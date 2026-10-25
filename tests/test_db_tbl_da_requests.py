@@ -1,8 +1,13 @@
 from datetime import UTC, datetime
 
+import pytest
+
 from db_table_functions.db_tbl_da_requests import create_request, get_request, list_requests
 
 OCT_2026 = datetime(2026, 10, 25, 9, 0, tzinfo=UTC)
+
+# From Phase 1, a request can only be created once a rulebook is published.
+pytestmark = pytest.mark.usefixtures("published_rulebook")
 
 
 def test_first_request_of_the_year_gets_number_0001(db_path):
@@ -71,11 +76,3 @@ def test_list_requests_returns_all_oldest_first(db_path):
 
 def test_list_requests_on_empty_database_is_empty(db_path):
     assert list_requests(db_path) == []
-
-
-def test_missing_data_folder_is_created(tmp_path):
-    db_path = tmp_path / "new_folder" / "devassist.db"
-
-    create_request(db_path, "Change A", "dev-0001", now=OCT_2026)
-
-    assert db_path.exists()

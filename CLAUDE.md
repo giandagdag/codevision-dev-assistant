@@ -24,7 +24,7 @@ Gian is an experienced bank programmer (hostcentric background) but new to Pytho
 7. Commit to Git only when Gian says so.
 
 ## Current phase
-Phase 0: Foundations. Spec: `specs/phase-0-foundations.md`
+Phase 1: Rulebook core. Spec: `specs/phase-1-rulebook-core.md`
 
 | # | Phase | # | Phase |
 |---|---|---|---|

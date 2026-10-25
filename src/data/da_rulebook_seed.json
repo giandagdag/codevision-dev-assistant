@@ -1,0 +1,131 @@
+{
+  "charter": {
+    "purpose": "Help developers change the made-up Harbour Loans demo application safely: understand the change, reuse existing code, start from sound code, and get early review feedback.",
+    "in_scope": [
+      "Python Plotly Dash pages and callbacks for the Harbour Loans demo",
+      "Database helper functions under db_table_functions",
+      "Pydantic data shapes under pydantic_classes"
+    ],
+    "out_of_scope": [
+      "Login, passwords, and access control",
+      "Payment processing and money movement",
+      "Changes to shared infrastructure or deployment settings"
+    ],
+    "architecture_principles": [
+      "All database access goes through db_table_functions, never straight from a page.",
+      "Pages only show data and collect input; business decisions live in agents.",
+      "Every stored time is UTC with a time zone."
+    ],
+    "constraints": [
+      "Python 3.14 only, with pinned library versions.",
+      "No secrets in code, logs, or tests.",
+      "Generated code is a starting point and is always reviewed by a person."
+    ],
+    "glossary": [
+      {"term": "Request", "meaning": "One developer change, tracked from start to handoff."},
+      {"term": "Rulebook", "meaning": "The versioned house rules used for generation and review."},
+      {"term": "Pinned version", "meaning": "The rulebook version a request keeps until it finishes."}
+    ]
+  },
+  "rules": [
+    {
+      "rule_id": "CV-PY-001",
+      "title": "Error messages are plain sentences",
+      "kind": "judgement",
+      "tags": ["general"],
+      "severity": "should_fix",
+      "why": "Developers and Admins must understand what went wrong and how to fix it without reading a stack trace.",
+      "good_example": "raise ConfigError(\"DA_DB_PATH is empty. Set it in your .env file.\")",
+      "bad_example": "raise Exception(\"ERR_CFG_07\")",
+      "source": "Written by Admin"
+    },
+    {
+      "rule_id": "CV-PY-002",
+      "title": "Store times in UTC with a time zone",
+      "kind": "judgement",
+      "tags": ["data"],
+      "severity": "should_fix",
+      "why": "Times without a zone are read differently on different machines, which breaks ordering and reports.",
+      "good_example": "saved_at = datetime.now(UTC)",
+      "bad_example": "saved_at = datetime.now()",
+      "source": "Written by Admin"
+    },
+    {
+      "rule_id": "CV-PY-003",
+      "title": "Never log or print secrets",
+      "kind": "judgement",
+      "tags": ["logging"],
+      "severity": "must_fix",
+      "why": "Log files are kept and shared widely; a key written there is a key exposed.",
+      "good_example": "logger.info(\"Calling provider %s\", provider_name)",
+      "bad_example": "logger.info(\"Calling with key %s\", api_key)",
+      "source": "Written by Admin"
+    },
+    {
+      "rule_id": "CV-PY-004",
+      "title": "Database access only through db_table_functions",
+      "kind": "judgement",
+      "tags": ["data"],
+      "severity": "must_fix",
+      "why": "Keeping every query in one folder means a database move only touches that folder.",
+      "good_example": "loan = get_loan(db_path, loan_id)",
+      "bad_example": "conn.execute(\"SELECT * FROM loans\") inside a page callback",
+      "source": "Written by Admin"
+    },
+    {
+      "rule_id": "CV-PY-005",
+      "title": "Short functions with clear names",
+      "kind": "judgement",
+      "tags": ["general"],
+      "severity": "fyi",
+      "why": "Small, well-named functions are easier to review, test, and reuse.",
+      "good_example": "def monthly_repayment(principal, rate, months): ...",
+      "bad_example": "def process(data): ... (200 lines doing five jobs)",
+      "source": "Written by Admin"
+    },
+    {
+      "rule_id": "CV-UI-001",
+      "title": "Use Dash Mantine Components for form controls",
+      "kind": "ui_convention",
+      "tags": ["ui"],
+      "severity": "should_fix",
+      "why": "One component set keeps every page looking and behaving the same.",
+      "good_example": "dmc.TextInput(label=\"Loan amount\")",
+      "bad_example": "html.Input(type=\"text\")",
+      "source": "Written by Admin"
+    },
+    {
+      "rule_id": "CV-UI-002",
+      "title": "Button labels start with a verb",
+      "kind": "ui_convention",
+      "tags": ["ui"],
+      "severity": "fyi",
+      "why": "A label that says what will happen avoids wrong clicks.",
+      "good_example": "dmc.Button(\"Save draft\")",
+      "bad_example": "dmc.Button(\"OK\")",
+      "source": "Written by Admin"
+    }
+  ],
+  "policy": {
+    "default_level": "L2",
+    "max_level": "L2",
+    "never_generate_zones": [
+      {
+        "name": "Security",
+        "description": "Encryption, key handling, and permission checks are written by people only.",
+        "examples": ["Encrypting a customer field", "Checking a user's role"]
+      },
+      {
+        "name": "Login",
+        "description": "Sign-in, sessions, and passwords are written by people only.",
+        "examples": ["Login page", "Session timeout handling"]
+      }
+    ],
+    "max_review_rounds": 3,
+    "escalation_triggers": [
+      {"name": "max_rounds_with_must_fix_open", "on": true},
+      {"name": "out_of_scope", "on": true},
+      {"name": "developer_disputes_finding", "on": true}
+    ]
+  }
+}

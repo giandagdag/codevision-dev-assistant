@@ -1,9 +1,18 @@
 """Shared test helpers. Nothing here touches a real AI, the internet, .env, or the real database."""
 
+from datetime import UTC, datetime
+
 import anthropic
 import pytest
 
 from configs.da_config import Settings
+from db_table_functions.db_tbl_da_rulebook import (
+    SEED_RULEBOOK_FILE,
+    load_rulebook_file,
+    publish_first_version,
+)
+
+SEED_PUBLISHED_AT = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
 
 
 @pytest.fixture(autouse=True)
@@ -20,6 +29,20 @@ def block_real_claude(monkeypatch):
 def db_path(tmp_path):
     """A fresh, empty database file in a temporary folder, deleted after the test."""
     return tmp_path / "test.db"
+
+
+@pytest.fixture
+def seed_rulebook():
+    """The made-up starter rulebook from src/data, as a Rulebook object."""
+    return load_rulebook_file(SEED_RULEBOOK_FILE)
+
+
+@pytest.fixture
+def published_rulebook(db_path, seed_rulebook):
+    """Publish the seed as v1 in the test database. Requests can only be created after this."""
+    return publish_first_version(
+        db_path, seed_rulebook, "admin-0001", "Starter rulebook", now=SEED_PUBLISHED_AT
+    )
 
 
 @pytest.fixture

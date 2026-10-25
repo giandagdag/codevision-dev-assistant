@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from da_logging import get_logger
-from db_table_functions.db_tbl_da_requests import ensure_request_tables, open_db, to_db_time
+from db_table_functions.da_db import open_db, to_db_time
+from db_table_functions.db_tbl_da_requests import ensure_request_tables
 from pydantic_classes.da_models import Actor, AuditEvent
 
 logger = get_logger(__name__)

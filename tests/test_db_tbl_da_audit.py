@@ -16,7 +16,7 @@ T0 = datetime(2026, 10, 25, 9, 0, tzinfo=UTC)
 
 
 @pytest.fixture
-def request_id(db_path):
+def request_id(db_path, published_rulebook):
     return create_request(db_path, "Change A", "dev-0001", now=T0).request_id
 
 

@@ -21,8 +21,9 @@ class Request(BaseModel):
     # AwareDatetime refuses times without a time zone, so every stored time is clearly UTC.
     created_at: AwareDatetime
     updated_at: AwareDatetime
-    # Empty until Phase 1 adds the rulebook.
-    rulebook_version: str | None = None
+    # The rulebook version number this request is pinned to. Set when the request is created
+    # and never changed. Empty only for a request built outside create_request.
+    rulebook_version: int | None = Field(default=None, ge=1)
 
 
 class AuditEvent(BaseModel):

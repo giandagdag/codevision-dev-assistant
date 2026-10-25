@@ -1,13 +1,19 @@
 """Save and read Developer Assistant requests (SQLite at home)."""
 
 import sqlite3
-from collections.abc import Iterator
-from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 from da_logging import get_logger
+from db_table_functions.da_db import begin_write, open_db, to_db_time
+from db_table_functions.db_tbl_da_rulebook import (
+    RulebookError,
+    ensure_rulebook_tables,
+    get_active_version_number,
+    get_version,
+)
 from pydantic_classes.da_models import STATUS_NEW, Request
+from pydantic_classes.da_rulebook_models import RulebookVersion
 
 logger = get_logger(__name__)
 
@@ -24,7 +30,7 @@ CREATE TABLE IF NOT EXISTS da_requests (
     version          INTEGER NOT NULL,
     created_at       TEXT NOT NULL,
     updated_at       TEXT NOT NULL,
-    rulebook_version TEXT
+    rulebook_version INTEGER
 );
 
 -- One row per year holding the last number handed out.
@@ -36,26 +42,6 @@ CREATE TABLE IF NOT EXISTS da_request_counters (
 """
 
 
-@contextmanager
-def open_db(db_path: Path) -> Iterator[sqlite3.Connection]:
-    """Open the database, commit if the block succeeds, roll back if it fails, always close."""
-    db_path = Path(db_path)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    try:
-        with conn:
-            yield conn
-    finally:
-        conn.close()
-
-
-def to_db_time(moment: datetime) -> str:
-    # Fixed-width UTC text (always with microseconds) so text order equals time order.
-    return moment.astimezone(UTC).isoformat(timespec="microseconds")
-
-
 def ensure_request_tables(conn: sqlite3.Connection) -> None:
     conn.executescript(_CREATE_TABLES_SQL)
 
@@ -63,10 +49,24 @@ def ensure_request_tables(conn: sqlite3.Connection) -> None:
 def create_request(
     db_path: Path, title: str, developer_id: str, now: datetime | None = None
 ) -> Request:
-    """Save a new request with status NEW and return it with its new ID."""
+    """Save a new request with status NEW, pinned to the active rulebook version, and return it.
+
+    Refused if no rulebook has been published yet, because every request must know which
+    house rules it is generated and reviewed under.
+    """
     now = now or datetime.now(UTC)
     with open_db(db_path) as conn:
         ensure_request_tables(conn)
+        ensure_rulebook_tables(conn)
+        # Lock first, so a rulebook save cannot slip in between reading the active version
+        # and saving the request: the pin is exactly the version active at that moment.
+        begin_write(conn)
+        pinned_version = get_active_version_number(conn)
+        if pinned_version is None:
+            raise RulebookError(
+                "No rulebook has been published yet, so the request was not created. "
+                "Ask an Admin to publish the first rulebook version."
+            )
         request = Request(
             request_id=_next_request_id(conn, now),
             title=title,
@@ -74,6 +74,7 @@ def create_request(
             status=STATUS_NEW,
             created_at=now,
             updated_at=now,
+            rulebook_version=pinned_version,
         )
         conn.execute(
             "INSERT INTO da_requests (request_id, title, developer_id, status, version,"
@@ -111,6 +112,26 @@ def list_requests(db_path: Path) -> list[Request]:
             "SELECT * FROM da_requests ORDER BY created_at, request_id"
         ).fetchall()
     return [Request(**dict(row)) for row in rows]
+
+
+def get_rulebook_for_request(db_path: Path, request_id: str) -> RulebookVersion:
+    """Return the rulebook version this request is pinned to. It never changes once set."""
+    request = get_request(db_path, request_id)
+    if request is None:
+        raise RulebookError(f"Request {request_id} does not exist, so it has no rulebook.")
+    if request.rulebook_version is None:
+        raise RulebookError(
+            f"Request {request_id} was created before rulebooks existed, "
+            "so it is not pinned to any version."
+        )
+    version = get_version(db_path, request.rulebook_version)
+    if version is None:
+        # Cannot happen through our functions (versions are never deleted), so say so plainly.
+        raise RulebookError(
+            f"Request {request_id} is pinned to v{request.rulebook_version}, "
+            "but that version is missing from the database."
+        )
+    return version
 
 
 def _next_request_id(conn: sqlite3.Connection, now: datetime) -> str:
