@@ -1,0 +1,15 @@
+# Tool settings only. This is not a package and adds no libraries.
+
+[tool.pytest.ini_options]
+# Let tests import our modules the same way the app does, e.g. "from configs.da_config import ...".
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+src = ["src"]
+
+[tool.ruff.lint]
+# E/W: style, F: real mistakes, I: import order, B: common bug patterns, UP: modern Python.
+select = ["E", "W", "F", "I", "B", "UP"]

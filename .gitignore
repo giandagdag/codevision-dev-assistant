@@ -1,0 +1,18 @@
+# Project-only Python install. Rebuild it with requirements.txt, never commit it.
+.venv/
+
+# Secrets live only here (rule R2).
+.env
+
+# Python and tool caches
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Local SQLite database
+data/*.db
+data/*.db-*
+
+# Windows folder settings file
+desktop.ini
