@@ -61,3 +61,4 @@ def make_settings(db_path):
         return Settings(**values)
 
     return build
+

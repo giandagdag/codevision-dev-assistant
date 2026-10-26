@@ -12,7 +12,7 @@ from db_table_functions.db_tbl_da_rulebook import (
     get_active_version_number,
     get_version,
 )
-from pydantic_classes.da_models import STATUS_NEW, Request
+from pydantic_classes.da_models import STATUS_DRAFT, Request, check_status_move
 from pydantic_classes.da_rulebook_models import RulebookVersion
 
 logger = get_logger(__name__)
@@ -46,10 +46,14 @@ def ensure_request_tables(conn: sqlite3.Connection) -> None:
     conn.executescript(_CREATE_TABLES_SQL)
 
 
+class RequestNotFoundError(Exception):
+    """There is no request with the given ID."""
+
+
 def create_request(
     db_path: Path, title: str, developer_id: str, now: datetime | None = None
 ) -> Request:
-    """Save a new request with status NEW, pinned to the active rulebook version, and return it.
+    """Save a new request with status DRAFT, pinned to the active rulebook version, and return it.
 
     Refused if no rulebook has been published yet, because every request must know which
     house rules it is generated and reviewed under.
@@ -61,47 +65,94 @@ def create_request(
         # Lock first, so a rulebook save cannot slip in between reading the active version
         # and saving the request: the pin is exactly the version active at that moment.
         begin_write(conn)
-        pinned_version = get_active_version_number(conn)
-        if pinned_version is None:
-            raise RulebookError(
-                "No rulebook has been published yet, so the request was not created. "
-                "Ask an Admin to publish the first rulebook version."
-            )
-        request = Request(
-            request_id=_next_request_id(conn, now),
-            title=title,
-            developer_id=developer_id,
-            status=STATUS_NEW,
-            created_at=now,
-            updated_at=now,
-            rulebook_version=pinned_version,
-        )
-        conn.execute(
-            "INSERT INTO da_requests (request_id, title, developer_id, status, version,"
-            " created_at, updated_at, rulebook_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                request.request_id,
-                request.title,
-                request.developer_id,
-                request.status,
-                request.version,
-                to_db_time(request.created_at),
-                to_db_time(request.updated_at),
-                request.rulebook_version,
-            ),
-        )
+        request = insert_request(conn, title, developer_id, now)
     logger.info("Created request %s", request.request_id)
     return request
+
+
+def insert_request(
+    conn: sqlite3.Connection, title: str, developer_id: str, now: datetime
+) -> Request:
+    """Save a new DRAFT request on the caller's connection, so it can share a transaction.
+
+    The caller sets up the tables and takes the write lock (begin_write) first.
+    """
+    pinned_version = get_active_version_number(conn)
+    if pinned_version is None:
+        raise RulebookError(
+            "No rulebook has been published yet, so the request was not created. "
+            "Ask an Admin to publish the first rulebook version."
+        )
+    request = Request(
+        request_id=_next_request_id(conn, now),
+        title=title,
+        developer_id=developer_id,
+        status=STATUS_DRAFT,
+        created_at=now,
+        updated_at=now,
+        rulebook_version=pinned_version,
+    )
+    conn.execute(
+        "INSERT INTO da_requests (request_id, title, developer_id, status, version,"
+        " created_at, updated_at, rulebook_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            request.request_id,
+            request.title,
+            request.developer_id,
+            request.status,
+            request.version,
+            to_db_time(request.created_at),
+            to_db_time(request.updated_at),
+            request.rulebook_version,
+        ),
+    )
+    return request
+
+
+def update_request(
+    conn: sqlite3.Connection,
+    request_id: str,
+    now: datetime,
+    title: str | None = None,
+    status: str | None = None,
+    version: int | None = None,
+) -> Request:
+    """Change a request's title, status or version on the caller's connection, and return it.
+
+    A status change must be a move in the spec 3.1 table. Staying on the same status is not a
+    move, so it is not checked. The caller writes the matching audit event in the same
+    transaction (rule R6).
+    """
+    current = read_request(conn, request_id)
+    if current is None:
+        raise RequestNotFoundError(f"Request {request_id} does not exist.")
+    if status is not None and status != current.status:
+        check_status_move(current.status, status)
+    changes = {"title": title, "status": status, "version": version}
+    data = current.model_dump() | {k: v for k, v in changes.items() if v is not None}
+    # Built through the model again, so an empty title or version 0 is refused before saving.
+    updated = Request.model_validate(data | {"updated_at": now})
+    conn.execute(
+        "UPDATE da_requests SET title = ?, status = ?, version = ?, updated_at = ?"
+        " WHERE request_id = ?",
+        (updated.title, updated.status, updated.version, to_db_time(now), request_id),
+    )
+    return updated
+
+
+def read_request(conn: sqlite3.Connection, request_id: str) -> Request | None:
+    """Read one request on the caller's connection, inside its transaction."""
+    row = conn.execute(
+        "SELECT * FROM da_requests WHERE request_id = ?", (request_id,)
+    ).fetchone()
+    return Request(**dict(row)) if row else None
 
 
 def get_request(db_path: Path, request_id: str) -> Request | None:
     """Return the request with this ID, or None if there is no such request."""
     with open_db(db_path) as conn:
         ensure_request_tables(conn)
-        row = conn.execute(
-            "SELECT * FROM da_requests WHERE request_id = ?", (request_id,)
-        ).fetchone()
-    return Request(**dict(row)) if row else None
+        return read_request(conn, request_id)
 
 
 def list_requests(db_path: Path) -> list[Request]:
@@ -110,6 +161,18 @@ def list_requests(db_path: Path) -> list[Request]:
         ensure_request_tables(conn)
         rows = conn.execute(
             "SELECT * FROM da_requests ORDER BY created_at, request_id"
+        ).fetchall()
+    return [Request(**dict(row)) for row in rows]
+
+
+def list_my_requests(db_path: Path, developer_id: str) -> list[Request]:
+    """Return one developer's requests, newest first (for "My recent requests")."""
+    with open_db(db_path) as conn:
+        ensure_request_tables(conn)
+        rows = conn.execute(
+            "SELECT * FROM da_requests WHERE developer_id = ?"
+            " ORDER BY created_at DESC, request_id DESC",
+            (developer_id,),
         ).fetchall()
     return [Request(**dict(row)) for row in rows]
 

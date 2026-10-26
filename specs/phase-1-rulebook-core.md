@@ -11,8 +11,9 @@ Independent Reviewer will read in later phases. This phase builds the rulebook's
 save a new version, see every version, restore an old one, and lock each request to the
 version it started under. No screens yet (the Admin console is Phase 9).
 
-Mainframe comparison: like a GDG (generation data group) with no limit. Every save is a new generation,
-old generations are never overwritten or rolled off, and a running job keeps reading the generation it started with.
+AS400 comparison: like saving every change to a source file as a brand-new member (RULEBK001,
+RULEBK002, ...) instead of overwriting one member. Old members are never changed or deleted, and a
+running job keeps reading the member it opened when it started.
 
 ## 1. Goal
 

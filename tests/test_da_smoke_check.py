@@ -1,9 +1,12 @@
 import tempfile
 
+import anthropic
+
 from da_smoke_check import main, run_smoke_check
+from tests.test_da_llm_client import FakeAnthropic, claude_settings
 
 
-def test_fake_provider_prints_all_four_items(make_settings, capsys):
+def test_fake_provider_prints_the_first_four_items(make_settings, capsys):
     exit_code = run_smoke_check(make_settings())
 
     output = capsys.readouterr().out
@@ -80,3 +83,35 @@ def test_invalid_provider_lists_allowed_values(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert exit_code == 1
     assert "fake, claude, onprem" in output
+
+
+def test_fake_provider_prints_the_four_understand_items(make_settings, capsys):
+    exit_code = run_smoke_check(make_settings())
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert (
+        "9. Loader: Rulebook v1 published. "
+        "Second run: Rulebook already published (active v1). Nothing changed."
+    ) in output
+    assert "10. Request CVDA-2026-0001 created (status CLARIFICATION_IN_PROGRESS)" in output
+    assert "- Question 4 answered: status DECISION_REQUIRED" in output
+    assert "(status DECISION_REQUIRED); chose \"Visible worksheets only\"" in output
+    assert "(status CLARIFICATION_IN_PROGRESS)" in output
+    assert (
+        "12. Confirmed as record v1 (status CONFIRMED_FOR_DISCOVERY); editing v1 was refused: "
+        "Confirmed request records are append-only and cannot be edited."
+    ) in output
+
+
+def test_understand_items_use_the_fake_script_whatever_the_provider(
+    make_settings, capsys, monkeypatch
+):
+    # Items 1 to 8 need a working generator client; give the claude provider a mocked one.
+    monkeypatch.setattr(anthropic, "Anthropic", FakeAnthropic)
+
+    exit_code = run_smoke_check(claude_settings(make_settings))
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "12. Confirmed as record v1" in output

@@ -59,6 +59,23 @@ def add_audit_event(
     details must hold plain values only (text, numbers, lists, dicts), and never a secret such as
     an API key: audit events are kept forever and cannot be removed.
     """
+    with open_db(db_path) as conn:
+        ensure_audit_table(conn)
+        event = insert_audit_event(conn, request_id, actor, event_type, details, now)
+    logger.info("Audit event %s recorded for %s", event.event_type, request_id)
+    return event
+
+
+def insert_audit_event(
+    conn: sqlite3.Connection,
+    request_id: str,
+    actor: Actor,
+    event_type: str,
+    details: dict[str, Any] | None = None,
+    now: datetime | None = None,
+) -> AuditEvent:
+    """Append one event on the caller's connection, so it is saved in the same transaction as
+    the change it records (rule R6). The caller runs ensure_audit_table first."""
     event = AuditEvent(
         request_id=request_id,
         timestamp=now or datetime.now(UTC),
@@ -68,40 +85,39 @@ def add_audit_event(
     )
     try:
         details_text = json.dumps(event.details)
-    except TypeError as error:
+    except (TypeError, ValueError) as error:
+        # TypeError: a value JSON cannot hold. ValueError: details that refer back to
+        # themselves (parked item P3).
         raise ValueError(
             f"Audit event details for {request_id} hold a value that cannot be saved ({error}). "
             "Use plain text, numbers, lists, or dicts only."
         ) from error
-    with open_db(db_path) as conn:
-        _ensure_audit_table(conn)
-        exists = conn.execute(
-            "SELECT 1 FROM da_requests WHERE request_id = ?", (request_id,)
-        ).fetchone()
-        if not exists:
-            raise UnknownRequestError(
-                f"Request {request_id} does not exist, so no audit event was recorded. "
-                "Create the request first."
-            )
-        conn.execute(
-            "INSERT INTO da_audit_events (request_id, timestamp, actor, event_type, details)"
-            " VALUES (?, ?, ?, ?, ?)",
-            (
-                event.request_id,
-                to_db_time(event.timestamp),
-                event.actor,
-                event.event_type,
-                details_text,
-            ),
+    exists = conn.execute(
+        "SELECT 1 FROM da_requests WHERE request_id = ?", (request_id,)
+    ).fetchone()
+    if not exists:
+        raise UnknownRequestError(
+            f"Request {request_id} does not exist, so no audit event was recorded. "
+            "Create the request first."
         )
-    logger.info("Audit event %s recorded for %s", event.event_type, request_id)
+    conn.execute(
+        "INSERT INTO da_audit_events (request_id, timestamp, actor, event_type, details)"
+        " VALUES (?, ?, ?, ?, ?)",
+        (
+            event.request_id,
+            to_db_time(event.timestamp),
+            event.actor,
+            event.event_type,
+            details_text,
+        ),
+    )
     return event
 
 
 def list_audit_events(db_path: Path, request_id: str) -> list[AuditEvent]:
     """Return a request's events in time order, then in the order they were added."""
     with open_db(db_path) as conn:
-        _ensure_audit_table(conn)
+        ensure_audit_table(conn)
         rows = conn.execute(
             "SELECT request_id, timestamp, actor, event_type, details FROM da_audit_events"
             " WHERE request_id = ? ORDER BY timestamp, event_id",
@@ -112,7 +128,7 @@ def list_audit_events(db_path: Path, request_id: str) -> list[AuditEvent]:
     ]
 
 
-def _ensure_audit_table(conn: sqlite3.Connection) -> None:
+def ensure_audit_table(conn: sqlite3.Connection) -> None:
     # The audit table points at da_requests, so that table must exist first.
     ensure_request_tables(conn)
     conn.executescript(_CREATE_TABLE_SQL)

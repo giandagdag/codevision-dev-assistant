@@ -1,12 +1,24 @@
-"""Proves Phases 0 and 1 work end to end. Run: .venv\\Scripts\\python src\\da_smoke_check.py"""
+"""Proves Phases 0, 1 and 2A work end to end.
 
+Run: .venv\\Scripts\\python src\\da_smoke_check.py
+"""
+
+import sqlite3
 import sys
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from agents.da_llm_client import LLMClient, LLMClientError, get_llm_client
+from agents.da_understand_flow import (
+    PROCEED_OPTION,
+    choose_option,
+    create_understand_request,
+    submit_answer,
+)
 from configs.da_config import DEFAULT_ENV_FILE, ConfigError, Settings, load_settings
-from db_table_functions.da_db import DatabaseBusyError
+from da_load_starter_rulebook import load_starter_rulebook
+from db_table_functions.da_db import DatabaseBusyError, open_db
 from db_table_functions.db_tbl_da_audit import add_audit_event, list_audit_events
 from db_table_functions.db_tbl_da_requests import create_request, get_rulebook_for_request
 from db_table_functions.db_tbl_da_rulebook import (
@@ -18,6 +30,8 @@ from db_table_functions.db_tbl_da_rulebook import (
     restore_version,
     save_new_version,
 )
+from db_table_functions.db_tbl_da_understand import UnderstandError
+from pydantic_classes.da_models import StatusMoveError
 from pydantic_classes.da_rulebook_models import Rulebook
 
 SAMPLE_TITLE = "Smoke check: sample change to a made-up loan program"
@@ -26,9 +40,20 @@ SAMPLE_ADMIN = "admin-0001"
 SAMPLE_PROMPT = "Say hello to the Developer Assistant team in one sentence."
 CHANGED_RULE_ID = "CV-PY-002"
 
+# The made-up Excel example from the demo. The fake script ignores the text, but the
+# answers are still checked (secrets, length) and saved in the chat like real ones.
+SAMPLE_FIRST_MESSAGE = "Users keep asking if they can upload Excel files. Can we support that?"
+SAMPLE_ANSWERS = (
+    "Yes. Teams keep inventories in Excel and convert them to PDF before uploading.",
+    "The upload screen only accepts PDF and DOCX. Excel files are rejected.",
+    "Validate the Excel file, extract the worksheets, and pass them into ingestion.",
+    ".xlsx workbooks in, the normal ingestion format out. Reject empty or corrupted files.",
+)
+SAMPLE_REFERENCE = "Use the existing PDF processing as a reference."
+
 
 def run_smoke_check(settings: Settings) -> int:
-    """Print the Phase 0 and Phase 1 checks. Return 0 if all passed, 1 if one stopped."""
+    """Print the Phase 0, 1 and 2A checks. Return 0 if all passed, 1 if one stopped."""
     print(f"1. Active AI provider: {settings.llm_provider}")
     try:
         # Set up the AI client first, so a setup problem stops us before anything is saved.
@@ -39,7 +64,16 @@ def run_smoke_check(settings: Settings) -> int:
         # still had the file open, we want to hear about it.
         with TemporaryDirectory(prefix="da_smoke_") as folder:
             _run_steps(Path(folder) / "smoke_check.db", settings, client)
-    except (ConfigError, LLMClientError, RulebookError, DatabaseBusyError) as error:
+            # A second, empty database, so the loader in item 9 has nothing published yet.
+            _run_understand_steps(Path(folder) / "smoke_understand.db", settings)
+    except (
+        ConfigError,
+        LLMClientError,
+        RulebookError,
+        DatabaseBusyError,
+        UnderstandError,
+        StatusMoveError,
+    ) as error:
         print(f"Smoke check stopped: {error}")
         return 1
 
@@ -95,6 +129,49 @@ def _run_steps(db_path: Path, settings: Settings, client: LLMClient) -> None:
         f'8. v{v1.version_number} restored as v{v3.version_number} ("{v3.change_note}"); '
         f"versions, newest first: {listed}"
     )
+
+
+def _run_understand_steps(db_path: Path, settings: Settings) -> None:
+    first = load_starter_rulebook(db_path)
+    second = load_starter_rulebook(db_path)
+    print(f"9. Loader: {first} Second run: {second}")
+
+    # Always the fake script, whatever the provider, so the smoke check never needs an AI.
+    demo = replace(settings, llm_provider="fake", db_path=db_path)
+    view = create_understand_request(demo, SAMPLE_FIRST_MESSAGE, developer_id=SAMPLE_DEVELOPER)
+    request_id = view.request.request_id
+    print(f"10. Request {request_id} created (status {view.request.status})")
+    for number, answer in enumerate(SAMPLE_ANSWERS, start=1):
+        view = submit_answer(demo, request_id, answer, view.revision)
+        print(f"    - Question {number} answered: status {view.request.status}")
+
+    decision = view.prompt
+    asked_status = view.request.status
+    choice = view.choices[0]
+    view = choose_option(demo, request_id, choice, view.revision)
+    print(
+        f'11. Decision asked: "{decision}" (status {asked_status}); '
+        f'chose "{choice}" (status {view.request.status})'
+    )
+
+    view = submit_answer(demo, request_id, SAMPLE_REFERENCE, view.revision)
+    view = choose_option(demo, request_id, PROCEED_OPTION, view.revision)
+    print(
+        f"12. Confirmed as record v{view.request.version} (status {view.request.status}); "
+        f"editing v1 was refused: {_try_to_edit_record(db_path, request_id)}"
+    )
+
+
+def _try_to_edit_record(db_path: Path, request_id: str) -> str:
+    """Try to change confirmed record v1 with raw SQL. The database must refuse it (rule R5)."""
+    try:
+        with open_db(db_path) as conn:
+            conn.execute(
+                "UPDATE da_request_records SET record = '{}' WHERE request_id = ?", (request_id,)
+            )
+    except sqlite3.IntegrityError as error:
+        return str(error)
+    raise UnderstandError("Record v1 could be edited. The append-only protection is missing.")
 
 
 def _with_stricter_rule(rulebook: Rulebook, rule_id: str) -> Rulebook:

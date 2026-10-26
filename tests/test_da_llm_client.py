@@ -1,10 +1,12 @@
+import subprocess
+import sys
 from types import SimpleNamespace
 
 import anthropic
 import pytest
 
 from agents.da_llm_client import LLMClientError, get_llm_client
-from configs.da_config import ConfigError
+from configs.da_config import PROJECT_ROOT, ConfigError
 
 
 class FakeAnthropic:
@@ -151,3 +153,41 @@ def test_api_key_is_not_logged(make_settings, monkeypatch, caplog):
 def test_onprem_says_not_configured_yet(make_settings):
     with pytest.raises(ConfigError, match="not configured yet"):
         get_llm_client("generator", make_settings(llm_provider="onprem"))
+
+
+# --- without the anthropic library (as at work) ---
+
+# Runs in a separate Python, so blocking the library cannot affect the other tests.
+# sys.modules["anthropic"] = None makes "import anthropic" fail, as if it were not installed.
+WITHOUT_ANTHROPIC_SCRIPT = """
+import sys
+sys.modules["anthropic"] = None
+from agents.da_llm_client import get_llm_client
+from configs.da_config import ConfigError, Settings
+
+def settings(provider):
+    return Settings(provider, "gen-model", "rev-model", "unused.db", anthropic_api_key="test-key")
+
+print(get_llm_client("generator", settings("fake")).complete("hello").provider)
+for provider in ("onprem", "claude"):
+    try:
+        get_llm_client("generator", settings(provider))
+    except ConfigError as error:
+        print(error)
+"""
+
+
+def test_module_loads_without_anthropic_installed():
+    result = subprocess.run(
+        [sys.executable, "-c", WITHOUT_ANTHROPIC_SCRIPT],
+        cwd=PROJECT_ROOT / "src",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    lines = result.stdout.splitlines()
+    assert lines[0] == "fake"
+    assert "not configured yet" in lines[1]
+    assert "needs the anthropic library" in lines[2]

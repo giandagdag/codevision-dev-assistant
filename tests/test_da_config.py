@@ -10,6 +10,7 @@ def test_defaults_when_nothing_is_set():
     assert settings.db_path == PROJECT_ROOT / "data" / "devassist.db"
     assert settings.claude_generator_model == ""
     assert settings.anthropic_api_key == ""
+    assert settings.developer_id == "dev-home-01"
 
 
 @pytest.mark.parametrize("provider", ["fake", "claude", "onprem"])
@@ -69,3 +70,9 @@ def test_api_key_is_hidden_when_settings_are_printed():
     assert settings.anthropic_api_key == "test-secret-value"
     assert "test-secret-value" not in repr(settings)
     assert "test-secret-value" not in str(settings)
+
+
+def test_developer_id_is_read_from_the_environment():
+    settings = load_settings(env_file=None, environ={"DA_DEVELOPER_ID": "dev-0042"})
+
+    assert settings.developer_id == "dev-0042"

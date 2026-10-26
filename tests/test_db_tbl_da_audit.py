@@ -99,3 +99,12 @@ def test_database_refuses_to_delete_an_audit_event(db_path, request_id):
             conn.execute("DELETE FROM da_audit_events")
 
     assert len(list_audit_events(db_path, request_id)) == 1
+
+
+def test_details_that_refer_to_themselves_give_the_plain_message(db_path, request_id):
+    # Parked item P3, fixed in Phase 2A.
+    details = {}
+    details["self"] = details
+
+    with pytest.raises(ValueError, match="hold a value that cannot be saved"):
+        add_audit_event(db_path, request_id, "system", "x", details)

@@ -1,0 +1,91 @@
+{
+  "_about": "Made-up scripted replies for DA_LLM_PROVIDER=fake (decision D-C). They walk the Excel example from the demo and ignore what is typed. A step that comes up again reuses its entry; a step not listed here gets an empty reply.",
+  "opening": {
+    "updates": {},
+    "ambiguities": [],
+    "hint": "Is the goal to let Excel content go through the same document-ingestion flow as PDFs?"
+  },
+  "question_1": {
+    "updates": {
+      "title": "Add Excel document processing",
+      "objective": "Let users upload Excel workbooks so their content goes through the same document-ingestion flow as PDFs.",
+      "reason": "Teams keep technical inventories in Excel and must convert them to PDF before uploading."
+    },
+    "ambiguities": [],
+    "hint": "Which screen or step stops Excel files right now?"
+  },
+  "question_2": {
+    "updates": {
+      "current_behaviour": "The upload screen accepts only PDF and DOCX files. Excel files are rejected during file-type validation."
+    },
+    "ambiguities": [],
+    "hint": "Describe the end-to-end behaviour you expect."
+  },
+  "question_3": {
+    "updates": {
+      "expected_behaviour": "CodeVision validates the Excel file, extracts the content from the worksheets, and passes it into the existing ingestion process.",
+      "functional_flow": [
+        "The user uploads an Excel workbook on the upload screen",
+        "The file-type check accepts the workbook",
+        "The content of the worksheets is extracted",
+        "The extracted content goes into the existing ingestion process"
+      ],
+      "in_scope": [
+        "Accept Excel workbooks on the upload screen",
+        "Extract worksheet content into the existing ingestion flow"
+      ]
+    },
+    "ambiguities": [],
+    "hint": "Think about what could go wrong, not only the happy path."
+  },
+  "question_4": {
+    "updates": {
+      "inputs": "Excel workbooks uploaded by the user",
+      "outputs": "Worksheet content in the normal ingestion format",
+      "success_scenarios": [
+        "A workbook with several worksheets is ingested"
+      ],
+      "failure_scenarios": [
+        "An empty workbook is rejected with a clear message",
+        "A corrupted workbook is rejected with a clear message",
+        "A password-protected workbook is rejected with a clear message"
+      ],
+      "out_of_scope": [
+        "Macros and formulas in the workbook"
+      ]
+    },
+    "ambiguities": [
+      {
+        "text": "Workbooks can contain hidden worksheets. Should hidden worksheets be extracted too?",
+        "material": true,
+        "options": [
+          "Visible worksheets only",
+          "All worksheets, including hidden ones"
+        ]
+      },
+      {
+        "text": "The answer says Excel workbooks without naming a file format.",
+        "material": false,
+        "assumption": {
+          "text": "Excel workbooks means the .xlsx format",
+          "basis": "Developer's answer to question 4 (.xlsx workbooks in)"
+        }
+      }
+    ],
+    "hint": ""
+  },
+  "optional": {
+    "updates": {
+      "references": [
+        "Existing PDF processing"
+      ]
+    },
+    "ambiguities": [],
+    "hint": ""
+  },
+  "correction": {
+    "updates": {},
+    "ambiguities": [],
+    "hint": ""
+  }
+}
