@@ -13,6 +13,8 @@ DEFAULT_ENV_FILE = PROJECT_ROOT / ".env"
 ALLOWED_PROVIDERS = ("fake", "claude", "onprem")
 DEFAULT_PROVIDER = "fake"
 DEFAULT_DB_PATH = "data/devassist.db"
+# Stands in for the logged-in developer until CodeVision's login is connected (spec Q5).
+DEFAULT_DEVELOPER_ID = "dev-home-01"
 
 
 class ConfigError(Exception):
@@ -25,6 +27,7 @@ class Settings:
     claude_generator_model: str
     claude_reviewer_model: str
     db_path: Path
+    developer_id: str = DEFAULT_DEVELOPER_ID
     # repr=False keeps the key out of print() and log output (rule R2).
     anthropic_api_key: str = field(default="", repr=False)
 
@@ -58,6 +61,7 @@ def load_settings(
         claude_generator_model=read("DA_CLAUDE_GENERATOR_MODEL"),
         claude_reviewer_model=read("DA_CLAUDE_REVIEWER_MODEL"),
         db_path=_resolve_db_path(read("DA_DB_PATH", DEFAULT_DB_PATH)),
+        developer_id=read("DA_DEVELOPER_ID", DEFAULT_DEVELOPER_ID),
         anthropic_api_key=read("ANTHROPIC_API_KEY"),
     )
 

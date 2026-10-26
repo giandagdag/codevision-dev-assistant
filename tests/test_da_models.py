@@ -34,7 +34,7 @@ def make_event(**changes):
 def test_new_request_has_starting_values():
     request = make_request()
 
-    assert request.status == "NEW"
+    assert request.status == "DRAFT"
     assert request.version == 1
     assert request.rulebook_version is None
 

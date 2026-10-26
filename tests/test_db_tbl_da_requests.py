@@ -1,10 +1,21 @@
 from datetime import UTC, datetime
 
 import pytest
+from pydantic import ValidationError
 
-from db_table_functions.db_tbl_da_requests import create_request, get_request, list_requests
+from db_table_functions.da_db import open_db
+from db_table_functions.db_tbl_da_requests import (
+    RequestNotFoundError,
+    create_request,
+    get_request,
+    list_my_requests,
+    list_requests,
+    update_request,
+)
+from pydantic_classes.da_models import StatusMoveError
 
 OCT_2026 = datetime(2026, 10, 25, 9, 0, tzinfo=UTC)
+LATER = datetime(2026, 10, 25, 10, 0, tzinfo=UTC)
 
 # From Phase 1, a request can only be created once a rulebook is published.
 pytestmark = pytest.mark.usefixtures("published_rulebook")
@@ -14,7 +25,7 @@ def test_first_request_of_the_year_gets_number_0001(db_path):
     request = create_request(db_path, "Change A", "dev-0001", now=OCT_2026)
 
     assert request.request_id == "CVDA-2026-0001"
-    assert request.status == "NEW"
+    assert request.status == "DRAFT"
 
 
 def test_request_numbers_go_up_by_one(db_path):
@@ -76,3 +87,66 @@ def test_list_requests_returns_all_oldest_first(db_path):
 
 def test_list_requests_on_empty_database_is_empty(db_path):
     assert list_requests(db_path) == []
+
+
+# --- Phase 2A: update_request and list_my_requests ---
+
+
+def _update(db_path, request_id, **changes):
+    with open_db(db_path) as conn:
+        return update_request(conn, request_id, now=LATER, **changes)
+
+
+def test_update_request_changes_title_status_and_version(db_path):
+    request = create_request(db_path, "New change request", "dev-0001", now=OCT_2026)
+
+    updated = _update(
+        db_path, request.request_id, title="Add Excel", status="CLARIFICATION_IN_PROGRESS"
+    )
+
+    assert get_request(db_path, request.request_id) == updated
+    assert updated.title == "Add Excel"
+    assert updated.status == "CLARIFICATION_IN_PROGRESS"
+    assert updated.updated_at == LATER
+
+
+def test_update_request_refuses_a_move_not_in_the_table(db_path):
+    request = create_request(db_path, "Change A", "dev-0001", now=OCT_2026)
+
+    with pytest.raises(StatusMoveError, match="cannot move from DRAFT to CONFIRMED"):
+        _update(db_path, request.request_id, status="CONFIRMED_FOR_DISCOVERY")
+    assert get_request(db_path, request.request_id).status == "DRAFT"
+
+
+def test_staying_on_the_same_status_is_not_a_move(db_path):
+    request = create_request(db_path, "Change A", "dev-0001", now=OCT_2026)
+
+    # DRAFT -> DRAFT is not in the table, but it is not a move, so it is accepted.
+    updated = _update(db_path, request.request_id, status="DRAFT", title="Change B")
+
+    assert updated.status == "DRAFT"
+    assert updated.title == "Change B"
+
+
+def test_update_request_refuses_an_empty_title(db_path):
+    request = create_request(db_path, "Change A", "dev-0001", now=OCT_2026)
+
+    with pytest.raises(ValidationError):
+        _update(db_path, request.request_id, title="")
+
+
+def test_update_unknown_request_is_refused(db_path):
+    create_request(db_path, "Change A", "dev-0001", now=OCT_2026)
+
+    with pytest.raises(RequestNotFoundError, match="CVDA-2026-9999 does not exist"):
+        _update(db_path, "CVDA-2026-9999", title="X")
+
+
+def test_list_my_requests_is_newest_first_and_mine_only(db_path):
+    create_request(db_path, "Mine, older", "dev-0001", now=OCT_2026)
+    create_request(db_path, "Someone else's", "dev-0002", now=LATER)
+    create_request(db_path, "Mine, newer", "dev-0001", now=LATER)
+
+    titles = [request.title for request in list_my_requests(db_path, "dev-0001")]
+
+    assert titles == ["Mine, newer", "Mine, older"]

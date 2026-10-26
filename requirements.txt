@@ -1,11 +1,6 @@
 # Pinned versions for the CodeVision Developer Assistant (Python 3.14).
-# Home versions for now; swap in the versions CodeVision uses at work (spec open question Q3).
+# This file goes to work: only the libraries CodeVision has, at the versions it uses (spec Q3).
+# At home, install requirements-home.txt instead; it includes this file.
 
-# App libraries
-anthropic==2.3.0
-pydantic==2.14.1
-python-dotenv==1.2.4
-
-# Dev tools
-pytest==9.1.1
-ruff==0.17.2
+pydantic==2.12.5
+python-dotenv==1.2.1

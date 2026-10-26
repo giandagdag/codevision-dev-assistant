@@ -11,7 +11,8 @@ This folder is a clean-room build at home. It is later copied into CodeVision at
 ## Who you are working with
 Gian is an experienced bank programmer (hostcentric background) but new to Python and Claude Code.
 - Explain in plain language. No jargon without a one-line meaning.
-- Comparisons to COBOL or mainframe ideas are welcome.
+- Comparisons to AS400 (IBM i) ideas such as RPG, CL, DDS, data areas, journals and 5250 screens
+  are welcome. Do not use mainframe comparisons.
 - After each step, say: what you did, why, and how Gian can check it.
 
 ## How we work: one phase at a time
@@ -24,7 +25,7 @@ Gian is an experienced bank programmer (hostcentric background) but new to Pytho
 7. Commit to Git only when Gian says so.
 
 ## Current phase
-Phase 1: Rulebook core. Spec: `specs/phase-1-rulebook-core.md`
+Phase 2A: Understand engine. Spec: `specs/phase-2-understand.md` (parts marked 2A only)
 
 | # | Phase | # | Phase |
 |---|---|---|---|

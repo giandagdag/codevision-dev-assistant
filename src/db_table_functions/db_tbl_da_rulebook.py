@@ -1,7 +1,7 @@
 """Save and read rulebook versions. Append-only: there are no edit or delete functions (rule R1).
 
-Like a GDG with no limit: every save is a new generation (v1, v2, v3...), old generations are
-never overwritten, and the active version is always the newest one.
+Like journal receivers: every save is a new version (v1, v2, v3...), old versions are never
+overwritten, and the active version is always the newest one.
 """
 
 import json

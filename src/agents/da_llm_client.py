@@ -3,8 +3,6 @@
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
-import anthropic
-
 from configs.da_config import ConfigError, Settings, load_settings
 from da_logging import get_logger
 
@@ -13,7 +11,8 @@ logger = get_logger(__name__)
 Role = Literal["generator", "reviewer"]
 ROLES = ("generator", "reviewer")
 
-CLAUDE_MAX_TOKENS = 1024
+# Room for a full request record in one reply (Phase 2), so it is not cut off.
+CLAUDE_MAX_TOKENS = 2048
 
 
 class LLMClientError(Exception):
@@ -44,10 +43,12 @@ class FakeLLMClient:
 
 
 class ClaudeLLMClient:
-    """Calls Claude through the official Anthropic library."""
+    """Calls Claude through the official Anthropic library (home only, never installed at work)."""
 
     def __init__(self, model: str, api_key: str):
+        anthropic = _import_anthropic()
         self.model = model
+        self._api_error = anthropic.APIError
         self._client = anthropic.Anthropic(api_key=api_key)
 
     def complete(self, prompt: str, system: str | None = None) -> LLMReply:
@@ -61,7 +62,7 @@ class ClaudeLLMClient:
             request["system"] = system
         try:
             response = self._client.messages.create(**request)
-        except anthropic.APIError as error:
+        except self._api_error as error:
             raise LLMClientError(
                 f"The Claude call failed ({type(error).__name__}). "
                 "Check the model name, your API key, and your network, then try again."
@@ -112,3 +113,16 @@ def _make_claude_client(role: Role, settings: Settings) -> ClaudeLLMClient:
             "to your .env file."
         )
     return ClaudeLLMClient(model=model, api_key=settings.anthropic_api_key)
+
+
+def _import_anthropic():
+    # Imported here, not at the top of the file: the library is not installed at work, and the
+    # app must still start there with the fake or onprem provider.
+    try:
+        import anthropic
+    except ImportError as error:
+        raise ConfigError(
+            "The Claude provider needs the anthropic library, which is installed at home only "
+            "(requirements-home.txt). Set DA_LLM_PROVIDER=fake or onprem in your .env file."
+        ) from error
+    return anthropic
