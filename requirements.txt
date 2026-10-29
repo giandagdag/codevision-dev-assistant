@@ -4,3 +4,8 @@
 
 pydantic==2.12.5
 python-dotenv==1.2.1
+
+# The screen (Phase 2B), at the CodeVision work versions (spec 3.10, Q3).
+dash==3.4.0
+dash-mantine-components==2.5.1
+dash-iconify==0.1.2

@@ -18,6 +18,7 @@ copy .env.example .env                            # then edit .env; it never goe
 | Check code style | `.venv\Scripts\python -m ruff check .` |
 | Run the smoke check | `.venv\Scripts\python src\da_smoke_check.py` |
 | Publish the starter rulebook (once) | `.venv\Scripts\python src\da_load_starter_rulebook.py` |
+| Run the screen (then open http://127.0.0.1:8050) | `.venv\Scripts\python src\web\da_home_web_server.py` |
 
 ## How Phase 0 works
 
@@ -152,6 +153,50 @@ changes nothing; a request answers questions 1 to 4; a decision is asked and rec
 request is confirmed as record v1, after which a raw SQL edit of v1 is refused. Items 9 to 12
 always use the fake script, whatever provider is set.
 
+## How Phase 2B works
+
+Phase 2B puts a screen on the 2A engine. It adds **no rules of its own**: every check (secret
+words, length, stale window, which input is allowed) still lives in the 2A code. The screen only
+shows what the engine says and passes on the clicks.
+
+AS400 comparison: the layout file is the display file (DDS), the callbacks are the small part of
+an RPG program that reads the function key and calls the right subroutine, and the Understand
+engine is the program that does the real work. The conversation is kept in a work file (the
+database) between screens, so a page reload or a lunch break loses nothing.
+
+**Run it** (first time, publish the starter rulebook once; see the table at the top):
+`.venv\Scripts\python src\web\da_home_web_server.py`, then open http://127.0.0.1:8050.
+With the default `DA_LLM_PROVIDER=fake`, replies are scripted and a banner says so.
+
+| File | What it does |
+|---|---|
+| `layouts/da_developer_assistant_page.py` | What is on the screen: Home, the blank workspace, a request's workspace (stepper, chat, composer, Summary panel) |
+| `callbacks/screen_callbacks/da_developer_assistant_page_callbacks.py` | `show_page` draws the right page from the URL; `handle_action` handles Send, a choice button or Skip and calls one 2A function |
+| `web/da_web_components.py` | Our own building blocks: status pill, stepper, chat bubble, panel section, progress bar |
+| `styles/da_styles.py` | The colours and sizes, in one place |
+| `web/da_home_web_server.py` | **Home only.** A stand-in CodeVision shell (header, left menu, `dcc.Location`). Never copied to work |
+
+How a click flows: you press **Send**. `handle_action` calls `create_understand_request` (first
+message) or `submit_answer`. If the engine refuses, its plain message appears under the chat and
+nothing is written. If it works, the page is drawn again from the database. While the interpreter
+thinks, Send shows a spinner and the text box cannot be used twice.
+
+- **Addresses.** `?new=1` is the blank workspace, `?request=CVDA-2026-0001` opens that request,
+  nothing opens Home. Reload any of them and you get the same screen.
+- **Four composer modes.** Text box; busy (spinner while the interpreter works); locked choices
+  (text box off, buttons only, "I need help deciding" always last); done (confirmed, with the
+  disabled "Proceed to Discovery (coming in Phase 3)" button). When a senior is needed the box is
+  also locked and says why.
+- **Summary panel.** Fills after every answer; fields changed by the last answer are
+  highlighted; empty fields say "Waiting for your answer"; assumptions show their basis.
+- **Text is always plain text.** A message such as `<b>hi</b>` is shown as typed, never as HTML.
+- **Times** are shown in Singapore time. The server listens on 127.0.0.1 only.
+- **Icons** are drawn by `dash-iconify`, which downloads them from the internet when the page
+  loads. With no internet the screen still works; the small icons are just missing.
+
+Tests do not open a browser. They build the components and call the callback functions
+directly, using the fake provider and a temporary database.
+
 ## Notes for the move to CodeVision
 
 - **The audit-table triggers are SQLite-only.** The append-only guarantee comes from two SQLite
@@ -169,3 +214,9 @@ always use the fake script, whatever provider is set.
   `requirements-home.txt` adds `anthropic`, `pytest` and `ruff` and is never copied to work.
   The Claude provider is home only; the app starts at work without `anthropic`.
 - `da_logging.py` may be replaced by CodeVision's shared logger if one exists (spec Q4).
+- **Phase 2B files to copy:** `layouts/`, `callbacks/`, `styles/` and `web/da_web_components.py`.
+  Do **not** copy `web/da_home_web_server.py` (it stands in for CodeVision's own header, menu and
+  routing). At work, check two things (spec Q6): the id of CodeVision's `dcc.Location` (the page
+  uses `url`, see `LOCATION_ID`), and where the side-menu entries are listed.
+- `dash`, `dash-mantine-components` and `dash-iconify` are in `requirements.txt` at the work
+  versions. Dash pulls in Flask; home gets 3.1.3, work has 3.1.2.

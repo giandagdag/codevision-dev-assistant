@@ -1,0 +1,113 @@
+"""A stand-in CodeVision shell, for running the Developer Assistant screen at home.
+
+Home only, never copied to work: at work CodeVision's own header, side menu and page routing are
+used. This file gives the page what CodeVision gives it (a header, a left menu, and a
+dcc.Location), so the page plugs in the same way.
+
+Run: .venv\\Scripts\\python src\\web\\da_home_web_server.py   then open http://127.0.0.1:8050
+"""
+
+import sys
+from pathlib import Path
+
+# Started as a script from src/web, Python only sees this folder. Add src so the imports work.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import dash_mantine_components as dmc  # noqa: E402
+from dash import Dash, dcc  # noqa: E402
+from dash_iconify import DashIconify  # noqa: E402
+
+from callbacks.screen_callbacks.da_developer_assistant_page_callbacks import (  # noqa: E402
+    get_settings,
+    register_da_developer_assistant_page_callbacks,
+)
+from configs.da_config import ConfigError  # noqa: E402
+from db_table_functions.da_db import DatabaseBusyError  # noqa: E402
+from db_table_functions.db_tbl_da_rulebook import RulebookError, get_active_version  # noqa: E402
+from layouts.da_developer_assistant_page import LOCATION_ID, layout  # noqa: E402
+from styles import da_styles  # noqa: E402
+
+# Local only (rule R13): nobody else on the network can reach this server.
+HOST = "127.0.0.1"
+PORT = 8050
+
+# The side menu as on CodeVision. Only the Developer Assistant works here.
+MENU: tuple[tuple[str, str, bool], ...] = (
+    ("Home", "tabler:home", False),
+    ("Chat", "tabler:message", False),
+    ("Create Docs", "tabler:file-text", False),
+    ("Developer Assistant", "tabler:code", True),
+)
+
+
+def create_app() -> Dash:
+    app = Dash(
+        __name__,
+        title="CodeVision Developer Assistant",
+        # The workspace is drawn by callbacks, so its buttons do not exist at start-up.
+        suppress_callback_exceptions=True,
+    )
+    app.layout = dmc.MantineProvider(
+        dmc.AppShell(
+            [
+                dcc.Location(id=LOCATION_ID),
+                dmc.AppShellHeader(_header(), px="md"),
+                dmc.AppShellNavbar(_menu(), p="xs"),
+                dmc.AppShellMain(layout(), bg=da_styles.CANVAS),
+            ],
+            header={"height": 60},
+            navbar={"width": 200, "breakpoint": "sm"},
+            padding=0,
+        )
+    )
+    register_da_developer_assistant_page_callbacks(app)
+    return app
+
+
+def _header() -> dmc.Group:
+    return dmc.Group(
+        [
+            dmc.Group(
+                [
+                    dmc.Text("CODEVISION", fw=800, size="lg", c=da_styles.NAVY),
+                    dmc.Text("Developer Assistant", c=da_styles.MUTED),
+                ]
+            ),
+            dmc.Text(get_settings().developer_id, size="sm", c=da_styles.MUTED),
+        ],
+        justify="space-between",
+        h="100%",
+    )
+
+
+def _menu() -> list:
+    return [
+        dmc.NavLink(
+            label=name,
+            leftSection=DashIconify(icon=icon, width=20),
+            active=works,
+            disabled=not works,
+            href="/" if works else None,
+        )
+        for name, icon, works in MENU
+    ]
+
+
+def main() -> int:
+    try:
+        settings = get_settings()
+        if get_active_version(settings.db_path) is None:
+            print(
+                "No rulebook has been published yet. Run this once first:\n"
+                "  .venv\\Scripts\\python src\\da_load_starter_rulebook.py"
+            )
+            return 1
+    except (ConfigError, RulebookError, DatabaseBusyError) as error:
+        print(error)
+        return 1
+    create_app().run(host=HOST, port=PORT, debug=False)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
