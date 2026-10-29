@@ -203,8 +203,7 @@ After items 1 to 8, using the temporary database and the fake script:
 12. The request is confirmed as record v1 (CONFIRMED_FOR_DISCOVERY), and an edit to v1 is refused
 
 ### 3.10 The screen (2B)
-**Visual reference:** the Understand screens of `CodeVision_Developer_Assistant_Demo.html` (in the
-parent folder). CodeVision has no Chat page to copy, so the demo is the look to follow.
+**Visual reference:** the Understand screens of `docs/CodeVision_Developer_Assistant_Demo.html` (open it in a browser). CodeVision has no Chat page to copy, so the demo is the look to follow.
 Not built from the demo: the presenter bar (Back, Next, page counter, "What this shows"),
 "Envisioned" badges, and the content of the other tabs.
 
