@@ -177,4 +177,16 @@ Each difference becomes a settings default or a one-function change, with its te
 | D-E | How to run the screen on Monday | PROPOSED: run our stand-in web server on the work laptop (127.0.0.1 only) for the test. Plugging into CodeVision's menu comes after Monday. This relaxes 2B's "never copied to work" for the home web server, for the test only |
 
 ## 8. Decisions made during planning
-(The planner adds them here.)
+(Added by the planner, 29 Oct 2026. The plan reviewer approved the plan with 0 Must fix.)
+
+| # | Decision | Why |
+|---|---|---|
+| PD-1 | The pretend server picks the scripted entry from the "The question being answered: ..." line of the prompt, not from a call counter. A prompt without that line (the ping) gets "OK". | Same entries and same order for a normal conversation, but a retry, a restart or two windows cannot put it out of step. This refines the wording "in the same order" in 2.5. |
+| PD-2 | `bad-json` mode sends a non-JSON reply unless the prompt carries the engine's retry note ("Your previous reply was not accepted"). A test ties this marker to the engine's `_retry_note`. | Makes "the first reply of each turn" stateless. |
+| PD-3 | A certificate error is NOT retried. Timeouts, connection errors, 429 and 5xx are (3 tries in total, waits 2 then 4 seconds). | Retrying cannot fix a certificate problem and would only add 6 seconds. This refines "connection errors" in 2.1. One line to change if you want it retried. |
+| PD-4 | Missing URL or model, and a missing certificate file, are checked when the onprem client is created, not when settings load. A bad timeout number is checked at load. | A stale onprem value must not break the app while it runs on `fake`. |
+| PD-5 | `DA_ONPREM_AUTH_PREFIX` keeps its trailing space and may be set to empty. `.env.example` writes it in quotes. | `.env` readers drop an unquoted trailing space, and a custom key header needs no prefix. |
+| PD-6 | The key is also removed from the "300 characters of the answer" in an error message. | Rule R1, in case a server echoes the key back. |
+| PD-7 | Smoke items 13 and 14 always use the pretend server on a free local port, whatever `DA_LLM_PROVIDER` is. | The smoke check must never need a real AI (R2). |
+| PD-8 | Five earlier tests that expected "not configured yet" now expect the new "DA_ONPREM_URL is missing" message. | That behaviour is exactly what this spec replaces. |
+| PD-9 | `logs/` is ignored by Git. In tests the rejected-reply log is redirected to a temporary folder, and the retry waits are replaced, by shared fixtures in `tests/conftest.py`. | No test writes into the project or waits for real. |

@@ -19,6 +19,8 @@ copy .env.example .env                            # then edit .env; it never goe
 | Run the smoke check | `.venv\Scripts\python src\da_smoke_check.py` |
 | Publish the starter rulebook (once) | `.venv\Scripts\python src\da_load_starter_rulebook.py` |
 | Run the screen (then open http://127.0.0.1:8050) | `.venv\Scripts\python src\web\da_home_web_server.py` |
+| Check the AI can be reached (ping) | `.venv\Scripts\python src\da_llm_ping.py` |
+| Run the pretend work AI (for `onprem` at home) | `.venv\Scripts\python src\web\da_fake_onprem_server.py` |
 
 ## How Phase 0 works
 
@@ -36,7 +38,8 @@ each in its own file under `src/`, following CodeVision's folder layout:
    - `claude`: calls Claude. Needs `ANTHROPIC_API_KEY` and the model name for the role
      (`DA_CLAUDE_GENERATOR_MODEL` or `DA_CLAUDE_REVIEWER_MODEL`). If any is missing, you get a
      plain message naming it.
-   - `onprem`: placeholder until we connect CodeVision's Qwen and Llama.
+   - `onprem`: CodeVision's Qwen and Llama through the standard chat-completions format
+     (since Phase 2C, see below).
 
 3. **Data shapes** (`pydantic_classes/da_models.py`). A *Request* (one developer change) and an
    *AuditEvent* (one thing that happened to it). Pydantic checks every field, like DDS field keywords
@@ -202,6 +205,55 @@ thinks, Send shows a spinner and the text box cannot be used twice.
 Tests do not open a browser. They build the components and call the callback functions
 directly, using the fake provider and a temporary database.
 
+## How Phase 2C works
+
+Phase 2C fills in the `onprem` provider, so on the work laptop the Understand conversation can
+run against CodeVision's Qwen or Llama. We cannot reach them from home, so the connector is built
+to the standard "chat completions" format (the same format CodeVision's `API_CALL` uses) and is
+tested at home against a pretend server that answers in that format.
+
+AS400 comparison: the screen and the logic already existed. This phase writes the program that
+CALLs the remote system through its published parameter list, plus a dummy remote program on the
+test LPAR that answers the same way, plus a PING to prove the line works first.
+
+| Piece | File | What it does |
+|---|---|---|
+| The client | `agents/da_llm_client.py` (`OnPremLLMClient`) | One HTTP POST per question. Body: model, messages, `temperature` 0.2, `top_p` 0.2, `max_tokens` 2048, `stream` false. Reply text is read from `choices[0].message.content`. |
+| Settings | `configs/da_config.py`, `.env.example` | `DA_ONPREM_URL`, `_MODEL`, `_API_KEY`, `_AUTH_HEADER`, `_AUTH_PREFIX`, `_VERIFY`, `_TIMEOUT_SECONDS` |
+| Rejected-reply log | `agents/da_rejected_reply_log.py` | Every reply the engine rejects is appended to `logs/da_rejected_replies.log` (Singapore time, request ID, attempt, provider, model, problems, raw text cut at 20,000 characters). Stays on the laptop. A log that cannot be written never stops the conversation. |
+| Ping | `da_llm_ping.py` | Sends "ping", prints provider, model, host name only, seconds and the first 200 characters of the reply. Exit code 0 or 1. Works with `fake` too. |
+| Pretend server | `web/da_fake_onprem_server.py` | Standard library only, 127.0.0.1 only, port 8070. Answers from the same scripted entries as the fake provider. |
+
+**Try it at home** (two terminals):
+
+1. Terminal 1: `.venv\Scripts\python src\web\da_fake_onprem_server.py`
+   (options: `--mode normal`, `--mode bad-json`, `--mode error`, `--port 8070`)
+2. In `.env`: `DA_LLM_PROVIDER=onprem`, `DA_ONPREM_URL=http://127.0.0.1:8070/v1/chat/completions`,
+   `DA_ONPREM_MODEL=fake-qwen`
+3. Terminal 2: `.venv\Scripts\python src\da_llm_ping.py`, then start the screen as usual.
+
+The modes: `bad-json` makes the first reply of each turn not JSON, to prove the engine's retry and
+fill the rejected-reply log. `error` answers HTTP 500, to prove the network retries and the plain
+message. Set `DA_FAKE_ONPREM_KEY` (in `.env` or the environment) to make the server answer 401
+unless the client sends `Authorization: Bearer <that key>`.
+
+**Retries.** Connection errors, timeouts, HTTP 429 and HTTP 5xx are tried 3 times in total,
+waiting 2 then 4 seconds. Other answers (401, 403, 404, other 4xx) and certificate problems are
+not retried. Every failure gives a plain message saying what to check. The key never appears in a
+message or log line. This is separate from the engine's own "bad JSON, try once more" retry.
+
+**Certificates.** The check is on by default. `DA_ONPREM_VERIFY` can be a path to the bank's
+certificate file, or `false` for the prototype only (a WARNING is logged every time).
+
+**If Friday's photos show a difference** (auth header, body field names, where the reply text
+sits, `httpx` instead of `requests`): the format lives in three small functions in
+`da_llm_client.py` (`_build_body`, `_build_headers`, `_read_reply`) plus the constants at the top
+of the file. Auth header name and prefix are settings. Change one place and update its test.
+
+The smoke check adds items 13 (the ping against the pretend server) and 14 (a full conversation
+with `onprem` against it, reaching CONFIRMED_FOR_DISCOVERY). They always use the pretend server,
+whatever provider is set. The Monday plan is `docs/monday-work-test.md`.
+
 ## Notes for the move to CodeVision
 
 - **The audit-table triggers are SQLite-only.** The append-only guarantee comes from two SQLite
@@ -223,6 +275,11 @@ directly, using the fake provider and a temporary database.
   Do **not** copy `web/da_home_web_server.py` (it stands in for CodeVision's own header, menu and
   routing). At work, check two things (spec Q6): the id of CodeVision's `dcc.Location` (the page
   uses `url`, see `LOCATION_ID`), and where the side-menu entries are listed.
+- **Phase 2C files:** `agents/da_llm_client.py`, `agents/da_rejected_reply_log.py`, the settings in
+  `configs/da_config.py`, `da_llm_ping.py`. `requests` 2.32.5 is the one library added to
+  `requirements.txt`. For the Monday test only (decision D-E), `web/da_fake_onprem_server.py` is
+  not needed at work, but `da_home_web_server.py` is copied to run the screen on the work laptop.
+  Smoke check items 13 and 14 import the pretend server, so copy it too if you run the smoke check.
 - `dash`, `dash-mantine-components` and `dash-iconify` are in `requirements.txt` at the work
   versions. Dash pulls in Flask; home gets 3.1.3, work has 3.1.2.
 - **Check at work that Dash clientside callbacks (inline JavaScript) are allowed.** Enter-to-send

@@ -46,7 +46,7 @@ def write_rejected_reply(
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as handle:
             handle.write(entry)
-    except OSError as error:
+    except (OSError, ValueError) as error:  # ValueError: text that cannot be encoded
         logger.warning(
             "Could not write the rejected-reply log (%s). Carrying on.", type(error).__name__
         )

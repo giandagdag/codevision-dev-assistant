@@ -115,3 +115,14 @@ def test_the_conversation_carries_on_when_the_log_cannot_be_written(
     result = run(StubClient("bad", stub_reply()), seed_rulebook.charter)
 
     assert result.ok and result.attempts == 2
+
+
+def test_a_reply_that_cannot_be_encoded_only_warns(tmp_path, caplog):
+    # A lone surrogate (from a JSON "\ud800" escape) cannot be written as UTF-8.
+    log_file = tmp_path / "rejected.log"
+
+    raw = "bad \ud800 text"
+
+    write_rejected_reply("CVDA-2026-0001", 1, "onprem", "m", ["p"], raw, log_file=log_file)
+
+    assert "Could not write the rejected-reply log (UnicodeEncodeError)" in caplog.text
