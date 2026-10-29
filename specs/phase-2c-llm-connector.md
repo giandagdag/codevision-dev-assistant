@@ -1,6 +1,6 @@
 # Phase 2C: Work LLM connector
 
-Status: APPROVED v1.0 (29 Oct 2026). Decisions D-A to D-D chosen by Gian. D-E proposed.
+Status: APPROVED v1.0 (29 Oct 2026). Decisions D-A to D-E chosen by Gian.
 Depends on: Phase 2A, Phase 2B
 Next: the Monday work test (2 Nov), then Phase 3, Discover
 Deadline: built and merged by Sunday 1 Nov.
@@ -174,7 +174,7 @@ Each difference becomes a settings default or a one-function change, with its te
 | D-B | Which model for Understand | A setting in `.env`, so Qwen and Llama can both be tried on Monday (Gian, 29 Oct) |
 | D-C | Certificate check | On by default, certificate file setting, can be switched off in `.env` with a warning (Gian, 29 Oct) |
 | D-D | Rejected replies | Saved to a local log file with the raw text (Gian, 29 Oct) |
-| D-E | How to run the screen on Monday | PROPOSED: run our stand-in web server on the work laptop (127.0.0.1 only) for the test. Plugging into CodeVision's menu comes after Monday. This relaxes 2B's "never copied to work" for the home web server, for the test only |
+| D-E | How to run the screen on Monday | Run our stand-in web server on the work laptop (127.0.0.1 only) for the test. Plugging into CodeVision's menu comes after Monday. This relaxes 2B's "never copied to work" for the home web server, for the test only (Gian, 29 Oct) |
 
 ## 8. Decisions made during planning
 (Added by the planner, 29 Oct 2026. The plan reviewer approved the plan with 0 Must fix.)
