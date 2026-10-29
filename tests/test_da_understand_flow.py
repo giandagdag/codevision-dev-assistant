@@ -414,7 +414,7 @@ def test_onprem_gives_a_plain_message_in_the_chat(make_settings, settings):
 
     after = answer(onprem, view)
 
-    assert "not configured yet" in last_message(after)
+    assert "DA_ONPREM_URL is missing" in last_message(after)
     assert after.demo_mode is False
 
 

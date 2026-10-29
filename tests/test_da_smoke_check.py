@@ -66,7 +66,7 @@ def test_onprem_stops_with_plain_message(make_settings, capsys):
 
     output = capsys.readouterr().out
     assert exit_code == 1
-    assert "not configured yet" in output
+    assert "DA_ONPREM_URL is missing" in output
 
 
 def test_setup_problem_saves_nothing(make_settings, db_path):

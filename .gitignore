@@ -16,3 +16,6 @@ data/*.db-*
 
 # Windows folder settings file
 desktop.ini
+
+# Local logs, for example rejected AI replies (Phase 2C)
+logs/
