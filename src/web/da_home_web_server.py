@@ -31,13 +31,10 @@ from styles import da_styles  # noqa: E402
 HOST = "127.0.0.1"
 PORT = 8050
 
-# The side menu as on CodeVision. Only the Developer Assistant works here.
-MENU: tuple[tuple[str, str, bool], ...] = (
-    ("Home", "tabler:home", False),
-    ("Chat", "tabler:message", False),
-    ("Create Docs", "tabler:file-text", False),
-    ("Developer Assistant", "tabler:code", True),
-)
+# The side menu: only the Developer Assistant (Gian, 29 Oct 2026). At work CodeVision's own
+# menu is used.
+MENU_NAME = "Developer Assistant"
+MENU_ICON = "tabler:code"
 
 
 def create_app() -> Dash:
@@ -56,7 +53,7 @@ def create_app() -> Dash:
                 dmc.AppShellMain(layout(), bg=da_styles.CANVAS),
             ],
             header={"height": 60},
-            navbar={"width": 200, "breakpoint": "sm"},
+            navbar={"width": 240, "breakpoint": "sm"},
             padding=0,
         )
     )
@@ -83,13 +80,11 @@ def _header() -> dmc.Group:
 def _menu() -> list:
     return [
         dmc.NavLink(
-            label=name,
-            leftSection=DashIconify(icon=icon, width=20),
-            active=works,
-            disabled=not works,
-            href="/" if works else None,
+            label=MENU_NAME,
+            leftSection=DashIconify(icon=MENU_ICON, width=20),
+            active=True,
+            href="/",
         )
-        for name, icon, works in MENU
     ]
 
 

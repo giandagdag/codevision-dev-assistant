@@ -18,18 +18,11 @@ def test_the_app_builds_and_serves_its_pages(make_settings, published_rulebook, 
     assert client.get("/_dash-dependencies").status_code == 200
 
 
-def test_menu_has_four_items_and_only_the_assistant_works(
-    make_settings, published_rulebook, monkeypatch
-):
+def test_menu_has_only_the_developer_assistant(make_settings, published_rulebook, monkeypatch):
     app = make_app(make_settings, monkeypatch)
     links = components(app.layout, "NavLink")
-    assert [link.label for link in links] == [
-        "Home",
-        "Chat",
-        "Create Docs",
-        "Developer Assistant",
-    ]
-    assert [link.disabled for link in links] == [True, True, True, False]
+    assert [link.label for link in links] == ["Developer Assistant"]
+    assert links[0].active is True
     assert "dev-home-01" in all_text(app.layout)
 
 

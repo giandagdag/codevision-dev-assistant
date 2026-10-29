@@ -252,7 +252,8 @@ medium radius and padding).
 
 **Home web server** (`web/da_home_web_server.py`, home only, never copied to work)
 - A minimal AppShell like the demo: header, a left menu (Home, Chat, Create Docs, Developer
-  Assistant; only Developer Assistant works) and `dcc.Location`, so the page plugs in the same way
+  Assistant; only Developer Assistant works; see section 9, 29 Oct 2026: now only Developer
+  Assistant) and `dcc.Location`, so the page plugs in the same way
   it will at work. At work, CodeVision's own header and menu are used instead.
 - Run: `.venv\Scripts\python src\web\da_home_web_server.py`, open http://127.0.0.1:8050
 
@@ -367,3 +368,4 @@ if the Q6 photos show the page layout needs it.
 - 25 Oct 2026 (2A plan): When the interpreter fails on an answer, the developer's message and the plain reply both stay in the chat. The record does not change.
 - 25 Oct 2026 (2A plan review): Staying on the same status is not a move. A help item is cleared when the developer later chooses. "Proceed" from DECISION_REQUIRED confirms in one action, with every move audited. Request creation is two saves; if the interpreter fails, question 1 is asked without a hint.
 - 26 Oct 2026 (2A build): Every status move also writes a `status_changed` audit event (from, to), so rule R6 holds for moves that have no event of their own in 3.6. Skipping the optional area writes `optional_skipped`.
+- 29 Oct 2026 (2B hands-on, Gian): Three changes after the hands-on test. (1) The home shell's left menu shows only Developer Assistant; this replaces the four-item menu sentence in 3.10, for the home shell only. (2) The panel tabs get a tabler icon each (dash-iconify), as the demo has emoji. (3) In the chat box Enter sends and Shift+Enter makes a new line; Enter does nothing while the box is locked or a reply is running.

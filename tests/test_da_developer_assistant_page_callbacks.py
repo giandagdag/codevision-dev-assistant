@@ -185,10 +185,10 @@ def test_unknown_trigger_does_nothing(settings):
         cb.perform_action(settings, "da-something-else", None, {"request_id": "x"}, 0)
 
 
-def test_register_attaches_both_callbacks_and_the_busy_state():
+def test_register_attaches_the_callbacks_and_the_busy_state():
     app = Dash(__name__, suppress_callback_exceptions=True)
     cb.register_da_developer_assistant_page_callbacks(app)
-    draw, action = app._callback_list
+    draw, action, enter = app._callback_list
     assert draw["prevent_initial_call"] is False  # it must draw on first load
     assert action["prevent_initial_call"] is True
     # Busy mode: Send spins, the text box and Skip cannot be used a second time.
@@ -198,3 +198,24 @@ def test_register_attaches_both_callbacks_and_the_busy_state():
         "da-skip.disabled": True,
     }
     assert set(action["running"]["runningOff"].values()) == {False}
+    # Enter-to-send: a browser-side callback that runs after every redraw.
+    assert enter["output"] == "da-keys-ready.data"
+    assert enter["inputs"][0]["id"] == page.PAGE_CONTENT_ID
+    assert enter["clientside_function"]["function_name"]
+
+
+def test_enter_script_has_every_guard():
+    # These are string checks only: the real proof is the browser check in the review notes.
+    js = cb.ENTER_TO_SEND_JS
+    assert "'da-text'" in js and "getElementById('da-send')" in js and "send.click()" in js
+    for guard in (
+        "event.key !== 'Enter'",
+        "event.shiftKey",  # Shift+Enter stays a new line
+        "event.isComposing",
+        "box.disabled",  # locked choices, waiting, done
+        "box.readOnly",  # a reply is running
+        "send.disabled",
+        "data-loading",
+    ):
+        assert guard in js
+    assert "window.daEnterToSend" in js  # one listener for the whole page

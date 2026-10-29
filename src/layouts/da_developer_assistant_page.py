@@ -26,6 +26,7 @@ SEND_ID = "da-send"
 SKIP_ID = "da-skip"
 MESSAGE_ID = "da-message"
 CHOICE_TYPE = "da-choice"
+KEYS_ID = "da-keys-ready"  # target of the Enter-to-send script; holds nothing
 
 CODE_BANNER = "No code is generated in Phase 1"  # the demo's wording (its own numbering)
 DEMO_BANNER = "Demo mode: replies are scripted"
@@ -33,13 +34,21 @@ EMPTY_TEXT = "Waiting for your answer"
 UNDERSTAND_STEP = 1
 
 # The other tabs exist on the demo but belong to later phases: shown greyed out.
-PANEL_TABS: tuple[str, ...] = ("Summary", "Discovery", "Gate", "Code", "Review", "Audit")
+PANEL_TABS: tuple[tuple[str, str], ...] = (
+    ("Summary", "tabler:clipboard-list"),
+    ("Discovery", "tabler:search"),
+    ("Gate", "tabler:traffic-lights"),
+    ("Code", "tabler:settings"),
+    ("Review", "tabler:shield-check"),
+    ("Audit", "tabler:receipt"),
+)
 
 
 def layout() -> list:
     """The page itself. The content is filled in by the callbacks, from the URL."""
     return [
         dcc.Store(id=REFRESH_ID, data=0),
+        dcc.Store(id=KEYS_ID),
         dmc.Box(id=PAGE_CONTENT_ID, style=da_styles.PAGE),
     ]
 
@@ -225,9 +234,17 @@ def _workspace(title, request_id, status, demo_mode, messages, composer, panel, 
             dmc.Tabs(
                 dmc.TabsList(
                     [
-                        dmc.TabsTab(name, value=name.lower(), disabled=name != "Summary")
-                        for name in PANEL_TABS
-                    ]
+                        dmc.TabsTab(
+                            name,
+                            value=name.lower(),
+                            leftSection=DashIconify(icon=icon, width=16),
+                            disabled=name != "Summary",
+                            px="xs",
+                        )
+                        for name, icon in PANEL_TABS
+                    ],
+                    # All six tabs stay on one line; a narrow window scrolls them sideways.
+                    style={"flexWrap": "nowrap", "overflowX": "auto"},
                 ),
                 value="summary",
             ),

@@ -75,10 +75,19 @@ def test_no_demo_banner_without_the_fake_provider():
     assert page.DEMO_BANNER not in all_text(page.render_new_workspace(demo_mode=False))
 
 
-def test_only_the_summary_tab_can_be_used():
+def test_tabs_have_tabler_icons_and_only_summary_can_be_used():
     tabs = components(page.render_new_workspace(False), "TabsTab")
-    assert [t.children for t in tabs] == list(page.PANEL_TABS)
+    assert [t.children for t in tabs] == [name for name, _ in page.PANEL_TABS]
+    assert [t.children for t in tabs] == ["Summary", "Discovery", "Gate", "Code", "Review", "Audit"]
     assert [t.disabled for t in tabs] == [False, True, True, True, True, True]
+    for tab, (_, icon) in zip(tabs, page.PANEL_TABS, strict=True):
+        icons = components(tab, "DashIconify")
+        assert len(icons) == 1 and icons[0].icon == icon
+        assert icon.startswith("tabler:")
+
+
+def test_the_page_has_a_store_for_the_enter_script():
+    assert by_id(page.layout(), page.KEYS_ID) is not None
 
 
 def test_panel_has_every_section_in_order():

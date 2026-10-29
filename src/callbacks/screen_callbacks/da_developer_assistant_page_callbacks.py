@@ -27,6 +27,7 @@ from db_table_functions.db_tbl_da_rulebook import RulebookError
 from db_table_functions.db_tbl_da_understand import UnderstandError
 from layouts.da_developer_assistant_page import (
     CHOICE_TYPE,
+    KEYS_ID,
     LOCATION_ID,
     MESSAGE_ID,
     PAGE_CONTENT_ID,
@@ -44,6 +45,34 @@ from layouts.da_developer_assistant_page import (
 # Problems the developer can understand and act on. Their messages are already plain words.
 # Anything else is a real bug and is allowed to stop loudly.
 SHOWN_ERRORS = (UnderstandError, RulebookError, DatabaseBusyError, ConfigError)
+
+
+# Enter sends, Shift+Enter makes a new line. Dash cannot tell them apart in Python, so this small
+# browser script (a Dash clientside callback) does the one thing a function key does on a 5250
+# screen: it presses the Send button. Everything after that is the normal Send path (handle_action
+# and the 2A checks), so no rule lives here (R12). It does nothing while the text box is locked
+# (disabled), a reply is running (the box is read-only and Send is loading), or for Shift, Ctrl,
+# Alt, Meta, or an input-method key press. The listener is added once for the whole page.
+ENTER_TO_SEND_JS = f"""
+function(content) {{
+    if (!window.daEnterToSend) {{
+        window.daEnterToSend = true;
+        document.addEventListener('keydown', function(event) {{
+            var box = event.target;
+            if (!box || box.id !== '{TEXT_ID}' || event.key !== 'Enter') {{ return; }}
+            if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey
+                    || event.isComposing) {{ return; }}
+            event.preventDefault();
+            var send = document.getElementById('{SEND_ID}');
+            if (!send || box.disabled || box.readOnly) {{ return; }}
+            if (send.disabled || send.hasAttribute('data-loading')
+                    || send.hasAttribute('data-disabled')) {{ return; }}
+            send.click();
+        }});
+    }}
+    return window.dash_clientside.no_update;
+}}
+"""
 
 
 @lru_cache(maxsize=1)
@@ -134,3 +163,10 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
         ],
         prevent_initial_call=True,
     )(handle_action)
+
+    # Runs after every redraw; the script installs its listener only the first time.
+    app.clientside_callback(
+        ENTER_TO_SEND_JS,
+        Output(KEYS_ID, "data"),
+        Input(PAGE_CONTENT_ID, "children"),
+    )

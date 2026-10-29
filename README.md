@@ -174,7 +174,7 @@ With the default `DA_LLM_PROVIDER=fake`, replies are scripted and a banner says 
 | `callbacks/screen_callbacks/da_developer_assistant_page_callbacks.py` | `show_page` draws the right page from the URL; `handle_action` handles Send, a choice button or Skip and calls one 2A function |
 | `web/da_web_components.py` | Our own building blocks: status pill, stepper, chat bubble, panel section, progress bar |
 | `styles/da_styles.py` | The colours and sizes, in one place |
-| `web/da_home_web_server.py` | **Home only.** A stand-in CodeVision shell (header, left menu, `dcc.Location`). Never copied to work |
+| `web/da_home_web_server.py` | **Home only.** A stand-in CodeVision shell (header, a left menu with only Developer Assistant, `dcc.Location`). Never copied to work |
 
 How a click flows: you press **Send**. `handle_action` calls `create_understand_request` (first
 message) or `submit_answer`. If the engine refuses, its plain message appears under the chat and
@@ -187,7 +187,12 @@ thinks, Send shows a spinner and the text box cannot be used twice.
   (text box off, buttons only, "I need help deciding" always last); done (confirmed, with the
   disabled "Proceed to Discovery (coming in Phase 3)" button). When a senior is needed the box is
   also locked and says why.
-- **Summary panel.** Fills after every answer; fields changed by the last answer are
+- **Enter sends, Shift+Enter makes a new line.** A small browser script (a Dash clientside
+  callback in the callbacks file) presses the Send button when you press plain Enter, so Enter
+  takes exactly the same path as clicking Send and gets the same checks and messages. It does
+  nothing while the box is locked, while a reply is running, or with Shift, Ctrl, Alt or Meta held.
+  Enter on an empty box shows the normal "Please type a message first." message.
+- **Summary panel.** Six tabs with tabler icons; only Summary works, the rest are greyed out. Fills after every answer; fields changed by the last answer are
   highlighted; empty fields say "Waiting for your answer"; assumptions show their basis.
 - **Text is always plain text.** A message such as `<b>hi</b>` is shown as typed, never as HTML.
 - **Times** are shown in Singapore time. The server listens on 127.0.0.1 only.
@@ -220,3 +225,5 @@ directly, using the fake provider and a temporary database.
   uses `url`, see `LOCATION_ID`), and where the side-menu entries are listed.
 - `dash`, `dash-mantine-components` and `dash-iconify` are in `requirements.txt` at the work
   versions. Dash pulls in Flask; home gets 3.1.3, work has 3.1.2.
+- **Check at work that Dash clientside callbacks (inline JavaScript) are allowed.** Enter-to-send
+  uses one; if CodeVision blocks inline scripts, Send still works by click.
