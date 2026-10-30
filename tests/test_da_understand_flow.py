@@ -117,7 +117,7 @@ def test_full_fake_script_reaches_confirmed_record_v1(settings):
     assert [(d.question, d.choice) for d in record.decisions] == [(HIDDEN_SHEETS, VISIBLE_ONLY)]
     assert record.references == ["Existing PDF processing"]
     assert "saved as version 1" in last_message(view)
-    assert "Proceed to Discovery (coming in Phase 3)" in last_message(view)
+    assert "Press Proceed to Discovery" in last_message(view)
 
 
 def test_full_run_writes_every_audit_event(settings):

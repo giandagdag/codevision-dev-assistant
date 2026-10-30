@@ -9,9 +9,25 @@ import dash_mantine_components as dmc
 from dash import dcc
 from dash_iconify import DashIconify
 
+from agents.da_discover_flow import (
+    CONFIRM_OPTION,
+    ESCALATE_OPTION,
+    HINT_OPTION,
+    HINT_QUESTION,
+    outcome_status,
+)
 from agents.da_understand_checks import MAX_MESSAGE_LENGTH
 from agents.da_understand_flow import HELP_OPTION, PROCEED_OPTION
-from pydantic_classes.da_models import Request
+from pydantic_classes.da_discovery_models import DiscoveryView
+from pydantic_classes.da_models import (
+    STATUS_CONFIRMED,
+    STATUS_DISCOVERY_CONFIRMED,
+    STATUS_ESCALATION,
+    STATUS_NO_MATCH,
+    STATUS_SEARCHING,
+    STATUS_SIMILAR_FOUND,
+    Request,
+)
 from pydantic_classes.da_request_record_models import UnderstandView
 from styles import da_styles
 from web import da_web_components as parts
@@ -27,11 +43,19 @@ SKIP_ID = "da-skip"
 MESSAGE_ID = "da-message"
 CHOICE_TYPE = "da-choice"
 KEYS_ID = "da-keys-ready"  # target of the Enter-to-send script; holds nothing
+BUSY_ID = "da-busy"  # the "searching" line, shown only while a Discover action runs
 
 CODE_BANNER = "No code is generated in Phase 1"  # the demo's wording (its own numbering)
 DEMO_BANNER = "Demo mode: replies are scripted"
 EMPTY_TEXT = "Waiting for your answer"
 UNDERSTAND_STEP = 1
+DISCOVER_STEP = 2
+# The Discover buttons use the same pattern id as the Understand choices (the callbacks tell them
+# apart by the workspace state, not by the text).
+PROCEED_DISCOVERY_OPTION = "Proceed to Discovery"
+SEARCH_AGAIN_OPTION = "Search again"
+BUSY_TEXT = "⏳ Searching approved sources…"
+READINESS_GATE_BUTTON = "🚦 Proceed to Readiness Gate (coming in Phase 4)"
 
 # The other tabs exist on the demo but belong to later phases: shown greyed out.
 PANEL_TABS: tuple[tuple[str, str], ...] = (
@@ -182,7 +206,19 @@ def render_new_workspace(demo_mode: bool) -> list:
     )
 
 
-def _workspace(title, request_id, status, demo_mode, messages, composer, panel, state) -> list:
+def _workspace(
+    title,
+    request_id,
+    status,
+    demo_mode,
+    messages,
+    composer,
+    panel,
+    state,
+    step: int = UNDERSTAND_STEP,
+    discovery: list | None = None,
+    busy_text: str = "",
+) -> list:
     top = dmc.Group(
         [
             dmc.Group(
@@ -223,40 +259,48 @@ def _workspace(title, request_id, status, demo_mode, messages, composer, panel, 
                 style=da_styles.CHAT_SCROLL,
             ),
             dmc.Text("", id=MESSAGE_ID, c="red", size="sm", px="md", **{"aria-live": "assertive"}),
+            dmc.Text(busy_text, id=BUSY_ID, size="sm", px="md", style={"display": "none"}),
             composer,
         ],
         withBorder=True,
         radius="md",
         style=da_styles.COLUMN,
     )
-    side = dmc.Paper(
+    tab_list = dmc.TabsList(
         [
-            dmc.Tabs(
-                dmc.TabsList(
-                    [
-                        dmc.TabsTab(
-                            name,
-                            value=name.lower(),
-                            leftSection=DashIconify(icon=icon, width=16),
-                            disabled=name != "Summary",
-                            px="xs",
-                        )
-                        for name, icon in PANEL_TABS
-                    ],
-                    # All six tabs stay on one line; a narrow window scrolls them sideways.
-                    style={"flexWrap": "nowrap", "overflowX": "auto"},
-                ),
-                value="summary",
-            ),
-            dmc.Box(panel, style=da_styles.PANEL_BODY),
+            dmc.TabsTab(
+                name,
+                value=name.lower(),
+                leftSection=DashIconify(icon=icon, width=16),
+                disabled=not (name == "Summary" or (name == "Discovery" and discovery)),
+                px="xs",
+            )
+            for name, icon in PANEL_TABS
         ],
-        withBorder=True,
-        radius="md",
-        style=da_styles.COLUMN,
+        # All six tabs stay on one line; a narrow window scrolls them sideways.
+        style={"flexWrap": "nowrap", "overflowX": "auto"},
     )
+    if discovery:
+        # Discover is under way: the Discovery tab can be used and opens first.
+        tabs = dmc.Tabs(
+            [
+                tab_list,
+                dmc.TabsPanel(dmc.Box(panel, style=da_styles.PANEL_BODY), value="summary"),
+                dmc.TabsPanel(dmc.Box(discovery, style=da_styles.PANEL_BODY), value="discovery"),
+            ],
+            value="discovery",
+            style=da_styles.COLUMN,
+        )
+        side_children = [tabs]
+    else:
+        side_children = [
+            dmc.Tabs(tab_list, value="summary"),
+            dmc.Box(panel, style=da_styles.PANEL_BODY),
+        ]
+    side = dmc.Paper(side_children, withBorder=True, radius="md", style=da_styles.COLUMN)
     return [
         dcc.Store(id=STATE_ID, data=state),
-        parts.stepper(UNDERSTAND_STEP),
+        parts.stepper(step),
         dmc.Box(top, mt="sm"),
         dmc.Box([chat, side], style=da_styles.WORKSPACE_GRID),
     ]
@@ -264,6 +308,150 @@ def _workspace(title, request_id, status, demo_mode, messages, composer, panel, 
 
 def _lock():
     return DashIconify(icon="tabler:lock", width=12)
+
+
+# --- Discover (Phase 3) ---
+
+
+def render_discover_workspace(understand: UnderstandView, view: DiscoveryView) -> list:
+    """The workspace once the request is confirmed: Discover is step 2, the chat carries on, and
+    the Discovery tab opens as soon as there is a round to show."""
+    # SEARCHING with no saved round also opens the tab, to say the round did not finish.
+    show_tab = view.result is not None or view.request.status == STATUS_SEARCHING
+    return _workspace(
+        title=view.request.title,
+        request_id=view.request.request_id,
+        status=view.request.status,
+        demo_mode=view.demo_mode,
+        messages=[parts.chat_bubble(message) for message in view.messages],
+        composer=_discover_composer(view),
+        panel=_summary_panel(understand),
+        state={"request_id": view.request.request_id, "revision": view.revision, "discover": True},
+        step=DISCOVER_STEP,
+        discovery=_discovery_panel(view) if show_tab else None,
+        busy_text=BUSY_TEXT,
+    )
+
+
+def _discovery_panel(view: DiscoveryView) -> list:
+    result = view.result
+    record = view.record
+    parts_list: list = [
+        dmc.Text(
+            f"Input: request {view.request.request_id}, record version {record.version}",
+            size="xs",
+            c=da_styles.MUTED,
+            id="da-discovery-input",
+        ),
+        parts.search_rows(),
+    ]
+    if result is None:
+        # SEARCHING with no saved round: the app stopped mid-round (spec section 2).
+        parts_list.append(
+            dmc.Alert(
+                "A search round did not finish. Press Search again to start it over.",
+                color="orange",
+                variant="light",
+                id="da-outcome-banner",
+            )
+        )
+        return parts_list
+    outcome = outcome_status(result.findings)
+    parts_list.append(parts.outcome_banner(outcome))
+    if view.request.status == STATUS_DISCOVERY_CONFIRMED:
+        parts_list.append(
+            dmc.Alert("Discovery confirmed.", color="green", variant="light", id="da-state-banner")
+        )
+    if view.request.status == STATUS_ESCALATION:
+        parts_list.append(
+            dmc.Alert(view.open_item, color="red", variant="light", id="da-state-banner")
+        )
+    if result.summary_source == "fallback" and result.hits:
+        parts_list.append(parts.fallback_banner())
+    hits_by_id = {hit.hit_id: hit for hit in result.hits}
+    parts_list += [parts.finding_card(finding, hits_by_id) for finding in result.findings]
+    if not result.findings:
+        parts_list.append(dmc.Text("No findings in this round.", style=da_styles.EMPTY_TEXT))
+    if result.limitations:
+        parts_list.append(parts.limitations_card(result.limitations))
+    parts_list.append(parts.round_label(view.rounds_used, view.max_rounds))
+    return parts_list
+
+
+def _discover_composer(view: DiscoveryView) -> dmc.Box:
+    """The bottom of the chat in Discover. The text box, Send and Skip always exist (the
+    callbacks name them). Send is the hint button while a hint can be given."""
+    status = view.request.status
+    can_hint = view.can_hint
+    controls = dmc.Box(
+        [
+            dmc.Textarea(
+                id=TEXT_ID,
+                label=HINT_QUESTION if can_hint else None,
+                placeholder="Type your hint..." if can_hint else "",
+                disabled=not can_hint,
+                autosize=True,
+                minRows=2,
+                maxRows=4,
+                inputProps={"maxLength": MAX_MESSAGE_LENGTH},
+            ),
+            dmc.Group(
+                [
+                    dmc.Button("Skip", id=SKIP_ID, style={"display": "none"}),
+                    dmc.Button(
+                        HINT_OPTION,
+                        id=SEND_ID,
+                        variant="light",
+                        disabled=not can_hint,
+                        style={} if can_hint else {"display": "none"},
+                    ),
+                ],
+                justify="flex-end",
+                mt="xs",
+            ),
+        ],
+        style=da_styles.COMPOSER if can_hint else {"display": "none"},
+    )
+    if status in (STATUS_CONFIRMED, STATUS_SEARCHING):
+        label = PROCEED_DISCOVERY_OPTION if status == STATUS_CONFIRMED else SEARCH_AGAIN_OPTION
+        note = f"Press {label} to search approved sources"
+        return dmc.Box([_discover_bar([label], note), controls])
+    if status in (STATUS_SIMILAR_FOUND, STATUS_NO_MATCH):
+        choices = [option for option in view.choices if option != HINT_OPTION]
+        note = view.cap_message or "Choose an option to continue"
+        return dmc.Box([_discover_bar(choices, note, [CONFIRM_OPTION]), controls])
+    # Confirmed or escalated: nothing more to do in this phase.
+    done = dmc.Box(
+        [
+            dmc.Button(READINESS_GATE_BUTTON, disabled=True)
+            if status == STATUS_DISCOVERY_CONFIRMED
+            else dmc.Text(view.open_item, size="sm"),
+        ],
+        style=da_styles.CHOICES_BAR,
+        pb="xs",
+    )
+    return dmc.Box([done, controls])
+
+
+def _discover_bar(options: list[str], note: str, filled: list[str] | None = None) -> dmc.Box:
+    buttons = [
+        dmc.Button(
+            option,
+            id={"type": CHOICE_TYPE, "option": option},
+            variant="filled" if option in (filled or [options[0]]) else "light",
+            color="gray" if option == ESCALATE_OPTION else "blue",
+            radius="xl",
+            size="sm",
+        )
+        for option in options
+    ]
+    return dmc.Box(
+        [
+            dmc.Group([_lock(), dmc.Text(note, size="xs", fw=600)]),
+            dmc.Group(buttons, mt="xs", mb="xs"),
+        ],
+        style=da_styles.CHOICES_BAR,
+    )
 
 
 # --- The composer: text, locked choices, waiting, done ---
@@ -312,17 +500,6 @@ def _composer(mode: str, choices: list[str], can_skip: bool, prompt: str) -> dmc
     )
     if mode == "choices":
         return dmc.Box([_choices_bar(choices), controls])
-    if mode == "done":
-        return dmc.Box(
-            [
-                dmc.Box(
-                    dmc.Button("Proceed to Discovery (coming in Phase 3)", disabled=True),
-                    style=da_styles.CHOICES_BAR,
-                    pb="xs",
-                ),
-                controls,
-            ]
-        )
     return controls
 
 

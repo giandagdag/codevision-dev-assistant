@@ -13,6 +13,15 @@ from urllib.parse import parse_qs
 from dash import ALL, Input, Output, State, ctx, no_update
 from dash.exceptions import PreventUpdate
 
+from agents.da_discover_flow import (
+    CONFIRM_OPTION,
+    ESCALATE_OPTION,
+    add_hint_and_search,
+    confirm_discovery,
+    escalate_discovery,
+    get_discovery_view,
+    start_discovery,
+)
 from agents.da_understand_flow import (
     choose_option,
     create_understand_request,
@@ -26,25 +35,39 @@ from db_table_functions.da_db import DatabaseBusyError
 from db_table_functions.db_tbl_da_rulebook import RulebookError
 from db_table_functions.db_tbl_da_understand import UnderstandError
 from layouts.da_developer_assistant_page import (
+    BUSY_ID,
     CHOICE_TYPE,
     KEYS_ID,
     LOCATION_ID,
     MESSAGE_ID,
     PAGE_CONTENT_ID,
+    PROCEED_DISCOVERY_OPTION,
     REFRESH_ID,
+    SEARCH_AGAIN_OPTION,
     SEND_ID,
     SKIP_ID,
     STATE_ID,
     TEXT_ID,
+    render_discover_workspace,
     render_home,
     render_message_page,
     render_new_workspace,
     render_workspace,
 )
+from pydantic_classes.da_models import (
+    STATUS_CLARIFICATION,
+    STATUS_DECISION_REQUIRED,
+    STATUS_DRAFT,
+    STATUS_READY,
+)
 
 # Problems the developer can understand and act on. Their messages are already plain words.
 # Anything else is a real bug and is allowed to stop loudly.
 SHOWN_ERRORS = (UnderstandError, RulebookError, DatabaseBusyError, ConfigError)
+
+# Until the request is confirmed the Understand workspace is shown; from CONFIRMED_FOR_DISCOVERY
+# on, the Discover workspace (Phase 3).
+UNDERSTAND_STATUSES = (STATUS_DRAFT, STATUS_CLARIFICATION, STATUS_DECISION_REQUIRED, STATUS_READY)
 
 
 # Enter sends, Shift+Enter makes a new line. Dash cannot tell them apart in Python, so this small
@@ -90,7 +113,11 @@ def show_page(search: str | None, refresh: int | None):
     params = parse_qs((search or "").lstrip("?"))
     if params.get("request"):
         try:
-            return render_workspace(get_understand_view(settings, params["request"][0]))
+            request_id = params["request"][0]
+            view = get_understand_view(settings, request_id)
+            if view.request.status in UNDERSTAND_STATUSES:
+                return render_workspace(view)
+            return render_discover_workspace(view, get_discovery_view(settings, request_id))
         except (UnderstandError, DatabaseBusyError) as error:
             return render_message_page(str(error))
     if params.get("new"):
@@ -126,7 +153,12 @@ def perform_action(settings: Settings, trigger, text, state, refresh):
             submit_answer(settings, request_id, text or "", revision)
         elif trigger == SKIP_ID:
             skip_optional(settings, request_id, revision)
-        elif isinstance(trigger, dict) and trigger.get("type") == CHOICE_TYPE:
+        elif state.get("discover") and trigger == SEND_ID:
+            # In Discover the Send button is "Something's missing": the text is the hint.
+            add_hint_and_search(settings, request_id, text or "", revision)
+        elif state.get("discover") and _is_choice(trigger):
+            _discover_choice(settings, request_id, trigger["option"], revision)
+        elif _is_choice(trigger):
             choose_option(settings, request_id, trigger["option"], revision)
         else:
             raise PreventUpdate
@@ -134,6 +166,22 @@ def perform_action(settings: Settings, trigger, text, state, refresh):
         # Nothing was written. The text stays in the box so the developer can fix it.
         return no_update, no_update, str(error)
     return (refresh or 0) + 1, no_update, ""
+
+
+def _is_choice(trigger) -> bool:
+    return isinstance(trigger, dict) and trigger.get("type") == CHOICE_TYPE
+
+
+def _discover_choice(settings: Settings, request_id: str, option: str, revision: int) -> None:
+    """The one Discover engine function a button stands for."""
+    if option in (PROCEED_DISCOVERY_OPTION, SEARCH_AGAIN_OPTION):
+        start_discovery(settings, request_id, revision)
+    elif option == CONFIRM_OPTION:
+        confirm_discovery(settings, request_id, revision)
+    elif option == ESCALATE_OPTION:
+        escalate_discovery(settings, request_id, revision)
+    else:
+        raise PreventUpdate
 
 
 def register_da_developer_assistant_page_callbacks(app) -> None:
@@ -160,6 +208,8 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
             (Output(SEND_ID, "loading"), True, False),
             (Output(TEXT_ID, "readOnly"), True, False),
             (Output(SKIP_ID, "disabled"), True, False),
+            # The "searching" line, hidden in every other workspace (it has no text there).
+            (Output(BUSY_ID, "style"), {"display": "block"}, {"display": "none"}),
         ],
         prevent_initial_call=True,
     )(handle_action)

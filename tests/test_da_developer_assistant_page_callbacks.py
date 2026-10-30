@@ -196,8 +196,12 @@ def test_register_attaches_the_callbacks_and_the_busy_state():
         "da-send.loading": True,
         "da-text.readOnly": True,
         "da-skip.disabled": True,
+        "da-busy.style": {"display": "block"},
     }
-    assert set(action["running"]["runningOff"].values()) == {False}
+    assert action["running"]["runningOff"]["da-busy.style"] == {"display": "none"}
+    assert {v for k, v in action["running"]["runningOff"].items() if k != "da-busy.style"} == {
+        False
+    }
     # Enter-to-send: a browser-side callback that runs after every redraw.
     assert enter["output"] == "da-keys-ready.data"
     assert enter["inputs"][0]["id"] == page.PAGE_CONTENT_ID
