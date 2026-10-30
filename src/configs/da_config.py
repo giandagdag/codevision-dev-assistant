@@ -47,6 +47,8 @@ class Settings:
     # certificate file.
     onprem_verify: bool | str = True
     onprem_timeout_seconds: int = DEFAULT_ONPREM_TIMEOUT_SECONDS
+    # None = do not send max_tokens (CodeVision does not). A number = send it (spec P13 2.1).
+    onprem_max_tokens: int | None = None
 
 
 def load_settings(
@@ -87,6 +89,7 @@ def load_settings(
         onprem_auth_prefix=_read_auth_prefix(values),
         onprem_verify=_parse_verify(read("DA_ONPREM_VERIFY")),
         onprem_timeout_seconds=_parse_timeout(read("DA_ONPREM_TIMEOUT_SECONDS")),
+        onprem_max_tokens=_parse_max_tokens(read("DA_ONPREM_MAX_TOKENS")),
     )
 
 
@@ -112,6 +115,17 @@ def _parse_timeout(raw: str) -> int:
         raise ConfigError(
             f"DA_ONPREM_TIMEOUT_SECONDS is '{raw}', which is not allowed. "
             "Use a whole number of seconds, 1 or more. Set it in your .env file."
+        )
+    return int(raw)
+
+
+def _parse_max_tokens(raw: str) -> int | None:
+    if not raw:
+        return None
+    if not raw.isdigit() or int(raw) < 1:
+        raise ConfigError(
+            f"DA_ONPREM_MAX_TOKENS is '{raw}', which is not allowed. "
+            "Leave it empty, or use a whole number, 1 or more. Set it in your .env file."
         )
     return int(raw)
 

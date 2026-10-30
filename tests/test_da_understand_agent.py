@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from agents import da_rejected_reply_log
 from agents.da_understand_agent import (
     FAILED_MESSAGE,
     ScriptedUnderstandClient,
@@ -9,6 +10,7 @@ from agents.da_understand_agent import (
     get_understand_client,
     interpret,
     parse_reply,
+    strip_think_block,
 )
 from configs.da_config import ConfigError
 from pydantic_classes.da_request_record_models import RequestRecord
@@ -153,3 +155,38 @@ def test_every_script_entry_passes_the_checks(step, record):
 def test_onprem_without_settings_names_the_missing_one(make_settings):
     with pytest.raises(ConfigError, match="DA_ONPREM_URL is missing"):
         get_understand_client(make_settings(llm_provider="onprem"), "question_1")
+
+
+# --- reasoning block (spec P13 2.3) ---
+
+GOOD = json.dumps(stub_reply({"title": "Add Excel uploads"}))
+
+
+def test_reply_wrapped_in_a_think_block_is_accepted(record, charter):
+    wrapped = f"<think>Let me\nthink {{about}} it.</think>\n\n{GOOD}"
+
+    assert run(StubClient(wrapped), record, charter).ok
+
+
+def test_think_tag_is_case_insensitive(record, charter):
+    assert run(StubClient(f"<THINK>hmm</Think> {GOOD}"), record, charter).ok
+
+
+def test_reply_with_only_a_closing_think_tag_is_accepted(record, charter):
+    assert run(StubClient(f"I reasoned a lot.\n</think>\n{GOOD}"), record, charter).ok
+
+
+def test_normal_reply_is_unchanged():
+    assert strip_think_block(GOOD) == GOOD
+    assert strip_think_block("no tags here") == "no tags here"
+
+
+def test_rejected_log_keeps_the_raw_reply_with_the_think_block(
+    record, charter, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(da_rejected_reply_log, "LOG_FILE", tmp_path / "rejected.log")
+    raw = "<think>secret thoughts</think> not json"
+
+    run(StubClient(raw, raw), record, charter)
+
+    assert "<think>secret thoughts</think>" in (tmp_path / "rejected.log").read_text("utf-8")
