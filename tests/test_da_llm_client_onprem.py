@@ -79,9 +79,26 @@ def test_body_with_a_system_message(make_settings, monkeypatch):
         ],
         "temperature": 0.2,
         "top_p": 0.2,
-        "max_tokens": 2048,
-        "stream": False,
     }
+
+
+def test_default_body_has_no_max_tokens_or_stream(make_settings, monkeypatch):
+    post = FakePost(answer())
+    client = make_client(make_settings, post, monkeypatch)
+
+    client.complete("hi")
+
+    assert "max_tokens" not in post.calls[0]["json"]
+    assert "stream" not in post.calls[0]["json"]
+
+
+def test_max_tokens_setting_is_sent(make_settings, monkeypatch):
+    post = FakePost(answer())
+    client = make_client(make_settings, post, monkeypatch, onprem_max_tokens=1500)
+
+    client.complete("hi")
+
+    assert post.calls[0]["json"]["max_tokens"] == 1500
 
 
 def test_body_without_a_system_message(make_settings, monkeypatch):
@@ -209,6 +226,7 @@ def test_reply_that_is_not_json_gives_a_plain_message(make_settings, monkeypatch
         (reply_with(429, None, "slow down"), "HTTP 429: slow down"),
         (reply_with(500, None, "server broke"), "HTTP 500: server broke"),
         (reply_with(503, None, "away"), "HTTP 503: away"),
+        (reply_with(407, None, "proxy"), "proxy asked for sign-in \\(HTTP 407\\).*proxy settings"),
     ],
 )
 def test_these_failures_are_tried_three_times_in_total(
@@ -239,7 +257,7 @@ def test_a_later_try_can_succeed(make_settings, monkeypatch, sleeps):
         (401, "HTTP 401.*DA_ONPREM_API_KEY"),
         (403, "HTTP 403.*DA_ONPREM_API_KEY"),
         (404, "HTTP 404.*path at the end of DA_ONPREM_URL"),
-        (400, "HTTP 400: bad request"),
+        (400, "refused the request as too large \\(HTTP 400\\)"),
         (422, "HTTP 422: bad request"),
     ],
 )

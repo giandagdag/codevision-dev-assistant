@@ -149,3 +149,15 @@ def test_onprem_verify_path_is_kept_as_a_path():
 def test_onprem_timeout_must_be_a_positive_whole_number(raw):
     with pytest.raises(ConfigError, match="DA_ONPREM_TIMEOUT_SECONDS"):
         load_settings(env_file=None, environ={"DA_ONPREM_TIMEOUT_SECONDS": raw})
+
+
+def test_max_tokens_is_empty_by_default_and_read_when_set():
+    assert load_settings(env_file=None, environ={}).onprem_max_tokens is None
+    settings = load_settings(env_file=None, environ={"DA_ONPREM_MAX_TOKENS": "1500"})
+    assert settings.onprem_max_tokens == 1500
+
+
+@pytest.mark.parametrize("bad", ["abc", "0", "-5"])
+def test_bad_max_tokens_names_the_setting(bad):
+    with pytest.raises(ConfigError, match="DA_ONPREM_MAX_TOKENS"):
+        load_settings(env_file=None, environ={"DA_ONPREM_MAX_TOKENS": bad})

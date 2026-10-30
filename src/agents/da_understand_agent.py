@@ -43,6 +43,10 @@ _EMPTY_REPLY = {"updates": {}, "ambiguities": [], "hint": ""}
 _PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
 # Some models wrap JSON in a ```json fence even when told not to; that wrapper is allowed.
 _FENCED_REPLY = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
+# Reasoning models (CodeVision's default is "reasoning-vlm") put their thinking in <think> tags.
+_THINK_BLOCK = re.compile(r"\s*<think>.*?</think>\s*", re.DOTALL | re.IGNORECASE)
+# Some servers drop the opening tag: remove everything up to and including the closing one.
+_THINK_TAIL = re.compile(r"^.*</think>\s*", re.DOTALL | re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -165,7 +169,7 @@ def parse_reply(
     text: str, record: RequestRecord, developer_text: str
 ) -> tuple[InterpreterReply | None, list[str]]:
     """Read the reply text as JSON in the agreed shape, then run the app checks."""
-    text = text.strip()
+    text = strip_think_block(text).strip()
     fenced = _FENCED_REPLY.match(text)
     if fenced:
         text = fenced.group(1)
@@ -179,6 +183,12 @@ def parse_reply(
         shape_problems = describe_validation_error(error)
         return None, [f"The reply has the wrong shape: {p}" for p in shape_problems]
     return reply, find_reply_problems(reply, record, developer_text)
+
+
+def strip_think_block(text: str) -> str:
+    """Remove a reasoning block (and a lone closing tag with what precedes it) from a reply."""
+    text = _THINK_BLOCK.sub("", text)
+    return _THINK_TAIL.sub("", text)
 
 
 def _retry_note(problems: list[str]) -> str:
