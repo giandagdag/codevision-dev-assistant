@@ -175,3 +175,46 @@ def test_error_mode_shows_the_plain_message_in_the_chat(
     assert "HTTP 500" in last and "tried 3 times" in last
     assert after.request.status == "CLARIFICATION_IN_PROGRESS"
     assert QUESTIONS[1] in after.messages[1].text  # question 1 was asked, without a hint
+
+
+# --- Discover (Phase 3, spec 3.9) ---
+
+
+def test_a_discover_prompt_gets_the_discover_reply_and_understand_replies_are_unchanged():
+    from agents.da_discover_agent import TASK_MARKER
+    from web.da_fake_onprem_server import reply_text
+
+    discover_prompt = f"{TASK_MARKER}\n[4] app/x.py :: PdfProcessor.extract_text (code)\n    x"
+
+    reply = json.loads(reply_text(discover_prompt, "normal"))
+
+    assert reply["findings"][0]["hit_ids"] == [4]
+    assert reply_text("hello", "normal") == "OK"
+
+
+def test_discover_through_the_real_client_gives_ai_findings(make_settings, published_rulebook):
+    from agents.da_discover_flow import start_discovery
+
+    with running_fake_onprem_server() as server:
+        settings = settings_for(make_settings, server)
+        request_id = to_confirmed(settings).request.request_id
+        view = start_discovery(settings, request_id, 0)
+
+    assert view.result.summary_source == "ai" and view.result.model == "fake-qwen"
+    assert view.request.status == "SIMILAR_IMPLEMENTATION_FOUND"
+
+
+def test_bad_json_mode_is_bad_on_every_discover_try_so_the_fallback_shows(
+    make_settings, published_rulebook
+):
+    from agents.da_discover_flow import start_discovery
+
+    with running_fake_onprem_server("bad-json") as server:
+        settings = settings_for(make_settings, server)
+        request_id = to_confirmed(settings).request.request_id
+        view = start_discovery(settings, request_id, 0)
+
+    assert view.result.summary_source == "fallback" and view.result.findings
+    assert view.request.status in ("SIMILAR_IMPLEMENTATION_FOUND", "NO_RELIABLE_MATCH")
+    text = da_rejected_reply_log.LOG_FILE.read_text(encoding="utf-8")
+    assert text.count("step discover") == 2

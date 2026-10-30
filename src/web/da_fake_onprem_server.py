@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from dotenv import dotenv_values  # noqa: E402
 
+from agents.da_discover_agent import TASK_MARKER, ScriptedDiscoverClient  # noqa: E402
 from agents.da_understand_agent import ScriptedUnderstandClient  # noqa: E402
 from agents.da_understand_flow import (  # noqa: E402
     CORRECTION_QUESTION,
@@ -58,6 +59,12 @@ NOT_JSON_REPLY = "Sorry, here is my answer in words and not in JSON."
 
 def reply_text(prompt: str, mode: str) -> str:
     """The text the pretend model sends back for this prompt."""
+    if TASK_MARKER in prompt:
+        # A Discover prompt (Phase 3). bad-json is bad on every try here, so the app's fallback
+        # to plain search results can be seen (unlike Understand, whose retry then passes).
+        if mode == "bad-json":
+            return NOT_JSON_REPLY
+        return ScriptedDiscoverClient("good").complete(prompt).text
     match = _QUESTION_LINE.search(prompt)
     if match is None:
         return "OK"  # not an Understand prompt, for example the ping
