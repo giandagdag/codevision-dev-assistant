@@ -41,7 +41,7 @@ Stop, push the work so far to the phase branch, and tell Gian what you need when
   you did not see.
 
 ## Current phase
-Phase 2C P13: adjustments from the work photos. Spec: `specs/phase-2c-p13-adjustments.md`
+Phase 3: Discover. Spec: `specs/phase-3-discover.md`
 
 | # | Phase | # | Phase |
 |---|---|---|---|
