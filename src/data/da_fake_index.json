@@ -324,7 +324,12 @@
         "upload",
         "validate",
         "type",
-        "size"
+        "size",
+        "new file type",
+        "excel",
+        "document",
+        "processing",
+        "ingestion"
       ],
       "snippet": "File handling standard: every upload is checked for type and size before processing. New file types must be added to the allowed list and to the ingestion router, with a test."
     },
