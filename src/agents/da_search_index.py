@@ -16,7 +16,13 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from configs.da_config import Settings
 from da_logging import get_logger
-from pydantic_classes.da_discovery_models import HitKind, SearchFilters, SearchHit, SearchMode
+from pydantic_classes.da_discovery_models import (
+    SNIPPET_LIMIT,
+    HitKind,
+    SearchFilters,
+    SearchHit,
+    SearchMode,
+)
 
 logger = get_logger(__name__)
 
@@ -78,7 +84,8 @@ class IndexPiece(BaseModel):
     deprecated: bool = False
     restricted: bool = False
     tags: list[str] = Field(default_factory=list)
-    snippet: str = ""
+    # Same limit as SearchHit.snippet: a longer one is refused when the file is loaded, never cut.
+    snippet: str = Field(default="", max_length=SNIPPET_LIMIT)
 
 
 @dataclass(frozen=True)
@@ -101,7 +108,8 @@ def load_index_file(path: Path = FAKE_INDEX_FILE) -> IndexData:
     except (OSError, ValueError, KeyError, TypeError, ValidationError) as error:
         raise IndexFormatError(
             f"The search index file could not be read ({type(error).__name__}). "
-            "Check that it has build_id and a list of pieces."
+            f"Check that it has build_id and a list of pieces, and that no snippet is longer "
+            f"than {SNIPPET_LIMIT} characters."
         ) from error
     for position, piece in enumerate(pieces):
         if piece.piece_no != position:

@@ -240,3 +240,11 @@ def test_codevision_provider_says_it_is_not_configured():
 
     with pytest.raises(SearchNotConfiguredError, match="CodeVision search is not configured yet"):
         get_search_index(settings).search("x", "exact", FILTERS, 5)
+
+
+def test_index_with_a_snippet_over_500_characters_is_refused_with_a_plain_message(tmp_path):
+    path = _write(tmp_path, [_piece(0, snippet="x" * 501)])
+
+    with pytest.raises(IndexFormatError, match="could not be read.*500 characters"):
+        load_index_file(path)
+    assert load_index_file(_write(tmp_path, [_piece(0, snippet="x" * 500)]))

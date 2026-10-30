@@ -75,3 +75,16 @@ def test_reply_limitation_limits():
 def test_unknown_fields_are_refused():
     with pytest.raises(ValidationError):
         DiscoveryReply.model_validate({"findings": [], "extra": 1})
+
+
+def test_a_round_cannot_cite_a_hit_it_does_not_hold():
+    from pydantic_classes.da_discovery_models import DiscoveryResult
+
+    values = {
+        "request_id": "CVDA-2026-0001", "round": 1, "record_version": 1, "rulebook_version": 1,
+        "search_provider": "fake", "queries": [], "limitations": [], "summary_source": "ai",
+        "hits": [hit(hit_id=1)],
+    }
+    assert DiscoveryResult(**values, findings=[finding(hit_ids=[1])])
+    with pytest.raises(ValidationError, match="not in this round"):
+        DiscoveryResult(**values, findings=[finding(hit_ids=[2])])

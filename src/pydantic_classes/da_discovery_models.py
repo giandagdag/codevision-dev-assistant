@@ -6,7 +6,7 @@ never cut short.
 
 from typing import Annotated, Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 from pydantic_classes.da_models import REQUEST_ID_PATTERN, Request
 from pydantic_classes.da_request_record_models import ChatMessage, RequestRecord
@@ -97,6 +97,14 @@ class DiscoveryResult(_Shape):
     model: str = ""
     hint: str = ""
     created_at: AwareDatetime | None = None
+
+    @model_validator(mode="after")
+    def _findings_cite_only_saved_hits(self) -> DiscoveryResult:
+        saved = {hit.hit_id for hit in self.hits}
+        for finding in self.findings:
+            if not set(finding.hit_ids) <= saved:
+                raise ValueError("A finding cites a hit number that is not in this round's hits.")
+        return self
 
 
 class DiscoveryView(BaseModel):

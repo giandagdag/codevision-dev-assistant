@@ -205,3 +205,16 @@ def test_a_broken_index_file_is_a_plain_message(settings, request_id, monkeypatc
 
     with pytest.raises(DiscoveryError, match="out of order"):
         start_discovery(settings, request_id, 0)
+
+
+def test_ai_setup_problem_gives_plain_results_not_a_crash(settings, request_id, monkeypatch):
+    from configs.da_config import ConfigError
+
+    def broken(settings):
+        raise ConfigError("DA_ONPREM_URL is not set.")
+
+    monkeypatch.setattr(flow, "get_discover_client", broken)
+
+    view = start_discovery(settings, request_id, 0)
+
+    assert view.result.summary_source == "fallback" and view.result.findings
