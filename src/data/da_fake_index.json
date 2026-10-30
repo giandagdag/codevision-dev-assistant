@@ -1,0 +1,471 @@
+{
+  "_about": "Made-up pretend index for DA_SEARCH_PROVIDER=fake. Same shape the real index will have: the position in 'pieces' is the piece number.",
+  "build_id": "fake-index-001",
+  "built_at": "2026-10-30T09:00:00+08:00",
+  "pieces": [
+    {
+      "piece_no": 0,
+      "path": "app/upload/upload_validator.py",
+      "symbol": "UploadValidator",
+      "line_start": 12,
+      "kind": "code",
+      "language": "python",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "upload",
+        "validator",
+        "file",
+        "type",
+        "screen"
+      ],
+      "snippet": "class UploadValidator:\n    \"\"\"Checks a file before it enters the ingestion flow.\"\"\"\n    ALLOWED_TYPES = ('pdf', 'docx')"
+    },
+    {
+      "piece_no": 1,
+      "path": "app/upload/upload_validator.py",
+      "symbol": "UploadValidator.check_type",
+      "line_start": 20,
+      "kind": "code",
+      "language": "python",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "upload",
+        "validate",
+        "file type",
+        "pdf",
+        "docx",
+        "reject",
+        "extension"
+      ],
+      "snippet": "def check_type(self, file_name):\n    ext = file_name.rsplit('.', 1)[-1].lower()\n    if ext not in self.ALLOWED_TYPES:\n        raise UploadRejected(friendly_error('type', ext))"
+    },
+    {
+      "piece_no": 2,
+      "path": "app/upload/upload_validator.py",
+      "symbol": "UploadValidator.check_size",
+      "line_start": 34,
+      "kind": "code",
+      "language": "python",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "upload",
+        "validate",
+        "file size",
+        "limit"
+      ],
+      "snippet": "def check_size(self, size_bytes):\n    if size_bytes > MAX_UPLOAD_BYTES:\n        raise UploadRejected(friendly_error('size', size_bytes))"
+    },
+    {
+      "piece_no": 3,
+      "path": "app/ingestion/pdf_processor.py",
+      "symbol": "PdfProcessor",
+      "line_start": 8,
+      "kind": "code",
+      "language": "python",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "pdf",
+        "processing",
+        "processor",
+        "ingestion",
+        "document"
+      ],
+      "snippet": "class PdfProcessor:\n    \"\"\"Turns a PDF into plain pages for the ingestion flow.\"\"\"\n    name = 'pdf'"
+    },
+    {
+      "piece_no": 4,
+      "path": "app/ingestion/pdf_processor.py",
+      "symbol": "PdfProcessor.extract_text",
+      "line_start": 15,
+      "kind": "code",
+      "language": "python",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "pdf",
+        "extract",
+        "text",
+        "pages",
+        "processing",
+        "document"
+      ],
+      "snippet": "def extract_text(self, path):\n    pages = []\n    for page in open_pdf(path).pages:\n        pages.append(page.get_text())\n    return pages"
+    },
+    {
+      "piece_no": 5,
+      "path": "app/ingestion/pdf_processor.py",
+      "symbol": "PdfProcessor.split_pages",
+      "line_start": 27,
+      "kind": "code",
+      "language": "python",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "pdf",
+        "pages",
+        "split"
+      ],
+      "snippet": "def split_pages(self, pages):\n    return [p for p in pages if p.strip()]"
+    },
+    {
+      "piece_no": 6,
+      "path": "app/ingestion/docx_processor.py",
+      "symbol": "DocxProcessor.extract_text",
+      "line_start": 14,
+      "kind": "code",
+      "language": "python",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "docx",
+        "word",
+        "extract",
+        "text",
+        "processing",
+        "document"
+      ],
+      "snippet": "def extract_text(self, path):\n    doc = open_docx(path)\n    return [para.text for para in doc.paragraphs]"
+    },
+    {
+      "piece_no": 7,
+      "path": "app/ingestion/ingestion_router.py",
+      "symbol": "IngestionRouter.route",
+      "line_start": 22,
+      "kind": "code",
+      "language": "python",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "ingestion",
+        "router",
+        "route",
+        "processor",
+        "document",
+        "flow"
+      ],
+      "snippet": "def route(self, upload):\n    processor = self._processors[upload.file_type]\n    pages = processor.extract_text(upload.path)\n    return self.pipeline.run(pages)"
+    },
+    {
+      "piece_no": 8,
+      "path": "app/ingestion/ingestion_router.py",
+      "symbol": "IngestionRouter.register_processor",
+      "line_start": 36,
+      "kind": "code",
+      "language": "python",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "ingestion",
+        "router",
+        "register",
+        "processor",
+        "new file type"
+      ],
+      "snippet": "def register_processor(self, file_type, processor):\n    self._processors[file_type] = processor"
+    },
+    {
+      "piece_no": 9,
+      "path": "app/ingestion/batching.py",
+      "symbol": "make_batches",
+      "line_start": 6,
+      "kind": "code",
+      "language": "python",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "batch",
+        "batching",
+        "helper",
+        "group",
+        "ingestion"
+      ],
+      "snippet": "def make_batches(items, size=20):\n    for start in range(0, len(items), size):\n        yield items[start:start + size]"
+    },
+    {
+      "piece_no": 10,
+      "path": "app/ingestion/batching.py",
+      "symbol": "BatchRunner.run",
+      "line_start": 18,
+      "kind": "code",
+      "language": "python",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "batch",
+        "runner",
+        "ingestion",
+        "retry"
+      ],
+      "snippet": "def run(self, items):\n    for batch in make_batches(items, self.size):\n        self.handler(batch)"
+    },
+    {
+      "piece_no": 11,
+      "path": "app/ingestion/chunker.py",
+      "symbol": "chunk_text",
+      "line_start": 5,
+      "kind": "code",
+      "language": "python",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "chunk",
+        "split",
+        "text",
+        "ingestion",
+        "size"
+      ],
+      "snippet": "def chunk_text(text, max_chars=1000):\n    return [text[i:i + max_chars] for i in range(0, len(text), max_chars)]"
+    },
+    {
+      "piece_no": 12,
+      "path": "app/ingestion/metadata.py",
+      "symbol": "build_metadata",
+      "line_start": 9,
+      "kind": "code",
+      "language": "python",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "metadata",
+        "document",
+        "ingestion",
+        "build"
+      ],
+      "snippet": "def build_metadata(upload):\n    return {'name': upload.name, 'type': upload.file_type, 'owner': upload.owner}"
+    },
+    {
+      "piece_no": 13,
+      "path": "app/upload/error_messages.py",
+      "symbol": "friendly_error",
+      "line_start": 4,
+      "kind": "code",
+      "language": "python",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "error",
+        "message",
+        "friendly",
+        "upload",
+        "user"
+      ],
+      "snippet": "def friendly_error(kind, detail):\n    return MESSAGES[kind].format(detail=detail)"
+    },
+    {
+      "piece_no": 14,
+      "path": "app/storage/file_store.py",
+      "symbol": "FileStore.save",
+      "line_start": 16,
+      "kind": "code",
+      "language": "python",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "storage",
+        "save",
+        "file",
+        "store"
+      ],
+      "snippet": "def save(self, name, data):\n    target = self.root / name\n    target.write_bytes(data)\n    return target"
+    },
+    {
+      "piece_no": 15,
+      "path": "app/storage/file_store.py",
+      "symbol": "FileStore.load",
+      "line_start": 24,
+      "kind": "code",
+      "language": "python",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "storage",
+        "load",
+        "read",
+        "file",
+        "store"
+      ],
+      "snippet": "def load(self, name):\n    return (self.root / name).read_bytes()"
+    },
+    {
+      "piece_no": 16,
+      "path": "app/search/index_writer.py",
+      "symbol": "IndexWriter.add_document",
+      "line_start": 30,
+      "kind": "code",
+      "language": "python",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "index",
+        "search",
+        "add",
+        "document",
+        "write"
+      ],
+      "snippet": "def add_document(self, doc_id, pages):\n    for number, page in enumerate(pages):\n        self.index.add(doc_id, number, page)"
+    },
+    {
+      "piece_no": 17,
+      "path": "standards/file-handling-standard.md",
+      "symbol": "",
+      "line_start": 1,
+      "kind": "standard",
+      "language": "markdown",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "standard",
+        "file",
+        "handling",
+        "upload",
+        "validate",
+        "type",
+        "size"
+      ],
+      "snippet": "File handling standard: every upload is checked for type and size before processing. New file types must be added to the allowed list and to the ingestion router, with a test."
+    },
+    {
+      "piece_no": 18,
+      "path": "standards/error-message-standard.md",
+      "symbol": "",
+      "line_start": 1,
+      "kind": "standard",
+      "language": "markdown",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "standard",
+        "error",
+        "message",
+        "user",
+        "plain"
+      ],
+      "snippet": "Error message standard: messages tell the user what happened and what to do next, in plain words, and never show internal names."
+    },
+    {
+      "piece_no": 19,
+      "path": "docs/ingestion-overview.md",
+      "symbol": "",
+      "line_start": 1,
+      "kind": "doc",
+      "language": "markdown",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "ingestion",
+        "overview",
+        "flow",
+        "document",
+        "pdf",
+        "docx",
+        "router"
+      ],
+      "snippet": "Ingestion overview: an upload is validated, routed to a processor by file type, split into pages and chunks, and written to the search index."
+    },
+    {
+      "piece_no": 20,
+      "path": "config/ingestion_settings.yaml",
+      "symbol": "",
+      "line_start": 1,
+      "kind": "config",
+      "language": "yaml",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "settings",
+        "ingestion",
+        "limits",
+        "batch",
+        "size"
+      ],
+      "snippet": "max_upload_mb: 25\nbatch_size: 20\nallowed_types: [pdf, docx]"
+    },
+    {
+      "piece_no": 21,
+      "path": "legacy/old_pdf_reader.py",
+      "symbol": "read_pdf",
+      "line_start": 3,
+      "kind": "code",
+      "language": "python",
+      "deprecated": true,
+      "restricted": false,
+      "tags": [
+        "pdf",
+        "legacy",
+        "read",
+        "extract",
+        "text"
+      ],
+      "snippet": "def read_pdf(path):\n    # Old reader, replaced by PdfProcessor.\n    return open(path, 'rb').read()"
+    },
+    {
+      "piece_no": 22,
+      "path": "hr/payroll_export.py",
+      "symbol": "export_payroll",
+      "line_start": 7,
+      "kind": "code",
+      "language": "python",
+      "deprecated": false,
+      "restricted": true,
+      "tags": [
+        "payroll",
+        "export",
+        "hr",
+        "file"
+      ],
+      "snippet": "def export_payroll(month):\n    # Restricted area. Made-up example.\n    return build_report(month)"
+    },
+    {
+      "piece_no": 23,
+      "path": "config/.env.sample",
+      "symbol": "",
+      "line_start": 1,
+      "kind": "config",
+      "language": "text",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "environment",
+        "settings",
+        "sample"
+      ],
+      "snippet": "EXAMPLE_SETTING=made-up-value\nEXAMPLE_MODE=test"
+    },
+    {
+      "piece_no": 24,
+      "path": "config/secrets_loader.py",
+      "symbol": "load_settings_file",
+      "line_start": 5,
+      "kind": "code",
+      "language": "python",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "settings",
+        "loader",
+        "file",
+        "read"
+      ],
+      "snippet": "def load_settings_file(path):\n    return parse(open(path).read())"
+    },
+    {
+      "piece_no": 25,
+      "path": "certs/dev_server.pem",
+      "symbol": "",
+      "line_start": 1,
+      "kind": "config",
+      "language": "text",
+      "deprecated": false,
+      "restricted": false,
+      "tags": [
+        "certificate",
+        "file"
+      ],
+      "snippet": "(made-up filler, not a real certificate)"
+    }
+  ]
+}

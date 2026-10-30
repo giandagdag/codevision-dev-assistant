@@ -59,6 +59,9 @@ class SearchHit(_Shape):
     snippet: str = Field(default="", max_length=SNIPPET_LIMIT)
     score: float = Field(ge=0, le=1)
     mode: SearchMode
+    # The index reports these so our own safety filter can drop such hits (spec 3.1, rule R3).
+    deprecated: bool = False
+    restricted: bool = False
 
 
 class Finding(_Shape):
