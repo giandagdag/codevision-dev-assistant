@@ -161,3 +161,42 @@ def test_max_tokens_is_empty_by_default_and_read_when_set():
 def test_bad_max_tokens_names_the_setting(bad):
     with pytest.raises(ConfigError, match="DA_ONPREM_MAX_TOKENS"):
         load_settings(env_file=None, environ={"DA_ONPREM_MAX_TOKENS": bad})
+
+
+def test_discover_defaults():
+    settings = load_settings(env_file=None, environ={})
+
+    assert settings.search_provider == "fake"
+    assert settings.search_top_k == 5
+    assert settings.discovery_max_rounds == 3
+
+
+def test_discover_values_are_read():
+    settings = load_settings(
+        env_file=None,
+        environ={
+            "DA_SEARCH_PROVIDER": "CodeVision",
+            "DA_SEARCH_TOP_K": "20",
+            "DA_DISCOVERY_MAX_ROUNDS": "1",
+        },
+    )
+
+    assert (settings.search_provider, settings.search_top_k) == ("codevision", 20)
+    assert settings.discovery_max_rounds == 1
+
+
+def test_bad_search_provider_lists_the_allowed_values():
+    with pytest.raises(ConfigError, match=r"DA_SEARCH_PROVIDER.*fake, codevision"):
+        load_settings(env_file=None, environ={"DA_SEARCH_PROVIDER": "google"})
+
+
+@pytest.mark.parametrize("bad", ["0", "21", "-1", "five"])
+def test_bad_top_k_is_refused(bad):
+    with pytest.raises(ConfigError, match="DA_SEARCH_TOP_K"):
+        load_settings(env_file=None, environ={"DA_SEARCH_TOP_K": bad})
+
+
+@pytest.mark.parametrize("bad", ["0", "6", "x"])
+def test_bad_max_rounds_is_refused(bad):
+    with pytest.raises(ConfigError, match="DA_DISCOVERY_MAX_ROUNDS"):
+        load_settings(env_file=None, environ={"DA_DISCOVERY_MAX_ROUNDS": bad})

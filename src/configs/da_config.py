@@ -22,6 +22,12 @@ DEFAULT_ONPREM_AUTH_HEADER = "Authorization"
 DEFAULT_ONPREM_AUTH_PREFIX = "Bearer "
 DEFAULT_ONPREM_TIMEOUT_SECONDS = 120
 
+# Discover (Phase 3, spec 3.10). "codevision" is a placeholder until the work adapter exists.
+ALLOWED_SEARCH_PROVIDERS = ("fake", "codevision")
+DEFAULT_SEARCH_PROVIDER = "fake"
+DEFAULT_SEARCH_TOP_K = 5
+DEFAULT_DISCOVERY_MAX_ROUNDS = 3
+
 
 class ConfigError(Exception):
     """A setup problem the developer can fix. The message says how."""
@@ -49,6 +55,10 @@ class Settings:
     onprem_timeout_seconds: int = DEFAULT_ONPREM_TIMEOUT_SECONDS
     # None = do not send max_tokens (CodeVision does not). A number = send it (spec P13 2.1).
     onprem_max_tokens: int | None = None
+    # Discover settings (Phase 3).
+    search_provider: str = DEFAULT_SEARCH_PROVIDER
+    search_top_k: int = DEFAULT_SEARCH_TOP_K
+    discovery_max_rounds: int = DEFAULT_DISCOVERY_MAX_ROUNDS
 
 
 def load_settings(
@@ -90,6 +100,17 @@ def load_settings(
         onprem_verify=_parse_verify(read("DA_ONPREM_VERIFY")),
         onprem_timeout_seconds=_parse_timeout(read("DA_ONPREM_TIMEOUT_SECONDS")),
         onprem_max_tokens=_parse_max_tokens(read("DA_ONPREM_MAX_TOKENS")),
+        search_provider=_parse_search_provider(read("DA_SEARCH_PROVIDER")),
+        search_top_k=_parse_whole_number(
+            "DA_SEARCH_TOP_K", read("DA_SEARCH_TOP_K"), DEFAULT_SEARCH_TOP_K, 1, 20
+        ),
+        discovery_max_rounds=_parse_whole_number(
+            "DA_DISCOVERY_MAX_ROUNDS",
+            read("DA_DISCOVERY_MAX_ROUNDS"),
+            DEFAULT_DISCOVERY_MAX_ROUNDS,
+            1,
+            5,
+        ),
     )
 
 
@@ -126,6 +147,27 @@ def _parse_max_tokens(raw: str) -> int | None:
         raise ConfigError(
             f"DA_ONPREM_MAX_TOKENS is '{raw}', which is not allowed. "
             "Leave it empty, or use a whole number, 1 or more. Set it in your .env file."
+        )
+    return int(raw)
+
+
+def _parse_search_provider(raw: str) -> str:
+    provider = (raw or DEFAULT_SEARCH_PROVIDER).lower()
+    if provider not in ALLOWED_SEARCH_PROVIDERS:
+        raise ConfigError(
+            f"DA_SEARCH_PROVIDER is '{provider}', which is not allowed. "
+            f"Use one of: {', '.join(ALLOWED_SEARCH_PROVIDERS)}. Set it in your .env file."
+        )
+    return provider
+
+
+def _parse_whole_number(name: str, raw: str, default: int, low: int, high: int) -> int:
+    if not raw:
+        return default
+    if not raw.isdigit() or not low <= int(raw) <= high:
+        raise ConfigError(
+            f"{name} is '{raw}', which is not allowed. "
+            f"Use a whole number from {low} to {high}. Set it in your .env file."
         )
     return int(raw)
 
