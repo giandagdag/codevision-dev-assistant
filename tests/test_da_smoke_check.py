@@ -52,6 +52,34 @@ def test_runs_twice_in_a_row_and_cleans_up(make_settings, capsys, tmp_path, monk
     assert list(temp_root.iterdir()) == []
 
 
+def test_fake_provider_prints_the_onprem_items_13_and_14(make_settings, capsys):
+    exit_code = run_smoke_check(make_settings())
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "13. Ping with onprem against the pretend server: OK in" in output
+    assert "(model fake-qwen, server 127.0.0.1)" in output
+    assert "14. Conversation with onprem against the pretend server:" in output
+    assert "reached CONFIRMED_FOR_DISCOVERY as record v1" in output
+    assert output.index("12. ") < output.index("13. ") < output.index("14. ")
+
+
+def test_onprem_with_a_missing_certificate_file_stops_with_plain_message(make_settings, capsys):
+    settings = make_settings(
+        llm_provider="onprem",
+        onprem_url="https://llm.example.com/v1/chat/completions",
+        onprem_model="work-model",
+        onprem_verify="no-such-file.pem",
+    )
+
+    exit_code = run_smoke_check(settings)
+
+    output = capsys.readouterr().out
+    assert exit_code == 1
+    assert "DA_ONPREM_VERIFY points to 'no-such-file.pem'" in output
+    assert "Traceback" not in output
+
+
 def test_claude_without_key_stops_with_plain_message(make_settings, capsys):
     exit_code = run_smoke_check(make_settings(llm_provider="claude"))
 
@@ -66,7 +94,7 @@ def test_onprem_stops_with_plain_message(make_settings, capsys):
 
     output = capsys.readouterr().out
     assert exit_code == 1
-    assert "not configured yet" in output
+    assert "DA_ONPREM_URL is missing" in output
 
 
 def test_setup_problem_saves_nothing(make_settings, db_path):

@@ -153,7 +153,7 @@ def test_onprem_shows_its_plain_message_in_the_chat(make_settings, published_rul
     view = flow.create_understand_request(settings, "Can we support Excel uploads?")
     cb.perform_action(settings, page.SEND_ID, "Because users ask", state_of(view), 0)
     tree = cb.show_page(f"?request={view.request.request_id}", 0)
-    assert "not configured" in all_text(tree).lower()
+    assert "DA_ONPREM_URL is missing" in all_text(tree)
     assert page.DEMO_BANNER not in all_text(tree)
 
 

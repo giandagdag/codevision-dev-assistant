@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import anthropic
 import pytest
 
+from agents import da_llm_client, da_rejected_reply_log
 from configs.da_config import Settings
 from db_table_functions.db_tbl_da_rulebook import (
     SEED_RULEBOOK_FILE,
@@ -23,6 +24,20 @@ def block_real_claude(monkeypatch):
         raise AssertionError("A test tried to create a real Anthropic client. Mock it instead.")
 
     monkeypatch.setattr(anthropic, "Anthropic", refuse)
+
+
+@pytest.fixture(autouse=True)
+def keep_rejected_reply_log_out_of_the_project(monkeypatch, tmp_path):
+    """Tests that reject replies write to a temporary log, never into the real logs/ folder."""
+    monkeypatch.setattr(da_rejected_reply_log, "LOG_FILE", tmp_path / "logs" / "rejected.log")
+
+
+@pytest.fixture
+def sleeps(monkeypatch):
+    """No real waiting in the onprem client's retries: the waits it asked for are kept here."""
+    waits: list[int] = []
+    monkeypatch.setattr(da_llm_client, "sleep", waits.append)
+    return waits
 
 
 @pytest.fixture

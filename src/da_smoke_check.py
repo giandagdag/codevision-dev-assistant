@@ -1,4 +1,4 @@
-"""Proves Phases 0, 1 and 2A work end to end.
+"""Proves Phases 0, 1, 2A and 2C work end to end.
 
 Run: .venv\\Scripts\\python src\\da_smoke_check.py
 """
@@ -17,6 +17,7 @@ from agents.da_understand_flow import (
     submit_answer,
 )
 from configs.da_config import DEFAULT_ENV_FILE, ConfigError, Settings, load_settings
+from da_llm_ping import ping
 from da_load_starter_rulebook import load_starter_rulebook
 from db_table_functions.da_db import DatabaseBusyError, open_db
 from db_table_functions.db_tbl_da_audit import add_audit_event, list_audit_events
@@ -31,8 +32,9 @@ from db_table_functions.db_tbl_da_rulebook import (
     save_new_version,
 )
 from db_table_functions.db_tbl_da_understand import UnderstandError
-from pydantic_classes.da_models import StatusMoveError
+from pydantic_classes.da_models import STATUS_CONFIRMED, StatusMoveError
 from pydantic_classes.da_rulebook_models import Rulebook
+from web.da_fake_onprem_server import running_fake_onprem_server
 
 SAMPLE_TITLE = "Smoke check: sample change to a made-up loan program"
 SAMPLE_DEVELOPER = "dev-0001"
@@ -50,6 +52,7 @@ SAMPLE_ANSWERS = (
     ".xlsx workbooks in, the normal ingestion format out. Reject empty or corrupted files.",
 )
 SAMPLE_REFERENCE = "Use the existing PDF processing as a reference."
+SAMPLE_ONPREM_MODEL = "fake-qwen"
 
 
 def run_smoke_check(settings: Settings) -> int:
@@ -66,6 +69,8 @@ def run_smoke_check(settings: Settings) -> int:
             _run_steps(Path(folder) / "smoke_check.db", settings, client)
             # A second, empty database, so the loader in item 9 has nothing published yet.
             _run_understand_steps(Path(folder) / "smoke_understand.db", settings)
+            # The same database: item 9 already published the rulebook there.
+            _run_onprem_steps(Path(folder) / "smoke_understand.db", settings)
     except (
         ConfigError,
         LLMClientError,
@@ -159,6 +164,46 @@ def _run_understand_steps(db_path: Path, settings: Settings) -> None:
     print(
         f"12. Confirmed as record v{view.request.version} (status {view.request.status}); "
         f"editing v1 was refused: {_try_to_edit_record(db_path, request_id)}"
+    )
+
+
+def _run_onprem_steps(db_path: Path, settings: Settings) -> None:
+    """Items 13 and 14: the onprem provider against the pretend server on this computer only.
+
+    Always the pretend server, whatever provider is set, so the smoke check never calls a real AI.
+    """
+    with running_fake_onprem_server() as server:
+        onprem = replace(
+            settings,
+            llm_provider="onprem",
+            onprem_url=server.url,
+            onprem_model=SAMPLE_ONPREM_MODEL,
+            onprem_api_key="",
+            onprem_verify=True,
+            db_path=db_path,
+        )
+        result = ping(onprem)
+        if not result.ok:
+            raise LLMClientError(f"The ping to the pretend server failed: {result.error}")
+        print(
+            f"13. Ping with onprem against the pretend server: OK in {result.seconds:.2f} seconds "
+            f"(model {result.model}, server {result.host})"
+        )
+
+        view = create_understand_request(
+            onprem, SAMPLE_FIRST_MESSAGE, developer_id=SAMPLE_DEVELOPER
+        )
+        request_id = view.request.request_id
+        for answer in SAMPLE_ANSWERS:
+            view = submit_answer(onprem, request_id, answer, view.revision)
+        view = choose_option(onprem, request_id, view.choices[0], view.revision)
+        view = submit_answer(onprem, request_id, SAMPLE_REFERENCE, view.revision)
+        view = choose_option(onprem, request_id, PROCEED_OPTION, view.revision)
+    if view.request.status != STATUS_CONFIRMED:
+        raise UnderstandError(f"The onprem conversation ended at {view.request.status}.")
+    print(
+        f"14. Conversation with onprem against the pretend server: {request_id} reached "
+        f"{view.request.status} as record v{view.request.version}"
     )
 
 

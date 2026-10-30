@@ -150,8 +150,8 @@ def test_api_key_is_not_logged(make_settings, monkeypatch, caplog):
 # --- onprem provider ---
 
 
-def test_onprem_says_not_configured_yet(make_settings):
-    with pytest.raises(ConfigError, match="not configured yet"):
+def test_onprem_without_settings_names_the_missing_one(make_settings):
+    with pytest.raises(ConfigError, match="DA_ONPREM_URL is missing"):
         get_llm_client("generator", make_settings(llm_provider="onprem"))
 
 
@@ -189,5 +189,5 @@ def test_module_loads_without_anthropic_installed():
     assert result.returncode == 0, result.stderr
     lines = result.stdout.splitlines()
     assert lines[0] == "fake"
-    assert "not configured yet" in lines[1]
+    assert "DA_ONPREM_URL is missing" in lines[1]
     assert "needs the anthropic library" in lines[2]

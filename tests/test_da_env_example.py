@@ -1,4 +1,5 @@
 from pathlib import Path
+from urllib.parse import urlparse
 
 from dotenv import dotenv_values
 
@@ -11,6 +12,13 @@ EXPECTED_SETTINGS = {
     "ANTHROPIC_API_KEY",
     "DA_DB_PATH",
     "DA_DEVELOPER_ID",
+    "DA_ONPREM_URL",
+    "DA_ONPREM_MODEL",
+    "DA_ONPREM_API_KEY",
+    "DA_ONPREM_AUTH_HEADER",
+    "DA_ONPREM_AUTH_PREFIX",
+    "DA_ONPREM_VERIFY",
+    "DA_ONPREM_TIMEOUT_SECONDS",
 }
 
 
@@ -34,3 +42,20 @@ def test_gitignore_keeps_secrets_and_database_out():
     assert ".env" in lines
     assert ".venv/" in lines
     assert "data/*.db" in lines
+    assert "logs/" in lines
+
+
+def test_env_example_onprem_values_are_made_up_and_safe():
+    values = dotenv_values(PROJECT_ROOT / ".env.example")
+
+    # Rule R3: only example.com addresses, never a work address. No key, certificate check on.
+    assert urlparse(values["DA_ONPREM_URL"]).hostname == "llm.example.com"
+    assert values["DA_ONPREM_API_KEY"] == ""
+    assert values["DA_ONPREM_VERIFY"] == "true"
+    assert values["DA_ONPREM_AUTH_PREFIX"] == "Bearer "
+
+
+def test_requests_is_pinned_for_work():
+    lines = (PROJECT_ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()
+
+    assert "requests==2.32.5" in lines

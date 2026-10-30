@@ -41,7 +41,7 @@ Stop, push the work so far to the phase branch, and tell Gian what you need when
   you did not see.
 
 ## Current phase
-Phase 2B: Understand screen. Spec: `specs/phase-2-understand.md` (parts marked 2B only)
+Phase 2C: Work LLM connector. Spec: `specs/phase-2c-llm-connector.md`
 
 | # | Phase | # | Phase |
 |---|---|---|---|

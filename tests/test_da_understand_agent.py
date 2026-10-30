@@ -150,6 +150,6 @@ def test_every_script_entry_passes_the_checks(step, record):
     assert problems == []
 
 
-def test_onprem_provider_is_not_configured_yet(make_settings):
-    with pytest.raises(ConfigError, match="not configured yet"):
+def test_onprem_without_settings_names_the_missing_one(make_settings):
+    with pytest.raises(ConfigError, match="DA_ONPREM_URL is missing"):
         get_understand_client(make_settings(llm_provider="onprem"), "question_1")
