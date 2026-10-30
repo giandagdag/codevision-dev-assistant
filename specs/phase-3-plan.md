@@ -45,7 +45,7 @@ get only the small edits listed (rule R7).
 | outcome status per section 2 and the "not proof" limitation | 11a, 11b |
 | round cap; hint refuses secrets and code | 11c (uses 8 checks) |
 | one transaction per round, append-only, record v1 unchanged | 10, 11b, 11d |
-| stale window refused; `codevision` message | 11c, 5 |
+| stale window refused; `codevision` message | 11c, 11d, 5 |
 | Gian's hands-on check (fake, hint round, bad-json fallback banner) | 13a, 13b, 15 (checklist given to Gian) |
 | Reviewer 0 Must fix, README, parked items | 15, 16 |
 
@@ -57,6 +57,10 @@ get only the small edits listed (rule R7).
   revision. From SEARCHING ("Search again"): only SEARCHING -> outcome (no second `discovery_started`
   status move, because the status is already SEARCHING).
 - Search and AI run before the write, so no half-saved round (spec section 2).
+- Discover chat lines (divider, result line, confirm, escalate) are written with `add_message` on the
+  same connection inside the same transaction, so a failed round leaves no orphan chat line. The
+  atomicity test in 11b also checks the chat count.
+- Name the new `da_discovery_state` table in spec section 11 when the decisions are copied there.
 - Outcome: any `existing_capability` or `similar_implementation` finding gives
   SIMILAR_IMPLEMENTATION_FOUND, else NO_RELIABLE_MATCH plus the "not proof" limitation (app adds it).
 - Round number = rows for the request + 1; refused beyond `DA_DISCOVERY_MAX_ROUNDS`.
