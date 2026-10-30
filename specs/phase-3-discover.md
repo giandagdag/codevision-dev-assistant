@@ -308,4 +308,23 @@ The shape (vectors + numbered list + metadata) is reused, with two traps avoided
 - P17. Discovery tab "functional flow with reference labels" card from the demo. After Monday, if wanted.
 
 ## 11. Decisions made during planning
-(Added by the planner.)
+(Added by the planner and the builder. Full list in `specs/phase-3-plan.md`, section "Spec ambiguities and decisions".)
+
+- **Discovery revision.** The stale-window check uses its own table `da_discovery_state`
+  (request ID, revision), written only by Discover. Understand's session row and record v1 are
+  never written. (Names a second table beside `da_discovery_results`; 3.6 lists only the first.)
+- **Hint moves.** Outcome to SEARCHING to new outcome, in the same transaction as the new round.
+  From SEARCHING ("Search again") only SEARCHING to outcome is written.
+- **`SearchHit` also carries `deprecated` and `restricted`** (default false), so our own safety
+  filter (3.1) can drop such hits even if an index returns them.
+- **Fallback findings** use one fixed explanation ("Found by search. Check the source before
+  reuse.") because a snippet is code. Titles: "Possible match: ...", "Standard to check: ...",
+  "Related document: ...".
+- **No hits means no AI call.** The round is saved with no findings and summary source `fallback`;
+  the fallback banner is shown only when there were hits.
+- **`bad-json` mode** of the pretend server is bad on every Discover try (Understand's retry
+  still passes), so the fallback can be seen.
+- **Screen.** Discover buttons use plain ASCII keys as ids (emoji ids cannot be clicked in Dash,
+  parked P19). In Discover the Send button is "Something's missing": the typed text is the hint.
+- **Time.** `created_at` is stored in UTC like every other time and shown in Singapore time
+  (parked P21).

@@ -254,6 +254,61 @@ The smoke check adds items 13 (the ping against the pretend server) and 14 (a fu
 with `onprem` against it, reaching CONFIRMED_FOR_DISCOVERY). They always use the pretend server,
 whatever provider is set. The Monday plan is `docs/monday-work-test.md`.
 
+## How Phase 3 works
+
+Phase 3 is **Discover**: after a request is confirmed, the app searches approved code for
+something that already does the job, so the developer reuses it instead of writing a copy.
+
+AS400 comparison: like running a where-used query (DSPPGMREF) before writing a new program. The
+app runs the queries (CL), the AI writes one short report, and the result goes into its own
+journaled file keyed to the request. Request record v1 is never touched.
+
+**The flow in 5 lines**
+
+1. Press **Proceed to Discovery** on a confirmed request. The app builds up to 6 searches from the
+   record (exact: title and references; meaning: objective and expected behaviour).
+2. The searches run on the index, our own safety filter drops anything deprecated, restricted or
+   secret-looking, and the best 12 hits are numbered.
+3. The AI is asked once to sort the hits into findings (it may only cite hit numbers it was
+   given). A bad reply is retried once. After two bad replies the app shows plain search results
+   instead, with a banner.
+4. The app picks the outcome (**Similar implementation found** or **No reliable match**), and
+   saves the round, the status moves, the audit events and the chat lines in ONE transaction.
+5. The developer confirms, types a hint (**Something's missing**, up to 3 rounds in total), or
+   escalates to a senior developer.
+
+| Piece | File | What it does |
+|---|---|---|
+| Search interface and safety filter | `agents/da_search_index.py` | `SearchIndex` with one `search` method, the pretend index, `get_search_index`, and `drop_unsafe_hits` (our own filter, run after any index) |
+| Pretend index | `data/da_fake_index.json` | About 26 made-up pieces in the shape the real index will have. The position in the list IS the piece number, and the loader refuses gaps or wrong order |
+| Python splitter | `agents/da_code_splitter.py` | One piece per function, class and method (standard `ast`). Used in tests now, by the work adapter later (P15) |
+| Searches and merge | `agents/da_discover_queries.py` | Builds the queries; merges hits by (path, symbol), so two functions in one file stay two hits |
+| The AI call | `agents/da_discover_agent.py`, `data/da_discover_prompt.md` | One call, retry once, plain-results fallback |
+| Checks | `agents/da_discover_checks.py` | Cited hits must be hits we sent; no code in any text; hint checks |
+| Flow | `agents/da_discover_flow.py` | `start_discovery`, `add_hint_and_search`, `confirm_discovery`, `escalate_discovery`, `get_discovery_view` |
+| Storage | `db_table_functions/db_tbl_da_discovery.py` | `da_discovery_results` (one row per round, append-only) and `da_discovery_state` (the discovery revision) |
+| Screen | `layouts/`, `callbacks/`, `web/da_web_components.py` | Discover workspace, Discovery tab, finding cards |
+
+**How the pretend index works.** `DA_SEARCH_PROVIDER=fake` (the default) reads
+`data/da_fake_index.json`. Exact search matches whole words (case does not matter) in the path,
+tags and snippet. Meaning search matches after a small synonym list (for example extract, parse,
+read are one group). It proves the pipeline; it is not real semantic search. `codevision` is a
+placeholder that says "CodeVision search is not configured yet" until the work adapter (P15).
+
+**Try it at home.** Run the screen as usual with `DA_LLM_PROVIDER=fake`. Get a request to
+CONFIRMED FOR DISCOVERY (the scripted Excel example), press **Proceed to Discovery**, then try
+**Something's missing** with a hint such as `batching helper`, then **Findings look right**.
+To see the fallback banner, start the pretend server with `--mode bad-json`, set
+`DA_LLM_PROVIDER=onprem` as in Phase 2C, and press Proceed to Discovery: both AI tries are bad,
+so plain results show. (Unlike Understand, bad-json is bad on every Discover try.)
+
+**Stale windows.** Discover keeps its own revision number (`da_discovery_state`), so the Understand
+session and record v1 are never written by Discover. A second window acting on an old view is
+refused with the usual "updated in another window" message.
+
+The smoke check adds items 15 (the pretend index, searches and the safety filter), 16 (a full
+Discover run to DISCOVERY_CONFIRMED with record v1 unchanged) and 17 (bad-json fallback).
+
 ## Notes for the move to CodeVision
 
 - **The audit-table triggers are SQLite-only.** The append-only guarantee comes from two SQLite
@@ -280,6 +335,11 @@ whatever provider is set. The Monday plan is `docs/monday-work-test.md`.
   `requirements.txt`. For the Monday test only (decision D-E), `web/da_fake_onprem_server.py` is
   not needed at work, but `da_home_web_server.py` is copied to run the screen on the work laptop.
   Smoke check items 13 and 14 import the pretend server, so copy it too if you run the smoke check.
+- **Phase 3 files:** `agents/da_discover_*.py`, `agents/da_search_index.py`,
+  `agents/da_code_splitter.py`, `db_table_functions/db_tbl_da_discovery.py`,
+  `pydantic_classes/da_discovery_models.py`, `data/da_discover_prompt.md`, the three Discover
+  settings, and the screen edits. `data/da_fake_index.json` and `data/da_discover_fake_script.json`
+  are for home. The two Discover tables use SQLite triggers (append-only), like the others.
 - `dash`, `dash-mantine-components` and `dash-iconify` are in `requirements.txt` at the work
   versions. Dash pulls in Flask; home gets 3.1.3, work has 3.1.2.
 - **Check at work that Dash clientside callbacks (inline JavaScript) are allowed.** Enter-to-send
