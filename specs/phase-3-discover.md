@@ -112,8 +112,8 @@ Phase 3. The screen uses the developer's numbering.
 ### 3.3 Building the searches (app only, no AI)
 - From record v1: exact queries from the title and each `references` item; meaning queries from
   `objective` and `expected_behaviour`; one more pair from the developer's hint when there is one.
-- Max 6 queries per round, `DA_SEARCH_TOP_K` (default 5) hits each. Merge by `source_path`
-  (keep the best score), keep the best 12. Number them 1 to 12 (`hit_id`).
+- Max 6 queries per round, `DA_SEARCH_TOP_K` (default 5) hits each. Merge by (`source_path`,
+  `symbol`) (keep the best score), so two functions in one file stay two hits (D-F). Keep the best 12. Number them 1 to 12 (`hit_id`).
 - Structural search (callers, imports) is shown on screen as "Coming later", greyed out.
 
 ### 3.4 The one AI call (D-B: 1 call + safe fallback)
@@ -149,7 +149,9 @@ Phase 3. The screen uses the developer's numbering.
   characters, same secret and no-code checks as Phase 2. Then a new round runs with the hint.
   Max `DA_DISCOVERY_MAX_ROUNDS` (default 3, so 2 extra). After the cap, only confirm and escalate
   are offered, with a line saying why.
-- Escalate: status ESCALATION_REQUIRED, open item "Escalated in Discover: <latest limitation or
+- Escalate: status ESCALATION_REQUIRED. Record v1 is NOT changed (R4), so the "open item" lives in
+  the `discovery_escalated` audit event, the chat and the discovery view, not in the record:
+  "Escalated in Discover: <latest limitation or
   'developer request'>", chat says a senior developer will pick it up (the inbox is Phase 8).
 - Confirm: status DISCOVERY_CONFIRMED, chat confirms with the round number. A disabled
   "🚦 Proceed to Readiness Gate (coming in Phase 4)" button shows.
@@ -245,7 +247,7 @@ Surgical changes to the 2B files, matching the demo's Envisioned Discover screen
 - [ ] Tests prove: an index with a gap or out-of-order piece number is refused; an empty filter
       result falls back to all permitted pieces
 - [ ] Tests prove: queries are built from the record fields and the hint, capped at 6; hits are
-      merged by path and capped at 12
+      merged by path and symbol (two functions in one file stay two hits) and capped at 12
 - [ ] Tests prove: a good AI reply becomes findings; an invented `hit_id`, a missing citation, too
       many findings or code in the text causes one retry with a plain note; two bad replies and an
       `LLMClientError` both give the fallback
