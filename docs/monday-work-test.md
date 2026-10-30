@@ -13,11 +13,19 @@ only into your `.env` on the work laptop. Never into a file that leaves the lapt
    [Like restoring the library to the test LPAR and checking it has the right objects.]
 2. **Fill in `.env`.** Copy `.env.example` to `.env`. Set:
    - `DA_LLM_PROVIDER=onprem`
-   - `DA_ONPREM_URL` (the full chat-completions address), `DA_ONPREM_MODEL` (Qwen first)
-   - `DA_ONPREM_API_KEY`, and if CodeVision uses a different header: `DA_ONPREM_AUTH_HEADER` and
-     `DA_ONPREM_AUTH_PREFIX` (keep the quotes, for example `"Bearer "`)
-   - `DA_ONPREM_VERIFY`: `true`, or the path to the bank's certificate file. `false` works for the
-     prototype but logs a warning each time. [Like a data area the program reads at start-up.]
+   - `DA_ONPREM_URL`: the active (not commented out) chat-completions setting in CodeVision's
+     `configs/llm_config.py`
+   - `DA_ONPREM_MODEL`: start with `reasoning-vlm` (CodeVision's default). Then try `default`.
+     Which name is Qwen or Llama is not known yet; write down what each one is.
+   - `DA_ONPREM_API_KEY`: the value of `SPIRARE_API_KEY` in CodeVision's `.env`. If CodeVision
+     uses a different header, also set `DA_ONPREM_AUTH_HEADER` and `DA_ONPREM_AUTH_PREFIX`
+     (keep the quotes, for example `"Bearer "`)
+   - `DA_ONPREM_VERIFY`: first try the path to the certificate file in CodeVision's `cert`
+     folder. If the ping shows a certificate error, set `false` (CodeVision itself runs with
+     checking off; it logs a warning each time). [Like a data area the program reads at start-up.]
+   - `DA_ONPREM_MAX_TOKENS`: leave empty (CodeVision sends none). Set a number such as `1500`
+     only if replies come back cut short.
+   - **Port:** CodeVision also uses port 8050. Stop CodeVision before starting our screen.
 3. **Load the rulebook, then ping.**
    - `.venv\Scripts\python src\da_load_starter_rulebook.py`
    - `.venv\Scripts\python src\da_llm_ping.py`
@@ -48,6 +56,8 @@ otherwise the call to our stand-in server on this laptop could be sent through t
 | What you see | What to check |
 |---|---|
 | "Cannot connect to the AI server" | `DA_ONPREM_URL` and the network |
+| "refused the request as too large (HTTP 400)" | the prompt or context is too long for the model |
+| "network proxy asked for sign-in (HTTP 407)" | the proxy settings on this laptop |
 | "did not answer within N seconds" | the network, or raise `DA_ONPREM_TIMEOUT_SECONDS` |
 | "The certificate check failed" | `DA_ONPREM_VERIFY` |
 | "refused the request (HTTP 401/403)" | `DA_ONPREM_API_KEY`, `DA_ONPREM_AUTH_HEADER`, `DA_ONPREM_AUTH_PREFIX` |

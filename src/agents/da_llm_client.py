@@ -24,7 +24,6 @@ CLAUDE_MAX_TOKENS = 2048
 # llm_config.py. If Friday's photos show different names or numbers, change them here.
 ONPREM_TEMPERATURE = 0.2
 ONPREM_TOP_P = 0.2
-ONPREM_MAX_TOKENS = 2048
 # Network retries (spec 2.1): 3 tries in total, waiting 2 then 4 seconds between them.
 ONPREM_MAX_TRIES = 3
 ONPREM_RETRY_WAITS = (2, 4)
@@ -107,13 +106,14 @@ class OnPremLLMClient:
         self._url = settings.onprem_url
         self._verify = settings.onprem_verify
         self._timeout = settings.onprem_timeout_seconds
+        self._max_tokens = settings.onprem_max_tokens
         self._api_key = settings.onprem_api_key
         self._headers = _build_headers(
             settings.onprem_api_key, settings.onprem_auth_header, settings.onprem_auth_prefix
         )
 
     def complete(self, prompt: str, system: str | None = None) -> LLMReply:
-        body = _build_body(self.model, prompt, system)
+        body = _build_body(self.model, prompt, system, self._max_tokens)
         for attempt in range(1, ONPREM_MAX_TRIES + 1):
             try:
                 return self._send_once(body)
@@ -176,6 +176,17 @@ class OnPremLLMClient:
                 f"The AI server refused the request (HTTP {status}). Check DA_ONPREM_API_KEY, "
                 "DA_ONPREM_AUTH_HEADER and DA_ONPREM_AUTH_PREFIX."
             )
+        if status == 400:
+            # CodeVision treats 400 as "too much context"; trying again would not help.
+            raise LLMClientError(
+                "The AI server refused the request as too large (HTTP 400). "
+                "The prompt or context is probably too long."
+            )
+        if status == 407:
+            raise _RetryableCallError(
+                "The network proxy asked for sign-in (HTTP 407). "
+                "Check the proxy settings on this laptop."
+            )
         if status == 404:
             raise LLMClientError(
                 "The AI server says the address was not found (HTTP 404). "
@@ -193,18 +204,25 @@ class OnPremLLMClient:
         return text[:ERROR_TEXT_LIMIT]
 
 
-def _build_body(model: str, prompt: str, system: str | None) -> dict[str, Any]:
-    """The JSON body. A system message only when given, then the user message."""
+def _build_body(
+    model: str, prompt: str, system: str | None, max_tokens: int | None = None
+) -> dict[str, Any]:
+    """The JSON body, the same fields as CodeVision sends (spec P13 2.1).
+
+    A system message only when given, then the user message. max_tokens is sent only when the
+    DA_ONPREM_MAX_TOKENS setting has a number.
+    """
     messages = [{"role": "system", "content": system}] if system else []
     messages.append({"role": "user", "content": prompt})
-    return {
+    body: dict[str, Any] = {
         "model": model,
         "messages": messages,
         "temperature": ONPREM_TEMPERATURE,
         "top_p": ONPREM_TOP_P,
-        "max_tokens": ONPREM_MAX_TOKENS,
-        "stream": False,
     }
+    if max_tokens is not None:
+        body["max_tokens"] = max_tokens
+    return body
 
 
 def _build_headers(api_key: str, auth_header: str, auth_prefix: str) -> dict[str, str]:
