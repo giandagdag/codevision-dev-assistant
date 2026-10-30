@@ -149,13 +149,13 @@ def perform_action(settings: Settings, trigger, text, state, refresh):
         if trigger == SEND_ID and request_id is None:
             view = create_understand_request(settings, text or "")
             return no_update, f"?request={view.request.request_id}", ""
-        if trigger == SEND_ID:
+        if trigger == SEND_ID and state.get("discover"):
+            # In Discover the Send button is "Something's missing": the text is the hint.
+            add_hint_and_search(settings, request_id, text or "", revision)
+        elif trigger == SEND_ID:
             submit_answer(settings, request_id, text or "", revision)
         elif trigger == SKIP_ID:
             skip_optional(settings, request_id, revision)
-        elif state.get("discover") and trigger == SEND_ID:
-            # In Discover the Send button is "Something's missing": the text is the hint.
-            add_hint_and_search(settings, request_id, text or "", revision)
         elif state.get("discover") and _is_choice(trigger):
             _discover_choice(settings, request_id, trigger["option"], revision)
         elif _is_choice(trigger):
