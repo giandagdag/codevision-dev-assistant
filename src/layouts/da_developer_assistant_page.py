@@ -51,7 +51,11 @@ EMPTY_TEXT = "Waiting for your answer"
 UNDERSTAND_STEP = 1
 DISCOVER_STEP = 2
 # The Discover buttons use the same pattern id as the Understand choices (the callbacks tell them
-# apart by the workspace state, not by the text).
+# apart by the workspace state). Their ids are plain ASCII keys, never the label: Dash cannot read
+# the click count of a button whose id holds an emoji (it matches ids as escaped text).
+START_KEY = "start"
+CONFIRM_KEY = "confirm"
+ESCALATE_KEY = "escalate"
 PROCEED_DISCOVERY_OPTION = "Proceed to Discovery"
 SEARCH_AGAIN_OPTION = "Search again"
 BUSY_TEXT = "⏳ Searching approved sources…"
@@ -278,7 +282,7 @@ def _workspace(
             for name, icon in PANEL_TABS
         ],
         # All six tabs stay on one line; a narrow window scrolls them sideways.
-        style={"flexWrap": "nowrap", "overflowX": "auto"},
+        style={"flexWrap": "nowrap", "overflowX": "auto", "flexShrink": 0},
     )
     if discovery:
         # Discover is under way: the Discovery tab can be used and opens first.
@@ -289,7 +293,7 @@ def _workspace(
                 dmc.TabsPanel(dmc.Box(discovery, style=da_styles.PANEL_BODY), value="discovery"),
             ],
             value="discovery",
-            style=da_styles.COLUMN,
+            style={**da_styles.COLUMN, "flex": 1},
         )
         side_children = [tabs]
     else:
@@ -415,11 +419,12 @@ def _discover_composer(view: DiscoveryView) -> dmc.Box:
     if status in (STATUS_CONFIRMED, STATUS_SEARCHING):
         label = PROCEED_DISCOVERY_OPTION if status == STATUS_CONFIRMED else SEARCH_AGAIN_OPTION
         note = f"Press {label} to search approved sources"
-        return dmc.Box([_discover_bar([label], note), controls])
+        return dmc.Box([_discover_bar([(START_KEY, label)], note), controls])
     if status in (STATUS_SIMILAR_FOUND, STATUS_NO_MATCH):
-        choices = [option for option in view.choices if option != HINT_OPTION]
+        keys = {CONFIRM_OPTION: CONFIRM_KEY, ESCALATE_OPTION: ESCALATE_KEY}
+        buttons = [(keys[option], option) for option in view.choices if option in keys]
         note = view.cap_message or "Choose an option to continue"
-        return dmc.Box([_discover_bar(choices, note, [CONFIRM_OPTION]), controls])
+        return dmc.Box([_discover_bar(buttons, note), controls])
     # Confirmed or escalated: nothing more to do in this phase.
     done = dmc.Box(
         [
@@ -433,22 +438,23 @@ def _discover_composer(view: DiscoveryView) -> dmc.Box:
     return dmc.Box([done, controls])
 
 
-def _discover_bar(options: list[str], note: str, filled: list[str] | None = None) -> dmc.Box:
-    buttons = [
+def _discover_bar(buttons: list[tuple[str, str]], note: str) -> dmc.Box:
+    """The choice buttons as (key, label) pairs. The first one is the main action."""
+    shown = [
         dmc.Button(
-            option,
-            id={"type": CHOICE_TYPE, "option": option},
-            variant="filled" if option in (filled or [options[0]]) else "light",
-            color="gray" if option == ESCALATE_OPTION else "blue",
+            label,
+            id={"type": CHOICE_TYPE, "option": key},
+            variant="filled" if number == 0 else "light",
+            color="gray" if key == ESCALATE_KEY else "blue",
             radius="xl",
             size="sm",
         )
-        for option in options
+        for number, (key, label) in enumerate(buttons)
     ]
     return dmc.Box(
         [
             dmc.Group([_lock(), dmc.Text(note, size="xs", fw=600)]),
-            dmc.Group(buttons, mt="xs", mb="xs"),
+            dmc.Group(shown, mt="xs", mb="xs"),
         ],
         style=da_styles.CHOICES_BAR,
     )

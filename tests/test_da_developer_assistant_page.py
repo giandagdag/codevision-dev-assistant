@@ -217,7 +217,7 @@ def tab(tree, name):
 def test_confirmed_request_shows_the_active_proceed_button_and_a_locked_discovery_tab(settings):
     tree, _ = discover_tree(settings)
 
-    proceed = [c for c in choice_buttons(tree) if c.id["option"] == page.PROCEED_DISCOVERY_OPTION]
+    proceed = [c for c in choice_buttons(tree) if c.id["option"] == page.START_KEY]
     assert len(proceed) == 1 and not getattr(proceed[0], "disabled", False)
     assert tab(tree, "discovery").disabled is True
     assert "Discovery" in all_text(tree) and by_id(tree, "da-outcome-banner") is None
@@ -252,8 +252,11 @@ def test_discovery_tab_shows_input_search_rows_outcome_findings_limitations_and_
 def test_findings_look_right_choices_and_the_hint_box(settings):
     tree, view = discover_tree(settings, start_step)
 
-    options = [c.id["option"] for c in choice_buttons(tree)]
-    assert options == ["✅ Findings look right", "🙋 Escalate to a senior developer"]
+    assert [c.id["option"] for c in choice_buttons(tree)] == ["confirm", "escalate"]
+    assert [c.children for c in choice_buttons(tree)] == [
+        "✅ Findings look right",
+        "🙋 Escalate to a senior developer",
+    ]
     send = by_id(tree, page.SEND_ID)
     assert send.children == "✏️ Something's missing" and not send.disabled
     text_box = by_id(tree, page.TEXT_ID)
@@ -345,7 +348,8 @@ def test_a_request_stuck_in_searching_offers_search_again(settings):
         discover.get_discovery_view(settings, request_id),
     )
 
-    assert [c.id["option"] for c in choice_buttons(tree)] == ["Search again"]
+    assert [c.id["option"] for c in choice_buttons(tree)] == ["start"]
+    assert [c.children for c in choice_buttons(tree)] == ["Search again"]
     assert "did not finish" in all_text(by_id(tree, "da-outcome-banner"))
 
 
@@ -369,3 +373,12 @@ def test_every_input_the_callbacks_name_exists_in_the_discover_workspace(setting
 
     for component_id in (page.TEXT_ID, page.SEND_ID, page.SKIP_ID, page.MESSAGE_ID, page.BUSY_ID):
         assert by_id(tree, component_id) is not None, component_id
+
+
+def test_discover_button_ids_are_plain_ascii(settings):
+    # Dash cannot read the click count of a button whose id holds an emoji (found in the browser
+    # check), so the ids use plain keys and only the labels carry emoji.
+    for steps in ((), (start_step,)):
+        tree, _ = discover_tree(settings, *steps)
+        for button in choice_buttons(tree):
+            assert button.id["option"].isascii(), button.id

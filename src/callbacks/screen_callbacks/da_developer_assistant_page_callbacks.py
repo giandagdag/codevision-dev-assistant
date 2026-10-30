@@ -14,8 +14,6 @@ from dash import ALL, Input, Output, State, ctx, no_update
 from dash.exceptions import PreventUpdate
 
 from agents.da_discover_flow import (
-    CONFIRM_OPTION,
-    ESCALATE_OPTION,
     add_hint_and_search,
     confirm_discovery,
     escalate_discovery,
@@ -37,15 +35,16 @@ from db_table_functions.db_tbl_da_understand import UnderstandError
 from layouts.da_developer_assistant_page import (
     BUSY_ID,
     CHOICE_TYPE,
+    CONFIRM_KEY,
+    ESCALATE_KEY,
     KEYS_ID,
     LOCATION_ID,
     MESSAGE_ID,
     PAGE_CONTENT_ID,
-    PROCEED_DISCOVERY_OPTION,
     REFRESH_ID,
-    SEARCH_AGAIN_OPTION,
     SEND_ID,
     SKIP_ID,
+    START_KEY,
     STATE_ID,
     TEXT_ID,
     render_discover_workspace,
@@ -172,13 +171,13 @@ def _is_choice(trigger) -> bool:
     return isinstance(trigger, dict) and trigger.get("type") == CHOICE_TYPE
 
 
-def _discover_choice(settings: Settings, request_id: str, option: str, revision: int) -> None:
+def _discover_choice(settings: Settings, request_id: str, key: str, revision: int) -> None:
     """The one Discover engine function a button stands for."""
-    if option in (PROCEED_DISCOVERY_OPTION, SEARCH_AGAIN_OPTION):
+    if key == START_KEY:
         start_discovery(settings, request_id, revision)
-    elif option == CONFIRM_OPTION:
+    elif key == CONFIRM_KEY:
         confirm_discovery(settings, request_id, revision)
-    elif option == ESCALATE_OPTION:
+    elif key == ESCALATE_KEY:
         escalate_discovery(settings, request_id, revision)
     else:
         raise PreventUpdate

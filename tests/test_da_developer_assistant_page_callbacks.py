@@ -262,7 +262,7 @@ def test_a_request_still_being_clarified_is_drawn_as_the_understand_workspace(se
 
 def test_proceed_to_discovery_runs_the_round_and_asks_for_a_redraw(settings, confirmed_id):
     result = cb.perform_action(
-        settings, choice(page.PROCEED_DISCOVERY_OPTION), None, discover_state(confirmed_id), 5
+        settings, choice(page.START_KEY), None, discover_state(confirmed_id), 5
     )
 
     assert result == (6, no_update, "")
@@ -275,7 +275,7 @@ def test_proceed_to_discovery_runs_the_round_and_asks_for_a_redraw(settings, con
 
 def test_send_in_discover_is_the_hint_and_searches_again(settings, confirmed_id):
     cb.perform_action(
-        settings, choice(page.PROCEED_DISCOVERY_OPTION), None, discover_state(confirmed_id), 0
+        settings, choice(page.START_KEY), None, discover_state(confirmed_id), 0
     )
 
     result = cb.perform_action(
@@ -289,7 +289,7 @@ def test_send_in_discover_is_the_hint_and_searches_again(settings, confirmed_id)
 
 def test_a_hint_with_a_secret_shows_a_plain_message_and_writes_nothing(settings, confirmed_id):
     cb.perform_action(
-        settings, choice(page.PROCEED_DISCOVERY_OPTION), None, discover_state(confirmed_id), 0
+        settings, choice(page.START_KEY), None, discover_state(confirmed_id), 0
     )
 
     hint = "key sk-abcdefghijklmnopqrstuvwxyz123456"
@@ -304,11 +304,11 @@ def test_a_hint_with_a_secret_shows_a_plain_message_and_writes_nothing(settings,
 
 def test_confirm_button_calls_the_flow(settings, confirmed_id):
     cb.perform_action(
-        settings, choice(page.PROCEED_DISCOVERY_OPTION), None, discover_state(confirmed_id), 0
+        settings, choice(page.START_KEY), None, discover_state(confirmed_id), 0
     )
 
     cb.perform_action(
-        settings, choice("✅ Findings look right"), None, discover_state(confirmed_id, 1), 1
+        settings, choice(page.CONFIRM_KEY), None, discover_state(confirmed_id, 1), 1
     )
 
     assert discovery_view(settings, confirmed_id).request.status == "DISCOVERY_CONFIRMED"
@@ -316,10 +316,10 @@ def test_confirm_button_calls_the_flow(settings, confirmed_id):
 
 def test_escalate_button_calls_the_flow(settings, confirmed_id):
     cb.perform_action(
-        settings, choice(page.PROCEED_DISCOVERY_OPTION), None, discover_state(confirmed_id), 0
+        settings, choice(page.START_KEY), None, discover_state(confirmed_id), 0
     )
 
-    escalate = choice("🙋 Escalate to a senior developer")
+    escalate = choice(page.ESCALATE_KEY)
     cb.perform_action(settings, escalate, None, discover_state(confirmed_id, 1), 1)
 
     view = discovery_view(settings, confirmed_id)
@@ -328,11 +328,11 @@ def test_escalate_button_calls_the_flow(settings, confirmed_id):
 
 def test_a_stale_discover_window_is_refused_and_nothing_is_written(settings, confirmed_id):
     cb.perform_action(
-        settings, choice(page.PROCEED_DISCOVERY_OPTION), None, discover_state(confirmed_id), 0
+        settings, choice(page.START_KEY), None, discover_state(confirmed_id), 0
     )
 
     result = cb.perform_action(
-        settings, choice("✅ Findings look right"), None, discover_state(confirmed_id, 0), 1
+        settings, choice(page.CONFIRM_KEY), None, discover_state(confirmed_id, 0), 1
     )
 
     assert result == (no_update, no_update, STALE_MESSAGE)
@@ -350,7 +350,7 @@ def test_codevision_search_provider_shows_the_not_configured_message(
     work = make_settings(search_provider="codevision")
 
     result = cb.perform_action(
-        work, choice(page.PROCEED_DISCOVERY_OPTION), None, discover_state(confirmed_id), 0
+        work, choice(page.START_KEY), None, discover_state(confirmed_id), 0
     )
 
     assert result == (no_update, no_update, "CodeVision search is not configured yet.")
