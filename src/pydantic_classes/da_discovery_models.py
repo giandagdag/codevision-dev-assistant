@@ -113,6 +113,8 @@ class DiscoveryView(BaseModel):
     max_rounds: int
     choices: list[str]
     can_hint: bool
+    # Why "Something's missing" is no longer offered (round cap reached), or empty.
+    cap_message: str
     # Set after an escalation: "Escalated in Discover: ..." (spec 3.5).
     open_item: str
     revision: int

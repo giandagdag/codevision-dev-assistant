@@ -132,6 +132,16 @@ def get_results(db_path: Path, request_id: str) -> list[DiscoveryResult]:
         return read_results(conn, request_id)
 
 
+def read_escalation_open_item(conn: sqlite3.Connection, request_id: str) -> str:
+    """The open item the latest discovery_escalated audit event carries, or empty (spec 3.5)."""
+    row = conn.execute(
+        "SELECT details FROM da_audit_events WHERE request_id = ? AND event_type ="
+        " 'discovery_escalated' ORDER BY event_id DESC LIMIT 1",
+        (request_id,),
+    ).fetchone()
+    return json.loads(row["details"]).get("open_item", "") if row else ""
+
+
 def read_discovery_revision(conn: sqlite3.Connection, request_id: str) -> int:
     """The discovery revision. 0 means Discover has not started for this request."""
     row = conn.execute(
