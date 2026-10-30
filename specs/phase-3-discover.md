@@ -1,6 +1,7 @@
 # Phase 3: Discover
 
-Status: APPROVED v1.0 (30 Oct 2026). Decisions D-A to D-D chosen by Gian.
+Status: APPROVED v1.1 (30 Oct 2026). Decisions D-A to D-F chosen by Gian. v1.1 adds what the
+work photos showed about CodeVision's search (section 9) and decisions D-E and D-F.
 Depends on: Phase 2A, 2B, 2C
 Next: Phase 4, Readiness Gate
 Build: Saturday 31 Oct after P13, only if tokens allow. Merge only AFTER the Monday work test
@@ -11,13 +12,14 @@ Build: Saturday 31 Oct after P13, only if tokens allow. Merge only AFTER the Mon
 A confirmed request (record v1) says WHAT the developer wants. Discover answers: "does something
 like this already exist, and what should be reused?" The app searches CodeVision's approved sources,
 asks the AI once to sort the hits into plain findings, and shows them in the Discovery tab, each
-with its source file and commit. The developer says the findings look right, says something is
+with its source file and function or class. The developer says the findings look right, says something is
 missing (search again with a hint), or escalates to a senior developer.
 
-We cannot reach CodeVision's real search index (`agents/a_vector`) from home, and we do not know
-yet how it is called. So, as in 2C, we build against a small search interface plus a home-only
-pretend index of made-up files. Friday's photos (section 9) show the real shape; the real hookup
-is a later, small adapter.
+CodeVision's existing search index holds summaries of old-system programs, not CodeVision's own
+Python code (section 9). So Discover gets its OWN index of the Python code, one piece per function
+or class (D-E, D-F), built later at work with CodeVision's own embedding call and FAISS. At home,
+as in 2C, we build against a small search interface plus a pretend index in the same shape. This
+phase also builds the splitter that cuts Python files into pieces (standard library, testable).
 
 AS400 comparison: like a cross-reference query (DSPPGMREF, or a where-used tool) run before you
 write a new program, so you reuse an existing one instead of writing a copy. The app runs the
@@ -30,7 +32,8 @@ Phase 3. The screen uses the developer's numbering.
 ## 1. Goal
 
 - From a CONFIRMED_FOR_DISCOVERY request, the developer clicks "Proceed to Discovery" and gets
-  findings in the Discovery tab, each tied to a source path and commit, within one screen action.
+  findings in the Discovery tab, each tied to a source path and function or class, within one
+  screen action.
 - If the AI reply is bad (twice), the developer still gets a plain list of search hits. Discover
   never fails because the AI misbehaved.
 - The developer can add a hint and search again (max 2 extra rounds), confirm, or escalate.
@@ -58,7 +61,10 @@ Phase 3. The screen uses the developer's numbering.
 - `SearchIndex` protocol with one method:
   `search(query: str, mode: "exact" | "meaning", filters: SearchFilters, top_k: int) -> list[SearchHit]`.
 - `SearchHit` (pydantic, `pydantic_classes/da_discovery_models.py`): `hit_id` (set by the app,
-  1, 2, 3...), `source_path`, `commit`, `kind` (`code`, `doc`, `standard`, `config`), `language`,
+  1, 2, 3...), `source_path`, `symbol` (function or class name, for example
+  `UploadValidator.check_type`; empty for a whole non-code file), `line_start`, `version` (a commit
+  ID when known, otherwise the index build ID; may be empty), `kind` (`code`, `doc`, `standard`,
+  `config`), `language`,
   `snippet` (max 500 characters, refused if longer, never cut by the index), `score` (0 to 1),
   `mode`.
 - `SearchFilters`: `languages` (default Python), `include_deprecated` false, `include_restricted`
@@ -70,17 +76,38 @@ Phase 3. The screen uses the developer's numbering.
   environment file (`.env`, `*.pem`, `*.key`, paths containing `secret` or `credential`), and drop
   deprecated or restricted hits even if the index returned them. Logged as a count, never the path.
 
-### 3.2 Pretend index (D-A: exact + meaning)
-- `src/data/da_fake_index.json`: about 25 made-up chunks of a made-up CodeVision-like codebase
-  (for example an upload validator, a PDF processor, a batching helper, a logging standard, an
-  exception-handling standard, an ingestion router, allowed-file-type settings). Each chunk has
-  path, commit, kind, language, deprecated, restricted, tags and a snippet. Include at least one
-  deprecated, one restricted and one `.env`-like chunk, so the filters are tested.
+### 3.2 Pretend index (D-A: exact + meaning; shape per D-F)
+- `src/data/da_fake_index.json`, in the same shape the real index will have (section 9):
+  - `build_id` and `built_at` for the whole index
+  - `pieces`: a list where the position is the piece number (like the row number CodeVision uses
+    to link vectors to names). About 25 made-up pieces of a made-up CodeVision-like codebase, one
+    per function or class (for example an upload validator, a PDF processor, a batching helper,
+    an ingestion router), plus a few whole-file pieces for standards and settings.
+  - Each piece: `piece_no`, path, symbol, line_start, kind, language, deprecated, restricted,
+    tags, snippet.
+  - Include at least one deprecated, one restricted and one `.env`-like piece.
+- Loading checks: `piece_no` must equal the position in the list, with no gaps. If not, the index
+  is refused with a plain message. This guards the "rows out of order point to the wrong file"
+  trap seen in CodeVision's design.
 - `FakeSearchIndex` in `agents/da_search_index.py`, standard library only:
   - exact: case-insensitive whole-word match on path, tags and snippet; score by matches.
   - meaning: word overlap after a small built-in synonym list (for example extract, parse, read;
     validate, check; ingest, load). Good enough to prove the pipeline, not real semantic search.
 - No new library. Real embeddings come with the real index.
+- If a filter leaves nothing to search, meaning search falls back to ALL permitted pieces, never
+  to zero results (CodeVision's own fallback is switched off; we do not copy that).
+
+### 3.2a Python splitter (`agents/da_code_splitter.py`, D-F)
+- `split_python_file(path, text) -> list[CodePiece]` using the standard `ast` module: one piece
+  per top-level function, per class, and per method (symbol `Class.method`). Module-level code
+  that is not inside any function or class becomes one `<module>` piece if it is not empty.
+- Each piece: path, symbol, line_start, line_end, and the source text of that piece cut to 2,000
+  characters for the index snippet (the full text stays in the file).
+- A file that does not parse gives one whole-file piece and a warning, never a crash.
+- `split_folder(root)`: every `.py` file under a folder, skipping `.venv`, `__pycache__`, and the
+  secret-looking paths from 3.1. Sorted by path, so the piece numbers are stable.
+- Phase 3 uses it only in tests and to check the pretend index. Writing vectors with CodeVision's
+  `create_embeddings` and FAISS is the work adapter (P15).
 
 ### 3.3 Building the searches (app only, no AI)
 - From record v1: exact queries from the title and each `references` item; meaning queries from
@@ -94,7 +121,7 @@ Phase 3. The screen uses the developer's numbering.
   `get_llm_client` (fake, claude, onprem) with the `generator` role, the same one Understand's
   interpreter uses (check `get_understand_client` and follow it).
 - Input: a short record summary (title, objective, expected behaviour, references, decisions)
-  and the numbered hits (path, commit, kind, snippet).
+  and the numbered hits (path, symbol, kind, snippet).
 - Output, JSON only:
   `findings`: list of `{kind, title, explanation, hit_ids, confidence}` where kind is
   `existing_capability`, `similar_implementation`, `relevant_standard` or `affected_area`,
@@ -158,7 +185,7 @@ Surgical changes to the 2B files, matching the demo's Envisioned Discover screen
 - Stepper: Discover highlighted. The Discovery tab unlocks and opens automatically.
 - Discovery tab: input banner (request ID and record version); search rows (Exact ✅, Meaning ✅,
   Filters ✅, Structural "Coming later" greyed); outcome banner (green or amber); one card per
-  finding (kind icon and label, title, explanation, `source_path @ commit` for each cited hit,
+  finding (kind icon and label, title, explanation, `source_path · symbol` (plus `@ version` when known) for each cited hit,
   confidence pill); limitations card; fallback banner when used; "Round N of 3".
 - Earlier rounds are not shown on screen (they are in the table and the audit trail).
 
@@ -177,8 +204,8 @@ Surgical changes to the 2B files, matching the demo's Envisioned Discover screen
 | `DA_DISCOVERY_MAX_ROUNDS` | `3` | Rounds per request, 1 to 5 |
 
 ### 3.11 Smoke check (extend `da_smoke_check.py`)
-15. The pretend index returns hits for an exact and a meaning query, and drops the deprecated,
-    restricted and `.env` chunks
+15. The pretend index loads (piece numbers checked), returns hits for an exact and a meaning
+    query, and drops the deprecated, restricted and `.env` pieces
 16. A full conversation reaches CONFIRMED_FOR_DISCOVERY, then Discover reaches DISCOVERY_CONFIRMED
     with the fake provider, and record v1 is unchanged
 17. With the pretend onprem server in `bad-json` mode, Discover falls back to plain results and
@@ -188,7 +215,8 @@ Surgical changes to the 2B files, matching the demo's Envisioned Discover screen
 "How Phase 3 works": the flow in 5 lines, how to run it at home, and how the pretend index works.
 
 ## 4. Out of scope (do NOT build in 3)
-- The real `a_vector` hookup (needs section 9 photos). Structural search.
+- Writing real vectors (CodeVision's `create_embeddings` and FAISS) and the work adapter (P15).
+  Structural search. Searching CodeVision's existing old-system summaries (P18).
 - Path 3 "quick discovery", the Readiness Gate (Phase 4), the escalations inbox (Phase 8).
 - The demo's "functional flow with reference labels" card (parked, see section 10).
 - Changing the Understand prompt or engine. Showing earlier rounds on screen.
@@ -196,7 +224,8 @@ Surgical changes to the 2B files, matching the demo's Envisioned Discover screen
 
 ## 5. Rules
 - R1. The AI suggests, the app decides: queries, statuses and the outcome are app decisions.
-- R2. No invented sources: every finding shown links to a hit the index really returned.
+- R2. No invented sources: every finding shown links to a hit the index really returned, shown as
+  `source_path` and symbol, plus `@ version` when a version is known.
 - R3. Secrets, environment files, deprecated and restricted content are never shown, even if an
   index returns them (our own filter, 3.1).
 - R4. Record v1 is never changed. Discovery results are append-only.
@@ -211,6 +240,10 @@ Surgical changes to the 2B files, matching the demo's Envisioned Discover screen
 - [ ] The smoke check prints items 1 to 17
 - [ ] Tests prove: exact and meaning search each find the expected made-up chunk; the safety filter
       drops deprecated, restricted and secret-looking hits
+- [ ] Tests prove: the splitter makes one piece per function, class and method with correct
+      symbols and line numbers; a broken file gives one whole-file piece; skipped folders are skipped
+- [ ] Tests prove: an index with a gap or out-of-order piece number is refused; an empty filter
+      result falls back to all permitted pieces
 - [ ] Tests prove: queries are built from the record fields and the hint, capped at 6; hits are
       merged by path and capped at 12
 - [ ] Tests prove: a good AI reply becomes findings; an invented `hit_id`, a missing citation, too
@@ -238,25 +271,38 @@ Surgical changes to the 2B files, matching the demo's Envisioned Discover screen
 | D-B | How Discover uses the AI | App builds the searches. One AI call sorts hits into findings. Bad reply falls back to a plain hit list (Gian, 30 Oct) |
 | D-C | "Something's missing" | Developer types a hint, search runs again. Max 2 extra rounds, then confirm or escalate (Gian, 30 Oct) |
 | D-D | Where findings are saved | Own append-only table linked to request and record version. Record v1 untouched (Gian, 30 Oct) |
+| D-E | What Discover searches | Our own index of CodeVision's Python code, not the existing old-system summaries (Gian, 30 Oct) |
+| D-F | Size of an indexed piece | One per function or class (methods too), not one per file (Gian, 30 Oct) |
 
 Set in this spec by Claude (veto any before the build): the six statuses in section 2; escalation
 only sets a status and an open item; 12 hits and 8 findings caps; no new library.
 
-## 9. Photos needed (Friday 30 Oct batch, items 7 to 12)
-Cover every URL, key, token, path value and real application name.
-7. `agents/a_vector`: the folder's file list, and the function that runs a search (name, inputs,
-   what it returns)
-8. One place in CodeVision that calls that search, and how the results are used
-9. `load_md_to_vector_db.py`: the chunking part and the extra info saved per chunk (`metadata`,
-   `chunk_size`, `Document(`)
-10. The line that creates the embedding model
-11. The line or setting that saves or loads the index (`save_local` / `load_local`), value covered
-12. If easy: one sample search result showing its field names (content blurred)
-None of these block the build. They feed the real adapter (P15).
+## 9. What the work photos showed (30 Oct)
+CodeVision's search, in plain words (no addresses or names copied):
+- Builder (`load_md_to_vector_db.py`): for each markdown summary of an OLD-SYSTEM program, take its
+  overview, make ONE vector for the whole file with `a_vector.create_embeddings`, add it to a
+  FAISS index (`IndexFlatL2`) and add the name to a spreadsheet. The spreadsheet row number is the
+  vector number. No chunking, no commit IDs.
+- Embedding: one HTTP call per text to the embedding endpoint (model bge-m3), reply at
+  `data[0].embedding`, retried up to 3 times.
+- Search (`a_vector.query_vector_db`): nearest K vectors, keep distance <= 0.90, and keep only
+  those in a list of allowed numbers. An empty list returns NOTHING (the fallback is commented out).
+- Allowed numbers come from `a_retriever.retrieve_relevant_metadata_files`: records in a
+  `metadata.json` matched on fields with "and" or "or".
+- `agent_flows/flw_metadata_filtering.main(prompt, max_count)`: a LangGraph flow that pulls filter
+  values out of the question, scores, filters, searches, reranks and writes the answer.
+- `a_retriever` "yellow pages": a spreadsheet of program name, app code, source library and file
+  type, used to find a program's source file and its markdown summary.
+Conclusion: the content is old-system programs, so Discover needs its own Python code index (D-E).
+The shape (vectors + numbered list + metadata) is reused, with two traps avoided (3.2).
 
 ## 10. New parked items (add to `specs/parked-items.md`)
-- P15. Real search adapter for `agents/a_vector` behind `DA_SEARCH_PROVIDER=codevision`. After photos 7 to 12.
+- P15. Work adapter behind `DA_SEARCH_PROVIDER=codevision`: run the splitter over CodeVision's
+  Python code, make vectors with CodeVision's `create_embeddings`, store them in FAISS with our
+  numbered piece list, and search them. Needs `faiss-cpu` (on the work list); ask before adding.
 - P16. Structural search (callers, imports, configuration links). After P15 shows what the index holds.
+- P18. Optional second source: CodeVision's existing old-system summaries, as background for a
+  change that touches an old-system program. Only if Gian wants it later.
 - P17. Discovery tab "functional flow with reference labels" card from the demo. After Monday, if wanted.
 
 ## 11. Decisions made during planning
