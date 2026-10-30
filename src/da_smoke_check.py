@@ -1,4 +1,4 @@
-"""Proves Phases 0, 1, 2A and 2C work end to end.
+"""Proves Phases 0, 1, 2A, 2C and 3 work end to end.
 
 Run: .venv\\Scripts\\python src\\da_smoke_check.py
 """
@@ -9,7 +9,9 @@ from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from agents.da_discover_flow import confirm_discovery, start_discovery
 from agents.da_llm_client import LLMClient, LLMClientError, get_llm_client
+from agents.da_search_index import FakeSearchIndex, search_safely
 from agents.da_understand_flow import (
     PROCEED_OPTION,
     choose_option,
@@ -31,8 +33,9 @@ from db_table_functions.db_tbl_da_rulebook import (
     restore_version,
     save_new_version,
 )
-from db_table_functions.db_tbl_da_understand import UnderstandError
-from pydantic_classes.da_models import STATUS_CONFIRMED, StatusMoveError
+from db_table_functions.db_tbl_da_understand import UnderstandError, get_confirmed_record
+from pydantic_classes.da_discovery_models import SearchFilters
+from pydantic_classes.da_models import STATUS_CONFIRMED, STATUS_DISCOVERY_CONFIRMED, StatusMoveError
 from pydantic_classes.da_rulebook_models import Rulebook
 from web.da_fake_onprem_server import running_fake_onprem_server
 
@@ -71,6 +74,7 @@ def run_smoke_check(settings: Settings) -> int:
             _run_understand_steps(Path(folder) / "smoke_understand.db", settings)
             # The same database: item 9 already published the rulebook there.
             _run_onprem_steps(Path(folder) / "smoke_understand.db", settings)
+            _run_discover_steps(Path(folder) / "smoke_understand.db", settings)
     except (
         ConfigError,
         LLMClientError,
@@ -205,6 +209,67 @@ def _run_onprem_steps(db_path: Path, settings: Settings) -> None:
         f"14. Conversation with onprem against the pretend server: {request_id} reached "
         f"{view.request.status} as record v{view.request.version}"
     )
+
+
+def _run_discover_steps(db_path: Path, settings: Settings) -> None:
+    """Items 15 to 17: Discover (Phase 3), always with the pretend index and pretend AI."""
+    index = FakeSearchIndex.from_file()
+    filters = SearchFilters()
+    exact, _ = search_safely(index, "check upload file type", "exact", filters, 5)
+    meaning, _ = search_safely(index, "parse pages", "meaning", filters, 5)
+    # Open filters make the index return the flagged pieces, so our own filter has work to do.
+    open_filters = SearchFilters(include_deprecated=True, include_restricted=True)
+    _, dropped = search_safely(index, "legacy payroll sample settings", "exact", open_filters, 30)
+    if not exact or not meaning or dropped < 3:
+        raise UnderstandError("The pretend index or its safety filter did not work as expected.")
+    print(
+        f"15. Pretend index loaded; exact search found {exact[0].symbol}, meaning search found "
+        f"{meaning[0].symbol}; the safety filter dropped {dropped} deprecated, restricted or "
+        ".env-like hits"
+    )
+
+    demo = replace(settings, llm_provider="fake", db_path=db_path)
+    request_id = _confirmed_request(demo)
+    before = get_confirmed_record(db_path, request_id)
+    view = start_discovery(demo, request_id, 0)
+    found = f"{view.request.status} ({view.result.summary_source} summary)"
+    view = confirm_discovery(demo, request_id, view.revision)
+    if view.request.status != STATUS_DISCOVERY_CONFIRMED:
+        raise UnderstandError(f"Discover ended at {view.request.status}.")
+    unchanged = get_confirmed_record(db_path, request_id) == before
+    print(
+        f"16. {request_id}: Discover reached {found}, then {view.request.status}; "
+        f"record v1 unchanged: {unchanged}"
+    )
+
+    with running_fake_onprem_server("bad-json") as server:
+        bad = replace(
+            demo,
+            llm_provider="onprem",
+            onprem_url=server.url,
+            onprem_model=SAMPLE_ONPREM_MODEL,
+        )
+        request_id = _confirmed_request(bad)
+        view = start_discovery(bad, request_id, 0)
+    print(
+        f"17. With the pretend server in bad-json mode, {request_id} fell back to plain results "
+        f"(summary source: {view.result.summary_source}) and still reached {view.request.status}"
+    )
+
+
+def _confirmed_request(settings: Settings) -> str:
+    view = create_understand_request(
+        settings, SAMPLE_FIRST_MESSAGE, developer_id=SAMPLE_DEVELOPER
+    )
+    request_id = view.request.request_id
+    for answer in SAMPLE_ANSWERS:
+        view = submit_answer(settings, request_id, answer, view.revision)
+    view = choose_option(settings, request_id, view.choices[0], view.revision)
+    view = submit_answer(settings, request_id, SAMPLE_REFERENCE, view.revision)
+    view = choose_option(settings, request_id, PROCEED_OPTION, view.revision)
+    if view.request.status != STATUS_CONFIRMED:
+        raise UnderstandError(f"The conversation ended at {view.request.status}.")
+    return request_id
 
 
 def _try_to_edit_record(db_path: Path, request_id: str) -> str:

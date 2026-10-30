@@ -64,6 +64,22 @@ def test_fake_provider_prints_the_onprem_items_13_and_14(make_settings, capsys):
     assert output.index("12. ") < output.index("13. ") < output.index("14. ")
 
 
+def test_fake_provider_prints_the_discover_items_15_to_17(make_settings, capsys):
+    exit_code = run_smoke_check(make_settings())
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "15. Pretend index loaded; exact search found UploadValidator.check_type" in output
+    assert "meaning search found" in output and "safety filter dropped" in output
+    assert "16. CVDA-" in output
+    assert "Discover reached SIMILAR_IMPLEMENTATION_FOUND (ai summary)" in output
+    assert "then DISCOVERY_CONFIRMED" in output
+    assert "record v1 unchanged: True" in output
+    assert "17. With the pretend server in bad-json mode, CVDA-" in output
+    assert "fell back to plain results (summary source: fallback)" in output
+    assert output.index("14. ") < output.index("15. ") < output.index("16. ") < output.index("17. ")
+
+
 def test_onprem_with_a_missing_certificate_file_stops_with_plain_message(make_settings, capsys):
     settings = make_settings(
         llm_provider="onprem",
