@@ -130,8 +130,9 @@ def test_decision_locks_the_text_box_and_shows_the_choices(settings):
     assert view.input_mode == "choices"
     assert by_id(tree, page.TEXT_ID).disabled is True
     assert by_id(tree, page.SEND_ID).disabled is True
-    options = [b.id["option"] for b in choice_buttons(tree)]
+    options = [b.children for b in choice_buttons(tree)]
     assert options == view.choices and flow.HELP_OPTION == options[-1]
+    assert [b.id["index"] for b in choice_buttons(tree)] == list(range(len(options)))
     assert "Text input is paused until you choose" in by_id(tree, page.TEXT_ID).placeholder
     assert "Clarification required: 1 open item" in all_text(tree)
 
@@ -149,7 +150,7 @@ def test_optional_area_shows_skip(settings):
 def test_checkpoint_offers_the_three_choices(settings):
     view = da_play.to_checkpoint(settings)
     tree = page.render_workspace(view)
-    assert [b.id["option"] for b in choice_buttons(tree)] == list(flow.CHECKPOINT_OPTIONS)
+    assert [b.children for b in choice_buttons(tree)] == list(flow.CHECKPOINT_OPTIONS)
     assert "Ready for confirmation" in all_text(tree)
     assert "READY FOR CONFIRMATION" in all_text(tree)
 

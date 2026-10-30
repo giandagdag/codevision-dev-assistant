@@ -327,16 +327,19 @@ def _composer(mode: str, choices: list[str], can_skip: bool, prompt: str) -> dmc
 
 
 def _choices_bar(choices: list[str]) -> dmc.Box:
+    # The id holds the position, not the text: AI-written options can hold curly quotes, long
+    # dashes, accents or emoji, which are not safe inside a component id. The callback looks the
+    # text up again from the saved request (P19).
     buttons = [
         dmc.Button(
             option,
-            id={"type": CHOICE_TYPE, "option": option},
+            id={"type": CHOICE_TYPE, "index": index},
             variant="filled" if option == PROCEED_OPTION else "light",
             color="gray" if option == HELP_OPTION else "blue",
             radius="xl",
             size="sm",
         )
-        for option in choices
+        for index, option in enumerate(choices)
     ]
     return dmc.Box(
         [

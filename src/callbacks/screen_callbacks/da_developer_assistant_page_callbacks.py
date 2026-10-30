@@ -24,7 +24,11 @@ from agents.da_understand_flow import (
 from configs.da_config import ConfigError, Settings, load_settings
 from db_table_functions.da_db import DatabaseBusyError
 from db_table_functions.db_tbl_da_rulebook import RulebookError
-from db_table_functions.db_tbl_da_understand import UnderstandError
+from db_table_functions.db_tbl_da_understand import (
+    STALE_MESSAGE,
+    StaleRevisionError,
+    UnderstandError,
+)
 from layouts.da_developer_assistant_page import (
     CHOICE_TYPE,
     KEYS_ID,
@@ -127,13 +131,26 @@ def perform_action(settings: Settings, trigger, text, state, refresh):
         elif trigger == SKIP_ID:
             skip_optional(settings, request_id, revision)
         elif isinstance(trigger, dict) and trigger.get("type") == CHOICE_TYPE:
-            choose_option(settings, request_id, trigger["option"], revision)
+            option = _option_at(settings, request_id, revision, trigger["index"])
+            choose_option(settings, request_id, option, revision)
         else:
             raise PreventUpdate
     except SHOWN_ERRORS as error:
         # Nothing was written. The text stays in the box so the developer can fix it.
         return no_update, no_update, str(error)
     return (refresh or 0) + 1, no_update, ""
+
+
+def _option_at(settings: Settings, request_id: str, revision: int, index: int) -> str:
+    """The text of the choice button that was pressed, read from the request as saved now.
+
+    A window that is out of date, or an index with no button behind it, gets the same stale-window
+    message as any other out-of-date save (rule R7). Nothing is written.
+    """
+    view = get_understand_view(settings, request_id)
+    if view.revision != revision or not 0 <= index < len(view.choices):
+        raise StaleRevisionError(STALE_MESSAGE)
+    return view.choices[index]
 
 
 def register_da_developer_assistant_page_callbacks(app) -> None:
@@ -151,7 +168,7 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
         Output(LOCATION_ID, "search"),
         Output(MESSAGE_ID, "children"),
         Input(SEND_ID, "n_clicks"),
-        Input({"type": CHOICE_TYPE, "option": ALL}, "n_clicks"),
+        Input({"type": CHOICE_TYPE, "index": ALL}, "n_clicks"),
         Input(SKIP_ID, "n_clicks"),
         State(TEXT_ID, "value"),
         State(STATE_ID, "data"),
