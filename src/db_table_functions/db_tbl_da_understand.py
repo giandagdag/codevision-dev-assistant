@@ -25,6 +25,13 @@ from pydantic_classes.da_request_record_models import (
 )
 
 STALE_MESSAGE = "This request was updated in another window. Reload to continue."
+# Phase 2D replaced the two scenario lists with acceptance criteria. There are no real users
+# yet, so old requests are not converted: they stay in the database, untouched, and cannot open.
+OLD_REQUEST_MESSAGE = (
+    "Request {request_id} was saved before the Understand update (2D) and cannot be opened. "
+    "Please start a new request."
+)
+_PRE_2D_FIELDS = ("success_scenarios", "failure_scenarios")
 
 # The triggers make the database itself refuse any edit or delete, even from code that skips
 # this file. They are SQLite-only: CodeVision's database will need its own equivalent.
@@ -83,6 +90,10 @@ class UnderstandError(Exception):
     """An Understand action was refused. The message says why in plain words."""
 
 
+class OldRequestError(UnderstandError):
+    """The request was saved before Phase 2D (it has the old scenario fields)."""
+
+
 class StaleRevisionError(UnderstandError):
     """The save was based on an old revision: another window saved first (rule R7)."""
 
@@ -134,9 +145,9 @@ def read_session(conn: sqlite3.Connection, request_id: str) -> UnderstandSession
     ).fetchone()
     if row is None:
         return None
-    return UnderstandSession.model_validate(
-        json.loads(row["session"]) | {"revision": row["revision"]}
-    )
+    data = json.loads(row["session"])
+    _refuse_old_record(request_id, data.get("record"))
+    return UnderstandSession.model_validate(data | {"revision": row["revision"]})
 
 
 def get_session(db_path: Path, request_id: str) -> UnderstandSession | None:
@@ -215,7 +226,16 @@ def read_confirmed_record(
         "SELECT record FROM da_request_records WHERE request_id = ? AND version = ?",
         (request_id, version),
     ).fetchone()
-    return RequestRecord.model_validate_json(row["record"]) if row else None
+    if row is None:
+        return None
+    data = json.loads(row["record"])
+    _refuse_old_record(request_id, data)
+    return RequestRecord.model_validate(data)
+
+
+def _refuse_old_record(request_id: str, record_data: dict | None) -> None:
+    if record_data and any(name in record_data for name in _PRE_2D_FIELDS):
+        raise OldRequestError(OLD_REQUEST_MESSAGE.format(request_id=request_id))
 
 
 def _session_json(session: UnderstandSession) -> str:

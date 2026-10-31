@@ -35,8 +35,6 @@ LIST_FIELDS: tuple[str, ...] = (
     "functional_flow",
     "in_scope",
     "out_of_scope",
-    "success_scenarios",
-    "failure_scenarios",
     "constraints",
     "references",
 )
@@ -54,11 +52,14 @@ FIELD_LABELS: dict[str, str] = {
     "functional_flow": "Functional flow",
     "in_scope": "In scope",
     "out_of_scope": "Out of scope",
-    "success_scenarios": "Success scenarios",
-    "failure_scenarios": "Failure scenarios",
+    "acceptance_criteria": "Acceptance criteria",
     "constraints": "Constraints",
     "references": "References",
 }
+
+CRITERION_ID_PATTERN = r"^AC-[1-9]\d*$"
+CriterionKind = Literal["success", "failure"]
+CRITERION_PARTS: tuple[str, ...] = ("given", "when", "then")
 
 Speaker = Literal["developer", "assistant", "system"]
 
@@ -84,6 +85,20 @@ class Assumption(_Shape):
     basis: ShortText
 
 
+class AcceptanceCriterion(_Shape):
+    """One testable case: Given a situation, when an action, then something that can be seen."""
+
+    # Given by the app, never by the AI. Renumbered AC-1..n while the request is a draft.
+    id: str = Field(pattern=CRITERION_ID_PATTERN)
+    kind: CriterionKind
+    given: ShortText
+    when: ShortText
+    then: ShortText
+
+
+CriteriaList = Annotated[list[AcceptanceCriterion], Field(max_length=LIST_LENGTH_LIMIT)]
+
+
 class RequestRecord(_Shape):
     request_id: str = Field(pattern=REQUEST_ID_PATTERN)
     version: int = Field(default=1, ge=1)
@@ -98,8 +113,7 @@ class RequestRecord(_Shape):
     out_of_scope: ShortList = Field(default_factory=list)
     inputs: LongText = ""
     outputs: LongText = ""
-    success_scenarios: ShortList = Field(default_factory=list)
-    failure_scenarios: ShortList = Field(default_factory=list)
+    acceptance_criteria: CriteriaList = Field(default_factory=list)
     constraints: ShortList = Field(default_factory=list)
     references: ShortList = Field(default_factory=list)
     decisions: list[Decision] = Field(default_factory=list)
@@ -124,12 +138,24 @@ class Ambiguity(_Shape):
     assumption: Assumption | None = None
 
 
+class ReplyCriterion(_Shape):
+    """A criterion as the AI writes it: no id. Kind and lengths are checked by da_understand_checks,
+    so a problem becomes a plain retry note naming the criterion."""
+
+    kind: str
+    given: str
+    when: str
+    then: str
+
+
 class InterpreterReply(_Shape):
     # Field name -> new value. Which names and value types are allowed is checked by
     # da_understand_checks, so a wrong one becomes a plain retry note.
     updates: dict[str, str | list[str]] = Field(default_factory=dict)
     ambiguities: list[Ambiguity] = Field(default_factory=list)
     hint: str = Field(default="", max_length=HINT_LIMIT)
+    # Left out or null: the criteria stay as they are. A list: the full new list.
+    acceptance_criteria: list[ReplyCriterion] | None = None
 
 
 class ChatMessage(BaseModel):
@@ -181,5 +207,9 @@ class UnderstandView(BaseModel):
     choices: list[str]
     can_skip: bool
     changed_fields: list[str]
+    # Which Summary fields the screen shows yet (W5). The record still holds all of them.
+    visible_fields: list[str]
+    # At a decision the text box opens for "Other, type here" (W3).
+    custom_choice_allowed: bool
     revision: int
     demo_mode: bool

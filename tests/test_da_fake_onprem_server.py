@@ -160,7 +160,8 @@ def test_bad_json_mode_still_confirms_and_fills_the_rejected_reply_log(
     assert NOT_JSON_REPLY in text
     assert "provider onprem" in text and "model fake-qwen" in text
     assert "attempt 1" in text and "attempt 2" not in text  # the engine's retry worked every time
-    assert text.count("=== 20") == 5  # one per turn: the opening message and questions 1 to 4
+    # one per turn: the opening message, questions 1 to 4, and the decision after question 4
+    assert text.count("=== 20") == 6
 
 
 def test_error_mode_shows_the_plain_message_in_the_chat(

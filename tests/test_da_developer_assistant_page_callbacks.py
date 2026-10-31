@@ -134,14 +134,18 @@ def test_a_message_with_a_key_is_refused_and_not_saved(settings):
     assert after.messages == view.messages
 
 
-def test_text_is_refused_while_a_decision_waits(settings):
+def test_typed_answer_over_300_characters_is_refused_at_a_decision(settings):
     view = da_play.to_decision(settings)
-    result = send(settings, view)
-    assert result == (
-        no_update,
-        no_update,
-        "A decision is waiting. Please choose one of the options first.",
-    )
+    result = send(settings, view, "x" * 301)
+    assert result == (no_update, no_update, flow.CUSTOM_TOO_LONG)
+
+
+def test_typed_answer_at_a_decision_is_saved_and_redraws(settings):
+    view = da_play.to_decision(settings)
+    result = send(settings, view, "Only the first sheet")
+    assert result == (1, no_update, "")
+    after = flow.get_understand_view(settings, view.request.request_id)
+    assert after.record.decisions[0].choice == "Only the first sheet"
 
 
 def test_help_choice_shows_decision_required_then_choosing_resumes(settings):
@@ -414,3 +418,27 @@ def test_the_same_buttons_in_an_understand_workspace_still_call_the_understand_e
 
     after = flow.get_understand_view(settings, view.request.request_id)
     assert after.request.status != "DECISION_REQUIRED"
+
+
+def test_a_request_saved_before_2d_shows_a_plain_page_and_stays_in_the_list(settings):
+    """2D-5: no crash, no stack trace, still listed, nothing deleted."""
+    import json
+    import sqlite3
+    from contextlib import closing
+
+    view = da_play.start(settings)
+    rid = view.request.request_id
+    with closing(sqlite3.connect(settings.db_path)) as conn:
+        (raw,) = conn.execute("SELECT session FROM da_understand_sessions").fetchone()
+        data = json.loads(raw)
+        data["record"]["success_scenarios"] = ["A workbook is ingested"]
+        conn.execute("UPDATE da_understand_sessions SET session = ?", (json.dumps(data),))
+        conn.commit()
+
+    text = all_text(cb.show_page(f"?request={rid}", 0))
+
+    assert f"Request {rid} was saved before the Understand update (2D)" in text
+    assert "cannot be opened." in text
+    assert "Please start a new request." in text
+    assert "Back to Home" in text
+    assert rid in all_text(cb.show_page("", 0))  # still in "My recent requests"

@@ -94,6 +94,16 @@ CHECKPOINT_OPTIONS: tuple[str, ...] = (PROCEED_OPTION, CORRECT_OPTION, HELP_OPTI
 SKIP_TEXT = "Skip"
 
 MAX_MATERIAL_DECISIONS = 5
+CUSTOM_ANSWER_LIMIT = 300
+CUSTOM_TOO_LONG = "Please keep your own answer under 300 characters, or choose a button."
+DECISION_STEP = "decision"  # the interpreter script step used after a decision
+DECISION_NOT_APPLIED = (
+    "Your decision is saved. I couldn't update the summary from it; it will be picked up "
+    "with your next answer."
+)
+QUESTION_4_HINT = (
+    "Each case you name becomes an acceptance criterion, and every criterion gets tested."
+)
 HELP_PREFIX = "Help requested: "
 SENIOR_PREFIX = "Needs a senior decision: "
 CHECKPOINT_HELP_ITEM = HELP_PREFIX + "confirmation"
@@ -106,6 +116,19 @@ OPTIONAL_MESSAGE = (
 CHECKPOINT_MESSAGE = (
     "Here is my understanding. Please check the summary, then choose how to continue."
 )
+
+# Which Summary fields the screen shows (W5). The AI still fills any field from any message; only
+# the screen waits. The title is not listed: the header keeps updating as it does today.
+ALWAYS_VISIBLE: tuple[str, ...] = ("assumptions", "decisions", "open_items")
+REVEALED_BY_QUESTION: dict[int, tuple[str, ...]] = {
+    1: ("objective", "reason"),
+    2: ("current_behaviour",),
+    3: ("expected_behaviour", "functional_flow", "in_scope"),
+    4: ("inputs", "outputs", "acceptance_criteria", "out_of_scope"),
+}
+REVEALED_BY_OPTIONAL: tuple[str, ...] = ("constraints", "references")
+# From the correction step on, the gate messages name fields, so every field must be visible.
+SHOW_ALL_STEPS = ("correction", "checkpoint", "done")
 
 # Which input the screen offers at each step.
 _INPUT_MODES: dict[str, InputMode] = {
@@ -127,6 +150,8 @@ class _Turn:
     request: Request
     session: UnderstandSession
     now: datetime
+    # What the screen showed before this action, to highlight what the action reveals (W5).
+    visible_before: list[str]
 
     def say(self, speaker: Speaker, text: str) -> None:
         add_message(self.conn, self.request.request_id, speaker, text, self.now)
@@ -216,6 +241,9 @@ def submit_answer(
     now = now or datetime.now(UTC)
     # Refuse early, before the slow interpreter call. Checked again when saving.
     session = _load_session(settings.db_path, request_id, base_revision)
+    if session.step == "decision":
+        # "Other, type here" (W3): a typed answer is a decision like a button.
+        return _submit_custom_decision(settings, session, text, base_revision, client, now)
     _require_text_step(session)
     step_name, question = _interpreter_step(session)
     result = _interpret(settings, session, step_name, question, text, client)
@@ -243,13 +271,15 @@ def choose_option(
     option: str,
     base_revision: int,
     now: datetime | None = None,
+    client: LLMClient | None = None,
 ) -> UnderstandView:
     """The developer picks a choice: a material decision, or one of the 3 checkpoint choices."""
     now = now or datetime.now(UTC)
+    session = _load_session(settings.db_path, request_id, base_revision)
+    if session.step == "decision":
+        return _decide(settings, request_id, option, False, base_revision, now, client)
     with _turn(settings.db_path, request_id, base_revision, now) as turn:
-        if turn.session.step == "decision":
-            _choose_decision(turn, option)
-        elif turn.session.step == "checkpoint":
+        if turn.session.step == "checkpoint":
             _choose_checkpoint(turn, option)
         else:
             raise UnderstandError(_wrong_step_message(turn.session))
@@ -308,6 +338,8 @@ def get_understand_view(settings: Settings, request_id: str) -> UnderstandView:
         choices=_choices_for(session),
         can_skip=session.step == "optional",
         changed_fields=session.last_changed_fields,
+        visible_fields=visible_fields(session),
+        custom_choice_allowed=session.step == "decision",
         revision=session.revision,
         demo_mode=settings.llm_provider == "fake",
     )
@@ -516,6 +548,8 @@ def _run_gate(turn: _Turn, announce: bool = True) -> bool:
 def _question_message(session: UnderstandSession) -> str:
     number = session.current_question
     text = f"Question {number} of {QUESTION_COUNT}: {QUESTIONS[number]}"
+    if number == QUESTION_COUNT:
+        text += f"\n{QUESTION_4_HINT}"
     if session.next_hint:
         text += f"\n{session.next_hint}"
     # A hint is only for the question that comes straight after it.
@@ -526,15 +560,73 @@ def _question_message(session: UnderstandSession) -> str:
 # --- choices ---
 
 
-def _choose_decision(turn: _Turn, option: str) -> None:
+def _submit_custom_decision(
+    settings: Settings,
+    session: UnderstandSession,
+    text: str,
+    base_revision: int,
+    client: LLMClient | None,
+    now: datetime | None,
+) -> UnderstandView:
+    """A typed answer at a decision step: the checks of any message, then at most 300 characters."""
+    text = _accept_developer_text(text)
+    if len(text) > CUSTOM_ANSWER_LIMIT:
+        raise UnderstandError(CUSTOM_TOO_LONG)
+    now = now or datetime.now(UTC)
+    # Typing the exact words of a button is the same as pressing it.
+    custom = text not in _decision_choices(session.pending_decisions[0])
+    return _decide(settings, session.request_id, text, custom, base_revision, now, client)
+
+
+def _decide(
+    settings: Settings,
+    request_id: str,
+    choice: str,
+    custom: bool,
+    base_revision: int,
+    now: datetime,
+    client: LLMClient | None,
+) -> UnderstandView:
+    """Record a decision, then let the interpreter update the Summary from it (D-C).
+
+    Same pattern as creating a request: save 1 records the decision, the interpreter is called
+    with no lock held, save 2 applies the reply and moves on. If the interpreter fails the
+    decision stays saved.
+    """
+    with _turn(settings.db_path, request_id, base_revision, now) as turn:
+        if turn.session.step != "decision":
+            raise UnderstandError(_wrong_step_message(turn.session))
+        question = turn.session.pending_decisions[0].question
+        decided = _record_decision(turn, choice, custom)
+    if not decided:
+        # "I need help deciding": nothing was decided, so the interpreter is not asked.
+        return get_understand_view(settings, request_id)
+
+    session = _load_session(settings.db_path, request_id, base_revision + 1)
+    result = _interpret(settings, session, DECISION_STEP, question, choice, client)
+    with _turn(settings.db_path, request_id, session.revision, now) as turn:
+        carried = list(turn.session.last_changed_fields)
+        if result.ok:
+            _apply_result(turn, result, answered=None)
+            merged = carried + [f for f in turn.session.last_changed_fields if f not in carried]
+            turn.session.last_changed_fields = merged
+        else:
+            turn.say("assistant", DECISION_NOT_APPLIED)
+            _audit_failure(turn, DECISION_STEP, result)
+        _advance(turn)
+    return get_understand_view(settings, request_id)
+
+
+def _record_decision(turn: _Turn, choice: str, custom: bool) -> bool:
+    """Save the choice. False means help was requested instead (nothing decided)."""
     session = turn.session
     pending = session.pending_decisions[0]
-    if option not in _decision_choices(pending):
-        raise UnderstandError(_not_a_choice_message(option, _decision_choices(pending)))
-    turn.say("developer", option)
+    if choice not in _decision_choices(pending) and not custom:
+        raise UnderstandError(_not_a_choice_message(choice, _decision_choices(pending)))
+    turn.say("developer", choice)
     help_item = HELP_PREFIX + pending.question
 
-    if option == HELP_OPTION:
+    if choice == HELP_OPTION:
         # The request waits at DECISION_REQUIRED; the developer can come back and choose.
         if help_item not in session.record.open_items:
             _set_open_items(session, [*session.record.open_items, help_item])
@@ -545,9 +637,9 @@ def _choose_decision(turn: _Turn, option: str) -> None:
             "Help requested. This request will wait here. You can come back and choose at any "
             "time. (A senior escalation inbox comes in a later phase.)",
         )
-        return
+        return False
 
-    decision = Decision(question=pending.question, choice=option, decided_at=turn.now)
+    decision = Decision(question=pending.question, choice=choice, decided_at=turn.now)
     old = session.record
     open_items = [item for item in old.open_items if item != help_item]
     session.record = RequestRecord.model_validate(
@@ -555,10 +647,17 @@ def _choose_decision(turn: _Turn, option: str) -> None:
     )
     session.pending_decisions.pop(0)
     session.last_changed_fields = _changed_fields(old, session.record)
-    turn.audit("developer", "decision_recorded", {"question": pending.question, "choice": option})
+    turn.audit(
+        "developer",
+        "decision_recorded",
+        {"question": pending.question, "choice": choice, "custom": custom},
+    )
     turn.move_to(STATUS_CLARIFICATION)
     turn.say("assistant", "Noted as a confirmed decision.")
-    _advance(turn)
+    if not session.pending_decisions:
+        # A valid resting step in case the app stops before save 2; save 2 sets the real one.
+        session.step = "correction"
+    return True
 
 
 def _choose_checkpoint(turn: _Turn, option: str) -> None:
@@ -628,6 +727,7 @@ def _confirmed_message(request: Request, record: RequestRecord) -> str:
         f"Status: {display_status(request.status)}.",
         f"Title: {record.title}",
     ]
+    lines.append(f"Acceptance criteria: {len(record.acceptance_criteria)}")
     if record.decisions:
         lines.append("Decisions:")
         lines += [f"- {d.question} {d.choice}" for d in record.decisions]
@@ -671,9 +771,46 @@ def _turn(db_path: Path, request_id: str, base_revision: int, now: datetime) -> 
             raise UnderstandError(f"Request {request_id} does not exist.")
         if session.revision != base_revision:
             raise StaleRevisionError(STALE_MESSAGE)
-        turn = _Turn(conn=conn, request=request, session=session, now=now)
+        turn = _Turn(
+            conn=conn,
+            request=request,
+            session=session,
+            now=now,
+            visible_before=visible_fields(session),
+        )
         yield turn
+        _highlight_revealed(turn)
         save_session(conn, turn.session, base_revision, now)
+
+
+def visible_fields(session: UnderstandSession) -> list[str]:
+    """Which Summary fields the screen shows now (W5). Plain code, testable without Dash."""
+    shown = set(ALWAYS_VISIBLE)
+    if session.step in SHOW_ALL_STEPS:
+        shown |= {name for names in REVEALED_BY_QUESTION.values() for name in names}
+        shown |= set(REVEALED_BY_OPTIONAL)
+    else:
+        for number in session.record.answered_questions:
+            shown |= set(REVEALED_BY_QUESTION.get(number, ()))
+        if session.optional_done:
+            shown |= set(REVEALED_BY_OPTIONAL)
+    order = [
+        *ALWAYS_VISIBLE,
+        *(name for names in REVEALED_BY_QUESTION.values() for name in names),
+        *REVEALED_BY_OPTIONAL,
+    ]
+    return [name for name in order if name in shown]
+
+
+def _highlight_revealed(turn: _Turn) -> None:
+    """A field that became visible in this action is highlighted like a changed one, even if its
+    value was filled earlier (W5). A field with nothing in it is not."""
+    session = turn.session
+    for name in visible_fields(session):
+        if name in turn.visible_before or name in session.last_changed_fields:
+            continue
+        if getattr(session.record, name):
+            session.last_changed_fields = [*session.last_changed_fields, name]
 
 
 def _load_session(db_path: Path, request_id: str, base_revision: int) -> UnderstandSession:
@@ -703,7 +840,7 @@ def _wrong_step_message(session: UnderstandSession) -> str:
         "question": "Please answer the question first.",
         "optional": "Please type your constraints, exclusions, or references, or press Skip.",
         "correction": "Please type what should change first.",
-        "decision": "A decision is waiting. Please choose one of the options first.",
+        "decision": "A decision is waiting. Please choose an option or type your own answer.",
         "checkpoint": (
             f"Please choose one of the options: {PROCEED_OPTION}, {CORRECT_OPTION}, "
             f"or {HELP_OPTION}."

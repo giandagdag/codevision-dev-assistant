@@ -218,3 +218,31 @@ def test_rejected_log_keeps_the_raw_reply_with_the_think_block(
     run(StubClient(raw, raw), record, charter)
 
     assert "<think>secret thoughts</think>" in (tmp_path / "rejected.log").read_text("utf-8")
+
+
+# --- acceptance criteria through the interpreter (Phase 2D) ---
+
+
+def test_a_vague_then_is_retried_once_with_the_note_then_accepted(record, charter):
+    """2D-2."""
+    bad = stub_reply()
+    bad["acceptance_criteria"] = [
+        {"kind": "success", "given": "a workbook", "when": "it is uploaded", "then": "it works"}
+    ]
+    good = stub_reply()
+    good["acceptance_criteria"] = [
+        {
+            "kind": "success",
+            "given": "a workbook",
+            "when": "it is uploaded",
+            "then": "its content enters the ingestion flow",
+        }
+    ]
+    client = StubClient(bad, good)
+
+    result = run(client, record, charter)
+
+    assert result.ok and result.attempts == 2
+    note = "AC-1: the 'then' part must say something a person or a test can see"
+    assert note in client.prompts[1]
+    assert [c.id for c in result.record.acceptance_criteria] == ["AC-1"]

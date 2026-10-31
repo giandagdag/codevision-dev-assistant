@@ -7,6 +7,8 @@ from agents.da_understand_agent import FAILED_MESSAGE
 from agents.da_understand_flow import (
     CHECKPOINT_HELP_ITEM,
     CORRECT_OPTION,
+    CUSTOM_TOO_LONG,
+    DECISION_NOT_APPLIED,
     HELP_OPTION,
     PROCEED_OPTION,
     SENIOR_MESSAGE,
@@ -59,8 +61,10 @@ def answer(settings, view, text="My answer", client=None):
     return submit_answer(settings, view.request.request_id, text, view.revision, client=client)
 
 
-def choose(settings, view, option):
-    return choose_option(settings, view.request.request_id, option, view.revision)
+def choose(settings, view, option, client=None):
+    return choose_option(
+        settings, view.request.request_id, option, view.revision, client=client
+    )
 
 
 def to_decision(settings):
@@ -200,13 +204,115 @@ def test_material_ambiguity_is_asked_with_help_added(settings):
     assert view.progress_text == "Clarification required: 1 open item"
 
 
-def test_text_answer_is_refused_while_a_decision_is_waiting(settings):
+def decision_events(settings, view):
+    return [
+        event
+        for event in list_audit_events(settings.db_path, rid(view))
+        if event.event_type == "decision_recorded"
+    ]
+
+
+def test_typed_answer_is_saved_as_the_choice_and_the_ai_is_asked_once(settings):
+    """2D-6 (W3, D-C)."""
+    view = to_decision(settings)
+    client = StubClient(stub_reply({"out_of_scope": ["Hidden worksheets"]}))
+
+    view = answer(settings, view, "Only the first sheet", client=client)
+
+    assert [(d.question, d.choice) for d in view.record.decisions] == [
+        (HIDDEN_SHEETS, "Only the first sheet")
+    ]
+    (event,) = decision_events(settings, view)
+    assert event.details == {
+        "question": HIDDEN_SHEETS,
+        "choice": "Only the first sheet",
+        "custom": True,
+    }
+    assert len(client.prompts) == 1
+    assert HIDDEN_SHEETS in client.prompts[0] and "Only the first sheet" in client.prompts[0]
+    assert view.record.out_of_scope == ["Hidden worksheets"]
+    assert view.request.status == "CLARIFICATION_IN_PROGRESS"
+    assert view.prompt == "Optional: constraints, exclusions, or references?"
+    assert {"decisions", "out_of_scope"} <= set(view.changed_fields)
+
+
+def test_a_button_decision_also_asks_the_ai_once_and_is_not_custom(settings):
+    view = to_decision(settings)
+    client = StubClient(stub_reply())
+
+    view = choose(settings, view, VISIBLE_ONLY, client=client)
+
+    assert len(client.prompts) == 1
+    assert decision_events(settings, view)[0].details["custom"] is False
+
+
+def test_typing_the_words_of_a_button_counts_as_that_button(settings):
+    view = answer(settings, to_decision(settings), VISIBLE_ONLY, client=StubClient(stub_reply()))
+
+    assert decision_events(settings, view)[0].details["custom"] is False
+
+
+def test_a_typed_answer_over_300_characters_is_refused_and_nothing_is_saved(settings):
+    """2D-7."""
+    view = to_decision(settings)
+    client = StubClient()
+
+    with pytest.raises(UnderstandError) as refused:
+        answer(settings, view, "x" * 301, client=client)
+
+    assert str(refused.value) == CUSTOM_TOO_LONG
+    assert client.prompts == []
+    after = get_understand_view(settings, rid(view))
+    assert after.messages == view.messages
+    assert after.record.decisions == [] and after.revision == view.revision
+
+
+def test_a_typed_decision_goes_through_the_secret_and_empty_checks(settings):
     view = to_decision(settings)
 
-    with pytest.raises(UnderstandError, match="A decision is waiting"):
-        answer(settings, view, "Just extract everything")
+    with pytest.raises(UnderstandError, match="API key"):
+        answer(settings, view, f"Use {FAKE_KEY}")
+    with pytest.raises(UnderstandError, match="type a message"):
+        answer(settings, view, "   ")
 
-    assert get_understand_view(settings, rid(view)).messages == view.messages
+    assert get_understand_view(settings, rid(view)).revision == view.revision
+
+
+def test_help_does_not_ask_the_ai(settings):
+    client = StubClient()
+
+    view = choose(settings, to_decision(settings), HELP_OPTION, client=client)
+
+    assert client.prompts == []
+    assert view.record.decisions == []
+
+
+def test_when_the_ai_fails_the_decision_is_kept_and_the_note_is_shown(settings):
+    """2D-8."""
+    view = to_decision(settings)
+
+    view = answer(settings, view, "Only the first sheet", client=StubClient("nope", "nope"))
+
+    assert view.record.decisions[0].choice == "Only the first sheet"
+    assert DECISION_NOT_APPLIED in [m.text for m in view.messages]
+    assert view.prompt == "Optional: constraints, exclusions, or references?"
+    assert "interpreter_failed" in event_types(settings, view)
+
+
+def test_decision_text_box_is_open_only_at_a_decision(settings):
+    view = to_decision(settings)
+    assert view.custom_choice_allowed is True
+    assert choose(settings, view, VISIBLE_ONLY).custom_choice_allowed is False
+
+
+def test_a_new_ambiguity_from_a_decision_reply_is_queued(settings):
+    view = to_decision(settings)
+    again = {"text": "Which sheet is first?", "material": True, "options": ["A", "B"]}
+
+    view = choose(settings, view, VISIBLE_ONLY, client=StubClient(stub_reply({}, [again])))
+
+    assert view.request.status == "DECISION_REQUIRED"
+    assert view.prompt == "Which sheet is first?"
 
 
 def test_choosing_records_the_decision_and_moves_on(settings):
@@ -305,6 +411,108 @@ def test_senior_message_shows_once_after_the_last_pending_decision(settings):
     assert view.messages[-1].text == SENIOR_MESSAGE
 
 
+# --- the Summary fills step by step (W5) ---
+
+ALWAYS = ["assumptions", "decisions", "open_items"]
+FILLED_AT_OPENING = stub_reply(
+    {
+        "objective": "Accept Excel",
+        "reason": "Users ask for it",
+        "current_behaviour": "Only PDF and DOCX",
+        "expected_behaviour": "Excel is ingested",
+        "functional_flow": ["Upload", "Extract"],
+        "in_scope": ["Excel upload"],
+        "inputs": "xlsx",
+        "outputs": "ingested text",
+        "out_of_scope": ["Macros"],
+        "constraints": ["None"],
+        "references": ["PDF processing"],
+    }
+)
+
+
+def test_after_the_opening_message_only_the_always_fields_are_visible(settings):
+    """2D-11: the AI filled everything, the screen shows nothing yet."""
+    view = start(settings, client=StubClient(FILLED_AT_OPENING))
+
+    assert view.record.objective == "Accept Excel"
+    assert view.visible_fields == ALWAYS
+
+
+def test_question_1_shows_and_highlights_objective_and_reason(settings):
+    """2D-12: the values were filled earlier, but they are revealed now."""
+    view = start(settings, client=StubClient(FILLED_AT_OPENING))
+
+    view = answer(settings, view, client=StubClient(stub_reply()))
+
+    assert view.visible_fields == ["assumptions", "decisions", "open_items", "objective", "reason"]
+    assert "current_behaviour" not in view.visible_fields
+    assert {"objective", "reason"} <= set(view.changed_fields)
+    assert "current_behaviour" not in view.changed_fields
+
+
+def test_each_question_reveals_its_own_fields(settings):
+    view = start(settings)
+    seen = []
+    for _ in range(4):
+        view = answer(settings, view)
+        seen.append(set(view.visible_fields) - set(ALWAYS))
+
+    assert seen[0] == {"objective", "reason"}
+    assert seen[1] - seen[0] == {"current_behaviour"}
+    assert seen[2] - seen[1] == {"expected_behaviour", "functional_flow", "in_scope"}
+    assert seen[3] - seen[2] == {"inputs", "outputs", "acceptance_criteria", "out_of_scope"}
+
+
+def test_the_optional_step_reveals_constraints_and_references(settings):
+    view = choose(settings, to_decision(settings), VISIBLE_ONLY)
+    assert "references" not in view.visible_fields
+
+    skipped = skip_optional(settings, rid(view), view.revision)
+
+    assert {"constraints", "references"} <= set(skipped.visible_fields)
+
+
+def test_every_field_is_visible_at_the_gate_checkpoint_and_after_confirmation(settings):
+    checkpoint = to_checkpoint(settings)
+    assert len(checkpoint.visible_fields) == 15  # 3 always + 12 revealed by questions and optional
+    done = choose(settings, checkpoint, PROCEED_OPTION)
+    assert done.visible_fields == checkpoint.visible_fields
+
+
+def test_a_reply_with_an_unrevealed_field_still_fills_the_record(settings):
+    view = answer(settings, start(settings), client=StubClient(FILLED_AT_OPENING))
+
+    assert view.record.inputs == "xlsx"
+    assert "inputs" not in view.visible_fields
+
+
+# --- acceptance criteria in a full run (2D-15) ---
+
+
+def test_full_fake_run_ends_with_seven_criteria(settings):
+    view = choose(settings, to_checkpoint(settings), PROCEED_OPTION)
+
+    assert view.request.status == "CONFIRMED_FOR_DISCOVERY"
+    criteria = get_confirmed_record(settings.db_path, rid(view)).acceptance_criteria
+    assert [c.id for c in criteria] == [f"AC-{n}" for n in range(1, 8)]
+    assert criteria[2].given == "a workbook with hidden sheets"
+    assert {c.kind for c in criteria} == {"success", "failure"}
+    assert view.record.out_of_scope == ["Macros and formulas in the workbook", "Hidden worksheets"]
+    assert "Acceptance criteria: 7" in last_message(view)
+
+
+def test_question_4_carries_the_app_hint(settings):
+    view = start(settings)
+    for _ in range(3):
+        view = answer(settings, view)
+
+    assert (
+        "Each case you name becomes an acceptance criterion, and every criterion gets tested."
+        in last_message(view)
+    )
+
+
 # --- minor ambiguity (R4) ---
 
 
@@ -385,7 +593,7 @@ def test_gate_failure_lists_every_missing_item(settings):
     assert view.prompt == "What should change?"
     message = last_message(view)
     assert message.startswith("Before you can confirm, these items need attention:")
-    for missing in ("Title is empty.", "Outputs is empty.", "At least 1 failure scenario"):
+    for missing in ("Title is empty.", "Outputs is empty.", "At least 1 failure criterion"):
         assert missing in message
 
 
