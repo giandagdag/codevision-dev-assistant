@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CodeVision Developer Assistant: Concept Demo</title>
+<title>CodeVision Developer Assistant: Concept Demo (revised 31 Oct 2026)</title>
 <!-- Self-contained: no internet, fonts, or external files needed. Open in Edge or Chrome. -->
 <style>
 :root{
@@ -300,6 +300,62 @@ pre.src-code{margin:0;padding:10px 0;font-family:var(--mono);font-size:12.6px;li
 .lanes.one{grid-template-columns:1fr 1fr}
 .ws .code{grid-template-columns:1.9fr 1fr}
 
+
+/* ---------- v3: redesign 31 Oct 2026 ---------- */
+.entry.three{grid-template-columns:repeat(3,1fr);max-width:1080px}
+.entry.focus-c .c{border-color:var(--blue);box-shadow:0 0 0 4px #D9E6FC}
+.wschip{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;background:var(--white);border:1px solid var(--line);border-radius:999px;padding:3px 4px 3px 10px}
+.wschip .mono{color:var(--ink)}
+.wschip .rs{border:1px solid var(--blue);color:var(--blue-d);background:var(--blue-l);border-radius:999px;padding:2px 10px;font-weight:600;font-size:12px}
+.wschip.off{color:var(--muted)}
+.steps{list-style:none;margin:0;padding:0}
+.steps li{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line)}
+.steps li:last-child{border-bottom:0}
+.steps .si{width:26px;text-align:center;flex:0 0 26px}
+.steps .grow{flex:1}
+.steps .tm{font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap}
+.spin{display:inline-block;animation:spin 1.2s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.ac{display:inline-block;font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--blue-d);background:var(--blue-l);border-radius:5px;padding:1px 6px;margin-right:6px}
+.gwt{font-size:13.5px}
+.gwt b{color:var(--navy);font-weight:600}
+.mine{display:inline-block;font-size:11px;font-weight:700;color:var(--violet);background:var(--violet-l);border-radius:5px;padding:1px 6px;margin-left:6px}
+.frozen{display:inline-block;font-size:11px;font-weight:700;color:#5A6273;background:#EEF0F4;border-radius:5px;padding:1px 6px;margin-left:6px}
+.layers{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.layer{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--white)}
+.layer .lt{font-size:12px;color:var(--muted);font-weight:600}
+.layer b{display:block;color:var(--navy);margin:2px 0}
+.layer.ok{border-color:#BFE3CB;background:var(--green-l)}
+.layer.bad{border-color:#F4C7C2;background:var(--red-l)}
+.layer.wait{border-style:dashed;color:var(--muted)}
+.label-big{font-size:20px;font-weight:700}
+.picker{border:1px solid #C9CFD9;border-radius:10px;background:#fff;box-shadow:0 8px 24px rgba(20,30,60,.12);overflow:hidden;margin-top:10px}
+.picker .pt2{background:#F3F5F8;padding:8px 12px;font-size:13px;font-weight:600;border-bottom:1px solid var(--line)}
+.picker .pb{padding:10px 12px;font-family:var(--mono);font-size:13px;line-height:1.7}
+.picker .pf{display:flex;justify-content:flex-end;gap:8px;padding:8px 12px;border-top:1px solid var(--line);background:#FAFBFC}
+.sel-row{background:var(--blue-l);border-radius:4px;padding:0 6px}
+.vtag{display:inline-block;font-family:var(--mono);font-size:12px;font-weight:700;border-radius:5px;padding:1px 8px;margin-right:6px;background:#EEF0F4;color:#5A6273}
+.vtag.cur{background:var(--blue);color:#fff}
+.adm{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.setrow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)}
+.setrow:last-child{border-bottom:0}
+.setrow .v{font-family:var(--mono);font-weight:700;color:var(--navy);background:var(--canvas);border:1px solid var(--line);border-radius:6px;padding:3px 10px;white-space:nowrap}
+.tgl{display:inline-block;width:34px;height:20px;border-radius:999px;background:#C8CDD6;position:relative;flex:0 0 34px}
+.tgl::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff}
+.tgl.on{background:var(--green)}
+.tgl.on::after{left:16px}
+.zonecard{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:10px}
+.zonecard:last-child{margin-bottom:0}
+.flow6{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
+.flow6 .card{padding:14px;text-align:left}
+.flow6 .card b{display:block;color:var(--navy);margin:4px 0 2px}
+.who{display:inline-block;font-size:11.5px;font-weight:700;border-radius:5px;padding:1px 7px;margin-top:6px}
+.who.ai{background:var(--blue-l);color:var(--blue-d)}
+.who.dev{background:var(--violet-l);color:var(--violet)}
+.who.sys{background:#EEF0F4;color:#5A6273}
+.qa{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:1100px){.entry.three,.layers,.adm,.flow6,.qa{grid-template-columns:1fr}}
+
 </style>
 </head>
 <body>
@@ -341,56 +397,83 @@ pre.src-code{margin:0;padding:10px 0;font-family:var(--mono);font-size:12.6px;li
 /* ================= Helpers ================= */
 const REQ="CVDA-2026-0001";
 const MARK='<svg viewBox="0 0 64 48" aria-hidden="true"><path d="M14 10L4 24l10 14" fill="none" stroke="#2A6BE0" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M50 10l10 14-10 14" fill="none" stroke="#2A6BE0" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="31" cy="21" r="12" fill="none" stroke="#1F5FD0" stroke-width="4"/><path d="M39.5 29.5L46 37" stroke="#1F5FD0" stroke-width="5" stroke-linecap="round"/><rect x="25" y="21" width="3" height="6" fill="#1F5FD0"/><rect x="29.5" y="17" width="3" height="10" fill="#1F5FD0"/><rect x="34" y="14" width="3" height="13" fill="#1F5FD0"/></svg>';
-const PILL={"DRAFT":"grey","CLARIFICATION IN PROGRESS":"blue","DECISION REQUIRED":"amber","READY FOR CONFIRMATION":"violet","CONFIRMED FOR DISCOVERY":"green","SEARCHING":"blue","SIMILAR IMPLEMENTATION FOUND":"green","READY FOR CODE GENERATION":"green","GENERATING":"blue","ACCEPTABLE FOR DEVELOPER COMPLETION":"green","WITH DEVELOPER":"violet","REVIEWING":"blue","CONDITIONALLY ACCEPTABLE":"amber","REVISION REQUIRED":"red","READY FOR HUMAN REVIEW":"green","READY FOR BITBUCKET SUBMISSION":"green","POLICY CHECK PASSED":"green","INTENT CONFIRMED":"green"};
+const PILL={"DRAFT":"grey","CLARIFICATION IN PROGRESS":"blue","DECISION REQUIRED":"amber","READY FOR CONFIRMATION":"violet","CONFIRMED FOR DISCOVERY":"green","SEARCHING":"blue","SIMILAR IMPLEMENTATION FOUND":"green","APPROACH PROPOSED":"violet","READY TO BUILD":"green","BUILDING":"blue","TESTING":"blue","TESTER REVIEW":"blue","READY FOR REVIEW":"green","READY, WITH WARNINGS":"amber","NOT PASSING":"red","REVISION IN PROGRESS":"violet","ESCALATED":"red","HANDED OFF":"green","PROGRAM CONFIRMED":"green","SAFETY NET READY":"green","CRITERIA CONFIRMED":"green"};
 const pill=t=>`<span class="pill p-${PILL[t]||"grey"}">${t}</span>`;
 const esc=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const ENV='<span class="env">🏷️ Envisioned</span>';
 const ILLUS='<div class="illus">Illustrative data. File paths, commit IDs, rule IDs, and timings are examples only.</div>';
 const file=(ic,n)=>`<span class="filechip">${ic} ${n}</span>`;
 
-/* ================= Stepper ================= */
-const PHASES=[{e:"💬",n:"Understand"},{e:"🔍",n:"Discover"},{e:"🚦",n:"Readiness Gate"},{e:"⚙️",n:"Generate + Check"},{e:"🛡️",n:"Preliminary Review"},{e:"🚀",n:"Handoff"}];
-function stepperMain(cur){
-  return PHASES.map((p,i)=>{const n=i+1,cls=n<cur?"done":(n===cur?"cur":"");
+/* ================= Steppers ================= */
+const PHASES=[{e:"💬",n:"Understand"},{e:"🔍",n:"Discover"},{e:"🧭",n:"Approach"},{e:"🧪",n:"Build & Test"},{e:"👀",n:"Your review"},{e:"🚀",n:"Handoff"}];
+function stepperMain(cur,tag){
+  return (tag?`<span class="path-tag">${tag}</span>`:"")+PHASES.map((p,i)=>{const n=i+1,cls=n<cur?"done":(n===cur?"cur":"");
     return `${i?'<span class="arrow">▶</span>':""}<div class="st ${cls}"><span class="dot">${n<cur?"✅":p.e}</span><span><span class="n">${n}</span> ${p.n}</span></div>`;}).join("");
 }
-function stepperP3(cur){
-  const s=[{e:"📝",n:"Quick intent"},{e:"🔍",n:"Quick discovery"},{e:"🛡️",n:"5 Preliminary Review"},{e:"🚀",n:"6 Handoff"}];
-  return '<span class="path-tag">Path 3: Review my code</span>'+s.map((p,i)=>{const n=i+1,cls=n<cur?"done":(n===cur?"cur":"");
+function stepperRev(cur){
+  const s=[{e:"📝",n:"Short understand"},{e:"🔍",n:"Discover"},{e:"🧪",n:"Test & review"},{e:"🚀",n:"Handoff"}];
+  return '<span class="path-tag">Review my code</span>'+s.map((p,i)=>{const n=i+1,cls=n<cur?"done":(n===cur?"cur":"");
     return `${i?'<span class="arrow">▶</span>':""}<div class="st ${cls}"><span class="dot">${n<cur?"✅":p.e}</span><span>${p.n}</span></div>`;}).join("");
 }
 
-/* ================= Cover / Home / Close ================= */
+/* ================= Pages ================= */
 function cover(){
   return `<div class="cover">${MARK}<div class="wm">CODEVISION</div><div class="tagl">MODERNIZING LEGACY CODE</div>
     <h2>Developer Assistant</h2>
-    <p>A governed, chat-based assistant that helps developers, including rotating interns and juniors, understand a change, reuse what already exists, start from standards-aligned Python, and get early review feedback.</p>
-    <p class="small" style="margin-top:22px">Concept demo. Press <b>Next</b> or the right arrow key to begin.</p></div>`;
+    <p>The developer owns the requirement. The AI writes the code. Independent tests prove it does what was agreed. Humans still approve every merge.</p>
+    <p class="small" style="margin-top:22px">Concept demo, revised after the director review. Press <b>Next</b> or the right arrow key to begin.</p></div>`;
+}
+function howItWorks(){
+  const S=[["💬","Understand","Agree what is needed, with testable criteria","dev","Developer"],["🔍","Discover","Find what already exists, and who is affected","ai","AI + search"],["🧭","Approach","Agree how: file plan, decisions, test plan","dev","Developer approves"],["🧪","Build & Test","AI writes 100% of the code, tests must pass","ai","AI + checks"],["👀","Your review","Run it, edit it, refine the requirement","dev","Developer"],["🚀","Handoff","PR summary, normal Bitbucket review","sys","Human reviewer"]];
+  return `<div class="shead"><div><h1>How it works now</h1><p class="sub">Six steps. The developer's job moves from writing code to owning the requirement and judging the result.</p></div></div>
+  <div class="flow6">${S.map((s,i)=>`<div class="card appear d${i+1}"><span style="font-size:22px">${s[0]}</span><b>${i+1}. ${s[1]}</b><span class="small muted">${s[2]}</span><br><span class="who ${s[3]}">${s[4]}</span></div>`).join("")}</div>
+  <div class="grid3" style="margin-top:16px">
+    <div class="card pad appear d7"><div class="h3">🧪 Three test layers</div><ul class="clean small"><li><b>A. Does it run?</b> Syntax, imports, rules. Plain code</li><li><b>B. Does it behave?</b> Unit tests run in a sandbox</li><li><b>C. Does it match what was agreed?</b> Independent Tester agent</li></ul></div>
+    <div class="card pad appear d8"><div class="h3">📁 Workspace on your laptop</div><p class="small" style="margin:0">Code is written straight into the developer's own CodeVision folder. No download, no upload. Edits are picked up with one <b>Re-scan</b>.</p></div>
+    <div class="card pad appear d9"><div class="h3">🔒 What never changes</div><ul class="clean small"><li>The assistant never commits, merges or approves</li><li>Every decision is in the audit trail</li><li>Bitbucket review by a human stays</li></ul></div>
+  </div>${ILLUS}`;
 }
 function home(focus){
-  return `<div class="shead"><div><h1>Developer Assistant</h1><p class="sub">Start a new change, or get your own code reviewed before it goes to Bitbucket.</p></div></div>
+  return `<div class="shead"><div><h1>Developer Assistant</h1><p class="sub">Build something new, change an existing program, or get your own code tested and reviewed.</p></div></div>
   <div class="hero">${MARK}<h2>What would you like to work on?</h2><p class="muted" style="margin:0">Everything happens in one chat. Results appear in the side panel. Nothing is committed for you.</p></div>
-  <div class="entry ${focus?"focus-"+focus:""}">
-    <div class="card a"><div class="ic">💬</div><h3>Start a change request</h3><p class="muted" style="margin:0">Describe what you need in plain words. I'll clarify it, check what already exists, and can generate starter code for you to download.</p></div>
-    <div class="card b"><div class="ic">🛡️</div><h3>Review my code</h3><p class="muted" style="margin:0">Already written it? Upload your code for a preliminary review against CodeVision standards.</p></div>
+  <div class="entry three ${focus?"focus-"+focus:""}">
+    <div class="card a"><div class="ic">➕</div><h3>Build something new</h3><p class="muted" style="margin:0">Describe it in plain words. I'll agree the requirement with you, write the code, and prove it with tests.</p></div>
+    <div class="card b"><div class="ic">🔧</div><h3>Enhance or fix a program</h3><p class="muted" style="margin:0">Name the CodeVision program, or describe it. I'll find it, protect what works today, and change only what you agree.</p></div>
+    <div class="card c"><div class="ic">🛡️</div><h3>Review my code</h3><p class="muted" style="margin:0">Wrote it yourself? Pick it from your workspace. I'll test it against your criteria and review it.</p></div>
   </div>
   <div class="grid2">
-    <div class="card pad"><div class="h3">📌 Guided templates <span class="muted small" style="font-weight:400">(set by Admin)</span></div>
-      <div class="chips"><span class="chip">📄 Add a new file type</span><span class="chip">🐞 Fix a defect</span><span class="chip">✨ Enhance an existing feature</span><span class="chip">⚙️ Change configuration</span></div></div>
+    <div class="card pad"><div class="h3">📁 Your workspace</div><p class="small muted" style="margin:0 0 10px">Your local CodeVision folder. Chosen once, remembered by your browser.</p><span class="wschip"><span>📁</span><span class="mono">C:\\Dev\\codevision</span><span>✅ connected</span><span class="rs">Change</span></span></div>
     <div class="card pad"><div class="h3">🕘 My recent requests</div>
       <table class="t"><tr><th>Request</th><th>Title</th><th>Status</th></tr>
-      <tr><td class="mono">CVDA-2026-0000</td><td>Add page numbers to Create Docs export</td><td>${pill("DECISION REQUIRED")}</td></tr>
-      <tr><td class="mono">CVDA-2025-0142</td><td>Show source file name in Chat answers</td><td>${pill("CONFIRMED FOR DISCOVERY")}</td></tr></table></div>
+      <tr><td class="mono">CVDA-2026-0000</td><td>Add page numbers to Create Docs export</td><td>${pill("READY FOR REVIEW")}</td></tr>
+      <tr><td class="mono">CVDA-2025-0142</td><td>Show source file name in Chat answers</td><td>${pill("HANDED OFF")}</td></tr></table></div>
+  </div>`;
+}
+function directorQA(){
+  return `<div class="shead"><div><h1>Questions from the review</h1><p class="sub">Two questions the director asked, answered in plain words.</p></div></div>
+  <div class="qa">
+    <div class="card pad"><div class="h3">🧠 Does it re-read the whole chat, like a chatbot?</div>
+      <p style="margin:0 0 8px"><b>No.</b> Each AI call sends four things only:</p>
+      <ul class="clean small"><li>📌 The project charter (short)</li><li>📋 <b>The current request record</b> (the agreed summary)</li><li>❓ The one question being asked</li><li>💬 The developer's answer</li></ul>
+      <p class="small" style="margin:10px 0 0">The record <b>is</b> the memory. The prompt stays the same size on turn 3 or turn 30. Every turn is saved on the server, so a developer can log off and reopen the request tomorrow at the same step from <b>My recent requests</b>.</p>
+      <p class="small muted" style="margin:8px 0 0">Context window: the limit set on the bank's AI server for each model. It matters most when code files are sent, so code is sent one file and one function at a time.</p></div>
+    <div class="card pad"><div class="h3">🧪 How do we know the AI's code even runs?</div>
+      <p style="margin:0 0 8px">It is tested before anyone sees it, the same way we build software with AI ourselves.</p>
+      <table class="t"><tr><th>Layer</th><th>Checks</th><th>By</th></tr>
+      <tr><td><b>A</b></td><td>Syntax, imports, coding rules</td><td class="small">Plain code</td></tr>
+      <tr><td><b>B</b></td><td>Unit tests from the agreed test plan</td><td class="small">Sandbox run</td></tr>
+      <tr><td><b>C</b></td><td>Every requirement covered, nothing extra built, approach followed</td><td class="small">Independent Tester</td></tr></table>
+      <p class="small muted" style="margin:10px 0 0">The Tester writes the tests from the requirement, <b>without seeing the code</b>, so it cannot share the generator's blind spots. The generator is never allowed to edit a test.</p></div>
   </div>`;
 }
 function closing(){
-  const pr=[["💬","Understand","before it searches"],["🔍","Search","before it generates"],["🛡️","Review","before it presents"],["👤","Humans","stay accountable before code is accepted"]];
+  const pr=[["💬","Understand","before it searches"],["🧭","Agree","before it builds"],["🧪","Test","before it shows"],["👤","Humans","own the requirement and the merge"]];
   return `<div class="cover" style="min-height:auto;padding-top:16px">${MARK}<h2 style="margin-top:12px">One control principle</h2>
     <div class="principle" style="margin-top:14px">${pr.map(p=>`<div class="card"><span style="font-size:22px">${p[0]}</span><b>${p[1]}</b><span class="muted small">${p[2]}</span></div>`).join("")}</div>
-    <div class="card pad paths"><div class="h3">Three ways in, one standard of review</div>
-      <div class="pathrow"><b>Path 1: Full</b><span class="seq">💬 🔍 🚦 ⚙️ 🛡️ 🚀<small>Understand, discover, gate, generate, review, handoff</small></span></div>
-      <div class="pathrow"><b>Path 2: Self-write</b><span class="seq">💬 🔍 🚦 ✍️ 🛡️ 🚀<small>Same, but the developer writes the code</small></span></div>
-      <div class="pathrow"><b>Path 3: Review only</b><span class="seq">📝 🔍 🛡️ 🚀<small>Quick intent and quick discovery, then review</small></span></div>
+    <div class="card pad paths"><div class="h3">Three ways in, one standard of testing</div>
+      <div class="pathrow"><b>Build something new</b><span class="seq">💬 🔍 🧭 🧪 👀 🚀<small>The AI writes 100%, the developer owns the requirement</small></span></div>
+      <div class="pathrow"><b>Enhance or fix</b><span class="seq">🔎 💬 🔍 🛟 🧭 🧪 👀 🚀<small>Find the program, protect today's behaviour, then change</small></span></div>
+      <div class="pathrow"><b>Review my code</b><span class="seq">📝 🔍 🧪 🚀<small>Short criteria, then the same tests and review</small></span></div>
     </div></div>`;
 }
 
@@ -405,55 +488,73 @@ const MAIN=[
 /*4*/{w:"dev",h:"The upload screen only accepts PDF and DOCX. Excel files get rejected during file-type validation."},
 /*5*/{w:"ai",h:`Got it.${Q(3,"What should happen after the change?")}Describe the end-to-end behaviour you expect.`},
 /*6*/{w:"dev",h:"CodeVision should validate the Excel file, extract the content from the worksheets, and pass it into the existing ingestion process."},
-/*7*/{w:"ai",h:`${Q(4,"What are the inputs, outputs, and important success or failure cases?")}Think about what could go wrong, not only the happy path.`},
+/*7*/{w:"ai",h:`${Q(4,"What are the inputs, outputs, and important success or failure cases?")}Each case you name becomes an acceptance criterion, and every criterion gets tested.`},
 /*8*/{w:"dev",h:".xlsx workbooks in. Output is the normal ingestion format. It should handle workbooks with several sheets, and reject empty, corrupted, or password-protected files."},
-/*9*/{w:"ai",h:`Thanks, all four answered.<div class="decide"><b>⚠️ One decision needed</b><br>You said "extract the content from the worksheets". Workbooks can contain hidden sheets. This changes what gets extracted, so I won't assume it. Please choose below.</div>`},
+/*9*/{w:"ai",h:`Thanks, all four answered.<div class="decide"><b>⚠️ One decision needed</b><br>You said "extract the content from the worksheets". Workbooks can contain hidden sheets. This changes what gets extracted and tested, so I won't assume it. Please choose below.</div>`},
 /*10*/{w:"dev",h:"Visible worksheets only."},
-/*11*/{w:"ai",h:`Noted as a confirmed decision.<span class="q">Optional: constraints, exclusions, or references?</span>If there's an existing feature I should use as a reference, tell me. Not sure? Skip it.`},
+/*11*/{w:"ai",h:`Noted as a confirmed decision, and added as criterion AC-3.<span class="q">Optional: constraints, exclusions, or references?</span>If there's an existing feature I should use as a reference, tell me. Not sure? Skip it.`},
 /*12*/{w:"dev",h:"Use the existing PDF processing as a reference."},
-/*13*/{w:"ai",h:"Here's my understanding. Please check the Summary tab, then choose how to continue."},
+/*13*/{w:"ai",h:"Here's my understanding, including 7 acceptance criteria. Please check the Summary tab, then choose how to continue."},
 /*14*/{w:"dev",h:"✅ Proceed with this understanding"},
-/*15*/{w:"ai",h:`Request <b>${REQ}</b> is saved as version 1. ${pill("CONFIRMED FOR DISCOVERY")}
+/*15*/{w:"ai",h:`Request <b>${REQ}</b> is saved as <b>version 1</b>. ${pill("CONFIRMED FOR DISCOVERY")}
 <div class="yaml"><span class="k">request_id:</span> ${REQ}
 <span class="k">title:</span> Add Excel document processing
-<span class="k">status:</span> confirmed_for_discovery
 <span class="k">version:</span> 1
+<span class="k">acceptance_criteria:</span> 7
 <span class="k">decisions:</span>
   - Process visible worksheets only
 <span class="k">references:</span>
   - Existing PDF-processing capability</div>`},
 /*16*/{w:"dev",h:"🔍 Proceed to Discovery"},
-/*17*/DIV("🔍 Phase 2: Discover"),
+/*17*/DIV("🔍 Discover"),
 /*18*/{w:"ai",h:"Searching approved CodeVision sources using your confirmed request. Secrets, environment files, deprecated, and restricted content are never retrieved."},
 /*19*/{w:"ai",h:"Search complete. File-type validation <b>already exists</b>, and the PDF processor is a close match to what you need. Details are in the Discovery tab. Do these findings look right?"},
 /*20*/{w:"dev",h:"✅ Findings look right"},
-/*21*/DIV("🚦 Phase 3: Readiness Gate"),
-/*22*/{w:"ai",h:`All 4 readiness gates passed. ${pill("READY FOR CODE GENERATION")}<br>How do you want to continue?`},
-/*23*/{w:"dev",h:"⚙️ Generate starter code"},
-/*24*/DIV("⚙️ Phase 4: Generate + Check"),
-/*25*/{w:"ai",h:"Generating starter code with Qwen. A separate Checker reviews it before you see anything."},
-/*26*/{w:"ai",h:"Attempt 1 had 2 findings, so it went back for a rebuild. Attempt 2 cleared all blocking checks."},
-/*27*/{w:"ai",h:`Your starter code is ready. Download it, complete the marked areas in your own IDE, then upload your finished code here.
-<div class="dlcard"><div>${file("🐍","excel_processor.py")}${file("📄",REQ+"_context.md")}</div><div class="muted small" style="margin:6px 0 8px">The context sheet has the confirmed request, what you need to complete, references, and assumptions.</div><span class="btn primary" style="display:inline-block">⬇️ Download starter code (.zip)</span></div>`},
-/*28*/{w:"dev",h:`${file("📎","excel_processor.py")}<div style="margin-top:6px">Done. Here's my completed code (Round 1).</div>`},
-/*29*/DIV("🛡️ Phase 5: Preliminary Review"),
-/*30*/{w:"ai",h:`Received and linked to ${REQ} v1. The Code tab now shows what you changed compared with the starter code. Reviewing Round 1…`},
-/*31*/{w:"ai",h:`Round 1 result: ${pill("CONDITIONALLY ACCEPTABLE")}<br><b>1 blocking finding:</b> the file-size limit is hardcoded (CV-STD-014). There are also 2 important findings. How do you want to handle the blocking one?`},
-/*32*/{w:"dev",h:"💡 Suggest a fix"},
-/*33*/{w:"ai",h:"Here's a suggested fix in the Review tab. <b>I won't change your code.</b> Apply it in your IDE, along with the 2 important findings, then upload Round 2. I'll re-run the full review, not only the changed lines."},
-/*34*/{w:"dev",h:`${file("📎","excel_processor.py")}<div style="margin-top:6px">Fixed. Here's Round 2.</div>`},
-/*35*/{w:"ai",h:`Round 2 result: <b>0 blocking findings.</b> All 3 earlier findings are resolved and nothing new was found. ${pill("READY FOR HUMAN REVIEW")}`},
-/*36*/{w:"dev",h:"🚀 Prepare handoff"},
-/*37*/DIV("🚀 Phase 6: Handoff"),
-/*38*/{w:"ai",h:"Your pull-request summary and audit trail are in the Audit tab. Submit through the normal Bitbucket process. <b>I never commit, merge, or approve.</b>"}
+/*21*/DIV("🧭 Approach"),
+/*22*/{w:"ai",h:"Here's how I propose to build it: 2 code files and 1 test file, reusing the existing validator. One design choice needs you. See the Approach tab."},
+/*23*/{w:"dev",h:"Add Excel to the existing upload screen"},
+/*24*/{w:"ai",h:"Noted. The independent Tester has now written the <b>test plan</b> from your 7 criteria, in plain language. It never saw any code. Is anything missing? You can add your own cases."},
+/*25*/{w:"dev",h:"Add a case: a workbook where every visible sheet is empty should be rejected as empty, not ingested."},
+/*26*/{w:"ai",h:`Added as test T-6, marked as yours. 9 test cases in total. Do you accept the test plan?`},
+/*27*/{w:"dev",h:"✅ Accept test plan"},
+/*28*/{w:"ai",h:`All 4 gates passed. ${pill("READY TO BUILD")}<br>Where should I put the code? Choose your local CodeVision folder once. Your browser asks you to allow it.<div class="picker"><div class="pt2">📁 Choose workspace folder</div><div class="pb">C:\\Dev\\<br><span class="sel-row">📂 codevision</span><br>📂 sandbox</div><div class="pf"><span class="btn ghost">Cancel</span><span class="btn primary">Select folder</span></div></div>`},
+/*29*/{w:"dev",h:"📁 C:\\Dev\\codevision, ✅ Allowed"},
+/*30*/DIV("🧪 Build & Test"),
+/*31*/{w:"ai",h:"Building. The Tester turned the plan into 9 tests, now <b>frozen</b>. Qwen is writing the code one file at a time. This takes a few minutes. You can leave this page; I'll keep going."},
+/*32*/{w:"ai",h:"Round 1: the code runs, but <b>2 of 9 tests failed</b> (T-6 and T-8). The failure report went back to Qwen, which is fixing only the failing file."},
+/*33*/{w:"ai",h:`Round 2: <b>9 of 9 tests pass.</b> The independent Tester's review is in the Tests tab. ${pill("READY, WITH WARNINGS")}<br>1 Should fix: the full file path is written to the log. How do you want to handle it?`},
+/*34*/{w:"dev",h:"🔧 Fix it"},
+/*35*/{w:"ai",h:`Fixed in one round, all tests still pass. ${pill("READY FOR REVIEW")}<br>3 files are now in your workspace, including the tests so you can run them yourself. Take a look, run the app, edit if you like. Re-scan when you change something, or tell me what to refine.`},
+/*36*/DIV("👀 Your review"),
+/*37*/{w:"dev",h:"I ran it locally with real-sized files. We forgot: workbooks over 10 MB should be rejected too. Also, I reworded one log message myself."},
+/*38*/{w:"ai",h:"That sounds like a <b>missing requirement</b>, not a bug: no criterion mentions file size. Which lane is it?"},
+/*39*/{w:"dev",h:"📝 Requirement change"},
+/*40*/{w:"ai",h:"Revision mode. I'm starting from version 1 and asking only about the change. Should the 10 MB limit be fixed, or a setting the team can change later?"},
+/*41*/{w:"dev",h:"A setting, default 10 MB."},
+/*42*/{w:"ai",h:`Saved as <b>version 2</b> of ${REQ}: 1 criterion added (AC-8), nothing else changed. The diff is in the Summary tab.<br>⚠️ You have <b>unscanned changes</b> in your workspace. Re-scan first, so I never overwrite your edit.`},
+/*43*/{w:"dev",h:"🔄 Re-scan"},
+/*44*/{w:"ai",h:"Re-scan found <b>1 file changed by you</b> (1 line). It went through all 3 layers like AI code: all tests pass, no new findings. Rebuilding for version 2 now. I'll patch the file, not rewrite it, so your line stays."},
+/*45*/{w:"ai",h:`Version 2 built in 1 round: <b>10 of 10 tests pass</b>, your edit is kept, no conflicts. ${pill("READY FOR REVIEW")}`},
+/*46*/{w:"dev",h:"🚀 Ready for handoff"},
+/*47*/DIV("🚀 Handoff"),
+/*48*/{w:"ai",h:"Final check passed: your workspace matches exactly what was last tested. Your PR summary and audit trail are in the Audit tab. Commit from your folder and raise the PR in Bitbucket as usual. <b>I never commit, merge, or approve.</b>"}
 ];
-const P3=[
-/*0*/{w:"dev",h:`${file("📎","docx_loader.py")}<div style="margin-top:6px">Can you review this before I raise a PR?</div>`},
-/*1*/{w:"ai",h:"Admin policy check passed: review-only is allowed for defect fixes, and no restricted core modules are touched.<br>There's no request record yet, so I drafted what I think your change does (see the Intent tab). Is this right?"},
-/*2*/{w:"dev",h:"✏️ Correct it"},
-/*3*/{w:"dev",h:"Batch size should be configurable, default 500."},
-/*4*/{w:"ai",h:"Thanks, intent confirmed. A quick discovery found a shared batching helper that may already do this. Running the review…"},
-/*5*/{w:"ai",h:`Result: ${pill("REVISION REQUIRED")}<br>1 blocking finding and 1 important finding. How do you want to handle them?`}
+const ENH=[
+/*0*/{w:"dev",h:"The limits expiry report shows the wrong date when a limit expires on a weekend. Can you fix it?"},
+/*1*/{w:"ai",h:"I searched the catalog by name and by meaning. Best match: <b>limits_expiry_report.py</b> in the <b>Limits</b> capability. Is this the right program?"},
+/*2*/{w:"dev",h:"✅ Yes, that's it"},
+/*3*/{w:"ai",h:`⚠️ <b>Freshness check:</b> your copy of <span class="mono">limits_expiry_report.py</span> differs from Bitbucket main. Run <span class="mono">git pull</span> first, or confirm your local changes are intentional.`},
+/*4*/{w:"dev",h:"🔁 I've pulled, check again"},
+/*5*/{w:"ai",h:`Your copy now matches main. ${pill("PROGRAM CONFIRMED")}<br>I read the code and drafted <b>what it does today</b> in the Summary tab. Please correct anything wrong, then tell me what should change and what must <b>not</b> change.`},
+/*6*/{w:"dev",h:"Today is right. Change: weekend expiries should show the next Monday. Must not change: the report columns and the sort order."},
+/*7*/{w:"ai",h:`Before changing anything, the Tester wrote <b>safety-net tests</b> that capture today's behaviour. They pass on the unchanged code, which proves the tests are right. ${pill("SAFETY NET READY")}<br>From here the journey is the same: Approach, Build & Test, your review, handoff.`}
+];
+const REV=[
+/*0*/{w:"dev",h:"I wrote a batching fix for large DOCX files myself. Can you test and review it before I raise a PR?"},
+/*1*/{w:"ai",h:"Sure. Three quick things: what does it fix, how should it behave (3 to 5 cases), and which files? Pick them from your workspace."},
+/*2*/{w:"dev",h:`Fixes a timeout on large DOCX files. Cases: paragraphs are processed in batches, batch size comes from settings with default 500, output order is unchanged. Files: ${file("🐍","docx_loader.py")}`},
+/*3*/{w:"ai",h:`3 criteria saved. ${pill("CRITERIA CONFIRMED")} A quick discovery found a shared batching helper. The Tester wrote 5 tests from your criteria and ran them on your file.`},
+/*4*/{w:"ai",h:`Result: ${pill("NOT PASSING")}<br>4 of 5 tests pass. 1 Must fix: batch size is hardcoded as 500, so the "comes from settings" criterion fails. How do you want to handle it?`}
 ];
 
 function msgHTML(m,isNew,d){
@@ -472,29 +573,46 @@ function composer(c){
   <div class="composer nob">${clip()}<div class="fake-input dis">Text input is paused until you choose</div><button class="send" tabindex="-1" aria-hidden="true" style="opacity:.4">➤</button></div>`;
 }
 
-/* ================= Tab: Summary (Phase 1 live panel) ================= */
+/* ================= Tab: Summary ================= */
 const FULLFLOW=["Receive the Excel workbook.","Validate that the workbook is an approved and readable type.","Reject unsupported, empty, corrupted, or protected workbooks.","Read the permitted worksheets.","Extract the required content.","Convert the content into the expected ingestion format.","Pass the result into the existing CodeVision ingestion process.","Return the standard CodeVision outcome or error response."];
+const AC=[
+["AC-1","a valid .xlsx with one visible sheet","it is uploaded","its content enters the existing ingestion flow"],
+["AC-2","a workbook with several visible sheets","it is processed","each visible sheet is extracted"],
+["AC-3","a workbook with hidden sheets","it is processed","hidden sheets are ignored"],
+["AC-4","an empty workbook","it is uploaded","it is rejected with the standard empty-file error"],
+["AC-5","a corrupted workbook","it is uploaded","it is rejected with the unreadable-file error"],
+["AC-6","a password-protected workbook","it is uploaded","it is rejected with the protected-file error"],
+["AC-7","a file type that is not allowed","it is uploaded","the existing validator rejects it"],
+["AC-8","a workbook larger than the size limit in settings (default 10 MB)","it is uploaded","it is rejected with the file-too-large error"]];
+const acRow=(a,fresh)=>`<li class="gwt ${fresh?"fresh":""}"><span class="ac">${a[0]}</span><b>Given</b> ${a[1]}, <b>when</b> ${a[2]}, <b>then</b> ${a[3]}.</li>`;
 const PS=[];
-let s={prog:0,ptxt:"0 of 4 mandatory questions answered",objective:"",reason:"",current:"",expected:"",inputs:"",outputs:"",success:[],failure:[],inScope:[],outScope:[],flow:[],assumptions:[],open:[],refs:[],fresh:[]};
+let s={prog:0,ptxt:"0 of 4 mandatory questions answered",objective:"",reason:"",current:"",expected:"",inputs:"",outputs:"",ac:[],inScope:[],outScope:[],flow:[],assumptions:[],open:[],refs:[],fresh:[]};
 PS.push(s);
 s={...s,prog:1,ptxt:"1 of 4 mandatory questions answered",objective:"Allow approved Excel workbooks to enter the existing CodeVision document-ingestion flow.",reason:"Users currently convert Excel documents into another supported format before ingestion.",fresh:["objective","reason"]};PS.push(s);
 s={...s,prog:2,ptxt:"2 of 4 mandatory questions answered",current:"Excel files are rejected during file-type validation. Only PDF and DOCX are accepted.",fresh:["current"]};PS.push(s);
 s={...s,prog:3,ptxt:"3 of 4 mandatory questions answered",expected:"Accept Excel, validate the workbook, extract worksheet content, and pass it into the current ingestion flow.",flow:["Receive the Excel workbook.","Validate the workbook.","Extract the worksheet content.","Pass the result into the existing ingestion process."],inScope:["Excel upload into the existing ingestion flow"],fresh:["expected","flow","scope"]};PS.push(s);
-s={...s,prog:4,ptxt:"Clarification required: 1 open item",warn:true,inputs:".xlsx workbook",outputs:"Extracted content in the existing normalized ingestion format",success:["Valid workbook with one worksheet","Valid workbook with multiple worksheets"],failure:["Empty workbook","Corrupted workbook","Password-protected workbook","Unsupported file type"],flow:FULLFLOW,outScope:["Legacy .xls files","Changes to PDF or DOCX handling"],open:["Hidden worksheets: process or ignore?"],fresh:["io","scen","open","scope"]};PS.push(s);
-s={...s,ptxt:"4 of 4 answered, no open items",warn:false,open:[],success:["Valid workbook with one worksheet","Valid workbook with multiple visible worksheets"],flow:FULLFLOW.map(x=>x.replace("permitted","visible")),outScope:["Legacy .xls files","Hidden worksheets (decided: ignore)","Changes to PDF or DOCX handling"],assumptions:["Minor details such as log wording and naming follow approved CodeVision standards."],fresh:["open","scen","scope","assume"]};PS.push(s);
+s={...s,prog:4,ptxt:"Clarification required: 1 open item",warn:true,inputs:".xlsx workbook",outputs:"Extracted content in the existing normalized ingestion format",ac:[0,1,3,4,5,6],flow:FULLFLOW,outScope:["Legacy .xls files","Changes to PDF or DOCX handling"],open:["Hidden worksheets: process or ignore?"],fresh:["io","ac","open","scope"]};PS.push(s);
+s={...s,ptxt:"4 of 4 answered, no open items",warn:false,open:[],ac:[0,1,2,3,4,5,6],flow:FULLFLOW.map(x=>x.replace("permitted","visible")),outScope:["Legacy .xls files","Hidden worksheets (decided: ignore)","Changes to PDF or DOCX handling"],assumptions:["Minor details such as log wording and naming follow approved CodeVision standards."],fresh:["open","ac","scope","assume"]};PS.push(s);
 s={...s,ptxt:"Ready for confirmation",refs:["Existing PDF-processing capability"],fresh:["refs"]};PS.push(s);
 s={...s,ptxt:"Confirmed and saved as version 1",fresh:[]};PS.push(s);
 
 function fld(label,val,key,st){const fr=st.fresh.includes(key)?" fresh":"";return `<div class="f${fr}"><div class="fl">${label}</div>${val?`<div class="fv">${val}</div>`:'<div class="fv empty">Waiting for your answer</div>'}</div>`;}
 function lst(arr,key,st,empty,ordered){const fr=st.fresh.includes(key)?" fresh":"";if(!arr.length)return `<div class="f${fr}"><div class="fv empty">${empty}</div></div>`;const tag=ordered?"ol":"ul";return `<div class="f${fr}"><${tag} class="${ordered?"flow":"clean"}">${arr.map(x=>`<li>${x}</li>`).join("")}</${tag}></div>`;}
-function tabSummary(k){
+function versionBar(v){
+  if(!v) return "";
+  return `<div class="psec"><h4>Versions</h4><span class="vtag ${v==="v1"?"cur":""}">v1</span>${v!=="v1"?'<span class="vtag cur">v2</span>':""}<span class="small muted">${v==="v1"?"Confirmed":"v2: 1 criterion added (AC-8). Everything else unchanged"}</span></div>`;
+}
+function tabSummary(k,ver){
   const st=PS[k], segs=[0,1,2,3].map(i=>`<span class="${i<st.prog?"on":""}"></span>`).join("");
   const blk=(l,a,e)=>`<div class="fl">${l}</div>${a.length?`<ul class="clean">${a.map(x=>`<li>${e} ${x}</li>`).join("")}</ul>`:'<div class="fv empty">Not yet defined</div>'}`;
-  return `<div class="prog" style="margin:0 0 6px"><div class="segs ${st.warn?"warn":""}">${segs}</div><div class="ptxt">${st.ptxt}</div></div>
+  const acs=ver==="v2"?[0,1,2,3,4,5,6,7]:st.ac;
+  const acHTML=acs.length?`<ul class="clean">${acs.map(i=>acRow(AC[i],ver==="v2"&&i===7)).join("")}</ul>`:'<div class="fv empty">Each success or failure case becomes a testable criterion</div>';
+  return `${ver?"":`<div class="prog" style="margin:0 0 6px"><div class="segs ${st.warn?"warn":""}">${segs}</div><div class="ptxt">${st.ptxt}</div></div>`}
+    ${versionBar(ver)}
     <div class="psec"><h4>Requirement summary</h4>${fld("Objective",st.objective,"objective",st)}${fld("Reason",st.reason,"reason",st)}${fld("Current behaviour",st.current,"current",st)}${fld("Expected behaviour",st.expected,"expected",st)}</div>
+    <div class="psec"><h4>Acceptance criteria <span class="muted small" style="font-weight:400">(each one gets tested)</span></h4><div class="f${st.fresh.includes("ac")?" fresh":""}">${acHTML}</div></div>
     <div class="psec"><h4>Scope</h4><div class="f${st.fresh.includes("scope")?" fresh":""}">${blk("In scope",st.inScope,"✅")}<div style="height:6px"></div>${blk("Out of scope",st.outScope,"🚫")}</div></div>
     <div class="psec"><h4>Inputs and outputs</h4><div class="f${st.fresh.includes("io")?" fresh":""}"><div class="fl">Input</div>${st.inputs?`<div class="fv">${st.inputs}</div>`:'<div class="fv empty">Waiting for your answer</div>'}<div class="fl">Output</div>${st.outputs?`<div class="fv">${st.outputs}</div>`:'<div class="fv empty">Waiting for your answer</div>'}</div></div>
-    <div class="psec"><h4>Important scenarios</h4><div class="f${st.fresh.includes("scen")?" fresh":""}">${st.success.length?`<ul class="clean">${st.success.map(x=>"<li>✅ "+x+"</li>").join("")}${st.failure.map(x=>"<li>⛔ "+x+"</li>").join("")}</ul>`:'<div class="fv empty">Waiting for your answer</div>'}</div></div>
     <div class="psec"><h4>Functional flow</h4>${lst(st.flow,"flow",st,"Appears once the expected behaviour is clear",true)}</div>
     <div class="psec"><h4>Assumptions</h4>${lst(st.assumptions.map(x=>"🔖 "+x),"assume",st,"None. Assumptions are always labelled here.")}</div>
     <div class="psec"><h4>Open items</h4>${lst(st.open.map(x=>"⚠️ "+x),"open",st,"No open items")}</div>
@@ -518,204 +636,197 @@ function tabDiscovery(state){
     <div class="card pad"><div class="h3">⚠️ Search limitation</div><p style="margin:0">No existing Excel parsing was found. That is <b>not</b> proof it doesn't exist; it means no reliable match in approved sources.</p></div>${ILLUS}`;
 }
 
-/* ================= Tab: Gate ================= */
-function tabGate(){
-  const G=[["1","Request understood",["Objective identified","Current behaviour identified","Expected behaviour identified","Inputs and outputs identified","Material ambiguity resolved"]],["2","Existing capability checked",["Exact capability search completed","Similar implementation search completed","Configuration alternative checked","Duplication risk checked"]],["3","Context sufficient",["Relevant source retrieved","Suitable references found","Applicable standards retrieved","Constraints identified"]],["4","Approach agreed",["Proposed approach explained","Likely affected areas shown","Assumptions and open items shown","Developer accepted the approach"]]];
-  return `<div class="grid2">${G.map((g,i)=>`<div class="card gate appear d${i+1}"><h4><span>🚦 Gate ${g[0]}: ${g[1]}</span><span>✅</span></h4><ul class="clean small">${g[2].map(x=>`<li>✅ ${x}</li>`).join("")}</ul></div>`).join("")}</div>
-  <div class="banner g appear d5" style="margin-top:14px">✅ <span class="grow"><b>READY FOR CODE GENERATION.</b> Only this result can invoke the generator.</span></div>
-  <div class="card pad appear d6"><div class="h3">Other possible results</div><div class="chips"><span class="chip">Clarification required</span><span class="chip">Existing capability found</span><span class="chip">Configuration change only</span><span class="chip">Insufficient repository context</span><span class="chip">Escalation required</span></div>
-  <p class="small muted" style="margin:10px 0 0">✍️ Choosing <b>I'll write it myself</b> skips only Phase 4. The request and discovery findings stay attached for review.</p></div>${ILLUS}`;
+/* ================= Tab: Approach ================= */
+const TP=[["T-1","AC-1","One visible sheet with 3 rows","3 rows reach ingestion in order"],["T-2","AC-2","Two visible sheets","Both sheets extracted, sheet names kept"],["T-3","AC-2","Two sheets, one of them blank","Blank sheet skipped, other extracted"],["T-4","AC-3","One visible and one hidden sheet","Only the visible sheet extracted"],["T-5","AC-4","Workbook with no sheets","Rejected: empty file"],["T-6","AC-4","Every visible sheet is empty","Rejected: empty file",true],["T-7","AC-5","Random bytes saved as .xlsx","Rejected: unreadable file"],["T-8","AC-6","Password-protected workbook","Rejected: protected file"],["T-9","AC-7",".exe renamed to .xlsx","Rejected by the existing validator"]];
+function tabApproach(state){
+  const plan=`<div class="card pad"><div class="h3">🗂️ File plan</div><table class="t"><tr><th>File</th><th>Action</th><th>Why</th></tr>
+    <tr><td class="mono small">ingestion/excel_processor.py</td><td><span class="tag b">New</span></td><td class="small">Extract visible sheets, PDF processor pattern</td></tr>
+    <tr><td class="mono small">ingestion/validators.py</td><td><span class="tag">Change</span></td><td class="small">Add .xlsx to allowed types, reuse <code>validate_file_type()</code></td></tr>
+    <tr><td class="mono small">tests/cvda_2026_0001/test_excel_processor.py</td><td><span class="tag b">New</span></td><td class="small">Written by the Tester, frozen</td></tr></table>
+    <p class="small muted" style="margin:8px 0 0">3 files, under the limit of 5. Allowed folders ✅ &nbsp; Protected files untouched ✅</p></div>`;
+  const dec=`<div class="grid2 sect"><div class="card pad"><div class="h3">🧩 Design choice</div><p class="small" style="margin:0 0 8px">Where does Excel upload live?</p><div class="chips"><span class="chip ${state==="proposed"?"":"on"}">Existing upload screen</span><span class="chip">New upload screen</span></div></div>
+    <div class="card pad"><div class="h3">📦 Libraries and zones</div><ul class="clean small"><li>✅ <code>openpyxl</code> is on the approved list</li><li>✅ No flag-for-review zones touched (security, login)</li></ul></div></div>`;
+  const tp=`<div class="card pad sect"><div class="h3">🧪 Test plan <span class="muted small" style="font-weight:400">written by the Tester from the criteria, without seeing any code</span></div>
+    <table class="t"><tr><th>Test</th><th>Criterion</th><th>Given</th><th>Expect</th></tr>${TP.filter(t=>!(state==="tp"&&t[4])).map(t=>`<tr class="${t[4]&&state==="tp2"?"fresh":""}"><td class="mono small">${t[0]}${t[4]?'<span class="mine">Yours</span>':""}</td><td><span class="ac">${t[1]}</span></td><td class="small">${t[2]}</td><td class="small">${t[3]}</td></tr>`).join("")}</table></div>`;
+  const G=[["Request confirmed","v1, 7 criteria"],["Discover done","2 matches reused"],["Approach confirmed","by you"],["Test plan accepted","9 tests, 1 yours"]];
+  const gates=`<div class="grid2">${G.map((g,i)=>`<div class="card gate appear d${i+1}"><h4><span>🚦 ${i+1}. ${g[0]}</span><span>✅</span></h4><div class="small muted">${g[1]}</div></div>`).join("")}</div>
+    <div class="banner g appear d5" style="margin-top:14px">✅ <span class="grow"><b>READY TO BUILD.</b> Only this status starts the build.</span></div>`;
+  if(state==="gates") return gates+plan+ILLUS;
+  if(state==="proposed") return `<div class="banner v">🧭 <span class="grow"><b>Agree how, before anything is built.</b> The generator and the Tester both work from this plan.</span></div>${plan}${dec}${ILLUS}`;
+  return `${tp}${plan}${ILLUS}`;
 }
 
-/* ================= Tab: Code ================= */
-const STARTER=`"""Excel workbook processor for the CodeVision ingestion flow.
-
-STARTER CODE from CodeVision Developer Assistant.
-Request CVDA-2026-0001 (v1). Developer completion required.
-"""
-from openpyxl import load_workbook
-from openpyxl.utils.exceptions import InvalidFileException
-
-from codevision.config import settings
-from codevision.ingestion.errors import (
-    CorruptedWorkbookError, EmptyWorkbookError)
-from codevision.ingestion.models import IngestionDocument
-from codevision.ingestion.validators import validate_file_type
-from codevision.logging import get_logger
-
-logger = get_logger(__name__)
-
-
-class ExcelProcessor:
-    """Extract content from visible worksheets for ingestion."""
-
-    def process(self, file_path: str) -> IngestionDocument:
-        validate_file_type(file_path, settings.ALLOWED_EXCEL_TYPES)
-        workbook = self._open_workbook(file_path)
-        sheets = [ws for ws in workbook.worksheets
-                  if ws.sheet_state == "visible"]
-        if not sheets:
-            raise EmptyWorkbookError(file_path)
-        sections = [self._extract_sheet(ws) for ws in sheets]
-        logger.info("Extracted %d visible worksheets", len(sections))
-        return IngestionDocument.from_sections(sections)
-
-    def _open_workbook(self, file_path: str):
-        # TODO(developer): detect password-protected workbooks
-        # and raise ProtectedWorkbookError (failure scenario 3).
-        try:
-            return load_workbook(file_path, read_only=True)
-        except InvalidFileException as exc:
-            raise CorruptedWorkbookError(file_path) from exc
-
-    def _extract_sheet(self, worksheet) -> dict:
-        # TODO(developer): follow the cell-to-text rules used in
-        # pdf_processor.normalise() for consistent output.
-        raise NotImplementedError`;
-function highlight(src){
-  const KW=/("[^"]*"|'[^']*')|(#.*$)|\b(from|import|class|def|return|raise|try|except|as|if|not|for|in|None)\b|\b(self|str|dict)\b/g;
-  let inDoc=false;
-  return src.split("\n").map((line,idx)=>{
-    let out="";const n=(line.match(/"""/g)||[]).length;
-    if(inDoc||n){out=`<span class="tk-s">${esc(line)}</span>`;if(n===1)inDoc=!inDoc;}
-    else{let last=0,m;KW.lastIndex=0;while((m=KW.exec(line))){out+=esc(line.slice(last,m.index));const cls=m[1]?"tk-s":m[2]?"tk-c":m[3]?"tk-k":"tk-b";out+=`<span class="${cls}">${esc(m[0])}</span>`;last=KW.lastIndex;}out+=esc(line.slice(last));}
-    const todo=/TODO|# and raise|# pdf_processor/.test(line)?" todo":"";
-    return `<span class="ln${todo}"><i>${idx+1}</i>${out}</span>`;
-  }).join("");
+/* ================= Tab: Build ================= */
+function stepList(rows){return `<ul class="steps">${rows.map(r=>`<li><span class="si">${r[0]}</span><div class="grow">${r[1]}${r[2]?`<div class="small muted">${r[2]}</div>`:""}</div><span class="tm">${r[3]||""}</span></li>`).join("")}</ul>`;}
+function layers(a,b,c){const L=(t,n,v,cls)=>`<div class="layer ${cls}"><div class="lt">${t}</div><b>${n}</b><div class="small">${v}</div></div>`;return `<div class="layers">${L("Layer A",a[0],a[1],a[2])}${L("Layer B",b[0],b[1],b[2])}${L("Layer C",c[0],c[1],c[2])}</div>`;}
+const WS_FILES=(edited)=>`<table class="t"><tr><th>File in your workspace</th><th>Status</th></tr><tr><td class="mono small">ingestion/excel_processor.py</td><td class="small">✅ Written${edited?' <span class="mine">1 line edited by you</span>':""}</td></tr><tr><td class="mono small">ingestion/validators.py</td><td class="small">✅ Written</td></tr><tr><td class="mono small">tests/cvda_2026_0001/test_excel_processor.py</td><td class="small">✅ Written <span class="frozen">🔒 Frozen</span></td></tr></table>`;
+function tabBuild(state){
+  if(state==="running") return `<div class="banner b">⏳ <span class="grow"><b>Round 1 of 3.</b> Running on the server. You can leave this page and come back.</span></div>
+    <div class="card pad">${stepList([["✅","Tester wrote 9 tests from the test plan <span class=\"frozen\">🔒 Frozen</span>","Qwen can never edit a test","0:48"],["✅","Qwen wrote <span class=\"mono\">validators.py</span>","1 file per AI call keeps each prompt small","1:21"],["<span class=\"spin\">⏳</span>","Qwen is writing <span class=\"mono\">excel_processor.py</span>","","1:52"],["⬜","Layer A: syntax, imports, rules",""],["⬜","Layer B: run the 9 tests in a sandbox","Time limit 60 seconds per run"],["⬜","Layer C: independent Tester review",""]])}</div>
+    <div class="card pad sect">${layers(["Does it run?","Waiting","wait"],["Does it behave?","Waiting","wait"],["Matches the agreement?","Waiting","wait"])}</div>${ILLUS}`;
+  if(state==="r1") return `<div class="banner r">↩️ <span class="grow"><b>Round 1: 2 of 9 tests failed.</b> Sent back to Qwen with a plain failure report. Round 2 of 3 is running.</span></div>
+    <div class="card pad">${layers(["Does it run?","✅ Passed","ok"],["Does it behave?","⛔ 7 of 9 passed","bad"],["Matches the agreement?","Waits for green tests","wait"])}</div>
+    <div class="card pad sect"><div class="h3">📝 Failure report sent to Qwen</div><table class="t">
+      <tr><td class="mono small">T-6 <span class="mine">Yours</span></td><td><span class="ac">AC-4</span></td><td class="small">A workbook whose visible sheets are all empty was <b>ingested</b> as an empty document. Expected: rejected as empty.</td></tr>
+      <tr><td class="mono small">T-8</td><td><span class="ac">AC-6</span></td><td class="small">A protected workbook raised a <b>general read error</b>. Expected: the protected-file error.</td></tr></table>
+      <p class="small muted" style="margin:10px 0 0">Only <span class="mono">excel_processor.py</span> is regenerated. Tests stay frozen. 1 shared budget of 3 rounds covers test failures and Tester Must fix.</p></div>${ILLUS}`;
+  if(state==="written") return `<div class="banner g">✅ <span class="grow"><b>Written to your workspace.</b> 3 files, with a fingerprint of each so your edits are always noticed.</span></div>
+    <div class="card pad">${WS_FILES(false)}</div>
+    <div class="grid2 sect"><div class="card pad"><div class="h3">👀 Your turn</div><ul class="clean small"><li>▶️ Run CodeVision and try an Excel upload</li><li>🧪 Run the tests yourself: <span class="mono">python -m unittest</span></li><li>✏️ Edit anything, then click <b>Re-scan</b></li><li>💬 Tell me if a requirement is missing</li></ul></div>
+    <div class="card pad"><div class="h3">📊 This build</div><ul class="clean small"><li>Rounds: 2 + 1 fix</li><li>Tests: 9 of 9 passing</li><li>Time: about 6 minutes</li></ul></div></div>${ILLUS}`;
+  if(state==="rescan") return `<div class="banner v">🔄 <span class="grow"><b>Re-scan: 1 file changed by you.</b> Only files in the plan and this request's tests folder are read.</span></div>
+    <div class="codebox"><div class="codebar"><span class="mono">ingestion/excel_processor.py</span><span class="muted small">Last written vs your folder now</span></div>
+    <div class="diff" style="border:0;border-radius:0"><span class="dl"><b> </b>        if worksheet.sheet_state != "visible":</span><span class="dl del"><b>-</b>            logger.info("Sheet skipped: hidden")</span><span class="dl add"><b>+</b>            logger.info("Hidden sheet skipped: %s", worksheet.title)</span><span class="dl"><b> </b>            continue</span></div></div>
+    <div class="card pad sect">${layers(["Does it run?","✅ Passed","ok"],["Does it behave?","✅ 9 of 9 passed","ok"],["Matches the agreement?","✅ No new findings","ok"])}</div>
+    <div class="card pad sect"><div class="h3">🛡️ How your edits are protected</div><ul class="clean small"><li>1. Never overwrite unscanned edits: fingerprints are checked before every write</li><li>2. Rebuilds patch your current file, they don't rewrite it</li><li>3. If the AI touches a line you edited, you see both and choose</li><li>4. Every version is kept on the server, one-click restore</li></ul></div>${ILLUS}`;
+  return `<div class="banner g">✅ <span class="grow"><b>Version 2 built in 1 round.</b> 10 of 10 tests pass. Your edited line was kept, no conflicts.</span></div>
+    <div class="card pad">${WS_FILES(true)}</div>
+    <div class="card pad sect"><div class="h3">🧾 Build history</div>${stepList([["✅","v1 build: 2 rounds + 1 fix","9 tests"],["✅","Re-scan: 1 file edited by you","All layers passed"],["✅","v2 build: 1 round, patch only","10 tests, T-10 added for AC-8"]])}</div>${ILLUS}`;
 }
-function lanes(attempt){
-  const ctx=`<div class="card"><b>📦 Controlled context package</b><ul class="clean small muted" style="margin-top:4px"><li>Confirmed request ${REQ} v1</li><li>Approved source: validators.py, pdf_processor.py</li><li>Applicable standards, rules, constraints, acceptance criteria</li></ul></div>`;
-  const a1=`<div class="card ${attempt===1?"appear d1":""}"><b>Attempt 1</b> <span class="muted small">Starter code generated</span></div>`;
-  const a2=`<div class="card appear d1"><b>Attempt 2</b> <span class="muted small">Rebuilt using the findings</span><ul class="clean small" style="margin-top:4px"><li>✅ Allowed types read from settings</li><li>✅ Reuses <code>validate_file_type()</code></li></ul></div>`;
-  const rg1=`<div class="card appear d2"><div class="sev" style="color:var(--red)">⛔ Rule Gate: 1 blocking</div><div class="small" style="margin-top:4px">Allowed file types hardcoded in the module.<br><span class="mono muted">CV-STD-014 Configuration must be externalised</span></div></div>`;
-  const ir1=`<div class="card appear d3"><div class="sev" style="color:var(--amber)">⚠️ Independent Reviewer: 1 important</div><div class="small" style="margin-top:4px">Re-implements a file-type check instead of reusing the existing validator.</div></div>`;
-  const rg2=`<div class="card appear d2"><div class="sev" style="color:var(--green)">✅ Rule Gate: 0 blocking</div><div class="small muted">Syntax, lint, type, security, secret, and admin-rule checks passed.</div></div>`;
-  const ir2=`<div class="card appear d3"><div class="sev" style="color:var(--green)">✅ Independent Reviewer: 0 important</div><div class="small muted">2 advisory suggestions passed to the developer.</div></div>`;
-  const loop=attempt===1?`<div class="loop appear d4">↩️ 2 findings sent back to the Maker (rebuild 1 of 3)</div>`:`<div class="banner g appear d4" style="margin:14px 0 0">✅ <span class="grow"><b>Blocking criteria cleared.</b> Released to the developer as starter code.</span></div>`;
-  return `<div class="lanes one">
-    <div class="lane maker"><div class="lh"><span>⚙️ Maker</span><b>Qwen</b><span>Generates, then rebuilds failed areas</span></div>${ctx}${a1}${attempt===2?a2:""}</div>
-    <div class="lane checker"><div class="lh"><span>🛡️ Checker</span><b>Rule Gate + Independent Reviewer</b><span>Reviews blind, against the confirmed request and rules only</span></div>${attempt===1?rg1+ir1:rg2+ir2}</div>
-  </div>${loop}${ILLUS}`;
-}
-function starterView(){
-  return `<div class="code">
-    <div class="codebox"><div class="codebar"><span class="mono">excel_processor.py</span><span class="pill p-amber">STARTER CODE</span></div><pre class="src-code" style="max-height:calc(100vh - 380px)">${highlight(STARTER)}</pre></div>
-    <div style="display:flex;flex-direction:column;gap:12px">
-      <div class="card pad"><div class="h3">⬇️ Download</div><p class="small muted" style="margin:0 0 10px">Code plus a context sheet, to complete in your own IDE.</p><span class="btn primary" style="display:inline-block">⬇️ Download (.zip)</span></div>
-      <div class="card pad"><div class="h3">✍️ You complete</div><ul class="clean small"><li>🟨 Password-protected workbook detection (line 34)</li><li>🟨 Cell-to-text extraction rules (line 42)</li></ul></div>
-      <div class="card pad"><div class="h3">📎 References used</div><ul class="clean small"><li>ingestion/validators.py (reused)</li><li>ingestion/pdf_processor.py (pattern)</li><li>CodeVision Python Standard v2.1</li></ul></div>
-      <div class="card pad"><div class="h3">🔖 Assumptions to confirm</div><ul class="clean small"><li>openpyxl is an approved dependency for the CodeVision runtime</li></ul></div>
-    </div></div>${ILLUS}`;
-}
-const DIFF=[[" ","    def process(self, file_path: str) -> IngestionDocument:"],["+","        if os.path.getsize(file_path) > 25 * 1024 * 1024:"],["+",'            logger.warning("Rejected large file: %s", file_path)'],["+","            raise WorkbookTooLargeError(file_path)"],[" ","        validate_file_type(file_path, settings.ALLOWED_EXCEL_TYPES)"],["~","... unchanged lines hidden ..."],[" ","    def _open_workbook(self, file_path: str):"],["-","        # TODO(developer): detect password-protected workbooks"],["-","        # and raise ProtectedWorkbookError (failure scenario 3)."],["+","        if is_encrypted(file_path):"],["+","            raise ProtectedWorkbookError(file_path)"],[" ","        try:"],["~","... unchanged lines hidden ..."],[" ","    def _extract_sheet(self, worksheet) -> dict:"],["-","        # TODO(developer): follow the cell-to-text rules used in"],["-","        # pdf_processor.normalise() for consistent output."],["-","        raise NotImplementedError"],["+","        rows = []"],["+","        try:"],["+","            for row in worksheet.iter_rows(values_only=True):"],["+","                rows.append(normalise_row(row))"],["+","        except Exception:"],["+","            return {}"],["+",'        return {"sheet": worksheet.title, "rows": rows}']];
-function diffView(){
-  const cls={" ":"","+":"add","-":"del","~":"gap"};
-  return `<div class="banner v">🔀 <span class="grow"><b>Changes vs starter code:</b> +12 −5 lines in 3 areas. Human reviewers can see exactly what the AI wrote and what the developer wrote.</span></div>
-  <div class="codebox"><div class="codebar"><span class="mono">excel_processor.py</span><span class="muted small">Round 1 upload vs starter code</span></div>
-  <div class="diff" style="border:0;border-radius:0">${DIFF.map(d=>`<span class="dl ${cls[d[0]]}"><b>${d[0]==="~"?"":d[0]}</b>${esc(d[1])}</span>`).join("")}</div></div>
-  <div class="grid2" style="margin-top:12px"><div class="card pad"><div class="h3">⏳ Reviewing Round 1</div><div class="chips"><span class="chip">Syntax and runtime</span><span class="chip">Functional alignment</span><span class="chip">Standards and rules</span><span class="chip">Security and risk</span><span class="chip">Maintainability</span><span class="chip">Architecture compatibility</span><span class="chip">Change impact</span><span class="chip">Dependency review</span></div></div>
-  <div class="card pad"><div class="h3">📎 Linked to</div><p style="margin:0">Confirmed request <b>${REQ} v1</b> and the starter code it was built from.</p></div></div>${ILLUS}`;
-}
-function tabCode(state){return state==="a1"?lanes(1):state==="a2"?lanes(2):state==="starter"?starterView():diffView();}
 
-/* ================= Tab: Review ================= */
-function ring(score,color){const r=44,c=2*Math.PI*r,off=c*(1-score/100);return `<svg class="ring" viewBox="0 0 108 108"><circle cx="54" cy="54" r="${r}" fill="none" stroke="#EEF0F4" stroke-width="10"/><circle cx="54" cy="54" r="${r}" fill="none" stroke="${color}" stroke-width="10" stroke-linecap="round" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" transform="rotate(-90 54 54)"/><text x="54" y="52" text-anchor="middle" font-size="26" font-weight="700" fill="#1E2B45" font-family="Segoe UI, Arial">${score}</text><text x="54" y="70" text-anchor="middle" font-size="12" fill="#6B7385" font-family="Segoe UI, Arial">of 100</text></svg>`;}
-function tiles(v){const t=(n,l,cls)=>`<div class="tile ${n>0?cls:""}"><b>${n}</b><span>${l}</span></div>`;return `<div class="tiles">${t(v[0],"Blocking","bad")}${t(v[1],"High-risk","bad")}${t(v[2],"Mandatory rule violations","bad")}${t(v[3],"Important","warn")}${t(v[4],"Advisory","")}</div>`;}
-function critBar(p,f,na){const tot=p+f+na;return `<div class="bar"><i style="width:${p/tot*100}%;background:#2E9B57"></i><i style="width:${f/tot*100}%;background:#D9483B"></i><i style="width:${na/tot*100}%;background:#C8CDD6"></i></div><div class="small muted">✅ ${p} passed &nbsp; ⛔ ${f} failed &nbsp; ➖ ${na} not applicable</div>`;}
-const CARRY=`<div class="banner a" style="margin:12px 0 0">📌 <span class="grow">Anything unresolved or marked risk-accepted is carried into the PR summary for the human reviewer. The assistant cannot block Bitbucket; this makes the decision visible.</span></div>`;
-function review(state){
-  if(state==="r1") return `<div class="grid2" style="grid-template-columns:1.1fr 1fr">
-      <div class="card pad"><div class="score">${ring(84,"#E3A23B")}<div><div class="muted small">Round 1 result</div><div style="font-size:20px;font-weight:700;color:var(--amber)">CONDITIONALLY ACCEPTABLE</div><div class="muted small">Rule Gate + Independent Reviewer</div></div></div><div class="h3" style="margin-top:14px">Acceptance criteria</div>${critBar(13,1,2)}</div>
-      <div class="card pad"><div class="h3">Counts</div>${tiles([1,0,1,2,4])}</div></div>
-    <div class="card pad sect"><div class="h3">Findings</div><table class="t">
-      <tr><th></th><th>Finding</th><th>Rule or category</th><th>Found by</th></tr>
-      <tr><td>⛔</td><td>File-size limit hardcoded as 25 MB (line 23)</td><td class="mono small">CV-STD-014</td><td class="small">Rule Gate</td></tr>
-      <tr><td>⚠️</td><td>Broad exception catch in sheet extraction</td><td class="small">Exception-handling pattern</td><td class="small">Independent Reviewer</td></tr>
-      <tr><td>⚠️</td><td>Full file path written to logs</td><td class="small">Sensitive data in logs</td><td class="small">Rule Gate</td></tr>
-      <tr><td>💬</td><td>4 advisory suggestions (naming, docstrings)</td><td class="small">Advisory</td><td class="small">Independent Reviewer</td></tr></table>${CARRY}</div>
-    <div class="card pad sect"><div class="h3">ℹ️ Review limitation</div><p class="small" style="margin:0">A preliminary automated review. It does not replace developer validation, peer review, or Bitbucket approval.</p></div>${ILLUS}`;
-  if(state==="fix") return `<div class="card pad"><div style="display:flex;justify-content:space-between"><div class="sev" style="color:var(--red)">⛔ Blocking finding</div><span class="mono muted small">CV-STD-014</span></div>
-      <dl class="explain"><dt>❓ What is wrong</dt><dd>The maximum file size is hardcoded as 25 MB.</dd><dt>💡 Why it matters</dt><dd>Limits differ by environment. A hardcoded value needs a code change to adjust.</dd><dt>📍 Where</dt><dd><span class="mono">excel_processor.py</span>, line 23</dd><dt>📏 Rule</dt><dd>CV-STD-014: Configuration must be externalised (Mandatory)</dd><dt>📎 Reference</dt><dd><span class="mono">pdf_processor.py</span>, line 18 shows the pattern</dd></dl>
-      <div class="h3" style="margin-top:14px">💡 Suggested fix <span class="muted small" style="font-weight:400">(Qwen suggests, you apply)</span></div>
-      <div class="fixgrid"><div><div class="fl">Before</div><div class="snip b">if os.path.getsize(file_path) &gt; 25 * 1024 * 1024:</div></div><div><div class="fl">After</div><div class="snip a">max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
-if os.path.getsize(file_path) &gt; max_bytes:</div></div></div></div>
-    <div class="card pad sect"><div class="h3">⚠️ Important findings: how to fix</div><ul class="clean small"><li>⚠️ <b>Broad exception catch:</b> catch the specific read error and raise <code>SheetExtractionError</code>, per the exception-handling pattern.</li><li>⚠️ <b>File path in logs:</b> log the file name only, not the full path.</li><li>💬 <b>4 advisory:</b> optional; fix or explain in your next upload.</li></ul></div>
-    <div class="banner b sect">🔒 <span class="grow">Suggestions only. Qwen never edits your code. Apply the fixes in your IDE, then upload Round 2.</span></div>
-    <div class="card pad"><div class="h3">🔁 The fix loop</div><p class="small" style="margin:0">Upload, full re-review, respond, fix, re-upload. After 3 rounds with blocking findings still open, a senior developer is suggested. The Admin sets this limit.</p></div>${ILLUS}`;
-  /* r2 */
-  const tr=(l,a,b)=>`<tr><td>${l}</td><td><b>${a}</b></td><td>▶</td><td><b>${b}</b></td></tr>`;
-  return `<div class="banner g">✅ <span class="grow"><b>Round 2: 0 blocking findings.</b> Ready for normal human review.</span></div>
-    <div class="grid2"><div class="card pad"><div class="h3">Round 1 vs Round 2</div><table class="t cmp"><tr><th></th><th>R1</th><th></th><th>R2</th></tr>${tr("Quality score","84","93")}${tr("Blocking","1","0")}${tr("Mandatory rule violations","1","0")}${tr("Important","2","0")}${tr("Criteria failed","1","0")}</table></div>
-    <div class="card pad"><div class="h3">Finding status</div><ul class="clean"><li>✅ <b>Resolved:</b> hardcoded file-size limit</li><li>✅ <b>Resolved:</b> broad exception catch</li><li>✅ <b>Resolved:</b> file path in logs</li><li>💬 <b>Advisory:</b> 2 fixed, 2 explained</li><li>🆕 <b>New issues:</b> none</li><li>⚠️ <b>Still open:</b> none</li></ul></div></div>
-    <div class="card pad sect" style="display:flex;gap:18px;align-items:center">${ring(93,"#2E9B57")}<div style="flex:1"><div class="h3" style="margin:0">Acceptance criteria</div>${critBar(14,0,2)}<p class="small muted" style="margin:8px 0 0">Full re-review ran on the whole file, not only the changed lines.</p></div></div>${ILLUS}`;
+/* ================= Tab: Tests (Tester report) ================= */
+const CHECKS=[["Every criterion has a test","Plain code","✅"],["Every criterion's tests pass","Plain code","✅"],["Files match the file plan","Plain code","✅"],["Approach decisions followed","AI (Tester)","✅"],["Nothing extra built","AI (Tester)","✅"],["Judgement rules","AI (Tester)","⚠️ 1"],["Flag-for-review zones","Plain code","✅ None"]];
+function tabTests(state){
+  const green=state!=="warn";
+  const head=green?`<div class="card pad"><div class="muted small">Independent Tester result</div><div class="label-big" style="color:var(--green)">🟢 Ready for your review</div><div class="small muted">0 Must fix, 0 Should fix open, 1 FYI</div></div>`
+    :`<div class="card pad"><div class="muted small">Independent Tester result</div><div class="label-big" style="color:var(--amber)">🟡 Ready, with warnings</div><div class="small muted">0 Must fix, 1 Should fix, 1 FYI. Never "Approved": a human still reviews the PR.</div></div>`;
+  const acs=state==="v2"?[0,1,2,3,4,5,6,7]:[0,1,2,3,4,5,6];
+  const tmap={"AC-1":"T-1","AC-2":"T-2, T-3","AC-3":"T-4","AC-4":"T-5, T-6","AC-5":"T-7","AC-6":"T-8","AC-7":"T-9","AC-8":"T-10"};
+  const req=`<div class="card pad sect"><div class="h3">📋 Requirements to tests</div><table class="t"><tr><th>Criterion</th><th>Tests</th><th>Result</th></tr>${acs.map(i=>`<tr><td><span class="ac">${AC[i][0]}</span><span class="small">${AC[i][3]}</span></td><td class="mono small">${tmap[AC[i][0]]}</td><td>✅</td></tr>`).join("")}</table></div>`;
+  const chk=`<div class="card pad sect"><div class="h3">🔍 What the Tester checked</div><table class="t">${CHECKS.map(c=>`<tr><td class="small">${c[0]}</td><td class="small muted">${c[1]}</td><td>${green&&c[2].startsWith("⚠️")?"✅":c[2]}</td></tr>`).join("")}</table></div>`;
+  const fnd=`<div class="card pad sect"><div class="h3">Findings <span class="muted small" style="font-weight:400">each must cite a file, a line, and a rule or criterion</span></div><table class="t">
+    <tr><td>${green?"✅":"🟡"}</td><td>Full file path written to the log<div class="mono muted small">excel_processor.py line 31 · Rule J-03 Sensitive data in logs</div></td><td class="small">${green?"Fixed":"Should fix"}</td></tr>
+    <tr><td>🔵</td><td>No description on <span class="mono">_extract_sheet</span><div class="mono muted small">excel_processor.py line 52 · Rule J-08 Docstrings</div></td><td class="small">FYI</td></tr></table>
+    ${green?"":'<p class="small muted" style="margin:10px 0 0">Should fix: <b>Fix it</b> or <b>Accept, with reason</b> (shown at handoff). A Must fix cannot be accepted away; the only way past is <b>Dispute</b>, which goes to the named senior.</p>'}</div>`;
+  return `${head}${req}${chk}${fnd}<p class="small muted" style="margin:10px 0 0">The Tester (Llama, a different model from the generator) sees the record, approach, test plan, code and test results. Never the generator's chat. This report stays in the app, not in your workspace.</p>${ILLUS}`;
 }
 
 /* ================= Tab: Audit ================= */
 function tabAudit(){
-  const T=[["09:02","Request created",REQ+" as draft"],["09:14","Material decision","Visible worksheets only"],["09:16","Confirmed for discovery","Version 1 saved"],["09:18","Discovery completed","2 sources at commit 4e1a9c2"],["09:19","Readiness gate passed","4 of 4 gates"],["09:21","Starter code released","2 attempts, rule set v3.2, generator config v1.4"],["09:22","Starter code downloaded","With context sheet"],["14:40","Round 1 uploaded","84 of 100, conditionally acceptable"],["14:43","Fix suggested","CV-STD-014, applied by developer"],["15:05","Round 2 uploaded","93 of 100, 0 blocking"],["15:07","PR summary prepared","Ready for human review"]];
+  const T=[["09:02","Request created",REQ+" as draft"],["09:14","Material decision","Visible worksheets only"],["09:16","Confirmed","Version 1, 7 criteria"],["09:18","Discovery completed","2 sources at commit 4e1a9c2"],["09:24","Approach confirmed","3 files, existing upload screen"],["09:27","Test plan accepted","9 tests, 1 added by developer"],["09:28","Workspace chosen","C:\\Dev\\codevision"],["09:34","Build v1","2 rounds, 9 of 9 pass"],["09:37","Should fix fixed","J-03, 1 round"],["14:10","Requirement change","Version 2, AC-8 added"],["14:12","Re-scan","1 file edited by developer, all layers pass"],["14:16","Build v2","1 round, 10 of 10 pass"],["14:18","Handoff","Final fingerprint check passed"]];
   return `<div class="banner b">🔒 <span class="grow">The assistant never commits, pushes, creates or approves pull requests, merges, or deploys.</span></div>
   <div class="grid2"><div class="card pad"><div class="h3">📋 Summary for your pull request</div>
-<div class="prbox">${REQ} v1: Add Excel document processing
-Scope: .xlsx, visible worksheets only
-Reuses: validate_file_type(), PDF processor pattern
-Code: AI starter code, completed by developer
-      (+12 −5 in 3 areas)
-Preliminary review: 2 rounds, 93/100, 0 blocking
-Findings: 3 fixed, 2 advisory fixed, 2 explained
-Unresolved or risk-accepted: none</div>
-    <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap"><span class="btn primary">📋 Copy summary</span><span class="btn">⬇️ Download</span></div></div>
-  <div class="card pad"><div class="h3">🧾 Audit trail</div><ul class="timeline small">${T.map(x=>`<li><span class="tm">${x[0]}</span><b>${x[1]}</b> <span class="muted">${x[2]}</span></li>`).join("")}</ul><p class="small muted" style="margin:4px 0 0">Nothing is retrained from this session. Rule changes stay with the Admin.</p></div></div>${ILLUS}`;
+<div class="prbox">${REQ} v2: Add Excel document processing
+Criteria: 8 · Tests: 10 of 10 passed
+          (1 written by the developer)
+Files: ingestion/excel_processor.py (new)
+         edited by developer: 1 line
+       ingestion/validators.py (changed)
+       tests/cvda_2026_0001/... (new)
+Reuses: validate_file_type(), PDF pattern
+Tester: Ready for review, 1 fixed, 1 FYI
+Accepted risks: none
+Flag-for-review zones: none
+Safety-net gaps: not applicable (new code)
+Final check: workspace = last tested ✅</div>
+    <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap"><span class="btn primary">📋 Copy summary</span></div></div>
+  <div class="card pad"><div class="h3">🧾 Audit trail</div><ul class="timeline small">${T.map(x=>`<li><span class="tm">${x[0]}</span><b>${x[1]}</b> <span class="muted">${x[2]}</span></li>`).join("")}</ul></div></div>${ILLUS}`;
 }
 
-/* ================= Path 3 tabs ================= */
-function tabIntent(state){
-  return `<div class="card pad"><div class="h3">🛡️ Admin policy check</div><ul class="clean"><li>✅ Review-only is allowed for defect fixes and small enhancements</li><li>✅ No restricted core modules touched</li><li>ℹ️ Restricted core modules need a full change request</li></ul></div>
-  <div class="card pad sect"><div class="h3">📝 Drafted from your code</div><div class="bubble" style="background:var(--blue-ll)">Fixes a timeout when ingesting large DOCX files by processing paragraphs in batches.</div>
-  ${state==="confirmed"?`<div class="fl" style="margin-top:12px">Developer correction</div><div class="bubble fresh">Batch size should be configurable, default 500.</div><p class="ok" style="margin:10px 0 0">✅ Intent confirmed by developer</p>`:`<p class="small muted" style="margin:10px 0 0">Waiting for the developer to confirm or correct.</p>`}</div>
-  <div class="card pad sect"><div class="h3">🧾 Review basis</div><p style="margin:0">Developer-declared intent. There is no confirmed request record on this path.</p></div>`;
+/* ================= Enhance tabs ================= */
+function tabEnhSummary(state){
+  const cat=`<div class="card pad"><div class="h3">🔎 Program found</div><table class="t"><tr><th>Candidate</th><th>Found by</th><th></th></tr>
+    <tr><td class="mono small">reports/limits_expiry_report.py</td><td class="small">Name + meaning</td><td><span class="conf h">Best match</span></td></tr>
+    <tr><td class="mono small">reports/limits_utilisation_report.py</td><td class="small">Meaning</td><td><span class="conf m">Possible</span></td></tr>
+    <tr><td class="mono small">limits/expiry_calendar.py</td><td class="small">Meaning</td><td><span class="conf m">Possible</span></td></tr></table>
+    <dl class="explain"><dt>Capability</dt><dd>Limits <span class="small muted">(catalog lookup, plain code)</span></dd><dt>Named senior</dt><dd>Limits capability lead</dd></dl></div>`;
+  const fresh=state==="stale"?`<div class="banner a sect">⚠️ <span class="grow"><b>Your copy differs from Bitbucket main.</b> Building on an old copy could undo someone else's change.</span></div>`
+    :`<div class="banner g sect">✅ <span class="grow"><b>Freshness check passed.</b> Your copy matches Bitbucket main.</span></div>`;
+  if(state==="found"||state==="stale") return cat+(state==="stale"?fresh:"")+ILLUS;
+  return `${fresh}<div class="card pad sect"><div class="h3">📋 Enhancement summary</div>
+    <div class="f"><div class="fl">What it does today <span class="tag b">Drafted by AI from the code, confirmed by you</span></div><div class="fv">Lists limits expiring in the next 30 days, sorted by expiry date, showing the expiry date exactly as stored.</div></div>
+    <div class="f ${state==="today"?"":"fresh"}"><div class="fl">What should change</div>${state==="today"?'<div class="fv empty">Waiting for your answer</div>':'<div class="fv">When a limit expires on a Saturday or Sunday, show the next Monday.</div>'}</div>
+    <div class="f ${state==="today"?"":"fresh"}"><div class="fl">What must NOT change</div>${state==="today"?'<div class="fv empty">Waiting for your answer</div>':'<div class="fv">The report columns and the sort order.</div>'}</div></div>
+    <div class="card pad sect"><div class="h3">🕸️ Impact <span class="muted small" style="font-weight:400">who calls the function being changed</span></div><ul class="clean small"><li>📄 <span class="mono">callbacks/limits_report_callbacks.py</span> calls <span class="mono">format_expiry()</span></li><li>📄 <span class="mono">exports/limits_excel_export.py</span> calls <span class="mono">format_expiry()</span></li></ul></div>${ILLUS}`;
 }
-function tabP3Discovery(){
-  return `<div class="card find" style="border-color:#F2D199"><div class="muted small">🔁 Similar implementation</div><h4>Shared batching helper</h4><p style="margin:6px 0 0">A reusable helper already exists. This change may duplicate it.</p><div class="src">utils/batching.py @ 9b20d7e</div></div>
-  <p class="small muted" style="margin:12px 0 0">Duplication checks need discovery, so a quick one always runs, even on this path.</p>${ILLUS}`;
+function tabSafety(){
+  const T=[["S-1","Weekday expiry shows the same date","Stays"],["S-2","Saturday expiry shows the stored date","Expected to change (AC-1)"],["S-3","Sunday expiry shows the stored date","Expected to change (AC-1)"],["S-4","Rows sorted by expiry date","Stays"],["S-5","Report has the same 6 columns","Stays"],["S-6","Excel export uses the same date format","Stays"]];
+  return `<div class="banner g">🛟 <span class="grow"><b>Safety net: 6 tests capture today's behaviour.</b> All 6 pass on the unchanged code, so the tests themselves are proven right.</span></div>
+    <div class="card pad"><table class="t"><tr><th>Test</th><th>Today's behaviour</th><th>After the change</th></tr>${T.map(t=>`<tr><td class="mono small">${t[0]}</td><td class="small">${t[1]}</td><td class="small">${t[2].startsWith("Expected")?`<span class="tag b">${t[2]}</span>`:"✅ Must still pass"}</td></tr>`).join("")}</table></div>
+    <div class="card pad sect"><div class="h3">⚠️ Not covered by the safety net</div><p class="small" style="margin:0">Report screen layout (a Dash screen). <b>Check manually.</b> This is listed in the PR summary.</p></div>${ILLUS}`;
 }
-function tabP3Review(){
-  return `<div class="banner v">🧾 <span class="grow"><b>Review basis:</b> developer-declared intent, not a confirmed request. Functional alignment is checked against that intent only.</span></div>
-  <div class="card pad"><div class="score">${ring(71,"#D9483B")}<div><div class="muted small">Result</div><div style="font-size:20px;font-weight:700;color:var(--red)">REVISION REQUIRED</div></div></div><div style="margin-top:14px">${tiles([1,0,1,1,2])}</div></div>
-  <div class="card pad sect"><div class="h3">Findings</div><table class="t"><tr><td>⛔</td><td>Batch size hardcoded as 500<div class="mono muted small">CV-STD-014 Configuration must be externalised</div></td></tr><tr><td>⚠️</td><td>Duplicates the shared batching helper<div class="mono muted small">Reinvention of existing function, utils/batching.py</div></td></tr><tr><td>💬</td><td>2 advisory suggestions<div class="mono muted small">Naming, docstrings</div></td></tr></table>
-  <p class="small muted" style="margin:10px 0 0">From here, the same fix loop applies: suggest a fix, apply in the IDE, re-upload, re-review, then handoff.</p></div>${ILLUS}`;
+
+/* ================= Review my code tabs ================= */
+function tabRevSummary(){
+  return `<div class="card pad"><div class="h3">📝 Short understanding</div><div class="f"><div class="fl">What it fixes</div><div class="fv">Timeout when ingesting large DOCX files.</div></div>
+    <div class="fl" style="margin-top:8px">Acceptance criteria</div><ul class="clean"><li class="gwt"><span class="ac">AC-1</span>Paragraphs are processed in batches</li><li class="gwt"><span class="ac">AC-2</span>Batch size comes from settings, default 500</li><li class="gwt"><span class="ac">AC-3</span>Output order is unchanged</li></ul></div>
+    <div class="card pad sect"><div class="h3">📁 Files picked from your workspace</div><div>${file("🐍","ingestion/docx_loader.py")}</div><p class="small muted" style="margin:8px 0 0">No upload. The file is read from your folder.</p></div>
+    <div class="card find sect" style="border-color:#F2D199"><div class="muted small">🔁 Similar implementation</div><h4>Shared batching helper</h4><p style="margin:6px 0 0">A reusable helper already exists. This change may duplicate it.</p><div class="src">utils/batching.py @ 9b20d7e</div></div>${ILLUS}`;
+}
+function tabRevTests(){
+  return `<div class="card pad"><div class="muted small">Independent Tester result</div><div class="label-big" style="color:var(--red)">🔴 Not passing</div><div class="small muted">4 of 5 tests pass · 1 Must fix · 1 Should fix</div></div>
+    <div class="card pad sect"><div class="h3">Findings</div><table class="t">
+    <tr><td>🔴</td><td>Batch size hardcoded as 500, so AC-2 fails<div class="mono muted small">docx_loader.py line 18 · AC-2 · CV-STD-014 Configuration must be externalised</div></td><td class="small">Must fix</td></tr>
+    <tr><td>🟡</td><td>Duplicates the shared batching helper<div class="mono muted small">docx_loader.py lines 20-34 · utils/batching.py</div></td><td class="small">Should fix</td></tr></table></div>
+    <div class="card pad sect"><div class="h3">Your options</div><ul class="clean small"><li>✋ <b>Fix it yourself</b>, then Re-scan</li><li>🤖 <b>Let AI fix</b>: a patch, your other lines are protected</li><li>⚖️ <b>Dispute</b>: goes to the named senior's inbox</li></ul></div>${ILLUS}`;
+}
+
+/* ================= Admin pages ================= */
+function adminBuild(){
+  const set=(l,v)=>`<div class="setrow"><span>${l}</span><span class="v">${v}</span></div>`;
+  const tg=(l,on)=>`<div class="setrow"><span class="small">${l}</span><span class="tgl ${on?"on":""}"></span></div>`;
+  return `<div class="shead"><div><h1>Admin: Build and test ${ENV}</h1><p class="sub">Replaces "Generation and review". The L0 to L3 generation levels are gone: the AI now writes all of the code.</p></div><div class="sright"><span class="btn primary">Save as new version</span></div></div>
+  <div class="adm">
+    <div class="card pad"><div class="h3">⚙️ Limits</div>${set("Fix rounds per build","3")}${set("Test time limit per run","60 s")}${set("Max files per request","5")}${set("Auto-escalate when the round cap is hit","2 times in a row")}</div>
+    <div class="card pad"><div class="h3">🤖 Model per role</div>${set("Generator","Qwen3.6-35B-A3B")}${set("Independent Tester","Llama-4-Maverick")}<p class="small muted" style="margin:8px 0 0">Tester is tentative until the bake-off on 3 sample requests.</p></div>
+    <div class="card pad"><div class="h3">🚩 Flag-for-review zones</div>
+      <div class="zonecard"><b>Security</b> <span class="small muted">Encryption, tokens, secrets, permission checks</span></div>
+      <div class="zonecard"><b>Login</b> <span class="small muted">Authentication, sessions, password handling</span></div>
+      <p class="small muted" style="margin:0">Effect: the capability's named senior becomes a <b>required reviewer</b> on the PR. Not a block.</p></div>
+    <div class="card pad"><div class="h3">🔒 Protected files <span class="tag b">New</span></div><div>${file("📄",".env")}${file("🐍","configs/llm_config.py")}${file("🐍","web_server.py")}</div><p class="small muted" style="margin:8px 0 0">The AI may never write these. Needing one is flagged in Approach.</p></div>
+    <div class="card pad"><div class="h3">📦 Approved libraries</div><div class="chips"><span class="chip">dash</span><span class="chip">dash-mantine-components</span><span class="chip">pandas</span><span class="chip">openpyxl</span><span class="chip">pydantic</span><span class="chip">requests</span><span class="chip">+ 14 more</span></div><p class="small muted" style="margin:8px 0 0">Layer A checks every import against this list.</p></div>
+    <div class="card pad"><div class="h3">🆘 Escalation triggers <span class="muted small" style="font-weight:400">fixed list, on or off only</span></div>${tg("Round cap hit twice in a row",true)}${tg("Request or approach out of scope",true)}${tg("Developer disputes a Must fix",true)}${tg("Tester unable to assess twice",true)}${tg("Developer clicks Get help",true)}</div>
+  </div>${ILLUS}`;
+}
+function adminOverview(){
+  const t=(v,l,s)=>`<div class="tile"><b>${v}</b><span>${l}</span>${s?`<div class="small muted">${s}</div>`:""}</div>`;
+  return `<div class="shead"><div><h1>Admin: Overview ${ENV}</h1><p class="sub">New health metrics. "AI code kept %" is gone, because the AI now writes all of the code.</p></div></div>
+  <div class="tiles" style="grid-template-columns:repeat(3,1fr)">${t("68%","First-round pass rate","builds green in round 1")}${t("1.6","Average fix rounds","per build")}${t("0.8","Requirement revisions","per request (v2, v3...)")}${t("22%","Files edited by developers","after the build")}${t("3","Escalations","this month")}${t("41","Tester findings","Judgement rules lead")}</div>
+  <div class="grid2 sect"><div class="card pad"><div class="h3">📈 Why these</div><ul class="clean small"><li><b>Requirement revisions</b> show whether Understand is missing things</li><li><b>Files edited by developers</b> show where the AI falls short</li><li><b>First-round pass rate</b> shows code quality before any fixing</li></ul></div>
+  <div class="card pad"><div class="h3">🗂️ Capability catalog: Unassigned queue</div><table class="t"><tr><th>Program</th><th>Picked by developer</th></tr><tr><td class="mono small">utils/date_helpers.py</td><td class="small">Limits</td></tr></table><p class="small muted" style="margin:8px 0 0">Programs a developer assigned to a capability, waiting for Admin to confirm.</p></div></div>${ILLUS}`;
 }
 
 /* ================= Workspace renderer ================= */
 const TABS={
-  main:[["summary","📋 Summary"],["discovery","🔍 Discovery"],["gate","🚦 Gate"],["code","⚙️ Code"],["review","🛡️ Review"],["audit","🧾 Audit"]],
-  p3:[["intent","📝 Intent"],["discovery","🔍 Discovery"],["review","🛡️ Review"]]
+  main:[["summary","📋 Summary"],["discovery","🔍 Discovery"],["approach","🧭 Approach"],["build","🧪 Build"],["tests","✅ Tests"],["audit","🧾 Audit"]],
+  enh:[["summary","📋 Summary"],["safety","🛟 Safety net"]],
+  rev:[["summary","📝 Summary"],["tests","✅ Tests"]]
 };
 function tabContent(b,t){
   const st=b.st;
   if(b.ws==="main"){
-    if(t==="summary") return tabSummary(st.p1);
+    if(t==="summary") return tabSummary(st.p1,st.ver);
     if(t==="discovery") return tabDiscovery(st.disc);
-    if(t==="gate") return tabGate();
-    if(t==="code") return tabCode(st.code);
-    if(t==="review") return review(st.review);
+    if(t==="approach") return tabApproach(st.appr);
+    if(t==="build") return tabBuild(st.build);
+    if(t==="tests") return tabTests(st.tests);
     if(t==="audit") return tabAudit();
+  } else if(b.ws==="enh"){
+    if(t==="summary") return tabEnhSummary(st.enh);
+    if(t==="safety") return tabSafety();
   } else {
-    if(t==="intent") return tabIntent(st.intent);
-    if(t==="discovery") return tabP3Discovery();
-    if(t==="review") return tabP3Review();
+    if(t==="summary") return tabRevSummary();
+    if(t==="tests") return tabRevTests();
   }
   return "";
 }
 let viewTab=null, expOverride=null;
+const MSGS={main:MAIN,enh:ENH,rev:REV};
+function chip(b){
+  if(!b.chip) return "";
+  if(b.chip==="off") return `<span class="wschip off">📁 No workspace chosen</span>`;
+  return `<span class="wschip"><span>📁</span><span class="mono">C:\\Dev\\codevision</span><span>✅</span><span class="rs">🔄 Re-scan</span></span>`;
+}
 function workspace(b){
-  const msgs=b.ws==="main"?MAIN:P3;
+  const msgs=MSGS[b.ws];
   const prev=b.prevUpto;
   let d=0;
   const body=msgs.slice(0,b.upto+1).map((m,i)=>{const isNew=i>prev;if(isNew)d++;return msgHTML(m,isNew,isNew&&d>1?"d"+Math.min(d-1,9):"");}).join("");
   const tab=viewTab||b.tab;
   const exp=expOverride===null?b.exp:expOverride;
   const tabs=TABS[b.ws].map(([k,l])=>{const un=b.unlocked.includes(k);return `<button class="tab ${k===tab?"on":""} ${un?"":"lock"} ${b.newTabs&&b.newTabs.includes(k)?"new":""}" data-tab="${k}" ${un?"":"disabled"}>${l}</button>`;}).join("");
-  return `<div class="wsbar"><div><span class="t">${b.title}</span>${b.ws==="main"&&b.st.p1>=0?`<span class="rid">${REQ}</span>`:""}</div><div class="sright">${b.env?ENV:""}${pill(b.status)}</div></div>
+  const rid=b.ws==="main"?REQ:b.ws==="enh"?"CVDA-2026-0003":"CVDA-2026-0004";
+  return `<div class="wsbar"><div><span class="t">${b.title}</span>${b.ws!=="main"||b.st.p1>=0?`<span class="rid">${rid}</span>`:""}</div><div class="sright">${chip(b)}${b.env?ENV:""}${pill(b.status)}</div></div>
   <div class="ws ${exp?"exp":""}">
     <section class="card chat"><div class="chat-head">💬 Developer Assistant chat ${b.lockNote?`<span class="lock">${b.lockNote}</span>`:""}</div>
       <div class="chat-body" id="chatBody">${body}</div>${composer(b.comp)}</section>
@@ -735,32 +846,52 @@ function ws(o){
 }
 const other=(ch,step,render,note)=>B.push({kind:"page",ch,step,render,note});
 const L=(arr,pick,esc)=>({m:"locked",ch:arr.map((t,i)=>({t,e:esc&&esc.includes(i)})),pick});
+const T="Add Excel document processing";
+const ALL=["summary","discovery","approach","build","tests","audit"];
 
-other("Introduction",null,cover,"<b>Open here.</b> The Developer Assistant is one planned capability inside CodeVision. It targets the repeated onboarding cost of rotating interns and junior developers.");
-other("Home",null,()=>home("a"),"<b>Two entry points.</b> Start a change request for new work, or Review my code for code already written. From here, everything happens in <b>one chat</b>, with results in the side panel.");
+other("Introduction",null,cover,"<b>Open here.</b> Revised after the director review: the AI writes all of the code, tests prove it, and the developer owns the requirement.");
+other("How it works",null,howItWorks,"<b>The new shape in one slide.</b> Six steps. Purple steps belong to the developer, blue steps to the AI. Three test layers, a workspace on the laptop, and the things that never change.");
+other("Home",null,()=>home("a"),"<b>Three entry points.</b> Build something new, enhance or fix an existing program, or review code the developer wrote. The workspace folder is chosen once and remembered.");
 
-const P1N=["The developer asks in plain words. The assistant <b>does not jump to code</b>; it asks first, like a senior developer. Note the banner: no code in Phase 1.","Question 1 answered. The <b>Summary tab</b> fills in live as the conversation happens. Qwen interprets; CodeVision application logic validates the structure.","Question 2 establishes the current state. The developer does <b>not</b> need to know exact source files.","Question 3 defines the expected behaviour. A plain-language <b>functional flow</b> appears, with no invented class or function names.","A <b>material ambiguity</b> is spotted. The chat <b>locks</b>: the text box is disabled and only choices are shown, always with an escape option.","The decision is recorded. <b>Minor ambiguity</b> such as log wording is resolved using standards and labelled as an assumption. References are optional.","The developer checks the summary and chooses: <b>proceed, correct, or get help deciding</b>. Unresolved material decisions stop progression.","The confirmed request is <b>stored and versioned</b>. This record, not the raw chat, drives everything that follows."];
+const P1N=["The developer asks in plain words. The assistant <b>does not jump to code</b>; it asks first, like a senior developer.","Question 1 answered. The <b>Summary tab</b> fills in live. Qwen interprets; CodeVision's own code validates the structure.","Question 2 establishes the current state. The developer does <b>not</b> need to know exact source files.","Question 3 defines the expected behaviour. A plain-language <b>functional flow</b> appears.","Each success or failure case becomes a <b>testable acceptance criterion</b> (Given, when, then). A material ambiguity locks the chat until the developer decides.","The decision becomes criterion AC-3. Minor details follow standards and are labelled as assumptions.","The developer checks the summary and chooses: <b>proceed, correct, or get help deciding</b>.","The confirmed request is <b>stored as version 1</b>. This record, not the raw chat, is what every later AI call reads. That's the memory."];
 const P1C=[{m:"text"},{m:"text"},{m:"text"},{m:"text"},L(["Visible worksheets only","All worksheets, including hidden","🤔 I need help deciding"],0,[2]),{m:"text",ph:"Type a reference, or say skip…"},L(["✅ Proceed with this understanding","✏️ Correct something","🤔 I need help deciding"],0,[2]),L(["🔍 Proceed to Discovery"],0)];
 const P1S=["DRAFT","CLARIFICATION IN PROGRESS","CLARIFICATION IN PROGRESS","CLARIFICATION IN PROGRESS","DECISION REQUIRED","CLARIFICATION IN PROGRESS","READY FOR CONFIRMATION","CONFIRMED FOR DISCOVERY"];
-[1,3,5,7,9,11,13,15].forEach((u,k)=>ws({ws:"main",ch:"Phase 1: Understand",step:1,upto:u,title:k<3?"New change request":"Add Excel document processing",status:P1S[k],env:false,lockNote:"🔒 No code is generated in Phase 1",tab:"summary",unlocked:["summary"],exp:false,comp:P1C[k],st:{p1:k},note:P1N[k]}));
+[1,3,5,7,9,11,13,15].forEach((u,k)=>ws({ws:"main",ch:"1 Understand",step:1,upto:u,title:k<3?"New change request":T,status:P1S[k],lockNote:"🔒 No code is generated while we agree the requirement",tab:"summary",unlocked:["summary"],exp:false,comp:P1C[k],st:{p1:k},note:P1N[k]}));
 
-ws({ws:"main",ch:"Phase 2: Discover",step:2,upto:18,title:"Add Excel document processing",status:"SEARCHING",env:true,tab:"discovery",unlocked:["summary","discovery"],newTabs:["discovery"],exp:false,comp:{m:"busy",ph:"⏳ Searching approved sources…"},st:{disc:"search"},note:"<b>Envisioned.</b> Same chat, new phase. The panel switches to the <b>Discovery tab</b>. CodeVision searches a pre-built index of approved Bitbucket content, not the whole repository."});
-ws({ws:"main",ch:"Phase 2: Discover",step:2,upto:19,title:"Add Excel document processing",status:"SIMILAR IMPLEMENTATION FOUND",env:true,tab:"discovery",unlocked:["summary","discovery"],exp:false,comp:L(["✅ Findings look right","✏️ Something's missing","🙋 Escalate to a senior developer"],0,[2]),st:{disc:"results"},note:"Findings come with <b>sources and commit IDs</b>. The developer learns that validation and a similar PDF processor already exist, so they reuse instead of duplicating."});
-ws({ws:"main",ch:"Phase 3: Readiness Gate",step:3,upto:22,title:"Add Excel document processing",status:"READY FOR CODE GENERATION",env:true,tab:"gate",unlocked:["summary","discovery","gate"],newTabs:["gate"],exp:false,comp:L(["⚙️ Generate starter code","✍️ I'll write it myself","🤔 I need help deciding"],0,[2]),note:"Four gates must pass, and <b>only READY FOR CODE GENERATION</b> invokes the generator. The developer chooses: generate, or <b>write it myself</b> (skips only Phase 4)."});
-ws({ws:"main",ch:"Phase 4: Generate + Check",step:4,upto:25,title:"Add Excel document processing",status:"GENERATING",env:true,tab:"code",unlocked:["summary","discovery","gate","code"],newTabs:["code"],exp:true,comp:{m:"busy",ph:"⏳ Generating and checking…"},st:{code:"a1"},note:"<b>Maker-checker</b>, a principle banking already uses. Qwen drafts; a separate checker reviews blind. The Rule Gate makes objective blocking decisions; the Independent Reviewer adds judgement. The panel <b>expands</b> for bigger content."});
-ws({ws:"main",ch:"Phase 4: Generate + Check",step:4,upto:26,title:"Add Excel document processing",status:"GENERATING",env:true,tab:"code",unlocked:["summary","discovery","gate","code"],exp:true,comp:{m:"busy",ph:"⏳ Finalising starter code…"},st:{code:"a2"},note:"Findings go back to Qwen for a <b>capped</b> number of rebuilds. The developer only sees code once blocking issues are cleared."});
-ws({ws:"main",ch:"Phase 4: Generate + Check",step:4,upto:27,title:"Add Excel document processing",status:"WITH DEVELOPER",env:true,tab:"code",unlocked:["summary","discovery","gate","code"],exp:true,comp:{m:"upload",ph:"Waiting for your upload. Attach your code with 📎"},st:{code:"starter"},note:"<b>Download, don't edit here.</b> The developer downloads starter code plus a context sheet, completes it in their own IDE, and uploads it back. The assistant stays read-only."});
-ws({ws:"main",ch:"Phase 5: Preliminary Review",step:5,upto:30,title:"Add Excel document processing",status:"REVIEWING",env:true,tab:"code",unlocked:["summary","discovery","gate","code"],exp:true,comp:{m:"busy",ph:"⏳ Reviewing Round 1…"},st:{code:"diff"},note:"The upload is <b>linked to the request</b> automatically. A <b>diff against the starter code</b> shows exactly what the AI wrote versus what the developer wrote, useful for the human reviewer later."});
-ws({ws:"main",ch:"Phase 5: Preliminary Review",step:5,upto:31,title:"Add Excel document processing",status:"CONDITIONALLY ACCEPTABLE",env:true,tab:"review",unlocked:["summary","discovery","gate","code","review"],newTabs:["review"],exp:true,comp:L(["🔧 I'll fix it myself","💡 Suggest a fix","🚫 False positive","➖ Not applicable","⚠️ Risk accepted"],1,[2,3,4]),st:{review:"r1"},note:"Round 1 report. A score alone is not enough: <b>one blocking finding stops the handoff</b>, whatever the score. The developer responds per finding, in the chat. Risk-accepted items are carried to the PR summary."});
-ws({ws:"main",ch:"Phase 5: Preliminary Review",step:5,upto:33,title:"Add Excel document processing",status:"CONDITIONALLY ACCEPTABLE",env:true,tab:"review",unlocked:["summary","discovery","gate","code","review"],exp:true,comp:{m:"upload",ph:"Waiting for Round 2. Apply the fixes in your IDE, then attach with 📎"},st:{review:"fix"},note:"<b>Qwen suggests, the developer applies.</b> Every finding explains what, why, where, which rule, and a reference. The developer keeps ownership and learns the standard."});
-ws({ws:"main",ch:"Phase 5: Preliminary Review",step:5,upto:35,title:"Add Excel document processing",status:"READY FOR HUMAN REVIEW",env:true,tab:"review",unlocked:["summary","discovery","gate","code","review"],exp:true,comp:L(["🚀 Prepare handoff"],0),st:{review:"r2"},note:"Round 2: a <b>full re-review</b>, showing resolved, still open, and new findings. The loop repeats until 0 blocking, with escalation after 3 rounds."});
-ws({ws:"main",ch:"Phase 6: Handoff",step:6,upto:38,title:"Add Excel document processing",status:"READY FOR BITBUCKET SUBMISSION",env:true,tab:"audit",unlocked:["summary","discovery","gate","code","review","audit"],newTabs:["audit"],exp:true,comp:{m:"text",ph:"Ask a follow-up question…"},note:"The assistant <b>hands over, it never takes over</b>. A ready PR summary plus a full audit trail. Every earlier tab is still clickable as history."});
+ws({ws:"main",ch:"2 Discover",step:2,upto:18,title:T,status:"SEARCHING",env:true,tab:"discovery",unlocked:["summary","discovery"],newTabs:["discovery"],exp:false,comp:{m:"busy",ph:"⏳ Searching approved sources…"},st:{disc:"search"},note:"Same chat, next step. CodeVision searches a pre-built index of approved code, including <b>who calls what</b>, so the AI reuses instead of duplicating."});
+ws({ws:"main",ch:"2 Discover",step:2,upto:19,title:T,status:"SIMILAR IMPLEMENTATION FOUND",env:true,tab:"discovery",unlocked:["summary","discovery"],exp:false,comp:L(["✅ Findings look right","✏️ Something's missing","🙋 Get help"],0,[2]),st:{disc:"results"},note:"Findings come with <b>sources and commit IDs</b>. Validation and a similar PDF processor already exist, so they will be reused."});
 
-other("Path 3: Review my code",null,()=>home("b"),"<b>Side demo.</b> For code that's already written, the developer starts from Review my code.");
-ws({ws:"p3",ch:"Path 3: Review my code",step:-1,upto:1,title:"Review my code: docx_loader.py",status:"POLICY CHECK PASSED",env:true,tab:"intent",unlocked:["intent"],exp:false,comp:L(["✅ That's right","✏️ Correct it"],1),st:{intent:"draft"},note:"The Admin decides when this shortcut is allowed. With no request record, the assistant <b>drafts the intent from the code</b> for the developer to confirm."});
-ws({ws:"p3",ch:"Path 3: Review my code",step:-2,upto:4,title:"Review my code: docx_loader.py",status:"INTENT CONFIRMED",env:true,tab:"discovery",unlocked:["intent","discovery"],newTabs:["discovery"],exp:false,comp:{m:"busy",ph:"⏳ Reviewing…"},st:{intent:"confirmed"},note:"The developer corrects the intent. A <b>quick discovery</b> always runs, because duplication can't be checked without it."});
-ws({ws:"p3",ch:"Path 3: Review my code",step:-3,upto:5,title:"Review my code: docx_loader.py",status:"REVISION REQUIRED",env:true,tab:"review",unlocked:["intent","discovery","review"],newTabs:["review"],exp:false,comp:L(["🔧 I'll fix it myself","💡 Suggest a fix","🚫 False positive","➖ Not applicable","⚠️ Risk accepted"],null,[2,3,4]),note:"Same review framework, with the <b>basis stated openly</b>. From here, the same fix loop and handoff apply."});
-other("Summary",null,closing,"<b>Close here.</b> One principle, three entry paths, one standard of review. Humans keep accountability throughout.");
+ws({ws:"main",ch:"3 Approach",step:3,upto:22,title:T,status:"APPROACH PROPOSED",env:true,tab:"approach",unlocked:["summary","discovery","approach"],newTabs:["approach"],exp:true,comp:L(["Add Excel to the existing upload screen","Create a new upload screen","🤔 I need help deciding"],0,[2]),st:{appr:"proposed"},note:"<b>Agree how, before anything is built.</b> The file plan, reuse decisions and libraries are checked by plain code: allowed folders, protected files, approved libraries. Too many files? It suggests splitting the request."});
+ws({ws:"main",ch:"3 Approach",step:3,upto:24,title:T,status:"APPROACH PROPOSED",env:true,tab:"approach",unlocked:["summary","discovery","approach"],exp:true,comp:{m:"text",ph:"Add your own test case in plain words, or accept the plan…"},st:{appr:"tp"},note:"<b>This is the developer's new job.</b> The Tester writes the test plan from the criteria, in plain language, <b>without seeing any code</b>. The developer reads cases, not code. A missing case usually means a missing requirement."});
+ws({ws:"main",ch:"3 Approach",step:3,upto:26,title:T,status:"APPROACH PROPOSED",env:true,tab:"approach",unlocked:["summary","discovery","approach"],exp:true,comp:L(["✅ Accept test plan","✏️ Change a case"],0),st:{appr:"tp2"},note:"The developer added his own case (T-6, marked <b>Yours</b>). He approves the test plan before anything is built."});
+ws({ws:"main",ch:"3 Approach",step:3,upto:28,title:T,status:"READY TO BUILD",env:true,chip:"off",tab:"approach",unlocked:["summary","discovery","approach"],exp:false,comp:L(["📁 Choose workspace folder"],0),st:{appr:"gates"},note:"Four gates must pass. Then the developer <b>chooses his local CodeVision folder once</b>, using the browser's own folder picker (Chrome and Edge, on https). No download, no upload from here on."});
+
+ws({ws:"main",ch:"4 Build & Test",step:4,upto:31,title:T,status:"BUILDING",env:true,chip:"on",tab:"build",unlocked:["summary","discovery","approach","build"],newTabs:["build"],exp:true,comp:{m:"busy",ph:"⏳ Building and testing. You can leave this page."},st:{build:"running"},note:"<b>Live progress.</b> Tests are written first and <b>frozen</b>. Qwen writes one file per call. A build takes minutes, so the developer can leave and come back. Each test run has a 60-second time limit, so a stuck run can never hang the server."});
+ws({ws:"main",ch:"4 Build & Test",step:4,upto:32,title:T,status:"TESTING",env:true,chip:"on",tab:"build",unlocked:["summary","discovery","approach","build"],exp:true,comp:{m:"busy",ph:"⏳ Round 2 of 3…"},st:{build:"r1"},note:"<b>Tests catch real problems.</b> One failure was the developer's own case. Qwen gets a plain failure report and fixes only the failing file. 3 rounds at most, then it stops and shows the developer."});
+ws({ws:"main",ch:"4 Build & Test",step:4,upto:33,title:T,status:"READY, WITH WARNINGS",env:true,chip:"on",tab:"tests",unlocked:["summary","discovery","approach","build","tests"],newTabs:["tests"],exp:true,comp:L(["🔧 Fix it","📝 Accept, with reason"],0,[1]),st:{build:"written",tests:"warn"},note:"<b>The independent Tester.</b> A different model checks every criterion has a passing test, the approach was followed, and nothing extra was built. Every finding cites file, line and rule. Never \"Approved\"."});
+ws({ws:"main",ch:"4 Build & Test",step:4,upto:35,title:T,status:"READY FOR REVIEW",env:true,chip:"on",tab:"build",unlocked:ALL.slice(0,5),exp:true,comp:{m:"text",ph:"Tell me what to refine, or Re-scan after editing…"},st:{tests:"green"},note:"<b>Written straight into the developer's folder</b>, with the tests. He can run the app, run the tests, and edit anything."});
+
+ws({ws:"main",ch:"5 Your review",step:5,upto:39,title:T,status:"READY FOR REVIEW",env:true,chip:"on",tab:"summary",unlocked:ALL.slice(0,5),exp:false,comp:L(["📝 Requirement change","🐞 Bug","🧭 Approach change"],0),st:{ver:"v1"},note:"<b>Refine, three lanes.</b> The AI suggests the lane, the developer confirms. Requirement change goes back to Understand. Bug goes straight to a fix with a test that reproduces it. Approach change goes back to Approach."});
+ws({ws:"main",ch:"5 Your review",step:5,upto:42,title:T,status:"REVISION IN PROGRESS",env:true,chip:"on",tab:"summary",unlocked:ALL.slice(0,5),exp:false,comp:L(["🔄 Re-scan"],0),st:{ver:"v2"},note:"<b>Same request, new version.</b> CVDA-2026-0001 v2 adds one criterion. Version 1 is kept as history. And the tool refuses to write until the developer's own edit has been scanned."});
+ws({ws:"main",ch:"5 Your review",step:5,upto:44,title:T,status:"REVISION IN PROGRESS",env:true,chip:"on",tab:"build",unlocked:ALL.slice(0,5),exp:true,comp:{m:"busy",ph:"⏳ Rebuilding version 2…"},st:{build:"rescan"},note:"<b>Re-scan, no upload.</b> The developer's change goes through all three test layers, exactly like AI code. Four rules protect his edits."});
+ws({ws:"main",ch:"5 Your review",step:5,upto:45,title:T,status:"READY FOR REVIEW",env:true,chip:"on",tab:"tests",unlocked:ALL.slice(0,5),exp:true,comp:L(["🚀 Ready for handoff","💬 Refine more"],0),st:{build:"v2",tests:"v2"},note:"Version 2: patched, not rewritten. 10 of 10 tests pass and the developer's line is kept."});
+
+ws({ws:"main",ch:"6 Handoff",step:6,upto:48,title:T,status:"HANDED OFF",env:true,chip:"on",tab:"audit",unlocked:ALL,newTabs:["audit"],exp:true,comp:{m:"text",ph:"Ask a follow-up question…"},note:"<b>What goes to Bitbucket is what was tested</b>: a final fingerprint check proves it. The PR summary tells the human reviewer exactly what to look at. The request is now locked; later changes get a new linked request."});
+
+other("Enhance or fix",null,()=>home("b"),"<b>Second entry point.</b> Changing an existing CodeVision program.");
+ws({ws:"enh",ch:"Enhance or fix",step:1,tag:"Enhance or fix",upto:1,title:"Fix weekend dates in expiry report",status:"CLARIFICATION IN PROGRESS",env:true,tab:"summary",unlocked:["summary"],exp:false,comp:L(["✅ Yes, that's it","🔎 Show other matches"],0),st:{enh:"found"},note:"<b>Find the program.</b> By name (plain-code catalog search) or by description (code index). The catalog gives the capability and its named senior. The developer always confirms."});
+ws({ws:"enh",ch:"Enhance or fix",step:1,tag:"Enhance or fix",upto:3,title:"Fix weekend dates in expiry report",status:"CLARIFICATION IN PROGRESS",env:true,chip:"on",tab:"summary",unlocked:["summary"],exp:false,comp:L(["🔁 I've pulled, check again","✅ My local changes are intentional"],0),st:{enh:"stale"},note:"<b>Freshness check.</b> The server knows the program as it is on Bitbucket main. If the developer's copy is older, building on it could undo a colleague's change."});
+ws({ws:"enh",ch:"Enhance or fix",step:1,tag:"Enhance or fix",upto:6,title:"Fix weekend dates in expiry report",status:"PROGRAM CONFIRMED",env:true,chip:"on",tab:"summary",unlocked:["summary"],exp:false,comp:{m:"text"},st:{enh:"answered"},note:"<b>Enhancement questions.</b> The AI drafts what it does today from the code. The developer adds what should change and, new, <b>what must NOT change</b>. Discover shows who calls the function being changed."});
+ws({ws:"enh",ch:"Enhance or fix",step:3,tag:"Enhance or fix",upto:7,title:"Fix weekend dates in expiry report",status:"SAFETY NET READY",env:true,chip:"on",tab:"safety",unlocked:["summary","safety"],newTabs:["safety"],exp:true,comp:L(["🧭 Continue to Approach"],0),note:"<b>Safety net first.</b> Tests capture today's behaviour and must pass on the unchanged code. After the change they must still pass, except the ones the requirement deliberately changes. Gaps are listed honestly."});
+
+other("Review my code",null,()=>home("c"),"<b>Third entry point.</b> For code the developer wrote himself. Same tests, same review.");
+ws({ws:"rev",ch:"Review my code",step:-1,upto:3,title:"Review my code: docx_loader.py",status:"CRITERIA CONFIRMED",env:true,chip:"on",tab:"summary",unlocked:["summary"],exp:false,comp:{m:"busy",ph:"⏳ Testing…"},note:"A <b>short understand</b>: 3 to 5 criteria, because the Tester needs something to test against. Files are picked from the workspace, not uploaded."});
+ws({ws:"rev",ch:"Review my code",step:-3,upto:4,title:"Review my code: docx_loader.py",status:"NOT PASSING",env:true,chip:"on",tab:"tests",unlocked:["summary","tests"],newTabs:["tests"],exp:false,comp:L(["✋ I'll fix it myself","🤖 Let AI fix","⚖️ Dispute"],null,[2]),note:"Same Tester, same labels. The developer can fix it himself, let the AI patch it, or <b>dispute</b>, which sends it to the named senior's inbox."});
+
+other("Admin: Build and test",null,adminBuild,"<b>Admin changes.</b> Generation levels are gone. New: limits, model per role, protected files. Flag-for-review zones make a senior a required PR reviewer instead of blocking.");
+other("Admin: Overview",null,adminOverview,"New health metrics that tell us where the AI or the requirements fall short.");
+other("Questions from the review",null,directorQA,"The director's two questions: memory and context, and how we know the code runs.");
+other("Summary",null,closing,"<b>Close here.</b> One principle, three ways in, one standard of testing. Humans own the requirement and the merge.");
 
 /* ================= Navigation ================= */
 let idx=0;
@@ -773,7 +904,7 @@ function paint(){
   const b=B[idx];
   stage.innerHTML=b.kind==="ws"?workspace(b):b.render();
   if(b.step===null){stepper.classList.add("hide");stepper.innerHTML="";}
-  else{stepper.classList.remove("hide");stepper.innerHTML=b.step>0?stepperMain(b.step):stepperP3(-b.step);}
+  else{stepper.classList.remove("hide");stepper.innerHTML=b.step>0?stepperMain(b.step,b.tag):stepperRev(-b.step);}
   $("count").textContent=`${idx+1} / ${B.length}`;
   $("back").disabled=idx===0;$("next").disabled=idx===B.length-1;
   $("jump").value=b.ch;
@@ -805,6 +936,7 @@ document.addEventListener("keydown",e=>{
 const h=parseInt((location.hash||"").slice(1),10);
 go(isNaN(h)?0:h-1);
 })();
+
 </script>
 </body>
 </html>

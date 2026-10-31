@@ -43,13 +43,17 @@ Stop, push the work so far to the phase branch, and tell Gian what you need when
 ## Current phase
 Phase 2C P13: adjustments from the work photos. Spec: `specs/phase-2c-p13-adjustments.md`
 
+Phases 4 onwards were redesigned on 31 Oct 2026 (LLM writes 100% of the code, built-in testing,
+laptop workspace). Source of truth: `specs/redesign-2026-10-31.md`.
+
 | # | Phase | # | Phase |
 |---|---|---|---|
-| 0 | Foundations | 5 | Generate + Check |
-| 1 | Rulebook core | 6 | Preliminary Review |
-| 2 | Understand | 7 | Handoff |
-| 3 | Discover | 8 | Paths 2 and 3, Escalations inbox |
-| 4 | Readiness Gate | 9 | Admin console and health metrics |
+| 0 | Foundations | 6 | Build + test loop |
+| 1 | Rulebook core | 7 | Independent Tester |
+| 2 | Understand | 8 | Refine (3 lanes, edit protection) |
+| 3 | Discover | 9 | Enhance existing program |
+| 4 | Approach | 10 | Review my code, Handoff, Escalations inbox |
+| 5 | Workspace | 11 | Admin console and health metrics |
 
 ## Technical rules
 - Python 3.14 only, inside `.venv`. Never use Python 3.15 features.
