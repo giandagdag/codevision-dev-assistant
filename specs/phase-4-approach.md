@@ -1,7 +1,7 @@
 # Phase 4: Approach
 
-Status: DRAFT v0.1 (31 Oct 2026). Waiting for Gian's choices on D-A to D-D (section 14).
-Recommended options are marked. Do not build until the status says APPROVED.
+Status: APPROVED v1.0 (31 Oct 2026). Decisions D-A, D-C, D-D, D-E chosen by Gian (section 14).
+Defaults D-B, D-F, D-G (section 15) were set by Claude and not objected to.
 Depends on: Phase 2D (criteria with AC IDs, the "choices plus Other, type here" control, the
 asterisk for negative scenarios) and Phase 3 (a confirmed Discover round). **Both must be merged
 into `main` first.**
@@ -370,9 +370,9 @@ Audit events (actor in brackets): `approach_proposed` (llm), `approach_failed` (
 Plus: `pytest` 0 failures, `ruff check` 0 problems, smoke check passes, code reviewer 0 Must fix, and a
 browser check at home that a full request reaches READY_TO_BUILD with the fake provider.
 
-## 14. Decisions (Gian to choose)
+## 14. Decisions (chosen by Gian, 31 Oct 2026: option 1 for all four)
 
-| # | Question | Options | Recommended |
+| # | Question | Options | Chosen |
 |---|---|---|---|
 | D-A | Where the new rule lists live (allowed folders, protected files, approved libraries, limits, zones) | 1. Rulebook policy (versioned, pinned per request, audited). 2. A separate settings file | **1**: the Admin console of Phase 11 already edits the rulebook, and a request keeps the rules it started with |
 | D-C | More code files than the limit of 5 | 1. Soft: a warning, and Accept anyway with a typed reason that is audited and shown at handoff. 2. Hard: Accept is not possible | **1**: Phase 4 has no "split the request" feature, so a hard block would leave the developer stuck. The reason trail does the job |
