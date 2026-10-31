@@ -41,7 +41,7 @@ Stop, push the work so far to the phase branch, and tell Gian what you need when
   you did not see.
 
 ## Current phase
-Phase 2D: Understand updates. Spec: `specs/phase-2d-understand-updates.md` (Phase 3 is merged into `main`)
+Phase 4: Approach. Spec: `specs/phase-4-approach.md` (Phase 2D and Phase 3 are merged into `main`)
 
 Phases 4 onwards were redesigned on 31 Oct 2026 (LLM writes 100% of the code, built-in testing,
 laptop workspace). Source of truth: `specs/redesign-2026-10-31.md`.
