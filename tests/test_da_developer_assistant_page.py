@@ -130,8 +130,9 @@ def test_decision_locks_the_text_box_and_shows_the_choices(settings):
     assert view.input_mode == "choices"
     assert by_id(tree, page.TEXT_ID).disabled is True
     assert by_id(tree, page.SEND_ID).disabled is True
-    options = [b.id["option"] for b in choice_buttons(tree)]
+    options = [b.children for b in choice_buttons(tree)]
     assert options == view.choices and flow.HELP_OPTION == options[-1]
+    assert [b.id["index"] for b in choice_buttons(tree)] == list(range(len(options)))
     assert "Text input is paused until you choose" in by_id(tree, page.TEXT_ID).placeholder
     assert "Clarification required: 1 open item" in all_text(tree)
 
@@ -149,7 +150,7 @@ def test_optional_area_shows_skip(settings):
 def test_checkpoint_offers_the_three_choices(settings):
     view = da_play.to_checkpoint(settings)
     tree = page.render_workspace(view)
-    assert [b.id["option"] for b in choice_buttons(tree)] == list(flow.CHECKPOINT_OPTIONS)
+    assert [b.children for b in choice_buttons(tree)] == list(flow.CHECKPOINT_OPTIONS)
     assert "Ready for confirmation" in all_text(tree)
     assert "READY FOR CONFIRMATION" in all_text(tree)
 
@@ -217,7 +218,7 @@ def tab(tree, name):
 def test_confirmed_request_shows_the_active_proceed_button_and_a_locked_discovery_tab(settings):
     tree, _ = discover_tree(settings)
 
-    proceed = [c for c in choice_buttons(tree) if c.id["option"] == page.START_KEY]
+    proceed = [c for c in choice_buttons(tree) if c.id["index"] == 0]
     assert len(proceed) == 1 and not getattr(proceed[0], "disabled", False)
     assert tab(tree, "discovery").disabled is True
     assert "Discovery" in all_text(tree) and by_id(tree, "da-outcome-banner") is None
@@ -252,7 +253,8 @@ def test_discovery_tab_shows_input_search_rows_outcome_findings_limitations_and_
 def test_findings_look_right_choices_and_the_hint_box(settings):
     tree, view = discover_tree(settings, start_step)
 
-    assert [c.id["option"] for c in choice_buttons(tree)] == ["confirm", "escalate"]
+    assert [c.id["index"] for c in choice_buttons(tree)] == [0, 1]
+    assert [key for key, _ in page.discover_buttons(view)] == ["confirm", "escalate"]
     assert [c.children for c in choice_buttons(tree)] == [
         "✅ Findings look right",
         "🙋 Escalate to a senior developer",
@@ -348,7 +350,7 @@ def test_a_request_stuck_in_searching_offers_search_again(settings):
         discover.get_discovery_view(settings, request_id),
     )
 
-    assert [c.id["option"] for c in choice_buttons(tree)] == ["start"]
+    assert [c.id["index"] for c in choice_buttons(tree)] == [0]
     assert [c.children for c in choice_buttons(tree)] == ["Search again"]
     assert "did not finish" in all_text(by_id(tree, "da-outcome-banner"))
 
@@ -375,10 +377,10 @@ def test_every_input_the_callbacks_name_exists_in_the_discover_workspace(setting
         assert by_id(tree, component_id) is not None, component_id
 
 
-def test_discover_button_ids_are_plain_ascii(settings):
+def test_discover_button_ids_hold_only_the_position(settings):
     # Dash cannot read the click count of a button whose id holds an emoji (found in the browser
-    # check), so the ids use plain keys and only the labels carry emoji.
+    # check), so the ids hold the position (P19) and only the labels carry emoji.
     for steps in ((), (start_step,)):
         tree, _ = discover_tree(settings, *steps)
         for button in choice_buttons(tree):
-            assert button.id["option"].isascii(), button.id
+            assert set(button.id) == {"type", "index"} and isinstance(button.id["index"], int)

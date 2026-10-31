@@ -31,7 +31,11 @@ from agents.da_understand_flow import (
 from configs.da_config import ConfigError, Settings, load_settings
 from db_table_functions.da_db import DatabaseBusyError
 from db_table_functions.db_tbl_da_rulebook import RulebookError
-from db_table_functions.db_tbl_da_understand import UnderstandError
+from db_table_functions.db_tbl_da_understand import (
+    STALE_MESSAGE,
+    StaleRevisionError,
+    UnderstandError,
+)
 from layouts.da_developer_assistant_page import (
     BUSY_ID,
     CHOICE_TYPE,
@@ -47,6 +51,7 @@ from layouts.da_developer_assistant_page import (
     START_KEY,
     STATE_ID,
     TEXT_ID,
+    discover_buttons,
     render_discover_workspace,
     render_home,
     render_message_page,
@@ -155,10 +160,12 @@ def perform_action(settings: Settings, trigger, text, state, refresh):
             submit_answer(settings, request_id, text or "", revision)
         elif trigger == SKIP_ID:
             skip_optional(settings, request_id, revision)
-        elif state.get("discover") and _is_choice(trigger):
-            _discover_choice(settings, request_id, trigger["option"], revision)
+        elif _is_choice(trigger) and state.get("discover"):
+            key = _discover_key_at(settings, request_id, revision, trigger["index"])
+            _discover_choice(settings, request_id, key, revision)
         elif _is_choice(trigger):
-            choose_option(settings, request_id, trigger["option"], revision)
+            option = _option_at(settings, request_id, revision, trigger["index"])
+            choose_option(settings, request_id, option, revision)
         else:
             raise PreventUpdate
     except SHOWN_ERRORS as error:
@@ -183,6 +190,30 @@ def _discover_choice(settings: Settings, request_id: str, key: str, revision: in
         raise PreventUpdate
 
 
+def _discover_key_at(settings: Settings, request_id: str, revision: int, index: int) -> str:
+    """The key of the Discover button that was pressed, read from the request as saved now.
+
+    Same stale-window rule as _option_at: an old window or an index with no button is refused.
+    """
+    view = get_discovery_view(settings, request_id)
+    buttons = discover_buttons(view)
+    if view.revision != revision or not 0 <= index < len(buttons):
+        raise StaleRevisionError(STALE_MESSAGE)
+    return buttons[index][0]
+
+
+def _option_at(settings: Settings, request_id: str, revision: int, index: int) -> str:
+    """The text of the choice button that was pressed, read from the request as saved now.
+
+    A window that is out of date, or an index with no button behind it, gets the same stale-window
+    message as any other out-of-date save (rule R7). Nothing is written.
+    """
+    view = get_understand_view(settings, request_id)
+    if view.revision != revision or not 0 <= index < len(view.choices):
+        raise StaleRevisionError(STALE_MESSAGE)
+    return view.choices[index]
+
+
 def register_da_developer_assistant_page_callbacks(app) -> None:
     # Draws on first load too, so this one does not use prevent_initial_call.
     app.callback(
@@ -198,7 +229,7 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
         Output(LOCATION_ID, "search"),
         Output(MESSAGE_ID, "children"),
         Input(SEND_ID, "n_clicks"),
-        Input({"type": CHOICE_TYPE, "option": ALL}, "n_clicks"),
+        Input({"type": CHOICE_TYPE, "index": ALL}, "n_clicks"),
         Input(SKIP_ID, "n_clicks"),
         State(TEXT_ID, "value"),
         State(STATE_ID, "data"),

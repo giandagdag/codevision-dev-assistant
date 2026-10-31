@@ -9,6 +9,7 @@ from callbacks.screen_callbacks import da_developer_assistant_page_callbacks as 
 from db_table_functions.db_tbl_da_understand import STALE_MESSAGE
 from layouts import da_developer_assistant_page as page
 from tests import da_play
+from tests.da_stub_client import StubClient, stub_reply
 from tests.da_tree import all_text, by_id
 
 
@@ -27,8 +28,27 @@ def send(settings, view, text="my answer"):
     return cb.perform_action(settings, page.SEND_ID, text, state_of(view), 0)
 
 
-def choice(option):
-    return {"type": page.CHOICE_TYPE, "option": option}
+def choice(index):
+    return {"type": page.CHOICE_TYPE, "index": index}
+
+
+# Made-up options with the characters that broke ids: curly quote, long dash, accent, emoji.
+TRICKY_OPTIONS = [
+    "Keep the user\u2019s old file \u2014 convert later",
+    "Caf\u00e9 sheets only",
+    "Skip hidden sheets \U0001F4CA",
+]
+
+
+def to_tricky_decision(settings):
+    """A material decision whose options hold the awkward characters (stub interpreter reply)."""
+    ambiguity = {"text": "Which way should we go?", "material": True, "options": TRICKY_OPTIONS}
+    reply = stub_reply({"title": "Add Excel uploads"}, [ambiguity])
+    view = flow.create_understand_request(settings, "Can we support Excel uploads?")
+    return flow.submit_answer(
+        settings, view.request.request_id, "Because users ask", view.revision,
+        client=StubClient(reply),
+    )
 
 
 def test_the_whole_scripted_conversation_runs_through_the_buttons(settings):
@@ -46,12 +66,13 @@ def test_the_whole_scripted_conversation_runs_through_the_buttons(settings):
         view = flow.get_understand_view(settings, request_id)
     assert view.input_mode == "choices"  # the decision locks the text box
 
-    cb.perform_action(settings, choice(view.choices[0]), None, state_of(view), 1)
+    cb.perform_action(settings, choice(0), None, state_of(view), 1)
     view = flow.get_understand_view(settings, request_id)
     assert view.can_skip
     cb.perform_action(settings, page.SKIP_ID, None, state_of(view), 2)
     view = flow.get_understand_view(settings, request_id)
-    cb.perform_action(settings, choice(flow.PROCEED_OPTION), None, state_of(view), 3)
+    proceed = view.choices.index(flow.PROCEED_OPTION)
+    cb.perform_action(settings, choice(proceed), None, state_of(view), 3)
 
     view = flow.get_understand_view(settings, request_id)
     assert view.request.status == "CONFIRMED_FOR_DISCOVERY"
@@ -125,19 +146,47 @@ def test_text_is_refused_while_a_decision_waits(settings):
 
 def test_help_choice_shows_decision_required_then_choosing_resumes(settings):
     view = da_play.to_decision(settings)
-    cb.perform_action(settings, choice(flow.HELP_OPTION), None, state_of(view), 0)
+    help_button = view.choices.index(flow.HELP_OPTION)
+    cb.perform_action(settings, choice(help_button), None, state_of(view), 0)
     view = flow.get_understand_view(settings, view.request.request_id)
     assert view.request.status == "DECISION_REQUIRED"
     assert "DECISION REQUIRED" in all_text(cb.show_page(f"?request={view.request.request_id}", 0))
-    cb.perform_action(settings, choice(view.choices[0]), None, state_of(view), 1)
+    cb.perform_action(settings, choice(0), None, state_of(view), 1)
     view = flow.get_understand_view(settings, view.request.request_id)
     assert view.request.status == "CLARIFICATION_IN_PROGRESS"
 
 
-def test_a_choice_that_is_not_offered_is_refused(settings):
+@pytest.mark.parametrize("index", range(len(TRICKY_OPTIONS)))
+def test_each_button_picks_its_own_option_even_with_awkward_characters(settings, index):
+    view = to_tricky_decision(settings)
+    assert view.choices[:-1] == TRICKY_OPTIONS  # the buttons, in order (Help is added last)
+
+    result = cb.perform_action(settings, choice(index), None, state_of(view), 0)
+
+    assert result == (1, no_update, "")
+    after = flow.get_understand_view(settings, view.request.request_id)
+    assert after.record.decisions[0].choice == TRICKY_OPTIONS[index]
+
+
+def test_a_button_index_with_nothing_behind_it_gets_the_stale_message(settings):
     view = da_play.to_decision(settings)
-    result = cb.perform_action(settings, choice("Something else"), None, state_of(view), 0)
-    assert "is not one of the choices" in result[2]
+    for index in (len(view.choices), 99, -1):
+        result = cb.perform_action(settings, choice(index), None, state_of(view), 0)
+        assert result == (no_update, no_update, STALE_MESSAGE)
+    after = flow.get_understand_view(settings, view.request.request_id)
+    assert after.messages == view.messages and after.revision == view.revision
+
+
+def test_a_choice_from_an_old_window_gets_the_stale_message(settings):
+    view = da_play.to_decision(settings)
+    old_state = state_of(view)
+    da_play.choose(settings, view, view.choices[1])  # "another window" chose first
+
+    result = cb.perform_action(settings, choice(0), None, old_state, 0)
+
+    assert result == (no_update, no_update, STALE_MESSAGE)
+    after = flow.get_understand_view(settings, view.request.request_id)
+    assert after.record.decisions[0].choice == view.choices[1]
 
 
 def test_no_rulebook_gives_a_plain_message(make_settings, monkeypatch):
@@ -262,7 +311,7 @@ def test_a_request_still_being_clarified_is_drawn_as_the_understand_workspace(se
 
 def test_proceed_to_discovery_runs_the_round_and_asks_for_a_redraw(settings, confirmed_id):
     result = cb.perform_action(
-        settings, choice(page.START_KEY), None, discover_state(confirmed_id), 5
+        settings, choice(0), None, discover_state(confirmed_id), 5
     )
 
     assert result == (6, no_update, "")
@@ -275,7 +324,7 @@ def test_proceed_to_discovery_runs_the_round_and_asks_for_a_redraw(settings, con
 
 def test_send_in_discover_is_the_hint_and_searches_again(settings, confirmed_id):
     cb.perform_action(
-        settings, choice(page.START_KEY), None, discover_state(confirmed_id), 0
+        settings, choice(0), None, discover_state(confirmed_id), 0
     )
 
     result = cb.perform_action(
@@ -289,7 +338,7 @@ def test_send_in_discover_is_the_hint_and_searches_again(settings, confirmed_id)
 
 def test_a_hint_with_a_secret_shows_a_plain_message_and_writes_nothing(settings, confirmed_id):
     cb.perform_action(
-        settings, choice(page.START_KEY), None, discover_state(confirmed_id), 0
+        settings, choice(0), None, discover_state(confirmed_id), 0
     )
 
     hint = "key sk-abcdefghijklmnopqrstuvwxyz123456"
@@ -304,11 +353,11 @@ def test_a_hint_with_a_secret_shows_a_plain_message_and_writes_nothing(settings,
 
 def test_confirm_button_calls_the_flow(settings, confirmed_id):
     cb.perform_action(
-        settings, choice(page.START_KEY), None, discover_state(confirmed_id), 0
+        settings, choice(0), None, discover_state(confirmed_id), 0
     )
 
     cb.perform_action(
-        settings, choice(page.CONFIRM_KEY), None, discover_state(confirmed_id, 1), 1
+        settings, choice(0), None, discover_state(confirmed_id, 1), 1
     )
 
     assert discovery_view(settings, confirmed_id).request.status == "DISCOVERY_CONFIRMED"
@@ -316,10 +365,10 @@ def test_confirm_button_calls_the_flow(settings, confirmed_id):
 
 def test_escalate_button_calls_the_flow(settings, confirmed_id):
     cb.perform_action(
-        settings, choice(page.START_KEY), None, discover_state(confirmed_id), 0
+        settings, choice(0), None, discover_state(confirmed_id), 0
     )
 
-    escalate = choice(page.ESCALATE_KEY)
+    escalate = choice(1)
     cb.perform_action(settings, escalate, None, discover_state(confirmed_id, 1), 1)
 
     view = discovery_view(settings, confirmed_id)
@@ -328,20 +377,22 @@ def test_escalate_button_calls_the_flow(settings, confirmed_id):
 
 def test_a_stale_discover_window_is_refused_and_nothing_is_written(settings, confirmed_id):
     cb.perform_action(
-        settings, choice(page.START_KEY), None, discover_state(confirmed_id), 0
+        settings, choice(0), None, discover_state(confirmed_id), 0
     )
 
     result = cb.perform_action(
-        settings, choice(page.CONFIRM_KEY), None, discover_state(confirmed_id, 0), 1
+        settings, choice(0), None, discover_state(confirmed_id, 0), 1
     )
 
     assert result == (no_update, no_update, STALE_MESSAGE)
     assert discovery_view(settings, confirmed_id).request.status == "SIMILAR_IMPLEMENTATION_FOUND"
 
 
-def test_a_discover_choice_that_is_not_offered_does_nothing(settings, confirmed_id):
-    with pytest.raises(PreventUpdate):
-        cb.perform_action(settings, choice("Something else"), None, discover_state(confirmed_id), 0)
+def test_a_discover_choice_with_no_button_behind_it_gets_the_stale_message(settings, confirmed_id):
+    result = cb.perform_action(settings, choice(5), None, discover_state(confirmed_id), 0)
+
+    assert result == (no_update, no_update, STALE_MESSAGE)
+    assert discovery_view(settings, confirmed_id).request.status == "CONFIRMED_FOR_DISCOVERY"
 
 
 def test_codevision_search_provider_shows_the_not_configured_message(
@@ -350,7 +401,7 @@ def test_codevision_search_provider_shows_the_not_configured_message(
     work = make_settings(search_provider="codevision")
 
     result = cb.perform_action(
-        work, choice(page.START_KEY), None, discover_state(confirmed_id), 0
+        work, choice(0), None, discover_state(confirmed_id), 0
     )
 
     assert result == (no_update, no_update, "CodeVision search is not configured yet.")

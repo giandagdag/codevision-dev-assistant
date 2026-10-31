@@ -382,6 +382,22 @@ def _discovery_panel(view: DiscoveryView) -> list:
     return parts_list
 
 
+def discover_buttons(view: DiscoveryView) -> list[tuple[str, str]]:
+    """The Discover choice buttons as (key, label) pairs, in screen order.
+
+    The button id holds the position (P19); the callback calls this again to turn a position
+    back into a key, so the screen and the callback cannot disagree.
+    """
+    status = view.request.status
+    if status in (STATUS_CONFIRMED, STATUS_SEARCHING):
+        label = PROCEED_DISCOVERY_OPTION if status == STATUS_CONFIRMED else SEARCH_AGAIN_OPTION
+        return [(START_KEY, label)]
+    if status in (STATUS_SIMILAR_FOUND, STATUS_NO_MATCH):
+        keys = {CONFIRM_OPTION: CONFIRM_KEY, ESCALATE_OPTION: ESCALATE_KEY}
+        return [(keys[option], option) for option in view.choices if option in keys]
+    return []
+
+
 def _discover_composer(view: DiscoveryView) -> dmc.Box:
     """The bottom of the chat in Discover. The text box, Send and Skip always exist (the
     callbacks name them). Send is the hint button while a hint can be given."""
@@ -416,13 +432,11 @@ def _discover_composer(view: DiscoveryView) -> dmc.Box:
         ],
         style=da_styles.COMPOSER if can_hint else {"display": "none"},
     )
+    buttons = discover_buttons(view)
     if status in (STATUS_CONFIRMED, STATUS_SEARCHING):
-        label = PROCEED_DISCOVERY_OPTION if status == STATUS_CONFIRMED else SEARCH_AGAIN_OPTION
-        note = f"Press {label} to search approved sources"
-        return dmc.Box([_discover_bar([(START_KEY, label)], note), controls])
+        note = f"Press {buttons[0][1]} to search approved sources"
+        return dmc.Box([_discover_bar(buttons, note), controls])
     if status in (STATUS_SIMILAR_FOUND, STATUS_NO_MATCH):
-        keys = {CONFIRM_OPTION: CONFIRM_KEY, ESCALATE_OPTION: ESCALATE_KEY}
-        buttons = [(keys[option], option) for option in view.choices if option in keys]
         note = view.cap_message or "Choose an option to continue"
         return dmc.Box([_discover_bar(buttons, note), controls])
     # Confirmed or escalated: nothing more to do in this phase.
@@ -443,7 +457,7 @@ def _discover_bar(buttons: list[tuple[str, str]], note: str) -> dmc.Box:
     shown = [
         dmc.Button(
             label,
-            id={"type": CHOICE_TYPE, "option": key},
+            id={"type": CHOICE_TYPE, "index": number},
             variant="filled" if number == 0 else "light",
             color="gray" if key == ESCALATE_KEY else "blue",
             radius="xl",
@@ -510,16 +524,19 @@ def _composer(mode: str, choices: list[str], can_skip: bool, prompt: str) -> dmc
 
 
 def _choices_bar(choices: list[str]) -> dmc.Box:
+    # The id holds the position, not the text: AI-written options can hold curly quotes, long
+    # dashes, accents or emoji, which are not safe inside a component id. The callback looks the
+    # text up again from the saved request (P19).
     buttons = [
         dmc.Button(
             option,
-            id={"type": CHOICE_TYPE, "option": option},
+            id={"type": CHOICE_TYPE, "index": index},
             variant="filled" if option == PROCEED_OPTION else "light",
             color="gray" if option == HELP_OPTION else "blue",
             radius="xl",
             size="sm",
         )
-        for option in choices
+        for index, option in enumerate(choices)
     ]
     return dmc.Box(
         [
