@@ -5,9 +5,10 @@ house rules from spec rule R3 and returns every problem as a plain sentence, so 
 the whole list at once instead of fixing one error per attempt.
 """
 
+import re
 from typing import Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
 RuleKind = Literal["judgement", "ui_convention"]
 Severity = Literal["must_fix", "should_fix", "fyi"]
@@ -73,6 +74,69 @@ class NeverGenerateZone(_RulebookPart):
     examples: list[str]
 
 
+class FlagReviewZone(_RulebookPart):
+    """An area where touching a file makes a named senior a required reviewer (Phase 4, D-E).
+    Like dual control: it never blocks, it only adds a second signature."""
+
+    name: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+    examples: list[str] = Field(default_factory=list)
+    # Matched by plain code against the whole lower-case path (fnmatch), never by the AI.
+    path_patterns: list[str] = Field(min_length=1)
+
+
+# Starter values for the Phase 4 policy fields (made up; the real values are set at work). A
+# rulebook version saved before Phase 4 has none of them, so each field defaults to these.
+DEFAULT_ALLOWED_FOLDERS = [
+    "src/configs",
+    "src/agents",
+    "src/pydantic_classes",
+    "src/db_table_functions",
+    "src/callbacks",
+    "src/layouts",
+    "src/styles",
+    "src/web",
+]
+DEFAULT_NEW_FILE_NAME_PATTERN = r"^[a-z][a-z0-9_]*\.py$"
+DEFAULT_PROTECTED_FILES = [
+    ".env",
+    "*/.env*",
+    "src/configs/llm_config.py",
+    "src/web/web_server.py",
+    "src/callbacks/universal_callbacks.py",
+]
+DEFAULT_APPROVED_LIBRARIES = [
+    "pydantic",
+    "dash",
+    "dash_mantine_components",
+    "dash_iconify",
+    "flask",
+    "plotly",
+    "requests",
+    "pandas",
+    "openpyxl",
+]
+DEFAULT_MAX_FILES = 5
+DEFAULT_MAX_DESIGN_CHOICES = 3
+
+
+def _default_zones() -> list[FlagReviewZone]:
+    return [
+        FlagReviewZone(
+            name="Security",
+            description="Encryption, key handling, and permission checks.",
+            examples=["Encrypting a customer field", "Checking a user's role"],
+            path_patterns=["*security*", "*crypto*", "*permission*"],
+        ),
+        FlagReviewZone(
+            name="Login",
+            description="Sign-in, sessions, and passwords.",
+            examples=["Login page", "Session timeout handling"],
+            path_patterns=["*login*", "*session*", "*password*"],
+        ),
+    ]
+
+
 class EscalationTrigger(_RulebookPart):
     # Plain text, not a fixed list of words, so a wrong name is reported by
     # find_rulebook_problems in plain words instead of as a Pydantic error.
@@ -87,6 +151,26 @@ class Policy(_RulebookPart):
     # A plain whole number here; the 1 to 5 range is checked by find_rulebook_problems.
     max_review_rounds: int
     escalation_triggers: list[EscalationTrigger]
+    # Phase 4 (Approach), spec section 7. Defaults keep older rulebook versions loadable.
+    allowed_folders: list[str] = Field(default_factory=lambda: list(DEFAULT_ALLOWED_FOLDERS))
+    new_file_name_pattern: str = DEFAULT_NEW_FILE_NAME_PATTERN
+    protected_files: list[str] = Field(default_factory=lambda: list(DEFAULT_PROTECTED_FILES))
+    approved_libraries: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_APPROVED_LIBRARIES)
+    )
+    max_files: int = Field(default=DEFAULT_MAX_FILES, ge=1)
+    max_design_choices: int = Field(default=DEFAULT_MAX_DESIGN_CHOICES, ge=1)
+    flag_review_zones: list[FlagReviewZone] = Field(default_factory=_default_zones)
+
+    @field_validator("new_file_name_pattern")
+    @classmethod
+    def _pattern_must_compile(cls, value: str) -> str:
+        # A broken pattern would crash every file-plan check, so it is refused when loaded.
+        try:
+            re.compile(value)
+        except re.error as error:
+            raise ValueError(f"is not a valid regular expression ({error})") from error
+        return value
 
 
 class Rulebook(_RulebookPart):

@@ -29,23 +29,32 @@ SPEC_TABLE = {
     ("NO_RELIABLE_MATCH", "DISCOVERY_CONFIRMED"),
     ("NO_RELIABLE_MATCH", "SEARCHING"),
     ("NO_RELIABLE_MATCH", "ESCALATION_REQUIRED"),
+    # Phase 4, Approach (spec section 2).
+    ("DISCOVERY_CONFIRMED", "APPROACH_PROPOSED"),
+    ("APPROACH_PROPOSED", "READY_TO_BUILD"),
+    ("APPROACH_PROPOSED", "ESCALATION_REQUIRED"),
 }
 
-# Every real move: 10 x 10 statuses minus the 10 "same status" pairs.
+# Every real move: 12 x 12 statuses minus the 12 "same status" pairs.
 REAL_MOVES = list(permutations(STATUSES, 2))
 
 
-def test_there_are_90_real_moves():
-    assert len(REAL_MOVES) == 90
+def test_there_are_132_real_moves():
+    assert len(REAL_MOVES) == 132
 
 
 def test_confirmed_for_discovery_moves_only_to_searching():
     assert ALLOWED_MOVES["CONFIRMED_FOR_DISCOVERY"] == ("SEARCHING",)
 
 
-def test_discover_final_statuses_have_no_moves_yet():
-    assert ALLOWED_MOVES["DISCOVERY_CONFIRMED"] == ()
+def test_final_statuses_have_no_moves_yet():
+    assert ALLOWED_MOVES["READY_TO_BUILD"] == ()
     assert ALLOWED_MOVES["ESCALATION_REQUIRED"] == ()
+
+
+def test_approach_moves():
+    assert ALLOWED_MOVES["DISCOVERY_CONFIRMED"] == ("APPROACH_PROPOSED",)
+    assert ALLOWED_MOVES["APPROACH_PROPOSED"] == ("READY_TO_BUILD", "ESCALATION_REQUIRED")
 
 
 def test_allowed_moves_match_the_spec_table():

@@ -249,3 +249,42 @@ def test_charter_size_counts_text_in_every_section():
 
     # 2 + 3 + 1 + 2 + 1 + 2 + 3: only the written text, no brackets or field names.
     assert check_charter_size(charter).characters == 14
+
+
+# --- Phase 4 policy fields (spec section 7, row 4-27) ---
+
+
+def test_seed_has_the_phase_4_policy_values(seed_rulebook):
+    policy = seed_rulebook.policy
+
+    assert "src/agents" in policy.allowed_folders
+    assert "src/web/web_server.py" in policy.protected_files
+    assert "openpyxl" in policy.approved_libraries
+    assert (policy.max_files, policy.max_design_choices) == (5, 3)
+    assert [zone.name for zone in policy.flag_review_zones] == ["Security", "Login"]
+
+
+def test_a_rulebook_saved_before_phase_4_loads_with_the_starter_values(seed_rulebook):
+    old = seed_rulebook.model_dump(mode="json")
+    for name in (
+        "allowed_folders",
+        "new_file_name_pattern",
+        "protected_files",
+        "approved_libraries",
+        "max_files",
+        "max_design_choices",
+        "flag_review_zones",
+    ):
+        del old["policy"][name]
+
+    loaded = Rulebook.model_validate(old)
+
+    assert loaded.policy == seed_rulebook.policy
+
+
+def test_a_broken_file_name_pattern_is_refused(seed_rulebook):
+    data = seed_rulebook.model_dump(mode="json")
+    data["policy"]["new_file_name_pattern"] = "([unclosed"
+
+    with pytest.raises(ValidationError, match="regular expression"):
+        Rulebook.model_validate(data)
