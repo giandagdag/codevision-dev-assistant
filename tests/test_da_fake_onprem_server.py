@@ -219,3 +219,100 @@ def test_bad_json_mode_is_bad_on_every_discover_try_so_the_fallback_shows(
     assert view.request.status in ("SIMILAR_IMPLEMENTATION_FOUND", "NO_RELIABLE_MATCH")
     text = da_rejected_reply_log.LOG_FILE.read_text(encoding="utf-8")
     assert text.count("step discover") == 2
+
+
+# --- Approach and the Tester (Phase 4, spec 11) ---
+
+
+def _approach_settings(make_settings, server):
+    return settings_for(make_settings, server)
+
+
+def test_every_approach_and_tester_marker_gets_its_scripted_reply():
+    from agents.da_approach_agent import TASK_MARKERS
+    from agents.da_tester_agent import CASE_MARKER, PLAN_MARKER
+    from web.da_fake_onprem_server import reply_text
+
+    hits = "[1] app/ingestion/pdf_processor.py :: PdfProcessor.extract_text (code)\n"
+    hits += "[2] app/ingestion/docx_processor.py :: DocxProcessor.extract_text (code)\n"
+
+    for marker in TASK_MARKERS.values():
+        reply = json.loads(reply_text(f"{marker}\n{hits}", "normal"))
+        assert reply["files"][0]["reuses"] == [1]
+        assert [d["hit_id"] for d in reply["reuse_decisions"]] == [1, 2]
+    assert len(json.loads(reply_text(PLAN_MARKER, "normal"))["cases"]) == 9
+    assert json.loads(reply_text(CASE_MARKER, "normal"))["case"]["criterion_id"] == "AC-4"
+    assert reply_text(PLAN_MARKER, "bad-json") == NOT_JSON_REPLY
+    assert reply_text(TASK_MARKERS["propose"], "bad-json") == NOT_JSON_REPLY
+
+
+def _confirmed_discovery(settings):
+    from agents.da_discover_flow import confirm_discovery, start_discovery
+
+    request_id = to_confirmed(settings).request.request_id
+    view = start_discovery(settings, request_id, 0)
+    confirm_discovery(settings, request_id, view.revision)
+    return request_id
+
+
+def test_4_29_a_full_approach_against_the_pretend_server_reaches_ready_to_build(
+    make_settings, published_rulebook
+):
+    from agents import da_approach_flow as flow
+
+    with running_fake_onprem_server() as server:
+        settings = _approach_settings(make_settings, server)
+        request_id = _confirmed_discovery(settings)
+
+        view = flow.start_approach(settings, request_id, 0)
+        assert view.approach.source == "proposal" and view.step == "choices"
+        cited = {n for f in view.approach.plan.files for n in f.reuses}
+        assert cited <= {hit.hit_id for hit in view.discovery.hits} and cited
+        view = flow.choose_design_option(settings, request_id, view.buttons[0][1], view.revision)
+        view = flow.accept_approach(settings, request_id, view.revision)
+        assert view.step == "tests" and len(view.plan.cases) == 9
+        view = flow.request_case(settings, request_id, view.revision)
+        view = flow.submit_text(settings, request_id, "Every visible sheet empty", view.revision)
+        view = flow.keep_case(settings, request_id, view.revision)
+        view = flow.accept_test_plan(settings, request_id, view.revision)
+        seen = [item["body"]["messages"][-1]["content"] for item in server.seen]
+
+    assert view.request.status == "READY_TO_BUILD"
+    assert view.demo_mode is False
+    assert not da_rejected_reply_log.LOG_FILE.exists()
+    tester_prompts = [text for text in seen if "Task: write a test plan" in text]
+    assert tester_prompts and "AC-7" in tester_prompts[0]
+    assert "excel_processor" not in tester_prompts[0]
+
+
+def test_bad_json_on_the_first_call_leaves_the_request_with_try_again(
+    make_settings, published_rulebook
+):
+    from agents import da_approach_flow as flow
+
+    with running_fake_onprem_server("bad-json") as server:
+        settings = _approach_settings(make_settings, server)
+        request_id = _confirmed_discovery(settings)
+        view = flow.start_approach(settings, request_id, 0)
+
+    assert view.request.status == "DISCOVERY_CONFIRMED"
+    assert view.buttons == [("start", "Try again")]
+    assert "attempt 2" in da_rejected_reply_log.LOG_FILE.read_text(encoding="utf-8")
+
+
+def test_bad_json_from_the_tester_leaves_the_plan_to_be_written_again(
+    make_settings, published_rulebook
+):
+    from agents import da_approach_flow as flow
+
+    with running_fake_onprem_server() as good:
+        settings = _approach_settings(make_settings, good)
+        request_id = _confirmed_discovery(settings)
+        view = flow.start_approach(settings, request_id, 0)
+        view = flow.choose_design_option(settings, request_id, view.buttons[0][1], view.revision)
+    with running_fake_onprem_server("bad-json") as bad:
+        settings = _approach_settings(make_settings, bad)
+        view = flow.accept_approach(settings, request_id, view.revision)
+
+    assert view.step == "tests_pending" and view.plan is None
+    assert view.buttons == [("write_plan", "Write the test plan")]

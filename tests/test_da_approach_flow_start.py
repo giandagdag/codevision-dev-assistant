@@ -37,7 +37,7 @@ def test_before_starting_the_only_button_is_proceed(settings, request_id):
     assert view.step == "start" and view.request.status == "DISCOVERY_CONFIRMED"
     assert view.buttons == [("start", "Proceed to Approach")]
     assert view.revision == 0 and not view.failed_first_call
-    assert [c.passed for c in view.gate] == [True, True, False, False]
+    assert [c.passed for c in view.gate] == [False] * 4  # nothing planned yet
 
 
 def test_4_1_the_first_call_saves_approach_v1_and_moves_to_approach_proposed(settings, request_id):
