@@ -14,6 +14,7 @@ from agents.da_discover_flow import DISCOVER_DIVIDER
 from db_table_functions.db_tbl_da_requests import SINGAPORE_TIME
 from pydantic_classes.da_discovery_models import Finding, SearchHit
 from pydantic_classes.da_models import (
+    STATUS_APPROACH_PROPOSED,
     STATUS_CLARIFICATION,
     STATUS_CONFIRMED,
     STATUS_DECISION_REQUIRED,
@@ -22,6 +23,7 @@ from pydantic_classes.da_models import (
     STATUS_ESCALATION,
     STATUS_NO_MATCH,
     STATUS_READY,
+    STATUS_READY_TO_BUILD,
     STATUS_SEARCHING,
     STATUS_SIMILAR_FOUND,
     display_status,
@@ -33,9 +35,9 @@ from styles import da_styles
 STEPS: tuple[str, ...] = (
     "Understand",
     "Discover",
-    "Readiness Gate",
-    "Generate + Check",
-    "Preliminary Review",
+    "Approach",
+    "Build & Test",
+    "Your review",
     "Handoff",
 )
 
@@ -51,6 +53,8 @@ _PILL_COLOURS: dict[str, str] = {
     STATUS_NO_MATCH: "orange",
     STATUS_DISCOVERY_CONFIRMED: "green",
     STATUS_ESCALATION: "red",
+    STATUS_APPROACH_PROPOSED: "violet",
+    STATUS_READY_TO_BUILD: "green",
 }
 
 FALLBACK_BANNER = "AI summary unavailable. Showing plain search results."

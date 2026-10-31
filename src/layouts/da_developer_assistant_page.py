@@ -18,12 +18,15 @@ from agents.da_discover_flow import (
 )
 from agents.da_understand_checks import MAX_MESSAGE_LENGTH
 from agents.da_understand_flow import ALWAYS_VISIBLE, HELP_OPTION, PROCEED_OPTION
+from layouts.da_approach_panel import approach_panel
+from pydantic_classes.da_approach_models import ApproachView
 from pydantic_classes.da_discovery_models import DiscoveryView
 from pydantic_classes.da_models import (
     STATUS_CONFIRMED,
     STATUS_DISCOVERY_CONFIRMED,
     STATUS_ESCALATION,
     STATUS_NO_MATCH,
+    STATUS_READY_TO_BUILD,
     STATUS_SEARCHING,
     STATUS_SIMILAR_FOUND,
     Request,
@@ -45,7 +48,7 @@ CHOICE_TYPE = "da-choice"
 KEYS_ID = "da-keys-ready"  # target of the Enter-to-send script; holds nothing
 BUSY_ID = "da-busy"  # the "searching" line, shown only while a Discover action runs
 
-CODE_BANNER = "No code is generated in Phase 1"  # the demo's wording (its own numbering)
+CODE_BANNER = "No code is written yet"
 DEMO_BANNER = "Demo mode: replies are scripted"
 EMPTY_TEXT = "Waiting for your answer"
 OTHER_PLACEHOLDER = "Other, type here"
@@ -61,6 +64,7 @@ ID_BADGE_STYLE = {"flexShrink": 0, "overflow": "visible", "width": "auto"}
 ID_BADGE_STYLES = {"label": {"overflow": "visible", "textOverflow": "clip"}}
 UNDERSTAND_STEP = 1
 DISCOVER_STEP = 2
+APPROACH_STEP = 3
 # The Discover buttons use the same pattern id as the Understand choices (the callbacks tell them
 # apart by the workspace state). Their ids are plain ASCII keys, never the label: Dash cannot read
 # the click count of a button whose id holds an emoji (it matches ids as escaped text).
@@ -70,15 +74,26 @@ ESCALATE_KEY = "escalate"
 PROCEED_DISCOVERY_OPTION = "Proceed to Discovery"
 SEARCH_AGAIN_OPTION = "Search again"
 BUSY_TEXT = "⏳ Searching approved sources…"
-READINESS_GATE_BUTTON = "🚦 Proceed to Readiness Gate (coming in Phase 4)"
+BUILD_BUTTON = "📁 Choose workspace folder (coming in Phase 5)"
+APPROACH_BUSY_TEXT = "⏳ Working on it…"
+# What the note above the Approach buttons says at each step.
+APPROACH_NOTES: dict[str, str] = {
+    "start": "Press Proceed to Approach to plan how it will be built",
+    "choices": "Choose an option to continue, or type your own answer",
+    "review": "Review the Approach tab, then choose how to continue",
+    "limit_reason": "Type a reason to accept this many files, or choose another option",
+    "tests_pending": "The Tester has not written the test plan yet",
+    "tests": "Review the test plan, then choose how to continue",
+    "case_check": "Keep this test case or discard it",
+}
 
 # The other tabs exist on the demo but belong to later phases: shown greyed out.
 PANEL_TABS: tuple[tuple[str, str], ...] = (
     ("Summary", "tabler:clipboard-list"),
     ("Discovery", "tabler:search"),
-    ("Gate", "tabler:traffic-lights"),
-    ("Code", "tabler:settings"),
-    ("Review", "tabler:shield-check"),
+    ("Approach", "tabler:compass"),
+    ("Build", "tabler:hammer"),
+    ("Tests", "tabler:test-pipe"),
     ("Audit", "tabler:receipt"),
 )
 
@@ -235,6 +250,7 @@ def _workspace(
     step: int = UNDERSTAND_STEP,
     discovery: list | None = None,
     busy_text: str = "",
+    approach: list | None = None,
 ) -> list:
     top = dmc.Group(
         [
@@ -289,7 +305,11 @@ def _workspace(
                 name,
                 value=name.lower(),
                 leftSection=DashIconify(icon=icon, width=16),
-                disabled=not (name == "Summary" or (name == "Discovery" and discovery)),
+                disabled=not (
+                    name == "Summary"
+                    or (name == "Discovery" and discovery)
+                    or (name == "Approach" and approach)
+                ),
                 px="xs",
             )
             for name, icon in PANEL_TABS
@@ -298,14 +318,18 @@ def _workspace(
         style={"flexWrap": "nowrap", "overflowX": "auto", "flexShrink": 0},
     )
     if discovery:
-        # Discover is under way: the Discovery tab can be used and opens first.
+        # Discover or Approach is under way: those tabs can be used. The newest one opens first.
+        panels = [dmc.TabsPanel(dmc.Box(panel, style=da_styles.PANEL_BODY), value="summary")]
+        panels.append(
+            dmc.TabsPanel(dmc.Box(discovery, style=da_styles.PANEL_BODY), value="discovery")
+        )
+        if approach:
+            panels.append(
+                dmc.TabsPanel(dmc.Box(approach, style=da_styles.PANEL_BODY), value="approach")
+            )
         tabs = dmc.Tabs(
-            [
-                tab_list,
-                dmc.TabsPanel(dmc.Box(panel, style=da_styles.PANEL_BODY), value="summary"),
-                dmc.TabsPanel(dmc.Box(discovery, style=da_styles.PANEL_BODY), value="discovery"),
-            ],
-            value="discovery",
+            [tab_list, *panels],
+            value="approach" if approach else "discovery",
             style={**da_styles.COLUMN, "flex": 1},
         )
         side_children = [tabs]
@@ -330,23 +354,135 @@ def _lock():
 # --- Discover (Phase 3) ---
 
 
-def render_discover_workspace(understand: UnderstandView, view: DiscoveryView) -> list:
+def render_discover_workspace(
+    understand: UnderstandView, view: DiscoveryView, approach: ApproachView | None = None
+) -> list:
     """The workspace once the request is confirmed: Discover is step 2, the chat carries on, and
-    the Discovery tab opens as soon as there is a round to show."""
+    the Discovery tab opens as soon as there is a round to show. Once Discover is confirmed, the
+    approach view brings the active Proceed to Approach button (Phase 4)."""
     # SEARCHING with no saved round also opens the tab, to say the round did not finish.
     show_tab = view.result is not None or view.request.status == STATUS_SEARCHING
+    confirmed = view.request.status == STATUS_DISCOVERY_CONFIRMED and approach is not None
+    request_id = view.request.request_id
+    state = {"request_id": request_id, "revision": view.revision, "discover": True}
+    if confirmed:
+        # Once Discover is confirmed the buttons belong to Approach, with its own revision.
+        state = {"request_id": request_id, "revision": approach.revision, "approach": True}
     return _workspace(
         title=view.request.title,
         request_id=view.request.request_id,
         status=view.request.status,
         demo_mode=view.demo_mode,
         messages=[parts.chat_bubble(message) for message in view.messages],
-        composer=_discover_composer(view),
+        composer=_approach_composer(approach) if confirmed else _discover_composer(view),
         panel=_summary_panel(understand),
-        state={"request_id": view.request.request_id, "revision": view.revision, "discover": True},
+        state=state,
         step=DISCOVER_STEP,
         discovery=_discovery_panel(view) if show_tab else None,
-        busy_text=BUSY_TEXT,
+        busy_text=APPROACH_BUSY_TEXT if confirmed else BUSY_TEXT,
+    )
+
+
+def render_approach_workspace(
+    understand: UnderstandView, discovery: DiscoveryView, view: ApproachView
+) -> list:
+    """The workspace from APPROACH_PROPOSED on: Approach is step 3 and its tab opens first."""
+    return _workspace(
+        title=view.request.title,
+        request_id=view.request.request_id,
+        status=view.request.status,
+        demo_mode=view.demo_mode,
+        messages=[parts.chat_bubble(message) for message in view.messages],
+        composer=_approach_composer(view),
+        panel=_summary_panel(understand),
+        state={"request_id": view.request.request_id, "revision": view.revision, "approach": True},
+        step=APPROACH_STEP,
+        discovery=_discovery_panel(discovery),
+        busy_text=APPROACH_BUSY_TEXT,
+        approach=approach_panel(view),
+    )
+
+
+def approach_buttons(view: ApproachView) -> list[tuple[str, str]]:
+    """The Approach choice buttons as (key, label) pairs, in screen order. The button id holds
+    the position (P19); the callback calls this again to turn a position back into a key."""
+    return view.buttons
+
+
+def _approach_composer(view: ApproachView | None) -> dmc.Box:
+    """The bottom of the chat in Approach: the buttons of the step, and a text box that opens
+    only at the steps that take typed text (rule G1)."""
+    buttons = view.buttons if view else []
+    prompt = view.text_prompt if view else ""
+    text_open = bool(prompt)
+    controls = dmc.Box(
+        [
+            dmc.Textarea(
+                id=TEXT_ID,
+                placeholder=prompt or "Text input is paused until you choose",
+                disabled=not text_open,
+                autosize=True,
+                minRows=2,
+                maxRows=6,
+                inputProps={"maxLength": MAX_MESSAGE_LENGTH},
+            ),
+            dmc.Group(
+                [
+                    dmc.Button("Skip", id=SKIP_ID, style={"display": "none"}),
+                    dmc.Button(
+                        "Send",
+                        id=SEND_ID,
+                        disabled=not text_open,
+                        leftSection=DashIconify(icon="tabler:send", width=16),
+                    ),
+                ],
+                justify="flex-end",
+                mt="xs",
+            ),
+        ],
+        style=da_styles.COMPOSER if text_open else {**da_styles.COMPOSER, "opacity": 0.6},
+    )
+    if view is not None and view.request.status == STATUS_READY_TO_BUILD:
+        done = dmc.Box(
+            [
+                dmc.Alert(
+                    "READY TO BUILD", color="green", variant="light", mb="xs", id="da-ready-chat"
+                ),
+                dmc.Button(BUILD_BUTTON, disabled=True),
+            ],
+            style=da_styles.CHOICES_BAR,
+            pb="xs",
+        )
+        return dmc.Box([done, controls])
+    if view is not None and view.step == "escalated":
+        done = dmc.Box(
+            dmc.Text(view.open_item, size="sm"), style=da_styles.CHOICES_BAR, pb="xs"
+        )
+        return dmc.Box([done, controls])
+    if not buttons:
+        return controls
+    note = (view.note if view else "") or APPROACH_NOTES.get(view.step if view else "", "")
+    return dmc.Box([_approach_bar(buttons, note), controls])
+
+
+def _approach_bar(buttons: list[tuple[str, str]], note: str) -> dmc.Box:
+    shown = [
+        dmc.Button(
+            label,
+            id={"type": CHOICE_TYPE, "index": number},
+            variant="filled" if number == 0 else "light",
+            color="gray" if key in ("help", "decide_help") else "blue",
+            radius="xl",
+            size="sm",
+        )
+        for number, (key, label) in enumerate(buttons)
+    ]
+    return dmc.Box(
+        [
+            dmc.Group([_lock(), dmc.Text(note, size="xs", fw=600)]),
+            dmc.Group(shown, mt="xs", mb="xs"),
+        ],
+        style=da_styles.CHOICES_BAR,
     )
 
 
@@ -455,7 +591,7 @@ def _discover_composer(view: DiscoveryView) -> dmc.Box:
     # Confirmed or escalated: nothing more to do in this phase.
     done = dmc.Box(
         [
-            dmc.Button(READINESS_GATE_BUTTON, disabled=True)
+            dmc.Button("Proceed to Approach", disabled=True)
             if status == STATUS_DISCOVERY_CONFIRMED
             else dmc.Text(view.open_item, size="sm"),
         ],

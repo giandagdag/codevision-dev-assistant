@@ -78,7 +78,9 @@ def test_no_demo_banner_without_the_fake_provider():
 def test_tabs_have_tabler_icons_and_only_summary_can_be_used():
     tabs = components(page.render_new_workspace(False), "TabsTab")
     assert [t.children for t in tabs] == [name for name, _ in page.PANEL_TABS]
-    assert [t.children for t in tabs] == ["Summary", "Discovery", "Gate", "Code", "Review", "Audit"]
+    assert [t.children for t in tabs] == [
+        "Summary", "Discovery", "Approach", "Build", "Tests", "Audit"
+    ]
     assert [t.disabled for t in tabs] == [False, True, True, True, True, True]
     for tab, (_, icon) in zip(tabs, page.PANEL_TABS, strict=True):
         icons = components(tab, "DashIconify")
@@ -324,19 +326,26 @@ def test_no_match_gives_an_amber_banner_and_the_not_proof_limitation(settings):
     assert by_id(tree, "da-fallback-banner") is None
 
 
-def test_confirmed_discovery_shows_the_disabled_readiness_gate_button(settings):
+def test_confirmed_discovery_shows_the_active_proceed_to_approach_button(settings):
+    from agents import da_approach_flow as approach
     from agents import da_discover_flow as discover
 
     def confirm(settings, request_id, view):
         return discover.confirm_discovery(settings, request_id, view.revision)
 
-    tree, _ = discover_tree(settings, start_step, confirm)
+    tree, view = discover_tree(settings, start_step, confirm)
+    understand = flow.get_understand_view(settings, view.request.request_id)
+    start = approach.get_approach_view(settings, view.request.request_id)
+    tree = page.render_discover_workspace(understand, view, start)
 
-    gate = [c for c in components(tree, "Button") if "Readiness Gate" in all_text(c)][0]
-    assert gate.disabled is True
-    assert "(coming in Phase 4)" in all_text(gate)
-    assert choice_buttons(tree) == []
+    buttons = choice_buttons(tree)
+    assert [all_text(b) for b in buttons] == ["Proceed to Approach"]
+    assert not getattr(buttons[0], "disabled", False)
+    assert "Readiness Gate" not in all_text(tree)
     assert "Discovery confirmed." in all_text(tree)
+    assert by_id(tree, page.STATE_ID).data == {
+        "request_id": view.request.request_id, "revision": 0, "approach": True
+    }
 
 
 def test_escalated_discovery_shows_the_open_item(settings):

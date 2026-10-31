@@ -529,6 +529,7 @@ def get_approach_view(settings: Settings, request_id: str) -> ApproachView:
             else compute_gate(record, request.version, None, 0, 0, None, None)
         )
         revision = read_approach_revision(conn, request_id)
+    file_limit = _policy(settings, request_id).max_files
     step: ApproachStep = state.step if state else "start"
     buttons, prompt, note = _screen_for(step, state, failed, approach)
     return ApproachView(
@@ -549,6 +550,7 @@ def get_approach_view(settings: Settings, request_id: str) -> ApproachView:
         change_count=state.change_count if state else 0,
         developer_case_count=_developer_cases(plan),
         tests_folder=folder_for_tests(request_id),
+        file_limit=file_limit,
         failed_first_call=failed,
         revision=revision,
         demo_mode=settings.llm_provider == "fake",

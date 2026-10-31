@@ -155,8 +155,8 @@ def confirm_discovery(
             conn,
             request_id,
             "assistant",
-            f"Discovery confirmed after round {rounds}. The next step is the Readiness Gate, "
-            "which comes in Phase 4.",
+            f"Discovery confirmed after round {rounds}. Press Proceed to Approach to plan how "
+            "it will be built.",
             now,
         )
     logger.info("Discovery confirmed for %s", request_id)

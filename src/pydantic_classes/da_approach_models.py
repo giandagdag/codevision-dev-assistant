@@ -244,6 +244,8 @@ class ApproachView(BaseModel):
     change_count: int
     developer_case_count: int
     tests_folder: str
+    # The soft limit of code files from the pinned rulebook (decision D-C).
+    file_limit: int
     failed_first_call: bool
     revision: int
     demo_mode: bool
