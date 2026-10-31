@@ -1,0 +1,23 @@
+{
+  "_about": "Made-up scripted Tester replies for DA_LLM_PROVIDER=fake in Approach (spec 11): 9 cases over the 7 criteria of the Excel example. The typed text is ignored.",
+  "test_plan": {
+    "cases": [
+      {"criterion_id": "AC-1", "given": "A valid workbook with one visible sheet of three rows", "expect": "The three rows reach the ingestion flow in order"},
+      {"criterion_id": "AC-2", "given": "A workbook with two visible sheets", "expect": "Both sheets are extracted and the sheet names are kept"},
+      {"criterion_id": "AC-2", "given": "Two visible sheets, one of them blank", "expect": "The blank sheet is skipped and the other one is extracted"},
+      {"criterion_id": "AC-3", "given": "One visible sheet and one hidden sheet", "expect": "Only the visible sheet is extracted"},
+      {"criterion_id": "AC-4", "given": "A workbook with no sheets", "expect": "The file is rejected with the standard empty-file error"},
+      {"criterion_id": "AC-5", "given": "Random bytes saved with an xlsx ending", "expect": "The file is rejected with the unreadable-file error"},
+      {"criterion_id": "AC-6", "given": "A password-protected workbook", "expect": "The file is rejected with the protected-file error"},
+      {"criterion_id": "AC-7", "given": "A file type that is not on the allowed list", "expect": "The existing validator rejects the file"},
+      {"criterion_id": "AC-4", "given": "A workbook where every visible sheet is empty", "expect": "The file is rejected with the standard empty-file error"}
+    ]
+  },
+  "test_case": {
+    "case": {
+      "criterion_id": "AC-4",
+      "given": "A workbook where every visible sheet is empty",
+      "expect": "The file is rejected as empty and is not ingested"
+    }
+  }
+}

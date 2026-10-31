@@ -28,3 +28,19 @@ class StubClient:
 def stub_reply(updates=None, ambiguities=None, hint=""):
     """One interpreter reply in the agreed shape."""
     return {"updates": updates or {}, "ambiguities": ambiguities or [], "hint": hint}
+
+
+class FailingClient:
+    """A made-up AI that cannot be reached, for the failure paths."""
+
+    model = "failing-stub"
+
+    def __init__(self, message="The AI server did not answer."):
+        self.message = message
+        self.prompts: list[str] = []
+
+    def complete(self, prompt, system=None):
+        from agents.da_llm_client import LLMClientError
+
+        self.prompts.append(prompt)
+        raise LLMClientError(self.message)
