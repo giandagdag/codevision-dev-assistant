@@ -635,7 +635,7 @@ def _confirmed_message(request: Request, record: RequestRecord) -> str:
     if record.references:
         lines.append("References:")
         lines += [f"- {reference}" for reference in record.references]
-    lines.append("Proceed to Discovery (coming in Phase 3).")
+    lines.append("Press Proceed to Discovery to search approved sources.")
     return "\n".join(lines)
 
 

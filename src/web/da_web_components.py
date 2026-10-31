@@ -10,13 +10,20 @@ from datetime import datetime
 import dash_mantine_components as dmc
 from dash_iconify import DashIconify
 
+from agents.da_discover_flow import DISCOVER_DIVIDER
 from db_table_functions.db_tbl_da_requests import SINGAPORE_TIME
+from pydantic_classes.da_discovery_models import Finding, SearchHit
 from pydantic_classes.da_models import (
     STATUS_CLARIFICATION,
     STATUS_CONFIRMED,
     STATUS_DECISION_REQUIRED,
+    STATUS_DISCOVERY_CONFIRMED,
     STATUS_DRAFT,
+    STATUS_ESCALATION,
+    STATUS_NO_MATCH,
     STATUS_READY,
+    STATUS_SEARCHING,
+    STATUS_SIMILAR_FOUND,
     display_status,
 )
 from pydantic_classes.da_request_record_models import ChatMessage
@@ -39,7 +46,29 @@ _PILL_COLOURS: dict[str, str] = {
     STATUS_DECISION_REQUIRED: "orange",
     STATUS_READY: "violet",
     STATUS_CONFIRMED: "green",
+    STATUS_SEARCHING: "blue",
+    STATUS_SIMILAR_FOUND: "green",
+    STATUS_NO_MATCH: "orange",
+    STATUS_DISCOVERY_CONFIRMED: "green",
+    STATUS_ESCALATION: "red",
 }
+
+FALLBACK_BANNER = "AI summary unavailable. Showing plain search results."
+# Label, icon and colour for each kind of finding (spec 3.8).
+FINDING_KINDS: dict[str, tuple[str, str, str]] = {
+    "existing_capability": ("Existing capability", "tabler:circle-check", "green"),
+    "similar_implementation": ("Similar implementation", "tabler:copy", "blue"),
+    "relevant_standard": ("Relevant standard", "tabler:book", "violet"),
+    "affected_area": ("Affected area", "tabler:target", "orange"),
+}
+CONFIDENCE_COLOURS = {"high": "green", "medium": "yellow", "low": "gray"}
+# The search rows on the Discovery tab: (name, ready). Structural search comes later (D-A).
+SEARCH_ROWS: tuple[tuple[str, bool], ...] = (
+    ("Exact", True),
+    ("Meaning", True),
+    ("Filters", True),
+    ("Structural", False),
+)
 
 
 def format_singapore_time(moment: datetime) -> str:
@@ -75,7 +104,9 @@ def stepper(current_step: int) -> dmc.Box:
 
 
 def chat_bubble(message: ChatMessage) -> dmc.Box:
-    """One chat message with its time in Singapore time."""
+    """One chat message with its time in Singapore time. The Discover marker is a divider."""
+    if message.speaker == "system" and message.text == DISCOVER_DIVIDER:
+        return dmc.Divider(label=DISCOVER_DIVIDER, labelPosition="center")
     return dmc.Box(
         [
             dmc.Text(message.text, size="sm"),
@@ -113,3 +144,113 @@ def progress_segments(answered: int, text: str, warn: bool = False) -> dmc.Box:
         ],
         mb=6,
     )
+
+
+# --- Discovery tab (Phase 3, spec 3.8) ---
+
+
+def source_line(hit: SearchHit) -> str:
+    """Where a finding comes from: path, then the function or class, then the version if known."""
+    line = f"{hit.source_path} · {hit.symbol}" if hit.symbol else hit.source_path
+    return f"{line} @ {hit.version}" if hit.version else line
+
+
+def search_rows() -> dmc.Box:
+    rows = []
+    for name, ready in SEARCH_ROWS:
+        status = (
+            DashIconify(icon="tabler:circle-check", width=16, color=da_styles.BLUE)
+            if ready
+            else dmc.Text("Coming later", size="xs")
+        )
+        rows.append(
+            dmc.Group(
+                [dmc.Text(name, size="sm"), status],
+                gap=6,
+                opacity=1 if ready else 0.5,
+                id=f"da-search-{name.lower()}",
+            )
+        )
+    return dmc.Group(rows, gap="lg")
+
+
+def outcome_banner(outcome: str) -> dmc.Alert:
+    """Green when something reusable was found, amber when not (spec 3.8)."""
+    if outcome == STATUS_SIMILAR_FOUND:
+        return dmc.Alert(
+            "Similar implementation found. Check the findings below before writing new code.",
+            color="green",
+            variant="light",
+            id="da-outcome-banner",
+        )
+    return dmc.Alert(
+        "No reliable match found. That is not proof it does not exist.",
+        color="orange",
+        variant="light",
+        id="da-outcome-banner",
+    )
+
+
+def fallback_banner() -> dmc.Alert:
+    return dmc.Alert(FALLBACK_BANNER, color="orange", variant="light", id="da-fallback-banner")
+
+
+def finding_card(finding: Finding, hits_by_id: dict[int, SearchHit]) -> dmc.Paper:
+    """One finding: kind, title, explanation, where it comes from, and how sure the AI is."""
+    label, icon, colour = FINDING_KINDS[finding.kind]
+    sources = [
+        dmc.Text(source_line(hits_by_id[hit_id]), size="xs", c=da_styles.MUTED, ff="monospace")
+        for hit_id in finding.hit_ids
+        if hit_id in hits_by_id
+    ]
+    return dmc.Paper(
+        [
+            dmc.Group(
+                [
+                    dmc.Group(
+                        [
+                            DashIconify(icon=icon, width=18),
+                            dmc.Text(label, size="xs", fw=600, c=colour),
+                        ],
+                        gap=4,
+                    ),
+                    dmc.Badge(
+                        f"{finding.confidence} confidence",
+                        color=CONFIDENCE_COLOURS[finding.confidence],
+                        variant="light",
+                    ),
+                ],
+                justify="space-between",
+            ),
+            dmc.Text(finding.title, fw=700, size="sm", c=da_styles.NAVY, mt=4),
+            dmc.Text(finding.explanation, size="sm"),
+            *sources,
+        ],
+        withBorder=True,
+        radius="md",
+        p="sm",
+        mb="xs",
+    )
+
+
+def limitations_card(limitations: list[str]) -> dmc.Paper:
+    lines = [
+        dmc.Group(
+            [DashIconify(icon="tabler:info-circle", width=16, color=da_styles.MUTED),
+             dmc.Text(text, size="sm")],
+            gap=6,
+            wrap="nowrap",
+        )
+        for text in limitations
+    ]
+    return dmc.Paper(
+        [dmc.Text("Limitations", fw=700, size="sm", c=da_styles.NAVY, mb=4), *lines],
+        withBorder=True,
+        radius="md",
+        p="sm",
+        id="da-limitations",
+    )
+
+
+def round_label(rounds_used: int, max_rounds: int) -> dmc.Text:
+    return dmc.Text(f"Round {rounds_used} of {max_rounds}", size="xs", c=da_styles.MUTED)

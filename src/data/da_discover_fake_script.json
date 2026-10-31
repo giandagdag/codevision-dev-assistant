@@ -1,0 +1,50 @@
+{
+  "_about": "Made-up scripted replies for DA_LLM_PROVIDER=fake in Discover (spec 3.9). They match the pretend index in da_fake_index.json. A finding names the hits it cites by function (or file, for a whole-file piece) in 'cites'; the fake client turns these into the hit numbers of the prompt it is given, so the reply stays valid whatever the numbering. 'invented' cites hit 99, which is never sent, for the retry test.",
+  "good": {
+    "findings": [
+      {
+        "kind": "existing_capability",
+        "title": "PDF text extraction already exists",
+        "explanation": "The PDF processor already pulls the text out of each page and passes it into the ingestion flow.",
+        "cites": ["PdfProcessor.extract_text"],
+        "confidence": "high"
+      },
+      {
+        "kind": "similar_implementation",
+        "title": "Word documents use the same flow",
+        "explanation": "The Word processor extracts text the same way, so a spreadsheet processor can follow the same pattern.",
+        "cites": ["DocxProcessor.extract_text"],
+        "confidence": "medium"
+      },
+      {
+        "kind": "relevant_standard",
+        "title": "File handling standard applies",
+        "explanation": "New file types must be added to the allowed list and to the ingestion router, with a test.",
+        "cites": ["standards/file-handling-standard.md"],
+        "confidence": "medium"
+      },
+      {
+        "kind": "affected_area",
+        "title": "The upload file-type check will change",
+        "explanation": "The upload check decides which file types are accepted, so Excel must be allowed there.",
+        "cites": ["UploadValidator.check_type"],
+        "confidence": "high"
+      }
+    ],
+    "limitations": [
+      "Only the approved Python code was searched, not the old-system programs."
+    ]
+  },
+  "invented": {
+    "findings": [
+      {
+        "kind": "existing_capability",
+        "title": "Excel processing already exists",
+        "explanation": "A spreadsheet processor is already in the ingestion flow.",
+        "hit_ids": [99],
+        "confidence": "high"
+      }
+    ],
+    "limitations": []
+  }
+}

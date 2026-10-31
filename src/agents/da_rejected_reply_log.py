@@ -28,15 +28,16 @@ def write_rejected_reply(
     raw_text: str,
     now: datetime | None = None,
     log_file: Path | None = None,
+    step: str = "understand",
 ) -> None:
-    """Add one entry to the log. Never raises."""
+    """Add one entry to the log. Never raises. step says which engine the reply came from."""
     when = (now or datetime.now(UTC)).astimezone(SINGAPORE_TIME)
     shown_text = raw_text[:RAW_TEXT_LIMIT]
     cut_note = f", cut at {RAW_TEXT_LIMIT}" if len(raw_text) > RAW_TEXT_LIMIT else ""
     problem_lines = "\n".join(f"- {problem}" for problem in problems) or "- (none listed)"
     entry = (
         f"=== {when:%Y-%m-%d %H:%M:%S} SGT | request {request_id or '(none)'} | "
-        f"attempt {attempt} | provider {provider} | model {model or '(unknown)'}\n"
+        f"step {step} | attempt {attempt} | provider {provider} | model {model or '(unknown)'}\n"
         f"Problems:\n{problem_lines}\n"
         f"Raw reply ({len(raw_text)} characters{cut_note}):\n{shown_text}\n"
         "=== end ===\n"

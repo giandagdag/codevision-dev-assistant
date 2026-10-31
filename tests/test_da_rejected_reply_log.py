@@ -126,3 +126,13 @@ def test_a_reply_that_cannot_be_encoded_only_warns(tmp_path, caplog):
     write_rejected_reply("CVDA-2026-0001", 1, "onprem", "m", ["p"], raw, log_file=log_file)
 
     assert "Could not write the rejected-reply log (UnicodeEncodeError)" in caplog.text
+
+
+def test_entry_names_the_step_and_defaults_to_understand(tmp_path):
+    log_file = tmp_path / "log.txt"
+
+    text = entry(log_file)
+    assert "step understand | attempt 1" in text
+
+    text = entry(log_file, step="discover")
+    assert "step discover | attempt 1" in text

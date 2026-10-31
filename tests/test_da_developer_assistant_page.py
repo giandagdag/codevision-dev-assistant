@@ -162,9 +162,8 @@ def test_confirmed_request_is_done(settings):
     assert view.input_mode == "done"
     assert "Confirmed and saved as version 1" in text
     assert "CONFIRMED FOR DISCOVERY" in text
-    assert "Proceed to Discovery (coming in Phase 3)" in text
-    button = [c for c in components(tree, "Button") if "Phase 3" in all_text(c)][0]
-    assert button.disabled is True
+    # From here the Discover workspace takes over (it has the active Proceed button).
+    assert "coming in Phase 3" not in text
     assert by_id(tree, page.TEXT_ID).disabled is True
     assert choice_buttons(tree) == []
 
@@ -183,3 +182,205 @@ def test_message_page_links_home():
     tree = page.render_message_page("Request CVDA-2026-9999 does not exist.")
     assert "does not exist" in all_text(tree)
     assert by_id(tree, "da-back-home").href == "?"
+
+
+# --- The Discover workspace (Phase 3, spec 3.8) ---
+
+
+def discover_tree(settings, *steps, **kwargs):
+    """Confirm a request, run the given Discover actions, and draw the workspace."""
+    from agents import da_discover_flow as discover
+
+    request_id = da_play.to_confirmed(settings).request.request_id
+    view = discover.get_discovery_view(settings, request_id)
+    for step in steps:
+        view = step(settings, request_id, view)
+    understand = flow.get_understand_view(settings, request_id)
+    return page.render_discover_workspace(understand, view), view
+
+
+def start_step(settings, request_id, view):
+    from agents import da_discover_flow as discover
+
+    return discover.start_discovery(settings, request_id, view.revision)
+
+
+def hint_step(settings, request_id, view):
+    from agents import da_discover_flow as discover
+
+    return discover.add_hint_and_search(settings, request_id, "batching helper", view.revision)
+
+
+def tab(tree, name):
+    return [c for c in components(tree, "TabsTab") if c.value == name][0]
+
+
+def test_confirmed_request_shows_the_active_proceed_button_and_a_locked_discovery_tab(settings):
+    tree, _ = discover_tree(settings)
+
+    proceed = [c for c in choice_buttons(tree) if c.id["index"] == 0]
+    assert len(proceed) == 1 and not getattr(proceed[0], "disabled", False)
+    assert tab(tree, "discovery").disabled is True
+    assert "Discovery" in all_text(tree) and by_id(tree, "da-outcome-banner") is None
+
+
+def test_stepper_is_on_discover_and_the_discovery_tab_opens_after_a_round(settings):
+    tree, _ = discover_tree(settings, start_step)
+
+    steps = [c for c in components(tree) if isinstance(getattr(c, "id", None), dict)
+             and c.id.get("type") == "da-step"]
+    assert [c.style.get("fontWeight") for c in steps][:2] == [None, 600]
+    assert tab(tree, "discovery").disabled is False and tab(tree, "summary").disabled is False
+    tabs = components(tree, "Tabs")[0]
+    assert tabs.value == "discovery"
+    assert page.BUSY_TEXT in all_text(tree)
+
+
+def test_discovery_tab_shows_input_search_rows_outcome_findings_limitations_and_round(settings):
+    tree, view = discover_tree(settings, start_step)
+
+    text = all_text(by_id(tree, "da-discovery-input"))
+    assert text == f"Input: request {view.request.request_id}, record version 1"
+    assert by_id(tree, "da-search-structural").opacity == 0.5
+    assert by_id(tree, "da-outcome-banner").color == "green"
+    body = all_text(tree)
+    assert "PDF text extraction already exists" in body
+    assert "app/ingestion/pdf_processor.py · PdfProcessor.extract_text @ fake-index-001" in body
+    assert "Limitations" in body and "Round 1 of 3" in body
+    assert by_id(tree, "da-fallback-banner") is None
+
+
+def test_findings_look_right_choices_and_the_hint_box(settings):
+    tree, view = discover_tree(settings, start_step)
+
+    assert [c.id["index"] for c in choice_buttons(tree)] == [0, 1]
+    assert [key for key, _ in page.discover_buttons(view)] == ["confirm", "escalate"]
+    assert [c.children for c in choice_buttons(tree)] == [
+        "✅ Findings look right",
+        "🙋 Escalate to a senior developer",
+    ]
+    send = by_id(tree, page.SEND_ID)
+    assert send.children == "✏️ Something's missing" and not send.disabled
+    text_box = by_id(tree, page.TEXT_ID)
+    assert text_box.label == "What's missing? Name a feature, file or term."
+    assert not text_box.disabled
+
+
+def test_after_the_round_cap_only_confirm_and_escalate_are_offered_with_a_reason(settings):
+    tree, view = discover_tree(settings, start_step, hint_step, hint_step)
+
+    assert view.rounds_used == 3
+    assert "Round 3 of 3" in all_text(tree)
+    assert by_id(tree, page.TEXT_ID).disabled is True
+    assert "all 3 search rounds" in all_text(tree)
+    assert len(choice_buttons(tree)) == 2
+
+
+def test_bad_ai_shows_the_fallback_banner(settings, monkeypatch):
+    from agents import da_discover_flow as discover
+    from tests.da_stub_client import StubClient
+
+    def bad_start(settings, request_id, view):
+        return discover.start_discovery(
+            settings, request_id, view.revision, client=StubClient("no", "no")
+        )
+
+    tree, _ = discover_tree(settings, bad_start)
+
+    assert all_text(by_id(tree, "da-fallback-banner")) == (
+        "AI summary unavailable. Showing plain search results."
+    )
+    assert "Possible match" in all_text(tree)
+
+
+def test_no_match_gives_an_amber_banner_and_the_not_proof_limitation(settings):
+    from agents import da_discover_flow as discover
+
+    class NoHits:
+        def search(self, query, mode, filters, top_k):
+            return []
+
+    def empty_start(settings, request_id, view):
+        return discover.start_discovery(settings, request_id, view.revision, index=NoHits())
+
+    tree, _ = discover_tree(settings, empty_start)
+
+    assert by_id(tree, "da-outcome-banner").color == "orange"
+    assert "not proof it does not exist" in all_text(by_id(tree, "da-limitations"))
+    assert by_id(tree, "da-fallback-banner") is None
+
+
+def test_confirmed_discovery_shows_the_disabled_readiness_gate_button(settings):
+    from agents import da_discover_flow as discover
+
+    def confirm(settings, request_id, view):
+        return discover.confirm_discovery(settings, request_id, view.revision)
+
+    tree, _ = discover_tree(settings, start_step, confirm)
+
+    gate = [c for c in components(tree, "Button") if "Readiness Gate" in all_text(c)][0]
+    assert gate.disabled is True
+    assert "(coming in Phase 4)" in all_text(gate)
+    assert choice_buttons(tree) == []
+    assert "Discovery confirmed." in all_text(tree)
+
+
+def test_escalated_discovery_shows_the_open_item(settings):
+    from agents import da_discover_flow as discover
+
+    def escalate(settings, request_id, view):
+        return discover.escalate_discovery(settings, request_id, view.revision)
+
+    tree, view = discover_tree(settings, start_step, escalate)
+
+    assert view.open_item.startswith("Escalated in Discover: ")
+    assert view.open_item in all_text(by_id(tree, "da-state-banner"))
+    assert choice_buttons(tree) == []
+
+
+def test_a_request_stuck_in_searching_offers_search_again(settings):
+    from tests.da_discover_play import set_status
+
+    request_id = da_play.to_confirmed(settings).request.request_id
+    set_status(settings, request_id, "SEARCHING")
+    from agents import da_discover_flow as discover
+
+    tree = page.render_discover_workspace(
+        flow.get_understand_view(settings, request_id),
+        discover.get_discovery_view(settings, request_id),
+    )
+
+    assert [c.id["index"] for c in choice_buttons(tree)] == [0]
+    assert [c.children for c in choice_buttons(tree)] == ["Search again"]
+    assert "did not finish" in all_text(by_id(tree, "da-outcome-banner"))
+
+
+def test_chat_shows_the_discover_divider(settings):
+    tree, _ = discover_tree(settings, start_step)
+
+    dividers = [c for c in components(tree, "Divider") if c.label == "🔍 Discover"]
+    assert len(dividers) == 1
+    assert "Searching approved sources" in all_text(tree)
+
+
+def test_workspace_state_carries_the_discovery_revision_and_flag(settings):
+    tree, view = discover_tree(settings, start_step)
+
+    state = by_id(tree, page.STATE_ID).data
+    assert state == {"request_id": view.request.request_id, "revision": 1, "discover": True}
+
+
+def test_every_input_the_callbacks_name_exists_in_the_discover_workspace(settings):
+    tree, _ = discover_tree(settings, start_step)
+
+    for component_id in (page.TEXT_ID, page.SEND_ID, page.SKIP_ID, page.MESSAGE_ID, page.BUSY_ID):
+        assert by_id(tree, component_id) is not None, component_id
+
+
+def test_discover_button_ids_hold_only_the_position(settings):
+    # Dash cannot read the click count of a button whose id holds an emoji (found in the browser
+    # check), so the ids hold the position (P19) and only the labels carry emoji.
+    for steps in ((), (start_step,)):
+        tree, _ = discover_tree(settings, *steps)
+        for button in choice_buttons(tree):
+            assert set(button.id) == {"type", "index"} and isinstance(button.id["index"], int)
