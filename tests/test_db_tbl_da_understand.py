@@ -151,3 +151,56 @@ def test_record_v1_cannot_be_edited_or_deleted_with_raw_sql(db_path, request_id,
         raw_sql(db_path, statement)
 
     assert get_confirmed_record(db_path, request_id) == record
+
+
+# --- requests saved before Phase 2D (spec 1.8) ---
+
+
+def make_it_a_pre_2d_session(db_path, request_id):
+    """Rewrite the saved session the way it looked before 2D: with the two scenario lists."""
+    import json
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        (raw,) = conn.execute(
+            "SELECT session FROM da_understand_sessions WHERE request_id = ?", (request_id,)
+        ).fetchone()
+        data = json.loads(raw)
+        data["record"].pop("acceptance_criteria")
+        data["record"]["success_scenarios"] = ["A workbook is ingested"]
+        data["record"]["failure_scenarios"] = ["An empty workbook is rejected"]
+        conn.execute(
+            "UPDATE da_understand_sessions SET session = ? WHERE request_id = ?",
+            (json.dumps(data), request_id),
+        )
+        conn.commit()
+    return raw
+
+
+def test_a_session_saved_before_2d_is_refused_in_plain_words_and_kept(db_path, request_id, session):
+    from db_table_functions.db_tbl_da_understand import OldRequestError
+
+    make_it_a_pre_2d_session(db_path, request_id)
+
+    with pytest.raises(OldRequestError) as refused:
+        get_session(db_path, request_id)
+
+    assert str(refused.value) == (
+        f"Request {request_id} was saved before the Understand update (2D) and cannot be "
+        "opened. Please start a new request."
+    )
+    with closing(sqlite3.connect(db_path)) as conn:  # nothing was deleted
+        assert conn.execute("SELECT COUNT(*) FROM da_understand_sessions").fetchone() == (1,)
+
+
+def test_a_confirmed_record_saved_before_2d_is_refused_too(db_path, request_id, session):
+    from db_table_functions.db_tbl_da_understand import OldRequestError
+
+    with open_db(db_path) as conn:
+        conn.execute(
+            "INSERT INTO da_request_records (request_id, version, record, confirmed_by,"
+            " confirmed_at) VALUES (?, 1, ?, 'dev-0001', ?)",
+            (request_id, '{"request_id": "x", "success_scenarios": []}', T0.isoformat()),
+        )
+
+    with pytest.raises(OldRequestError):
+        get_confirmed_record(db_path, request_id)

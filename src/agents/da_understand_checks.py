@@ -9,9 +9,12 @@ import re
 from pydantic import ValidationError
 
 from pydantic_classes.da_request_record_models import (
+    CRITERION_PARTS,
     FIELD_LABELS,
     INTERPRETER_FIELDS,
     LIST_FIELDS,
+    LIST_ITEM_LIMIT,
+    LIST_LENGTH_LIMIT,
     QUESTION_COUNT,
     TEXT_FIELDS,
     InterpreterReply,
@@ -34,6 +37,24 @@ GATE_TEXT_FIELDS: tuple[str, ...] = (
     "outputs",
 )
 MIN_FLOW_STEPS = 2
+
+# A "then" must be something a person or a test can see (spec 1.4).
+MIN_THEN_WORDS = 3
+VAGUE_THEN = frozenset(
+    {
+        "it works",
+        "works",
+        "works correctly",
+        "it works correctly",
+        "works as expected",
+        "as expected",
+        "success",
+        "it succeeds",
+        "no error",
+        "ok",
+    }
+)
+CRITERION_KINDS = ("success", "failure")
 
 _CODE_FENCE = "```"
 # A line that starts like Python code. Lower case only, so "Class sizes..." in a sentence passes.
@@ -91,6 +112,7 @@ def find_reply_problems(
 ) -> list[str]:
     """Every reason the interpreter's reply cannot be used. An empty list means it is fine."""
     problems = _update_field_problems(reply) + _ambiguity_problems(reply)
+    problems += _criteria_problems(reply)
     if not problems:
         # Only build the record once the field names and types are right.
         try:
@@ -110,6 +132,13 @@ def build_candidate(record: RequestRecord, reply: InterpreterReply) -> RequestRe
     data = record.model_dump()
     for name, value in reply.updates.items():
         data[name] = value.strip() if isinstance(value, str) else [v.strip() for v in value]
+    if reply.acceptance_criteria is not None:
+        # The app numbers the list in the order given (D-B). Frozen once record v1 is confirmed.
+        data["acceptance_criteria"] = [
+            {"id": f"AC-{number}", "kind": item.kind.strip()}
+            | {part: getattr(item, part).strip() for part in CRITERION_PARTS}
+            for number, item in enumerate(reply.acceptance_criteria, start=1)
+        ]
     known = record.assumptions
     for ambiguity in reply.ambiguities:
         if not ambiguity.material and ambiguity.assumption and ambiguity.assumption not in known:
@@ -152,10 +181,11 @@ def confirmation_gate_problems(record: RequestRecord, waiting_decisions: int) ->
         problems.append(
             f"The functional flow needs at least {MIN_FLOW_STEPS} steps (it has {steps})."
         )
-    if not record.success_scenarios:
-        problems.append("At least 1 success scenario is needed.")
-    if not record.failure_scenarios:
-        problems.append("At least 1 failure scenario is needed.")
+    kinds = {criterion.kind for criterion in record.acceptance_criteria}
+    if "success" not in kinds:
+        problems.append("At least 1 success criterion is needed.")
+    if "failure" not in kinds:
+        problems.append("At least 1 negative scenario is needed.")
     problems += [f"Open item: {item}" for item in record.open_items]
     if waiting_decisions:
         problems.append(f"Decisions still waiting for your choice: {waiting_decisions}.")
@@ -242,6 +272,47 @@ def _ambiguity_problems(reply: InterpreterReply) -> list[str]:
     return problems
 
 
+def _criteria_problems(reply: InterpreterReply) -> list[str]:
+    """Spec 1.4: kind, lengths, count, a visible 'then', and no repeats. Numbered as the app
+    will number them (AC-1..n), so the retry note matches what the developer will see."""
+    items = reply.acceptance_criteria
+    if not items:
+        return []
+    problems = []
+    if len(items) > LIST_LENGTH_LIMIT:
+        problems.append(
+            f"There are {len(items)} acceptance criteria. The limit is {LIST_LENGTH_LIMIT}."
+        )
+    seen: dict[tuple[str, str, str], int] = {}
+    for number, item in enumerate(items, start=1):
+        label = f"AC-{number}"
+        if item.kind.strip() not in CRITERION_KINDS:
+            problems.append(f"{label}: 'kind' must be success or failure.")
+        for part in CRITERION_PARTS:
+            size = len(getattr(item, part).strip())
+            if not 1 <= size <= LIST_ITEM_LIMIT:
+                problems.append(
+                    f"{label}: '{part}' must be 1 to {LIST_ITEM_LIMIT} characters (it has {size})."
+                )
+        if _is_vague_then(item.then):
+            problems.append(
+                f"{label}: the 'then' part must say something a person or a test can see, "
+                "for example a message, a saved value, or a rejected file."
+            )
+        key = tuple(" ".join(getattr(item, part).lower().split()) for part in CRITERION_PARTS)
+        if key in seen:
+            first = seen[key]
+            problems.append(f"{label} repeats AC-{first}: same given, when and then.")
+        else:
+            seen[key] = number
+    return problems
+
+
+def _is_vague_then(text: str) -> bool:
+    plain = " ".join(re.sub(r"[^\w\s]", "", text.lower()).split())
+    return len(plain.split()) < MIN_THEN_WORDS or plain in VAGUE_THEN
+
+
 def _code_problems(reply: InterpreterReply) -> list[str]:
     problems = []
     for text in _all_reply_text(reply):
@@ -268,6 +339,13 @@ def _invented_name_problems(reply: InterpreterReply, developer_text: str) -> lis
                 f"{FIELD_LABELS[name]} names '{invented}', which the developer did not type. "
                 "Describe the step in plain words instead of naming files or functions."
             )
+    for number, item in enumerate(reply.acceptance_criteria or [], start=1):
+        text = "\n".join(getattr(item, part) for part in CRITERION_PARTS)
+        for invented in find_invented_names(text, developer_text):
+            problems.append(
+                f"AC-{number} names '{invented}', which the developer did not type. "
+                "Describe the case in plain words instead of naming files or functions."
+            )
     return problems
 
 
@@ -275,6 +353,8 @@ def _all_reply_text(reply: InterpreterReply) -> list[str]:
     texts = [reply.hint]
     for value in reply.updates.values():
         texts += [value] if isinstance(value, str) else value
+    for item in reply.acceptance_criteria or []:
+        texts += [getattr(item, part) for part in CRITERION_PARTS]
     for ambiguity in reply.ambiguities:
         texts += [ambiguity.text, *ambiguity.options]
         if ambiguity.assumption:

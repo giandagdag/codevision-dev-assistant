@@ -26,6 +26,17 @@ def reply(**values):
     return InterpreterReply.model_validate(values)
 
 
+def criterion(id_, kind, **parts):
+    values = {
+        "id": id_,
+        "kind": kind,
+        "given": "an empty workbook",
+        "when": "it is uploaded",
+        "then": "it is rejected with the standard empty-file error",
+    }
+    return values | parts
+
+
 def complete_record(**changes):
     values = {
         "title": "Add Excel document processing",
@@ -36,8 +47,10 @@ def complete_record(**changes):
         "inputs": ".xlsx workbooks",
         "outputs": "Content in the normal ingestion format",
         "functional_flow": ["The user uploads a workbook", "The content is extracted"],
-        "success_scenarios": ["A workbook with several sheets is ingested"],
-        "failure_scenarios": ["An empty workbook is rejected"],
+        "acceptance_criteria": [
+            criterion("AC-1", "success"),
+            criterion("AC-2", "failure"),
+        ],
         "answered_questions": [1, 2, 3, 4],
     }
     values.update(changes)
@@ -327,8 +340,8 @@ def test_gate_lists_every_missing_item():
         "Inputs is empty.",
         "Outputs is empty.",
         "The functional flow needs at least 2 steps (it has 0).",
-        "At least 1 success scenario is needed.",
-        "At least 1 failure scenario is needed.",
+        "At least 1 success criterion is needed.",
+        "At least 1 negative scenario is needed.",
         "Decisions still waiting for your choice: 1.",
     ]
 
@@ -348,3 +361,148 @@ def test_code_problem_names_the_line_to_rephrase():
         'The reply contains code: "import the workbook". Describe the change in plain words '
         "only, and do not start a line with def, class, import or from ... import."
     ]
+
+
+# --- acceptance criteria (Phase 2D, spec 1.3 to 1.5) ---
+
+
+def ai_criterion(**parts):
+    """A criterion as the AI writes it: no id."""
+    values = {
+        "kind": "failure",
+        "given": "an empty workbook",
+        "when": "it is uploaded",
+        "then": "it is rejected with the standard empty-file error",
+    }
+    return values | parts
+
+
+def with_criteria(*items):
+    return reply(acceptance_criteria=list(items))
+
+
+def test_the_app_numbers_the_criteria_in_the_order_given():
+    """2D-1."""
+    three = with_criteria(
+        ai_criterion(given="a"), ai_criterion(given="b"), ai_criterion(given="c")
+    )
+
+    assert find_reply_problems(three, make_record(), "") == []
+    record = build_candidate(make_record(), three)
+
+    assert [c.id for c in record.acceptance_criteria] == ["AC-1", "AC-2", "AC-3"]
+    assert [c.given for c in record.acceptance_criteria] == ["a", "b", "c"]
+
+
+def test_a_new_list_replaces_the_old_one_and_renumbers():
+    old = make_record(
+        acceptance_criteria=[criterion("AC-1", "success"), criterion("AC-2", "failure")]
+    )
+
+    record = build_candidate(old, with_criteria(ai_criterion(given="only one")))
+
+    assert [(c.id, c.given) for c in record.acceptance_criteria] == [("AC-1", "only one")]
+
+
+@pytest.mark.parametrize("silent", [reply(), reply(acceptance_criteria=None)])
+def test_a_reply_without_the_key_leaves_the_criteria_unchanged(silent):
+    """2D-3."""
+    old = make_record(acceptance_criteria=[criterion("AC-4", "success")])
+
+    assert build_candidate(old, silent).acceptance_criteria == old.acceptance_criteria
+
+
+def test_an_empty_list_clears_the_criteria():
+    old = make_record(acceptance_criteria=[criterion("AC-1", "success")])
+
+    assert build_candidate(old, reply(acceptance_criteria=[])).acceptance_criteria == []
+
+
+def test_a_vague_then_is_refused_with_the_exact_note():
+    """2D-2 (the retry itself is tested with the interpreter)."""
+    vague = with_criteria(ai_criterion(), ai_criterion(then="It works."))
+
+    assert find_reply_problems(vague, make_record(), "") == [
+        "AC-2: the 'then' part must say something a person or a test can see, for example a "
+        "message, a saved value, or a rejected file."
+    ]
+
+
+@pytest.mark.parametrize(
+    "then",
+    ["works", "Works correctly!", "as expected", "Success", "no error", "OK", "it succeeds"],
+)
+def test_vague_or_too_short_then_parts_are_refused(then):
+    problems = find_reply_problems(with_criteria(ai_criterion(then=then)), make_record(), "")
+
+    assert len(problems) == 1 and problems[0].startswith("AC-1: the 'then' part")
+
+
+def test_a_two_word_then_is_refused_even_if_not_on_the_list():
+    problems = find_reply_problems(with_criteria(ai_criterion(then="done fine")), make_record(), "")
+
+    assert len(problems) == 1
+
+
+def test_a_then_with_three_words_that_is_not_on_the_list_passes():
+    ok = with_criteria(ai_criterion(then="a message is shown"))
+
+    assert find_reply_problems(ok, make_record(), "") == []
+
+
+def test_kind_and_lengths_are_checked_in_plain_words():
+    bad = with_criteria(
+        ai_criterion(kind="maybe"), ai_criterion(given=""), ai_criterion(when="w" * 301)
+    )
+
+    assert find_reply_problems(bad, make_record(), "") == [
+        "AC-1: 'kind' must be success or failure.",
+        "AC-2: 'given' must be 1 to 300 characters (it has 0).",
+        "AC-3: 'when' must be 1 to 300 characters (it has 301).",
+    ]
+
+
+def test_more_than_12_criteria_are_refused():
+    many = with_criteria(*[ai_criterion(given=f"case {n}") for n in range(13)])
+
+    assert find_reply_problems(many, make_record(), "") == [
+        "There are 13 acceptance criteria. The limit is 12."
+    ]
+
+
+def test_a_repeated_criterion_is_refused_ignoring_case_and_spaces():
+    twice = with_criteria(ai_criterion(), ai_criterion(given="An  EMPTY workbook"))
+
+    assert find_reply_problems(twice, make_record(), "") == [
+        "AC-2 repeats AC-1: same given, when and then."
+    ]
+
+
+def test_code_and_invented_names_are_checked_in_all_three_parts():
+    code = with_criteria(ai_criterion(when="import the workbook"))
+    names = with_criteria(ai_criterion(then="upload.check_type rejects it with a message"))
+
+    assert any("contains code" in p for p in find_reply_problems(code, make_record(), ""))
+    assert find_reply_problems(names, make_record(), "") == [
+        "AC-1 names 'upload.check_type', which the developer did not type. "
+        "Describe the case in plain words instead of naming files or functions."
+    ]
+    assert find_reply_problems(names, make_record(), "I call upload.check_type today") == []
+
+
+def test_an_id_from_the_ai_is_not_allowed():
+    with pytest.raises(ValueError):
+        reply(acceptance_criteria=[ai_criterion() | {"id": "AC-9"}])
+
+
+def test_gate_asks_for_a_negative_scenario_when_only_success_exists():
+    """2D-4."""
+    record = complete_record(acceptance_criteria=[criterion("AC-1", "success")])
+
+    assert confirmation_gate_problems(record, 0) == ["At least 1 negative scenario is needed."]
+
+
+def test_gate_asks_for_a_success_criterion_when_only_failure_exists():
+    record = complete_record(acceptance_criteria=[criterion("AC-1", "failure")])
+
+    assert confirmation_gate_problems(record, 0) == ["At least 1 success criterion is needed."]

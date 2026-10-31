@@ -8,9 +8,9 @@ from tests.da_tree import all_text, by_id, components
 
 SECTIONS = [
     "Requirement summary",
+    "Acceptance criteria (each one gets tested)",
     "Scope",
     "Inputs and outputs",
-    "Important scenarios",
     "Functional flow",
     "Assumptions",
     "Open items",
@@ -66,7 +66,7 @@ def test_new_workspace_is_blank_with_the_banners(settings):
     assert page.CODE_BANNER in text and page.DEMO_BANNER in text
     assert "New change request" in text and "DRAFT" in text
     assert "0 of 4 mandatory questions answered" in text
-    assert text.count(page.EMPTY_TEXT) == 10
+    assert text.count(page.EMPTY_TEXT) == 11  # every field that is not 'always' visible
     assert by_id(tree, page.TEXT_ID).disabled is False
     assert by_id(tree, page.STATE_ID).data == {"request_id": None, "revision": None}
 
@@ -128,13 +128,22 @@ def test_decision_locks_the_text_box_and_shows_the_choices(settings):
     view = da_play.to_decision(settings)
     tree = page.render_workspace(view)
     assert view.input_mode == "choices"
-    assert by_id(tree, page.TEXT_ID).disabled is True
-    assert by_id(tree, page.SEND_ID).disabled is True
+    # The buttons stay and the text box opens for "Other, type here" (W3).
+    assert by_id(tree, page.TEXT_ID).disabled is False
+    assert by_id(tree, page.TEXT_ID).placeholder == "Other, type here"
+    assert by_id(tree, page.SEND_ID).disabled is False
     options = [b.children for b in choice_buttons(tree)]
     assert options == view.choices and flow.HELP_OPTION == options[-1]
     assert [b.id["index"] for b in choice_buttons(tree)] == list(range(len(options)))
-    assert "Text input is paused until you choose" in by_id(tree, page.TEXT_ID).placeholder
     assert "Clarification required: 1 open item" in all_text(tree)
+
+
+def test_checkpoint_stays_buttons_only(settings):
+    view = da_play.to_checkpoint(settings)
+    tree = page.render_workspace(view)
+    assert by_id(tree, page.TEXT_ID).disabled is True
+    assert by_id(tree, page.SEND_ID).disabled is True
+    assert "Text input is paused until you choose" in by_id(tree, page.TEXT_ID).placeholder
 
 
 def test_optional_area_shows_skip(settings):
@@ -171,7 +180,12 @@ def test_confirmed_request_is_done(settings):
 def test_senior_stop_is_locked_and_shows_why(settings):
     view = da_play.to_decision(settings)
     waiting = view.model_copy(
-        update={"input_mode": "waiting", "choices": [], "prompt": flow.SENIOR_MESSAGE}
+        update={
+            "input_mode": "waiting",
+            "choices": [],
+            "prompt": flow.SENIOR_MESSAGE,
+            "custom_choice_allowed": False,
+        }
     )
     tree = page.render_workspace(waiting)
     assert by_id(tree, page.TEXT_ID).disabled is True
@@ -384,3 +398,93 @@ def test_discover_button_ids_hold_only_the_position(settings):
         tree, _ = discover_tree(settings, *steps)
         for button in choice_buttons(tree):
             assert set(button.id) == {"type", "index"} and isinstance(button.id["index"], int)
+
+
+# --- Summary: criteria and step-by-step fill (Phase 2D) ---
+
+
+def test_hidden_fields_say_waiting_even_though_the_record_holds_them(settings):
+    view = da_play.answer(settings, da_play.start(settings), da_play.ANSWERS[0])
+    assert view.record.title and view.record.objective
+    # The fake script only fills question 1 fields here; make the record hold a later one too.
+    sneaky = view.model_copy(
+        update={"record": view.record.model_copy(update={"inputs": "SECRET-LATER-VALUE"})}
+    )
+    text = all_text(page.render_workspace(sneaky))
+    assert "SECRET-LATER-VALUE" not in text
+    assert "Let users upload Excel workbooks" in text
+
+
+def test_criteria_show_id_badge_and_given_when_then(settings):
+    view = da_play.to_checkpoint(settings)
+    tree = page.render_workspace(view)
+    text = all_text(tree)
+    assert "AC-1" in text and "AC-7" in text
+    assert (
+        "Given an empty workbook, when it is uploaded, then it is rejected with the standard "
+        "empty-file error." in text
+    )
+    assert "failure" not in [b.children for b in components(tree, "Badge")]  # no red tag
+    assert "Important scenarios" not in text
+
+
+def criteria_rows(tree):
+    """Each criterion line as (id badge, the line's asterisk marks), in screen order."""
+    rows = []
+    for group in components(tree, "Group"):
+        badges = [c for c in components(group.children, "Badge")]
+        if badges and str(badges[0].children).startswith("AC-"):
+            marks = [t for t in components(group.children, "Text") if t.children == "*"]
+            rows.append((badges[0], marks))
+    return rows
+
+
+def test_id_badge_text_is_the_criterion_id_and_is_never_cut_or_shrunk(settings):
+    view = da_play.to_checkpoint(settings)
+    rows = criteria_rows(page.render_workspace(view))
+    assert [badge.children for badge, _ in rows] == [c.id for c in view.record.acceptance_criteria]
+    for badge, _ in rows:
+        assert badge.style["flexShrink"] == 0
+        assert badge.styles["label"]["textOverflow"] == "clip"
+        assert badge.styles["label"]["overflow"] == "visible"
+
+
+def test_a_negative_scenario_shows_an_asterisk_and_a_success_does_not(settings):
+    view = da_play.to_checkpoint(settings)
+    rows = criteria_rows(page.render_workspace(view))
+    kinds = [c.kind for c in view.record.acceptance_criteria]
+    assert kinds.count("failure") == 4 and kinds.count("success") == 3
+    for (_, marks), kind in zip(rows, kinds, strict=True):
+        assert len(marks) == (1 if kind == "failure" else 0)
+    mark = next(marks[0] for _, marks in rows if marks)
+    assert getattr(mark, "aria-label") == "Negative scenario"
+    tooltips = components(page.render_workspace(view), "Tooltip")
+    assert [t.label for t in tooltips] == ["Negative scenario"] * 4
+
+
+def test_the_legend_shows_when_there_are_criteria_and_not_when_empty(settings):
+    view = da_play.to_checkpoint(settings)
+    full = page.render_workspace(view)
+    assert by_id(full, "da-criteria-legend").children == "* Negative scenario testing"
+    assert all_text(full).count("* Negative scenario testing") == 1
+    # The legend is a muted line under the heading, before the first criterion.
+    lines = all_text(full).splitlines()
+    assert lines.index("* Negative scenario testing") == lines.index(SECTIONS[1]) + 1
+
+    empty = page.render_new_workspace(False)
+    assert by_id(empty, "da-criteria-legend") is None
+    assert "* Negative scenario testing" not in all_text(empty)
+
+
+def test_criteria_section_sits_under_the_requirement_summary():
+    titles = all_text(page.render_new_workspace(False)).splitlines()
+    assert titles.index(SECTIONS[1]) == titles.index(SECTIONS[0]) + 9
+
+
+def test_empty_visible_criteria_show_the_hint_text(settings):
+    view = da_play.answer(settings, da_play.start(settings), da_play.ANSWERS[0])
+    visible = [*view.visible_fields, "acceptance_criteria"]
+    shown = view.model_copy(update={"visible_fields": visible})
+    text = all_text(page.render_workspace(shown))
+    assert page.CRITERIA_EMPTY in text
+    assert "Each success or negative case becomes a testable criterion" in text

@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from dotenv import dotenv_values  # noqa: E402
 
 from agents.da_discover_agent import TASK_MARKER, ScriptedDiscoverClient  # noqa: E402
-from agents.da_understand_agent import ScriptedUnderstandClient  # noqa: E402
+from agents.da_understand_agent import FAKE_SCRIPT_FILE, ScriptedUnderstandClient  # noqa: E402
 from agents.da_understand_flow import (  # noqa: E402
     CORRECTION_QUESTION,
     OPENING_QUESTION,
@@ -45,11 +45,19 @@ KEY_SETTING = "DA_FAKE_ONPREM_KEY"
 
 # The scripted entry for each question the engine can ask. Picking by the question in the
 # prompt (not by counting calls) keeps the server in step through retries and restarts.
+def _decision_questions() -> dict[str, str]:
+    """The material question the script raises at question 4. After the developer decides it, the
+    engine asks again with that question, and the script answers with its "decision" entry."""
+    script = json.loads(FAKE_SCRIPT_FILE.read_text(encoding="utf-8"))
+    return {a["text"]: "decision" for a in script["question_4"]["ambiguities"] if a["material"]}
+
+
 SCRIPT_STEPS: dict[str, str] = {
     OPENING_QUESTION: "opening",
     **{text: f"question_{number}" for number, text in QUESTIONS.items()},
     OPTIONAL_QUESTION: "optional",
     CORRECTION_QUESTION: "correction",
+    **_decision_questions(),
 }
 _QUESTION_LINE = re.compile(r"^The question being answered: (.*)$", re.MULTILINE)
 # The engine adds this to the prompt when it asks again after a rejected reply.

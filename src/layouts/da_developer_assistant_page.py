@@ -17,7 +17,7 @@ from agents.da_discover_flow import (
     outcome_status,
 )
 from agents.da_understand_checks import MAX_MESSAGE_LENGTH
-from agents.da_understand_flow import HELP_OPTION, PROCEED_OPTION
+from agents.da_understand_flow import ALWAYS_VISIBLE, HELP_OPTION, PROCEED_OPTION
 from pydantic_classes.da_discovery_models import DiscoveryView
 from pydantic_classes.da_models import (
     STATUS_CONFIRMED,
@@ -28,7 +28,7 @@ from pydantic_classes.da_models import (
     STATUS_SIMILAR_FOUND,
     Request,
 )
-from pydantic_classes.da_request_record_models import UnderstandView
+from pydantic_classes.da_request_record_models import AcceptanceCriterion, UnderstandView
 from styles import da_styles
 from web import da_web_components as parts
 
@@ -48,6 +48,17 @@ BUSY_ID = "da-busy"  # the "searching" line, shown only while a Discover action 
 CODE_BANNER = "No code is generated in Phase 1"  # the demo's wording (its own numbering)
 DEMO_BANNER = "Demo mode: replies are scripted"
 EMPTY_TEXT = "Waiting for your answer"
+OTHER_PLACEHOLDER = "Other, type here"
+CRITERIA_TITLE = "Acceptance criteria (each one gets tested)"
+CRITERIA_EMPTY = "Each success or negative case becomes a testable criterion"
+# What the developer reads for a "failure" criterion. The record keeps the kind "failure".
+NEGATIVE_LABEL = "Negative scenario"
+NEGATIVE_MARK = "*"
+CRITERIA_LEGEND = f"{NEGATIVE_MARK} {NEGATIVE_LABEL} testing"
+# Mantine cuts a badge's text with "..." when the badge is squeezed in a row. The ID must always
+# show in full: no shrinking, and the label may not be clipped.
+ID_BADGE_STYLE = {"flexShrink": 0, "overflow": "visible", "width": "auto"}
+ID_BADGE_STYLES = {"label": {"overflow": "visible", "textOverflow": "clip"}}
 UNDERSTAND_STEP = 1
 DISCOVER_STEP = 2
 # The Discover buttons use the same pattern id as the Understand choices (the callbacks tell them
@@ -182,7 +193,9 @@ def render_workspace(view: UnderstandView) -> list:
         status=view.request.status,
         demo_mode=view.demo_mode,
         messages=[parts.chat_bubble(message) for message in view.messages],
-        composer=_composer(view.input_mode, view.choices, view.can_skip, view.prompt),
+        composer=_composer(
+            view.input_mode, view.choices, view.can_skip, view.prompt, view.custom_choice_allowed
+        ),
         panel=_summary_panel(view),
         state={"request_id": view.request.request_id, "revision": view.revision},
     )
@@ -477,10 +490,13 @@ def _discover_bar(buttons: list[tuple[str, str]], note: str) -> dmc.Box:
 # --- The composer: text, locked choices, waiting, done ---
 
 
-def _composer(mode: str, choices: list[str], can_skip: bool, prompt: str) -> dmc.Box:
+def _composer(
+    mode: str, choices: list[str], can_skip: bool, prompt: str, custom_allowed: bool = False
+) -> dmc.Box:
     """The bottom of the chat. The text box, Send and Skip always exist (the callbacks name
-    them); the mode decides which ones can be used."""
-    text_open = mode == "text"
+    them); the mode decides which ones can be used. At a decision the buttons stay and the text
+    box opens too, for "Other, type here" (W3)."""
+    text_open = mode == "text" or custom_allowed
     paused = {
         "choices": "Text input is paused until you choose",
         "waiting": prompt,
@@ -490,7 +506,13 @@ def _composer(mode: str, choices: list[str], can_skip: bool, prompt: str) -> dmc
         [
             dmc.Textarea(
                 id=TEXT_ID,
-                placeholder="Type your message..." if text_open else paused,
+                placeholder=(
+                    OTHER_PLACEHOLDER
+                    if custom_allowed
+                    else "Type your message..."
+                    if text_open
+                    else paused
+                ),
                 disabled=not text_open,
                 autosize=True,
                 minRows=2,
@@ -551,20 +573,30 @@ def _choices_bar(choices: list[str]) -> dmc.Box:
 
 
 def _summary_panel(view: UnderstandView | None) -> list:
-    """The live summary. Fields changed by the last answer are highlighted."""
+    """The live summary. Fields changed by the last answer are highlighted. A field the screen
+    does not show yet says "Waiting for your answer" (W5); the record already holds its value."""
     record = view.record if view else None
-    changed = set(view.changed_fields) if view else set()
+    shown = set(view.visible_fields) if view else set(ALWAYS_VISIBLE)
+    changed = set(view.changed_fields) & shown if view else set()
     text = view.progress_text if view else "0 of 4 mandatory questions answered"
     answered = view.answered_count if view else 0
     warn = text.startswith("Clarification required")
 
     def value(name: str) -> str:
-        return getattr(record, name) if record else ""
+        return getattr(record, name) if record and name in shown else ""
 
     def items(name: str) -> list:
-        return list(getattr(record, name)) if record else []
+        return list(getattr(record, name)) if record and name in shown else []
 
-    assumptions = [f"{a.text} (basis: {a.basis})" for a in record.assumptions] if record else []
+    def empty(name: str, text: str) -> str:
+        return text if name in shown else EMPTY_TEXT
+
+    assumptions = (
+        [f"{a.text} (basis: {a.basis})" for a in record.assumptions]
+        if record and "assumptions" in shown
+        else []
+    )
+    criteria = list(record.acceptance_criteria) if record and "acceptance_criteria" in shown else []
     return [
         parts.progress_segments(answered, text, warn),
         parts.panel_section(
@@ -580,6 +612,16 @@ def _summary_panel(view: UnderstandView | None) -> list:
                     value("expected_behaviour"),
                     "expected_behaviour" in changed,
                 ),
+            ],
+        ),
+        parts.panel_section(
+            CRITERIA_TITLE,
+            [
+                _criteria_field(
+                    criteria,
+                    "acceptance_criteria" in changed,
+                    empty("acceptance_criteria", CRITERIA_EMPTY),
+                )
             ],
         ),
         parts.panel_section(
@@ -599,23 +641,6 @@ def _summary_panel(view: UnderstandView | None) -> list:
             ],
         ),
         parts.panel_section(
-            "Important scenarios",
-            [
-                _list_field(
-                    "Success",
-                    items("success_scenarios"),
-                    "success_scenarios" in changed,
-                    "tabler:circle-check",
-                ),
-                _list_field(
-                    "Failure",
-                    items("failure_scenarios"),
-                    "failure_scenarios" in changed,
-                    "tabler:alert-circle",
-                ),
-            ],
-        ),
-        parts.panel_section(
             "Functional flow",
             [
                 _list_field(
@@ -623,7 +648,7 @@ def _summary_panel(view: UnderstandView | None) -> list:
                     items("functional_flow"),
                     "functional_flow" in changed,
                     numbered=True,
-                    empty="Appears once the expected behaviour is clear",
+                    empty=empty("functional_flow", "Appears once the expected behaviour is clear"),
                 )
             ],
         ),
@@ -659,11 +684,51 @@ def _summary_panel(view: UnderstandView | None) -> list:
                     items("references"),
                     "references" in changed,
                     "tabler:paperclip",
-                    empty="None provided (optional)",
+                    empty=empty("references", "None provided (optional)"),
                 )
             ],
         ),
     ]
+
+
+def _criteria_field(
+    criteria: list[AcceptanceCriterion], changed: bool, empty: str
+) -> dmc.Box:
+    """One line each: the ID as a small badge, an asterisk after it on negative (failure)
+    criteria, then Given / when / then in words. A muted legend explains the asterisk."""
+    if not criteria:
+        return _field_box([_empty(empty)], changed)
+    lines = [dmc.Text(CRITERIA_LEGEND, size="xs", c=da_styles.MUTED, id="da-criteria-legend")]
+    for criterion in criteria:
+        sentence = f"Given {criterion.given}, when {criterion.when}, then {criterion.then}."
+        lines.append(
+            dmc.Group(
+                [
+                    dmc.Badge(
+                        criterion.id,
+                        size="sm",
+                        variant="light",
+                        color="blue",
+                        style=ID_BADGE_STYLE,
+                        styles=ID_BADGE_STYLES,
+                    ),
+                    _negative_mark() if criterion.kind == "failure" else None,
+                    dmc.Text(sentence, size="sm"),
+                ],
+                gap=6,
+                wrap="nowrap",
+                align="flex-start",
+            )
+        )
+    return _field_box(lines, changed)
+
+
+def _negative_mark() -> dmc.Tooltip:
+    """The asterisk after the ID of a negative scenario: hover text and aria-label."""
+    mark = dmc.Text(
+        NEGATIVE_MARK, size="sm", fw=700, **{"aria-label": NEGATIVE_LABEL}
+    )
+    return dmc.Tooltip(mark, label=NEGATIVE_LABEL)
 
 
 def _field_box(children: list, changed: bool) -> dmc.Box:

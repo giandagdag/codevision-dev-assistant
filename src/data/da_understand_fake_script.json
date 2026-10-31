@@ -42,14 +42,6 @@
     "updates": {
       "inputs": "Excel workbooks uploaded by the user",
       "outputs": "Worksheet content in the normal ingestion format",
-      "success_scenarios": [
-        "A workbook with several worksheets is ingested"
-      ],
-      "failure_scenarios": [
-        "An empty workbook is rejected with a clear message",
-        "A corrupted workbook is rejected with a clear message",
-        "A password-protected workbook is rejected with a clear message"
-      ],
       "out_of_scope": [
         "Macros and formulas in the workbook"
       ]
@@ -72,7 +64,99 @@
         }
       }
     ],
-    "hint": ""
+    "hint": "",
+    "acceptance_criteria": [
+      {
+        "kind": "success",
+        "given": "a valid .xlsx with one visible sheet",
+        "when": "it is uploaded",
+        "then": "its content enters the existing ingestion flow"
+      },
+      {
+        "kind": "success",
+        "given": "a workbook with several visible sheets",
+        "when": "it is processed",
+        "then": "each visible sheet is extracted"
+      },
+      {
+        "kind": "failure",
+        "given": "an empty workbook",
+        "when": "it is uploaded",
+        "then": "it is rejected with the standard empty-file error"
+      },
+      {
+        "kind": "failure",
+        "given": "a corrupted workbook",
+        "when": "it is uploaded",
+        "then": "it is rejected with the unreadable-file error"
+      },
+      {
+        "kind": "failure",
+        "given": "a password-protected workbook",
+        "when": "it is uploaded",
+        "then": "it is rejected with the protected-file error"
+      },
+      {
+        "kind": "failure",
+        "given": "a file type that is not allowed",
+        "when": "it is uploaded",
+        "then": "the existing validator rejects it"
+      }
+    ]
+  },
+  "decision": {
+    "updates": {
+      "out_of_scope": [
+        "Macros and formulas in the workbook",
+        "Hidden worksheets"
+      ]
+    },
+    "ambiguities": [],
+    "hint": "",
+    "acceptance_criteria": [
+      {
+        "kind": "success",
+        "given": "a valid .xlsx with one visible sheet",
+        "when": "it is uploaded",
+        "then": "its content enters the existing ingestion flow"
+      },
+      {
+        "kind": "success",
+        "given": "a workbook with several visible sheets",
+        "when": "it is processed",
+        "then": "each visible sheet is extracted"
+      },
+      {
+        "kind": "success",
+        "given": "a workbook with hidden sheets",
+        "when": "it is processed",
+        "then": "hidden sheets are ignored"
+      },
+      {
+        "kind": "failure",
+        "given": "an empty workbook",
+        "when": "it is uploaded",
+        "then": "it is rejected with the standard empty-file error"
+      },
+      {
+        "kind": "failure",
+        "given": "a corrupted workbook",
+        "when": "it is uploaded",
+        "then": "it is rejected with the unreadable-file error"
+      },
+      {
+        "kind": "failure",
+        "given": "a password-protected workbook",
+        "when": "it is uploaded",
+        "then": "it is rejected with the protected-file error"
+      },
+      {
+        "kind": "failure",
+        "given": "a file type that is not allowed",
+        "when": "it is uploaded",
+        "then": "the existing validator rejects it"
+      }
+    ]
   },
   "optional": {
     "updates": {

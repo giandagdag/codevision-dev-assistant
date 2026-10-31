@@ -38,7 +38,11 @@ Reply with JSON only: no other text before or after it. Use this shape:
    {"text": "<what is unclear>", "material": false,
     "assumption": {"text": "<what you assumed>", "basis": "<why that is safe>"}}
  ],
- "hint": "<one short sentence>"}
+ "hint": "<one short sentence>",
+ "acceptance_criteria": [
+   {"kind": "success", "given": "<starting situation>", "when": "<action>",
+    "then": "<what a person or a test can see>"}
+ ]}
 
 Rules:
 - updates: fill only these fields: {{allowed_fields}}.
@@ -53,4 +57,14 @@ Rules:
   - minor means it can be resolved safely. Give the assumption you made and its basis, for
     example "Rulebook v{{rulebook_version}} glossary". Give no options.
   - Leave the list empty if nothing is unclear.
+- acceptance_criteria: optional. Leave the key out when the criteria do not change.
+  - Every success or failure case the developer names becomes one criterion. kind is "success" or
+    "failure".
+  - given = the starting situation, when = the action, then = what a person or a test can see,
+    such as a message, a saved value or a rejected file. "It works" is not enough.
+  - Each part is 1 to 300 characters. Up to 12 criteria.
+  - A decision the developer made that changes behaviour becomes a criterion, or changes one.
+  - Give the full new list; it replaces the old one. Never write IDs: the app numbers them.
+- You may fill any field from any message, not only the one for the current question. The screen
+  decides what to show and when.
 - hint: optional, up to 200 characters, to help the developer with the next question.

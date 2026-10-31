@@ -69,8 +69,11 @@ with the standard empty-file error.
 ### 1.5 Confirmation gate
 Replace the two scenario lines with:
 - "At least 1 success criterion is needed."
-- "At least 1 failure criterion is needed."
+- "At least 1 negative scenario is needed."
 Everything else in the gate stays.
+
+Note: the gate wording changed from "failure criterion" to "negative scenario" (the bank's word),
+agreed by Gian on 31 Oct 2026. The record, database, prompt and AI reply still say `failure`.
 
 ### 1.6 Prompt (`src/data/da_understand_prompt.md`)
 Add a short section, in the same style as today:
@@ -83,8 +86,13 @@ Add a short section, in the same style as today:
 ### 1.7 Screen and messages
 - Summary tab: section "Acceptance criteria (each one gets tested)" in place of "Important
   scenarios", placed under "Requirement summary" as in the demo. Each line as in 1.1, with the ID
-  as a small badge and a small "failure" tag on failure criteria. Empty text: "Each success or
-  failure case becomes a testable criterion".
+  as a small badge that always shows its full text (no cut-off "...", no shrinking). A failure
+  criterion has a plain asterisk (*) right after the ID badge, with hover text and aria-label
+  "Negative scenario"; success criteria have none. Under the heading, whenever the list is not
+  empty, one small muted legend line: "* Negative scenario testing". Empty text: "Each success
+  or negative case becomes a testable criterion".
+  (Changed from the red "failure" tag; agreed by Gian on 31 Oct 2026. Screen wording only: the
+  kind stays `success` or `failure` in the record, database, prompt and AI reply.)
 - Confirmed message: add the line "Acceptance criteria: N".
 - Question 4 hint (app text, not AI): "Each case you name becomes an acceptance criterion, and
   every criterion gets tested."
@@ -185,7 +193,7 @@ In `agents/da_understand_agent.py` `parse_reply`:
 | 2D-1 | a reply with 3 valid criteria | it is applied | the record has AC-1 to AC-3 in that order |
 | 2D-2 | a reply with a criterion whose then part is "it works" | it is checked | it is refused with the AC-n retry note and retried once |
 | 2D-3 | a reply without the `acceptance_criteria` key | it is applied | the criteria are unchanged |
-| 2D-4 | a record with only success criteria | the gate runs | "At least 1 failure criterion is needed." is listed |
+| 2D-4 | a record with only success criteria | the gate runs | "At least 1 negative scenario is needed." is listed |
 | 2D-5 | a saved session with `success_scenarios` | the request is opened | the plain "saved before 2D" page shows, no error |
 | 2D-6 | a decision step | the developer types "Only the first sheet" | it is saved as the choice, audit has `"custom": true`, the AI is called once |
 | 2D-7 | a decision step | the developer types 301 characters | it is refused with the 300-character message, nothing saved |
