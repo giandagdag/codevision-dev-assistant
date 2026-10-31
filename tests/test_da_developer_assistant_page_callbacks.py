@@ -410,7 +410,7 @@ def test_codevision_search_provider_shows_the_not_configured_message(
 def test_the_same_buttons_in_an_understand_workspace_still_call_the_understand_engine(settings):
     view = da_play.to_decision(settings)
 
-    cb.perform_action(settings, choice(view.choices[0]), None, state_of(view), 0)
+    cb.perform_action(settings, choice(0), None, state_of(view), 0)
 
     after = flow.get_understand_view(settings, view.request.request_id)
     assert after.request.status != "DECISION_REQUIRED"
