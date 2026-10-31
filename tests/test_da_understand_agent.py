@@ -181,6 +181,34 @@ def test_normal_reply_is_unchanged():
     assert strip_think_block("no tags here") == "no tags here"
 
 
+def test_valid_json_whose_hint_contains_a_closing_think_tag_parses_first_time(record):
+    """2D-13: nothing is stripped when the reply parses as it is."""
+    text = json.dumps(stub_reply({"title": "Add Excel uploads"}, hint="Never write </think> here"))
+
+    reply, problems = parse_reply(text, record, "")
+
+    assert problems == []
+    assert reply.hint == "Never write </think> here"
+
+
+def test_only_the_leading_think_block_is_removed():
+    text = "<think>a</think>{\"hint\": \"x</think>y\"}"
+
+    assert strip_think_block(text) == "{\"hint\": \"x</think>y\"}"
+
+
+def test_a_lone_closing_tag_removes_up_to_the_first_one_only():
+    assert strip_think_block("thoughts</think>{\"a\": \"</think>\"}") == "{\"a\": \"</think>\"}"
+
+
+def test_think_block_then_fenced_json_is_accepted(record):
+    wrapped = f"<think>hmm</think>\n```json\n{GOOD}\n```"
+
+    reply, problems = parse_reply(wrapped, record, "")
+
+    assert reply is not None and problems == []
+
+
 def test_rejected_log_keeps_the_raw_reply_with_the_think_block(
     record, charter, tmp_path, monkeypatch
 ):

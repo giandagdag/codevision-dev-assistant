@@ -44,9 +44,11 @@ _PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
 # Some models wrap JSON in a ```json fence even when told not to; that wrapper is allowed.
 _FENCED_REPLY = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 # Reasoning models (CodeVision's default is "reasoning-vlm") put their thinking in <think> tags.
-_THINK_BLOCK = re.compile(r"\s*<think>.*?</think>\s*", re.DOTALL | re.IGNORECASE)
-# Some servers drop the opening tag: remove everything up to and including the closing one.
-_THINK_TAIL = re.compile(r"^.*</think>\s*", re.DOTALL | re.IGNORECASE)
+# Only a block at the very start is removed, up to the FIRST closing tag (P13).
+_THINK_BLOCK = re.compile(r"^\s*<think>.*?</think>\s*", re.DOTALL | re.IGNORECASE)
+# Some servers drop the opening tag: remove everything up to and including the first closing one.
+_THINK_TAIL = re.compile(r"^.*?</think>\s*", re.DOTALL | re.IGNORECASE)
+_NOT_JSON = object()
 
 
 @dataclass(frozen=True)
@@ -169,13 +171,12 @@ def parse_reply(
     text: str, record: RequestRecord, developer_text: str
 ) -> tuple[InterpreterReply | None, list[str]]:
     """Read the reply text as JSON in the agreed shape, then run the app checks."""
-    text = strip_think_block(text).strip()
-    fenced = _FENCED_REPLY.match(text)
-    if fenced:
-        text = fenced.group(1)
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
+    # The reply as it is first. Think text is cleaned only if that fails, so a hint that happens
+    # to contain "</think>" is never cut (P13).
+    data = _load_json(text)
+    if data is _NOT_JSON:
+        data = _load_json(strip_think_block(text))
+    if data is _NOT_JSON:
         return None, ["The reply was not valid JSON. Reply with JSON only."]
     try:
         reply = InterpreterReply.model_validate(data)
@@ -185,10 +186,26 @@ def parse_reply(
     return reply, find_reply_problems(reply, record, developer_text)
 
 
+def _load_json(text: str):
+    """Trim, remove a whole-reply ```json fence, and parse. _NOT_JSON if it does not parse."""
+    text = text.strip()
+    fenced = _FENCED_REPLY.match(text)
+    if fenced:
+        text = fenced.group(1)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return _NOT_JSON
+
+
 def strip_think_block(text: str) -> str:
-    """Remove a reasoning block (and a lone closing tag with what precedes it) from a reply."""
-    text = _THINK_BLOCK.sub("", text)
-    return _THINK_TAIL.sub("", text)
+    """Remove a leading reasoning block, or with no opening tag everything up to the first
+    closing tag. Think text inside or after the JSON is never touched."""
+    if _THINK_BLOCK.match(text):
+        return _THINK_BLOCK.sub("", text, count=1)
+    if "<think>" not in text.lower():
+        return _THINK_TAIL.sub("", text, count=1)
+    return text
 
 
 def _retry_note(problems: list[str]) -> str:
