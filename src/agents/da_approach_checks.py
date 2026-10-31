@@ -242,6 +242,22 @@ def _reply_texts(reply: ApproachReply) -> list[str]:
     return texts
 
 
+def normalise_reply_paths(reply: ApproachReply) -> ApproachReply:
+    """The reply with every path cleaned (spec 4, check 1), so the saved plan holds the path
+    later phases will read, not the raw text the AI wrote."""
+    return reply.model_copy(
+        update={
+            "files": [
+                item.model_copy(update={"path": normalise_path(item.path)}) for item in reply.files
+            ],
+            "needs_people": [
+                item.model_copy(update={"path": normalise_path(item.path)})
+                for item in reply.needs_people
+            ],
+        }
+    )
+
+
 # --- warnings and zones (computed by the app, never by the AI) ---
 
 

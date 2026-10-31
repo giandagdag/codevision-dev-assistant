@@ -214,6 +214,9 @@ def start_approach(
     result = _generate(settings, PROPOSE, context, generator)
     if not result.ok:
         with _write_transaction(settings.db_path) as conn:
+            if read_approach_revision(conn, request_id) != base_revision:
+                # Another window already acted (for example a double click on Try again).
+                raise StaleRevisionError(STALE_MESSAGE)
             _say(conn, request_id, "system", APPROACH_DIVIDER, now)
             _say(conn, request_id, "assistant", _failure_text(result, "make a plan"), now)
             insert_audit_event(

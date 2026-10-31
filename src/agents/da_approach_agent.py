@@ -13,7 +13,14 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from agents.da_approach_checks import CHANGE, PROPOSE, SETTLE, find_approach_problems, question_key
+from agents.da_approach_checks import (
+    CHANGE,
+    PROPOSE,
+    SETTLE,
+    find_approach_problems,
+    normalise_reply_paths,
+    question_key,
+)
 from agents.da_llm_client import LLMClient, LLMClientError, LLMReply, get_llm_client
 from agents.da_rejected_reply_log import write_rejected_reply
 from agents.da_understand_agent import strip_think_block
@@ -239,7 +246,7 @@ def generate_approach(client: LLMClient, call: str, context: ApproachContext) ->
         provider, model = llm_reply.provider, llm_reply.model
         reply, problems = parse_reply(llm_reply.text, context, call, answered)
         if reply is not None and not problems:
-            return ApproachResult(reply, provider, model, attempt)
+            return ApproachResult(normalise_reply_paths(reply), provider, model, attempt)
         logger.warning("Approach reply %s was not usable: %d problems", attempt, len(problems))
         write_rejected_reply(
             context.record.request_id,

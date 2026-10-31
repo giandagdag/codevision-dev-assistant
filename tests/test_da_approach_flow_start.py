@@ -174,3 +174,15 @@ def test_a_request_not_yet_discovery_confirmed_cannot_start(settings):
 
     with pytest.raises(ApproachError):
         flow.start_approach(settings, unconfirmed, 0)
+
+
+def test_a_failed_first_call_from_an_old_window_adds_no_second_failure_line(
+    settings, request_id
+):
+    flow.start_approach(settings, request_id, 0, generator=FailingClient("down"))
+    proposed(settings, request_id)  # another window got through meanwhile
+
+    with pytest.raises(StaleRevisionError):
+        flow.start_approach(settings, request_id, 0, generator=FailingClient("down"))
+
+    assert len(events_of(settings, request_id, "approach_failed")) == 1

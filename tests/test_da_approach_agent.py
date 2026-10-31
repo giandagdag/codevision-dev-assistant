@@ -156,3 +156,15 @@ def test_the_scripted_settle_has_no_choices_and_propose_has_one(seed_rulebook):
     assert len(propose.reply.design_choices) == 1
     assert settle.ok and settle.reply.design_choices == []
     assert change.ok
+
+
+def test_saved_paths_are_cleaned_up(seed_rulebook):
+    plan = good_plan()
+    plan["files"][0]["path"] = "src\\agents\\excel_processor.py"
+    plan["files"][1]["path"] = "  src/agents/upload_validator.py "
+
+    result = generate_approach(StubClient(plan), PROPOSE, context(seed_rulebook))
+
+    assert [f.path for f in result.reply.files] == [
+        "src/agents/excel_processor.py", "src/agents/upload_validator.py"
+    ]
