@@ -792,3 +792,19 @@ def test_save_during_the_interpreter_call_makes_this_answer_stale(settings):
     texts = [m.text for m in get_understand_view(settings, rid(view)).messages]
     assert "Answer from the other window" in texts
     assert "Answer from this window" not in texts
+
+
+def test_a_decision_before_question_4_reveals_and_highlights_nothing_hidden(settings):
+    """Review round 1: the resting step between the two decision saves must not leak fields."""
+    view = start(settings)
+    ask = {"text": "Which sheet?", "material": True, "options": ["First", "All"]}
+    opening = stub_reply(FILLED_AT_OPENING["updates"], [ask])
+    view = answer(settings, view, client=StubClient(opening))
+    assert view.input_mode == "choices"
+
+    view = choose(settings, view, "First", client=StubClient(stub_reply()))
+
+    shown = {"objective", "reason"} | set(ALWAYS)
+    assert set(view.visible_fields) == shown
+    assert set(view.changed_fields) <= shown | {"answered_questions", "title"}
+    assert view.prompt.startswith("Question 2 of 4")

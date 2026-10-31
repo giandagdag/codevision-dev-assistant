@@ -152,6 +152,9 @@ class _Turn:
     now: datetime
     # What the screen showed before this action, to highlight what the action reveals (W5).
     visible_before: list[str]
+    # False for a save that only parks the session (the decision's save 1): the real step, and
+    # so the real reveal, comes with save 2.
+    reveal: bool = True
 
     def say(self, speaker: Speaker, text: str) -> None:
         add_message(self.conn, self.request.request_id, speaker, text, self.now)
@@ -598,6 +601,7 @@ def _decide(
             raise UnderstandError(_wrong_step_message(turn.session))
         question = turn.session.pending_decisions[0].question
         decided = _record_decision(turn, choice, custom)
+        shown_before = turn.visible_before
     if not decided:
         # "I need help deciding": nothing was decided, so the interpreter is not asked.
         return get_understand_view(settings, request_id)
@@ -605,6 +609,7 @@ def _decide(
     session = _load_session(settings.db_path, request_id, base_revision + 1)
     result = _interpret(settings, session, DECISION_STEP, question, choice, client)
     with _turn(settings.db_path, request_id, session.revision, now) as turn:
+        turn.visible_before = shown_before
         carried = list(turn.session.last_changed_fields)
         if result.ok:
             _apply_result(turn, result, answered=None)
@@ -657,6 +662,7 @@ def _record_decision(turn: _Turn, choice: str, custom: bool) -> bool:
     if not session.pending_decisions:
         # A valid resting step in case the app stops before save 2; save 2 sets the real one.
         session.step = "correction"
+        turn.reveal = False
     return True
 
 
@@ -806,6 +812,8 @@ def _highlight_revealed(turn: _Turn) -> None:
     """A field that became visible in this action is highlighted like a changed one, even if its
     value was filled earlier (W5). A field with nothing in it is not."""
     session = turn.session
+    if not turn.reveal:
+        return
     for name in visible_fields(session):
         if name in turn.visible_before or name in session.last_changed_fields:
             continue
