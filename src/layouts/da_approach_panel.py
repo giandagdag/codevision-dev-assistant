@@ -22,7 +22,7 @@ DRAFT_BANNER = "Draft: may change after your choices"
 TESTS_LINE = "written by the Tester, frozen, in Phase 6"
 READY_LINE = "READY TO BUILD"
 NEGATIVE_LABEL = "Negative scenario"
-# The same look as the criteria in the Summary tab: the ID is never cut.
+# The same look as the criteria in the Summary tab: a badge's text is never cut with '...'.
 ID_BADGE_STYLE = {"flexShrink": 0, "overflow": "visible", "width": "auto"}
 ID_BADGE_STYLES = {"label": {"overflow": "visible", "textOverflow": "clip"}}
 ACTION_LABELS = {"create": "New", "modify": "Change"}
@@ -91,6 +91,8 @@ def _file_plan(view: ApproachView, approach: ApproachVersion):
                             size="sm",
                             variant="light",
                             color="blue" if item.action == "create" else "gray",
+                            style=ID_BADGE_STYLE,
+                            styles=ID_BADGE_STYLES,
                         )
                     ),
                     dmc.TableTd(dmc.Text(item.purpose, size="xs")),
@@ -102,7 +104,16 @@ def _file_plan(view: ApproachView, approach: ApproachVersion):
         dmc.TableTr(
             [
                 dmc.TableTd(dmc.Text(view.tests_folder, size="xs", ff="monospace")),
-                dmc.TableTd(dmc.Badge("Tests", size="sm", variant="light", color="violet")),
+                dmc.TableTd(
+                    dmc.Badge(
+                        "Tests",
+                        size="sm",
+                        variant="light",
+                        color="violet",
+                        style=ID_BADGE_STYLE,
+                        styles=ID_BADGE_STYLES,
+                    )
+                ),
                 dmc.TableTd(dmc.Text(TESTS_LINE, size="xs")),
                 dmc.TableTd(""),
             ]
@@ -166,6 +177,8 @@ def _reuse_table(discovery: DiscoveryResult | None, approach: ApproachVersion):
                             size="sm",
                             variant="light",
                             color="gray" if item.decision == "ignore" else "green",
+                            style=ID_BADGE_STYLE,
+                            styles=ID_BADGE_STYLES,
                         )
                     ),
                     dmc.TableTd(dmc.Text(item.reason, size="xs")),
