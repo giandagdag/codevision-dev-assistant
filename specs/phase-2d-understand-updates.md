@@ -1,7 +1,6 @@
 # Phase 2D: Understand updates
 
-Status: DRAFT v0.1 (31 Oct 2026). Waiting for Gian's choices on D-A to D-D (section 9).
-Recommended options are marked. Do not build until the status says APPROVED.
+Status: APPROVED v1.0 (31 Oct 2026). Decisions D-A to D-D chosen by Gian (section 9).
 Depends on: Phase 2A, 2B, 2C, P13, P19 (all on `main`). **Phase 3 must be merged into `main`
 first** (both phases change the screen and its callbacks; building 2D on top avoids a messy merge).
 Next: Phase 4, Approach (`specs/redesign-2026-10-31.md` section 5.3)
@@ -202,9 +201,9 @@ In `agents/da_understand_agent.py` `parse_reply`:
 Plus: `pytest` 0 failures, `ruff check` 0 problems, smoke check passes, code reviewer 0 Must fix,
 and a browser check at home that the Summary fills step by step and "Other, type here" works.
 
-## 9. Decisions (Gian to choose)
+## 9. Decisions (chosen by Gian, 31 Oct 2026: option 1 for all four)
 
-| # | Question | Options | Recommended |
+| # | Question | Options | Chosen |
 |---|---|---|---|
 | D-A | Criteria and the old scenario lists | 1. Criteria replace them. 2. Keep both | **1**: one source of truth; the AI never has to keep two lists in step |
 | D-B | Criterion IDs while drafting | 1. Renumber AC-1..n until confirmed. 2. Stable IDs from now, AI must quote them | **1**: simpler and safer with our models; stable IDs come with revision mode |
