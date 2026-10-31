@@ -593,7 +593,7 @@ def test_gate_failure_lists_every_missing_item(settings):
     assert view.prompt == "What should change?"
     message = last_message(view)
     assert message.startswith("Before you can confirm, these items need attention:")
-    for missing in ("Title is empty.", "Outputs is empty.", "At least 1 failure criterion"):
+    for missing in ("Title is empty.", "Outputs is empty.", "At least 1 negative scenario"):
         assert missing in message
 
 

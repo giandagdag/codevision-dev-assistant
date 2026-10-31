@@ -415,7 +415,7 @@ def test_hidden_fields_say_waiting_even_though_the_record_holds_them(settings):
     assert "Let users upload Excel workbooks" in text
 
 
-def test_criteria_show_id_badge_failure_tag_and_given_when_then(settings):
+def test_criteria_show_id_badge_and_given_when_then(settings):
     view = da_play.to_checkpoint(settings)
     tree = page.render_workspace(view)
     text = all_text(tree)
@@ -424,9 +424,56 @@ def test_criteria_show_id_badge_failure_tag_and_given_when_then(settings):
         "Given an empty workbook, when it is uploaded, then it is rejected with the standard "
         "empty-file error." in text
     )
-    badges = [b.children for b in components(tree, "Badge")]
-    assert badges.count("failure") == 4
+    assert "failure" not in [b.children for b in components(tree, "Badge")]  # no red tag
     assert "Important scenarios" not in text
+
+
+def criteria_rows(tree):
+    """Each criterion line as (id badge, the line's asterisk marks), in screen order."""
+    rows = []
+    for group in components(tree, "Group"):
+        badges = [c for c in components(group.children, "Badge")]
+        if badges and str(badges[0].children).startswith("AC-"):
+            marks = [t for t in components(group.children, "Text") if t.children == "*"]
+            rows.append((badges[0], marks))
+    return rows
+
+
+def test_id_badge_text_is_the_criterion_id_and_is_never_cut_or_shrunk(settings):
+    view = da_play.to_checkpoint(settings)
+    rows = criteria_rows(page.render_workspace(view))
+    assert [badge.children for badge, _ in rows] == [c.id for c in view.record.acceptance_criteria]
+    for badge, _ in rows:
+        assert badge.style["flexShrink"] == 0
+        assert badge.styles["label"]["textOverflow"] == "clip"
+        assert badge.styles["label"]["overflow"] == "visible"
+
+
+def test_a_negative_scenario_shows_an_asterisk_and_a_success_does_not(settings):
+    view = da_play.to_checkpoint(settings)
+    rows = criteria_rows(page.render_workspace(view))
+    kinds = [c.kind for c in view.record.acceptance_criteria]
+    assert kinds.count("failure") == 4 and kinds.count("success") == 3
+    for (_, marks), kind in zip(rows, kinds, strict=True):
+        assert len(marks) == (1 if kind == "failure" else 0)
+    mark = next(marks[0] for _, marks in rows if marks)
+    assert getattr(mark, "aria-label") == "Negative scenario"
+    tooltips = components(page.render_workspace(view), "Tooltip")
+    assert [t.label for t in tooltips] == ["Negative scenario"] * 4
+
+
+def test_the_legend_shows_when_there_are_criteria_and_not_when_empty(settings):
+    view = da_play.to_checkpoint(settings)
+    full = page.render_workspace(view)
+    assert by_id(full, "da-criteria-legend").children == "* Negative scenario testing"
+    assert all_text(full).count("* Negative scenario testing") == 1
+    # The legend is a muted line under the heading, before the first criterion.
+    lines = all_text(full).splitlines()
+    assert lines.index("* Negative scenario testing") == lines.index(SECTIONS[1]) + 1
+
+    empty = page.render_new_workspace(False)
+    assert by_id(empty, "da-criteria-legend") is None
+    assert "* Negative scenario testing" not in all_text(empty)
 
 
 def test_criteria_section_sits_under_the_requirement_summary():
@@ -438,4 +485,6 @@ def test_empty_visible_criteria_show_the_hint_text(settings):
     view = da_play.answer(settings, da_play.start(settings), da_play.ANSWERS[0])
     visible = [*view.visible_fields, "acceptance_criteria"]
     shown = view.model_copy(update={"visible_fields": visible})
-    assert page.CRITERIA_EMPTY in all_text(page.render_workspace(shown))
+    text = all_text(page.render_workspace(shown))
+    assert page.CRITERIA_EMPTY in text
+    assert "Each success or negative case becomes a testable criterion" in text

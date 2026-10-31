@@ -341,7 +341,7 @@ def test_gate_lists_every_missing_item():
         "Outputs is empty.",
         "The functional flow needs at least 2 steps (it has 0).",
         "At least 1 success criterion is needed.",
-        "At least 1 failure criterion is needed.",
+        "At least 1 negative scenario is needed.",
         "Decisions still waiting for your choice: 1.",
     ]
 
@@ -495,11 +495,11 @@ def test_an_id_from_the_ai_is_not_allowed():
         reply(acceptance_criteria=[ai_criterion() | {"id": "AC-9"}])
 
 
-def test_gate_asks_for_a_failure_criterion_when_only_success_exists():
+def test_gate_asks_for_a_negative_scenario_when_only_success_exists():
     """2D-4."""
     record = complete_record(acceptance_criteria=[criterion("AC-1", "success")])
 
-    assert confirmation_gate_problems(record, 0) == ["At least 1 failure criterion is needed."]
+    assert confirmation_gate_problems(record, 0) == ["At least 1 negative scenario is needed."]
 
 
 def test_gate_asks_for_a_success_criterion_when_only_failure_exists():

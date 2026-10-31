@@ -50,7 +50,15 @@ DEMO_BANNER = "Demo mode: replies are scripted"
 EMPTY_TEXT = "Waiting for your answer"
 OTHER_PLACEHOLDER = "Other, type here"
 CRITERIA_TITLE = "Acceptance criteria (each one gets tested)"
-CRITERIA_EMPTY = "Each success or failure case becomes a testable criterion"
+CRITERIA_EMPTY = "Each success or negative case becomes a testable criterion"
+# What the developer reads for a "failure" criterion. The record keeps the kind "failure".
+NEGATIVE_LABEL = "Negative scenario"
+NEGATIVE_MARK = "*"
+CRITERIA_LEGEND = f"{NEGATIVE_MARK} {NEGATIVE_LABEL} testing"
+# Mantine cuts a badge's text with "..." when the badge is squeezed in a row. The ID must always
+# show in full: no shrinking, and the label may not be clipped.
+ID_BADGE_STYLE = {"flexShrink": 0, "overflow": "visible", "width": "auto"}
+ID_BADGE_STYLES = {"label": {"overflow": "visible", "textOverflow": "clip"}}
 UNDERSTAND_STEP = 1
 DISCOVER_STEP = 2
 # The Discover buttons use the same pattern id as the Understand choices (the callbacks tell them
@@ -686,21 +694,26 @@ def _summary_panel(view: UnderstandView | None) -> list:
 def _criteria_field(
     criteria: list[AcceptanceCriterion], changed: bool, empty: str
 ) -> dmc.Box:
-    """One line each: the ID as a small badge, a small "failure" tag on failure criteria, then
-    Given / when / then in words."""
+    """One line each: the ID as a small badge, an asterisk after it on negative (failure)
+    criteria, then Given / when / then in words. A muted legend explains the asterisk."""
     if not criteria:
         return _field_box([_empty(empty)], changed)
-    lines = []
+    lines = [dmc.Text(CRITERIA_LEGEND, size="xs", c=da_styles.MUTED, id="da-criteria-legend")]
     for criterion in criteria:
         sentence = f"Given {criterion.given}, when {criterion.when}, then {criterion.then}."
         lines.append(
             dmc.Group(
                 [
-                    dmc.Badge(criterion.id, size="sm", variant="light", color="blue"),
+                    dmc.Badge(
+                        criterion.id,
+                        size="sm",
+                        variant="light",
+                        color="blue",
+                        style=ID_BADGE_STYLE,
+                        styles=ID_BADGE_STYLES,
+                    ),
+                    _negative_mark() if criterion.kind == "failure" else None,
                     dmc.Text(sentence, size="sm"),
-                    dmc.Badge("failure", size="xs", variant="light", color="red")
-                    if criterion.kind == "failure"
-                    else None,
                 ],
                 gap=6,
                 wrap="nowrap",
@@ -708,6 +721,14 @@ def _criteria_field(
             )
         )
     return _field_box(lines, changed)
+
+
+def _negative_mark() -> dmc.Tooltip:
+    """The asterisk after the ID of a negative scenario: hover text and aria-label."""
+    mark = dmc.Text(
+        NEGATIVE_MARK, size="sm", fw=700, **{"aria-label": NEGATIVE_LABEL}
+    )
+    return dmc.Tooltip(mark, label=NEGATIVE_LABEL)
 
 
 def _field_box(children: list, changed: bool) -> dmc.Box:
