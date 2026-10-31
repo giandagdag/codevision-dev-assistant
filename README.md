@@ -130,10 +130,10 @@ the conversation is kept in a work file between screens. A page reload loses not
   - more than 5 decisions on one request means "get help from a senior". The request then
     waits with no input allowed: the senior escalation inbox comes in Phase 8.
 - **Decisions and assumptions.** Something unclear that changes what gets built is always
-  asked: the text input is locked and only the choices work, always including "I need help
-  deciding". A small unclear point is resolved and shown as an assumption with its basis.
+  asked: the choices stay and the text box opens ("Other, type here", up to 300 characters),
+  always including "I need help deciding". A small unclear point is resolved and shown as an assumption with its basis.
 - **The confirmation gate**: all 4 questions answered; the main fields filled; at least 2 flow
-  steps, 1 success and 1 failure scenario; no open items and no waiting decision. If it fails,
+  steps, 1 success and 1 failure acceptance criterion; no open items and no waiting decision. If it fails,
   every missing item is listed.
 - **Storage** (`db_table_functions/db_tbl_da_understand.py`):
   - `da_understand_sessions` is the work file. Each save carries a revision number: a save

@@ -1,4 +1,4 @@
-"""Proves Phases 0, 1, 2A, 2C and 3 work end to end.
+"""Proves Phases 0, 1, 2A, 2C, 2D and 3 work end to end.
 
 Run: .venv\\Scripts\\python src\\da_smoke_check.py
 """
@@ -13,6 +13,7 @@ from agents.da_discover_flow import confirm_discovery, start_discovery
 from agents.da_llm_client import LLMClient, LLMClientError, get_llm_client
 from agents.da_search_index import FakeSearchIndex, search_safely
 from agents.da_understand_flow import (
+    ALWAYS_VISIBLE,
     PROCEED_OPTION,
     choose_option,
     create_understand_request,
@@ -56,6 +57,7 @@ SAMPLE_ANSWERS = (
 )
 SAMPLE_REFERENCE = "Use the existing PDF processing as a reference."
 SAMPLE_ONPREM_MODEL = "fake-qwen"
+EXPECTED_CRITERIA = 7  # the fake script's six criteria plus the one the hidden-sheet decision adds
 
 
 def run_smoke_check(settings: Settings) -> int:
@@ -75,6 +77,7 @@ def run_smoke_check(settings: Settings) -> int:
             # The same database: item 9 already published the rulebook there.
             _run_onprem_steps(Path(folder) / "smoke_understand.db", settings)
             _run_discover_steps(Path(folder) / "smoke_understand.db", settings)
+            _run_reveal_step(Path(folder) / "smoke_understand.db", settings)
     except (
         ConfigError,
         LLMClientError,
@@ -165,8 +168,15 @@ def _run_understand_steps(db_path: Path, settings: Settings) -> None:
 
     view = submit_answer(demo, request_id, SAMPLE_REFERENCE, view.revision)
     view = choose_option(demo, request_id, PROCEED_OPTION, view.revision)
+    criteria = get_confirmed_record(db_path, request_id).acceptance_criteria
+    if view.request.status != STATUS_CONFIRMED or len(criteria) != EXPECTED_CRITERIA:
+        raise UnderstandError(
+            f"Expected {EXPECTED_CRITERIA} criteria at {STATUS_CONFIRMED}, got {len(criteria)} "
+            f"at {view.request.status}."
+        )
     print(
-        f"12. Confirmed as record v{view.request.version} (status {view.request.status}); "
+        f"12. Confirmed as record v{view.request.version} (status {view.request.status}) "
+        f"with {len(criteria)} acceptance criteria; "
         f"editing v1 was refused: {_try_to_edit_record(db_path, request_id)}"
     )
 
@@ -255,6 +265,18 @@ def _run_discover_steps(db_path: Path, settings: Settings) -> None:
         f"17. With the pretend server in bad-json mode, {request_id} fell back to plain results "
         f"(summary source: {view.result.summary_source}) and still reached {view.request.status}"
     )
+
+
+def _run_reveal_step(db_path: Path, settings: Settings) -> None:
+    """Item 18 (W5): the Summary fills step by step. The record already holds every field the
+    fake script fills, but after question 1 the screen shows only objective and reason."""
+    demo = replace(settings, llm_provider="fake", db_path=db_path)
+    view = create_understand_request(demo, SAMPLE_FIRST_MESSAGE, developer_id=SAMPLE_DEVELOPER)
+    view = submit_answer(demo, view.request.request_id, SAMPLE_ANSWERS[0], view.revision)
+    revealed = [name for name in view.visible_fields if name not in ALWAYS_VISIBLE]
+    if revealed != ["objective", "reason"]:
+        raise UnderstandError(f"After question 1 the screen showed {revealed}.")
+    print(f"18. After question 1 the Summary shows only: {', '.join(revealed)}")
 
 
 def _confirmed_request(settings: Settings) -> str:

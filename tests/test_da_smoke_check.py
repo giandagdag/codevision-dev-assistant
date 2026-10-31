@@ -143,9 +143,11 @@ def test_fake_provider_prints_the_four_understand_items(make_settings, capsys):
     assert "(status DECISION_REQUIRED); chose \"Visible worksheets only\"" in output
     assert "(status CLARIFICATION_IN_PROGRESS)" in output
     assert (
-        "12. Confirmed as record v1 (status CONFIRMED_FOR_DISCOVERY); editing v1 was refused: "
+        "12. Confirmed as record v1 (status CONFIRMED_FOR_DISCOVERY) with 7 acceptance "
+        "criteria; editing v1 was refused: "
         "Confirmed request records are append-only and cannot be edited."
     ) in output
+    assert "18. After question 1 the Summary shows only: objective, reason" in output
 
 
 def test_understand_items_use_the_fake_script_whatever_the_provider(
