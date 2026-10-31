@@ -250,15 +250,59 @@ def test_more_than_5_material_decisions_need_a_senior(settings):
         "Needs a senior decision: Decision 5?",
         "Needs a senior decision: Decision 6?",
     ]
-    assert any(message.text == SENIOR_MESSAGE for message in view.messages)
+    # Not yet: decisions are still waiting (W4). It is said once, after the last one.
+    assert senior_messages(view) == []
 
     for _ in range(5):
         view = choose(settings, view, "Yes")
 
+    assert len(senior_messages(view)) == 1
     assert view.input_mode == "waiting"
     assert view.request.status == "DECISION_REQUIRED"
     with pytest.raises(UnderstandError, match="get help from a senior"):
         answer(settings, view)
+
+
+def senior_messages(view):
+    return [m for m in view.messages if m.text == SENIOR_MESSAGE]
+
+
+def material(count, start_at=0):
+    return [
+        {"text": f"Decision {n}?", "material": True, "options": ["Yes", "No"]}
+        for n in range(start_at, start_at + count)
+    ]
+
+
+def test_senior_message_shows_once_when_nothing_is_pending(settings):
+    """2D-9 (W4): the 6th material ambiguity arrives with no decision waiting."""
+    view = start(settings)
+    view = answer(settings, view, client=StubClient(stub_reply(GOOD_Q1["updates"], material(5))))
+    for _ in range(5):
+        view = choose(settings, view, "Yes")
+    assert senior_messages(view) == []
+
+    view = answer(settings, view, client=StubClient(stub_reply({}, material(1, start_at=5))))
+
+    assert view.input_mode == "waiting"
+    assert len(senior_messages(view)) == 1
+
+
+def test_senior_message_shows_once_after_the_last_pending_decision(settings):
+    """2D-10 (W4): with decisions still pending it must not appear early."""
+    view = start(settings)
+    view = answer(settings, view, client=StubClient(stub_reply(GOOD_Q1["updates"], material(7))))
+    assert view.record.open_items  # the 6th and 7th became open items; a senior is needed
+
+    for _ in range(4):
+        view = choose(settings, view, "Yes")
+        assert senior_messages(view) == []
+
+    view = choose(settings, view, "Yes")
+
+    assert view.input_mode == "waiting"
+    assert len(senior_messages(view)) == 1
+    assert view.messages[-1].text == SENIOR_MESSAGE
 
 
 # --- minor ambiguity (R4) ---

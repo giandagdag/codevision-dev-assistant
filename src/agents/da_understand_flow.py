@@ -393,10 +393,7 @@ def _apply_result(turn: _Turn, result: InterpretResult, answered: int | None) ->
         if assumption not in old.assumptions:
             turn.audit("system", "assumption_added", assumption.model_dump())
 
-    needed_senior = session.needs_senior
     record = _queue_material_decisions(session, record, result)
-    if session.needs_senior and not needed_senior:
-        turn.say("assistant", SENIOR_MESSAGE)
     session.record = record
     session.next_hint = result.reply.hint
     session.last_changed_fields = _changed_fields(old, record)
@@ -456,9 +453,11 @@ def _advance(turn: _Turn) -> None:
     if session.pending_decisions:
         _ask_decision(turn)
     elif session.needs_senior:
+        # The only place that says it, and only when the step changes (W4).
+        if session.step != "senior":
+            turn.say("assistant", SENIOR_MESSAGE)
         session.step = "senior"
         turn.move_to(STATUS_DECISION_REQUIRED)
-        turn.say("assistant", SENIOR_MESSAGE)
     elif unanswered:
         session.step = "question"
         session.current_question = unanswered[0]
