@@ -309,6 +309,55 @@ refused with the usual "updated in another window" message.
 The smoke check adds items 15 (the pretend index, searches and the safety filter), 16 (a full
 Discover run to DISCOVERY_CONFIRMED with record v1 unchanged) and 17 (bad-json fallback).
 
+## How Phase 4 works
+
+Phase 4 is **Approach**: after Discover is confirmed, the app plans HOW the change will be built
+and HOW it will be tested, before any code is written. Only then does the request become
+**READY TO BUILD**. (AS400 comparison: the program change form signed off before anyone touches the
+source. It lists the objects to create or change, which existing objects are reused, and a test
+script written by QA, not by the programmer.)
+
+Two AI roles do separate jobs in separate calls. The **Generator** proposes the plan (files to
+create or change, what to reuse from Discover, design choices, libraries). The **Tester** writes
+the test plan from the acceptance criteria and never sees the file plan or any code. The app checks
+every reply with plain code; the AI suggests, the app decides, the developer approves.
+
+1. **Proceed to Approach** (one Generator call). The Approach tab shows the file plan, reuse
+   decisions, libraries and warnings. If the plan has design choices, they are asked one at a time
+   (buttons, **I need help deciding**, or type your own answer, 300 characters). After the last one,
+   ONE more call settles the plan as a new version; the old version is kept.
+2. **Accept approach**, **Change something** (up to 3 per request) or **Get help**. More code files
+   than the limit (5 in the starter rulebook) asks for a typed reason, which is audited.
+3. The Tester writes the **test plan**. **Add a test case** lets you type your own (up to 5); you
+   see a draft and press **Keep this case** or **Discard it**. **Change the approach** from here
+   makes a new approach and a new Tester plan; your own cases are kept.
+4. **Accept test plan** runs the **gate**: request confirmed, Discover done, approach confirmed,
+   test plan accepted. All four true gives READY TO BUILD. The Build button stays disabled until
+   Phase 5.
+
+**The rule lists** (allowed folders, new file name pattern, protected files, approved libraries,
+the file limit, the design-choice limit and the flag-for-review zones) are new fields on the
+rulebook `policy`. A rulebook version saved before Phase 4 loads with the starter values. The
+Admin screen that edits them comes in Phase 11. A file in a flag-for-review zone (for example a
+login page) never blocks: it adds a warning and the zone name, and a named senior becomes a
+required reviewer at the pull request.
+
+**Tester model.** `DA_CLAUDE_TESTER_MODEL` (home) and `DA_ONPREM_TESTER_MODEL` (work) choose the
+Tester's model. Empty means the generator's model, until the bake-off decides.
+
+**Try it at home.** Run the screen with `DA_LLM_PROVIDER=fake`, take the scripted Excel example to
+DISCOVERY CONFIRMED and press **Proceed to Approach**. The fake plan always shows one warning, "Not
+found in Discover", on purpose: it modifies a path that no Discover hit has. To see the failure
+paths, start the pretend server with `--mode bad-json` and set `DA_LLM_PROVIDER=onprem`: the
+first call fails twice and the button reads **Try again**. (Like Discover, bad-json is bad on every
+try for these prompts.)
+
+**Stale windows.** Approach keeps its own revision number (`da_approach_state`). A second window
+acting on an old view is refused with the usual "updated in another window" message.
+
+The smoke check adds items 19 (fake provider to READY TO BUILD), 20 (the same against the pretend
+server) and 21 (the Tester's prompt holds the criteria and not the file plan).
+
 ## Notes for the move to CodeVision
 
 - **The audit-table triggers are SQLite-only.** The append-only guarantee comes from two SQLite
@@ -340,6 +389,13 @@ Discover run to DISCOVERY_CONFIRMED with record v1 unchanged) and 17 (bad-json f
   `pydantic_classes/da_discovery_models.py`, `data/da_discover_prompt.md`, the three Discover
   settings, and the screen edits. `data/da_fake_index.json` and `data/da_discover_fake_script.json`
   are for home. The two Discover tables use SQLite triggers (append-only), like the others.
+- **Phase 4 files:** `agents/da_approach_*.py`, `agents/da_tester_agent.py`,
+  `db_table_functions/db_tbl_da_approach.py`, `pydantic_classes/da_approach_models.py`,
+  `layouts/da_approach_panel.py`, the three prompt files, the new policy fields in
+  `da_rulebook_models.py` and the seed, the Tester settings, and the screen edits.
+  `data/da_approach_fake_script.json` and `data/da_tester_fake_script.json` are for home. The
+  `da_approach_versions` and `da_test_plans` tables use SQLite triggers (append-only). Phase 4
+  also made `is_vague_then` in `da_understand_checks.py` public (it was private).
 - `dash`, `dash-mantine-components` and `dash-iconify` are in `requirements.txt` at the work
   versions. Dash pulls in Flask; home gets 3.1.3, work has 3.1.2.
 - **Check at work that Dash clientside callbacks (inline JavaScript) are allowed.** Enter-to-send

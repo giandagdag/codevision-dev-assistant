@@ -6,6 +6,19 @@ from da_smoke_check import main, run_smoke_check
 from tests.test_da_llm_client import FakeAnthropic, claude_settings
 
 
+def test_fake_provider_prints_the_approach_items_19_to_21(make_settings, capsys):
+    exit_code = run_smoke_check(make_settings())
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "19. CVDA-" in output
+    assert "Approach with the fake provider reached READY_TO_BUILD" in output
+    assert "10 test cases (1 yours), gate yes yes yes yes" in output
+    assert "20. CVDA-" in output
+    assert "onprem against the pretend server reached READY_TO_BUILD" in output
+    assert "21. The Tester's prompt held all 7 criteria and none of the 2 planned" in output
+
+
 def test_fake_provider_prints_the_first_four_items(make_settings, capsys):
     exit_code = run_smoke_check(make_settings())
 
