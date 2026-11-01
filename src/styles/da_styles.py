@@ -42,10 +42,20 @@ BUBBLE = {
     "system": {**BUBBLE_BASE, "alignSelf": "center", "background": BLUE_LIGHT, "color": INK},
 }
 
+# Help and escalation buttons (P21): outlined, so they read as clickable but less prominent than the
+# main blue buttons. Only the border colour is set here: the Mantine "default" variant already gives
+# white background and dark text, and a disabled button keeps Mantine's own greyed-out look.
+SECONDARY_BUTTON_BORDER = {"borderColor": "#7C879B"}
+
 CHOICES_BAR = {"padding": "12px 16px 0", "borderTop": f"1px solid {LINE}"}
 COMPOSER = {"padding": "12px 16px", "borderTop": f"1px solid {LINE}"}
 
-PANEL_BODY = {"flex": 1, "overflow": "auto", "padding": "14px 18px 18px"}
+# The scroll box of a right-panel tab. minHeight 0 lets it shrink below its content, which is what
+# makes the scroll bar appear instead of the panel growing past the window.
+PANEL_BODY = {"flex": 1, "minHeight": 0, "overflow": "auto", "padding": "14px 18px 18px"}
+# The Mantine tab panel that holds a PANEL_BODY: it takes the height left under the tab row, so
+# the box inside is limited to it. Without this the panel grows with its content and never scrolls.
+TAB_PANEL = {"flex": 1, "minHeight": 0, "display": "flex", "flexDirection": "column"}
 PANEL_SECTION = {"padding": "10px 0", "borderBottom": f"1px solid {LINE}"}
 FIELD = {"padding": "4px 6px", "margin": "0 -6px", "borderRadius": "6px"}
 FIELD_CHANGED = {**FIELD, "background": HIGHLIGHT}

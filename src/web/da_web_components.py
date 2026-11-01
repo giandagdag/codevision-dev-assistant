@@ -14,6 +14,7 @@ from agents.da_discover_flow import DISCOVER_DIVIDER
 from db_table_functions.db_tbl_da_requests import SINGAPORE_TIME
 from pydantic_classes.da_discovery_models import Finding, SearchHit
 from pydantic_classes.da_models import (
+    STATUS_APPROACH_PROPOSED,
     STATUS_CLARIFICATION,
     STATUS_CONFIRMED,
     STATUS_DECISION_REQUIRED,
@@ -22,6 +23,7 @@ from pydantic_classes.da_models import (
     STATUS_ESCALATION,
     STATUS_NO_MATCH,
     STATUS_READY,
+    STATUS_READY_TO_BUILD,
     STATUS_SEARCHING,
     STATUS_SIMILAR_FOUND,
     display_status,
@@ -33,9 +35,9 @@ from styles import da_styles
 STEPS: tuple[str, ...] = (
     "Understand",
     "Discover",
-    "Readiness Gate",
-    "Generate + Check",
-    "Preliminary Review",
+    "Approach",
+    "Build & Test",
+    "Your review",
     "Handoff",
 )
 
@@ -51,6 +53,8 @@ _PILL_COLOURS: dict[str, str] = {
     STATUS_NO_MATCH: "orange",
     STATUS_DISCOVERY_CONFIRMED: "green",
     STATUS_ESCALATION: "red",
+    STATUS_APPROACH_PROPOSED: "violet",
+    STATUS_READY_TO_BUILD: "green",
 }
 
 FALLBACK_BANNER = "AI summary unavailable. Showing plain search results."
@@ -101,6 +105,30 @@ def stepper(current_step: int) -> dmc.Box:
         if number < len(STEPS):
             items.append(DashIconify(icon="tabler:chevron-right", width=14, color="#B7BECB"))
     return dmc.Box(items, style=da_styles.STEPPER)
+
+
+PRIMARY, NORMAL, SECONDARY = "primary", "normal", "secondary"
+
+
+def choice_button(label: str, button_id: dict, kind: str = NORMAL, disabled: bool = False):
+    """The one place a choice button is built, for every screen (P21).
+
+    primary: filled blue, the main action. normal: light blue. secondary: the help and escalation
+    path (I need help deciding, Get help, Escalate): outlined, white with dark text and a thin
+    border, so it never looks disabled. A disabled button keeps Mantine's greyed-out look, so the
+    border colour is only added while the button can be clicked.
+    """
+    secondary = kind == SECONDARY
+    return dmc.Button(
+        label,
+        id=button_id,
+        variant="filled" if kind == PRIMARY else ("default" if secondary else "light"),
+        color="blue",
+        radius="xl",
+        size="sm",
+        disabled=disabled,
+        style=da_styles.SECONDARY_BUTTON_BORDER if secondary and not disabled else None,
+    )
 
 
 def chat_bubble(message: ChatMessage) -> dmc.Box:

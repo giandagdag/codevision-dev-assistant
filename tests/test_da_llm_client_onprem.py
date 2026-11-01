@@ -388,3 +388,14 @@ def test_existing_certificate_file_is_accepted(make_settings, tmp_path):
     client = get_llm_client("generator", onprem_settings(make_settings, onprem_verify=str(cert)))
 
     assert isinstance(client, OnPremLLMClient)
+
+
+def test_tester_uses_its_own_onprem_model_when_set(make_settings):
+    settings = onprem_settings(make_settings, onprem_tester_model="test-llama")
+
+    assert get_llm_client("tester", settings).model == "test-llama"
+    assert get_llm_client("generator", settings).model == "test-qwen"
+
+
+def test_tester_with_no_onprem_model_uses_the_generator_model(make_settings):
+    assert get_llm_client("tester", onprem_settings(make_settings)).model == "test-qwen"

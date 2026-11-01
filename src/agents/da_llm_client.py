@@ -14,8 +14,8 @@ from da_logging import get_logger
 
 logger = get_logger(__name__)
 
-Role = Literal["generator", "reviewer"]
-ROLES = ("generator", "reviewer")
+Role = Literal["generator", "reviewer", "tester"]
+ROLES = ("generator", "reviewer", "tester")
 
 # Room for a full request record in one reply (Phase 2), so it is not cut off.
 CLAUDE_MAX_TOKENS = 2048
@@ -101,8 +101,8 @@ class OnPremLLMClient:
     difference found at work is a one-function change.
     """
 
-    def __init__(self, settings: Settings):
-        self.model = settings.onprem_model
+    def __init__(self, settings: Settings, model: str = ""):
+        self.model = model or settings.onprem_model
         self._url = settings.onprem_url
         self._verify = settings.onprem_verify
         self._timeout = settings.onprem_timeout_seconds
@@ -265,7 +265,7 @@ def get_llm_client(role: Role, settings: Settings | None = None) -> LLMClient:
     elif provider == "claude":
         client = _make_claude_client(role, settings)
     elif provider == "onprem":
-        client = _make_onprem_client(settings)
+        client = _make_onprem_client(settings, role)
     else:
         # load_settings already blocks this; kept so a hand-built Settings cannot slip through.
         raise ConfigError(f"DA_LLM_PROVIDER '{provider}' is not supported.")
@@ -281,9 +281,14 @@ def _make_claude_client(role: Role, settings: Settings) -> ClaudeLLMClient:
             "or set DA_LLM_PROVIDER=fake to work without Claude."
         )
     model_setting = f"DA_CLAUDE_{role.upper()}_MODEL"
-    model = (
-        settings.claude_generator_model if role == "generator" else settings.claude_reviewer_model
-    )
+    if role == "generator":
+        model = settings.claude_generator_model
+    elif role == "tester":
+        # Empty means the generator's model, until the bake-off decides (redesign M1).
+        model = settings.claude_tester_model or settings.claude_generator_model
+        model_setting = "DA_CLAUDE_TESTER_MODEL or DA_CLAUDE_GENERATOR_MODEL"
+    else:
+        model = settings.claude_reviewer_model
     if not model:
         raise ConfigError(
             f"{model_setting} is missing. Add the Claude model name for the {role} role "
@@ -292,8 +297,8 @@ def _make_claude_client(role: Role, settings: Settings) -> ClaudeLLMClient:
     return ClaudeLLMClient(model=model, api_key=settings.anthropic_api_key)
 
 
-def _make_onprem_client(settings: Settings) -> OnPremLLMClient:
-    # One model for both roles for now (decision D-B).
+def _make_onprem_client(settings: Settings, role: Role = "generator") -> OnPremLLMClient:
+    # One model for all roles, except a Tester model when one is set (Phase 4).
     required = (("DA_ONPREM_URL", settings.onprem_url), ("DA_ONPREM_MODEL", settings.onprem_model))
     for name, value in required:
         if not value:
@@ -309,7 +314,7 @@ def _make_onprem_client(settings: Settings) -> OnPremLLMClient:
         )
     if verify is False:
         logger.warning("Certificate check is OFF. Use only for the prototype.")
-    return OnPremLLMClient(settings)
+    return OnPremLLMClient(settings, settings.onprem_tester_model if role == "tester" else "")
 
 
 def _import_anthropic():

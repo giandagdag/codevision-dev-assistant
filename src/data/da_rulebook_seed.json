@@ -126,6 +126,16 @@
       {"name": "max_rounds_with_must_fix_open", "on": true},
       {"name": "out_of_scope", "on": true},
       {"name": "developer_disputes_finding", "on": true}
+    ],
+    "allowed_folders": ["src/configs", "src/agents", "src/pydantic_classes", "src/db_table_functions", "src/callbacks", "src/layouts", "src/styles", "src/web"],
+    "new_file_name_pattern": "^[a-z][a-z0-9_]*\\.py$",
+    "protected_files": [".env", "*/.env*", "src/configs/llm_config.py", "src/web/web_server.py", "src/callbacks/universal_callbacks.py"],
+    "approved_libraries": ["pydantic", "dash", "dash_mantine_components", "dash_iconify", "flask", "plotly", "requests", "pandas", "openpyxl"],
+    "max_files": 5,
+    "max_design_choices": 3,
+    "flag_review_zones": [
+      {"name": "Security", "description": "Encryption, key handling, and permission checks.", "examples": ["Encrypting a customer field", "Checking a user's role"], "path_patterns": ["*security*", "*crypto*", "*permission*"]},
+      {"name": "Login", "description": "Sign-in, sessions, and passwords.", "examples": ["Login page", "Session timeout handling"], "path_patterns": ["*login*", "*session*", "*password*"]}
     ]
   }
 }

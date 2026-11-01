@@ -27,7 +27,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from dotenv import dotenv_values  # noqa: E402
 
+from agents.da_approach_agent import TASK_MARKERS, ScriptedApproachClient  # noqa: E402
 from agents.da_discover_agent import TASK_MARKER, ScriptedDiscoverClient  # noqa: E402
+from agents.da_tester_agent import (  # noqa: E402
+    CASE_MARKER,
+    CASE_STEP,
+    PLAN_MARKER,
+    PLAN_STEP,
+    ScriptedTesterClient,
+)
 from agents.da_understand_agent import FAKE_SCRIPT_FILE, ScriptedUnderstandClient  # noqa: E402
 from agents.da_understand_flow import (  # noqa: E402
     CORRECTION_QUESTION,
@@ -65,8 +73,33 @@ RETRY_MARKER = "Your previous reply was not accepted"
 NOT_JSON_REPLY = "Sorry, here is my answer in words and not in JSON."
 
 
+# Phase 4: the three Generator calls and the two Tester calls, told apart by the task line each
+# prompt carries. The Generator and the Tester replies come from the same scripted Excel example
+# as the fake provider, so they cite the Discover hit numbers and criterion IDs in the prompt.
+_APPROACH_CALLS = {marker: call for call, marker in TASK_MARKERS.items()}
+
+
+def _approach_reply(prompt: str, mode: str) -> str | None:
+    """The reply for an Approach or Tester prompt, or None if the prompt is neither."""
+    for marker, call in _APPROACH_CALLS.items():
+        if marker in prompt:
+            return NOT_JSON_REPLY if mode == "bad-json" else (
+                ScriptedApproachClient(call).complete(prompt).text
+            )
+    for marker, step in ((CASE_MARKER, CASE_STEP), (PLAN_MARKER, PLAN_STEP)):
+        if marker in prompt:
+            return NOT_JSON_REPLY if mode == "bad-json" else (
+                ScriptedTesterClient(step).complete(prompt).text
+            )
+    return None
+
+
 def reply_text(prompt: str, mode: str) -> str:
     """The text the pretend model sends back for this prompt."""
+    approach = _approach_reply(prompt, mode)
+    if approach is not None:
+        # bad-json is bad on every try here, as in Discover, so the failure paths can be seen.
+        return approach
     if TASK_MARKER in prompt:
         # A Discover prompt (Phase 3). bad-json is bad on every try here, so the app's fallback
         # to plain search results can be seen (unlike Understand, whose retry then passes).

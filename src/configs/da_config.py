@@ -59,6 +59,10 @@ class Settings:
     search_provider: str = DEFAULT_SEARCH_PROVIDER
     search_top_k: int = DEFAULT_SEARCH_TOP_K
     discovery_max_rounds: int = DEFAULT_DISCOVERY_MAX_ROUNDS
+    # Phase 4: the Tester's model. Empty means use the generator's model until the bake-off
+    # decides (redesign M1).
+    claude_tester_model: str = ""
+    onprem_tester_model: str = ""
 
 
 def load_settings(
@@ -111,6 +115,8 @@ def load_settings(
             1,
             5,
         ),
+        claude_tester_model=read("DA_CLAUDE_TESTER_MODEL"),
+        onprem_tester_model=read("DA_ONPREM_TESTER_MODEL"),
     )
 
 

@@ -200,3 +200,13 @@ def test_bad_top_k_is_refused(bad):
 def test_bad_max_rounds_is_refused(bad):
     with pytest.raises(ConfigError, match="DA_DISCOVERY_MAX_ROUNDS"):
         load_settings(env_file=None, environ={"DA_DISCOVERY_MAX_ROUNDS": bad})
+
+
+def test_tester_models_are_empty_by_default_and_read_when_set():
+    assert load_settings(env_file=None, environ={}).claude_tester_model == ""
+    settings = load_settings(
+        env_file=None,
+        environ={"DA_CLAUDE_TESTER_MODEL": "t-claude", "DA_ONPREM_TESTER_MODEL": "t-llama"},
+    )
+
+    assert (settings.claude_tester_model, settings.onprem_tester_model) == ("t-claude", "t-llama")

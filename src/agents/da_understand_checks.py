@@ -294,7 +294,7 @@ def _criteria_problems(reply: InterpreterReply) -> list[str]:
                 problems.append(
                     f"{label}: '{part}' must be 1 to {LIST_ITEM_LIMIT} characters (it has {size})."
                 )
-        if _is_vague_then(item.then):
+        if is_vague_then(item.then):
             problems.append(
                 f"{label}: the 'then' part must say something a person or a test can see, "
                 "for example a message, a saved value, or a rejected file."
@@ -308,7 +308,7 @@ def _criteria_problems(reply: InterpreterReply) -> list[str]:
     return problems
 
 
-def _is_vague_then(text: str) -> bool:
+def is_vague_then(text: str) -> bool:
     plain = " ".join(re.sub(r"[^\w\s]", "", text.lower()).split())
     return len(plain.split()) < MIN_THEN_WORDS or plain in VAGUE_THEN
 

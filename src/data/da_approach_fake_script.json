@@ -1,0 +1,105 @@
+{
+  "_about": "Made-up scripted Generator replies for DA_LLM_PROVIDER=fake in Approach (spec 11). They follow the Excel example and the pretend index. A file or a reuse decision names the Discover hits it cites by symbol (or path, for a whole-file piece) in 'cites'; the fake client turns these into the hit numbers of the prompt it is given. The typed text is ignored.",
+  "propose": {
+    "summary": "Add Excel to the existing upload screen: one new processor that reads the visible sheets, and one change to the file-type check.",
+    "files": [
+      {
+        "path": "src/agents/excel_processor.py",
+        "action": "create",
+        "purpose": "Extract the visible sheets, following the PDF processor pattern.",
+        "cites": ["PdfProcessor.extract_text"]
+      },
+      {
+        "path": "src/agents/upload_validator.py",
+        "action": "modify",
+        "purpose": "Allow Excel workbooks in the file-type check.",
+        "cites": []
+      }
+    ],
+    "needs_people": [],
+    "reuse_decisions": [
+      {
+        "cite": "PdfProcessor.extract_text",
+        "decision": "extend",
+        "reason": "Excel extraction follows the same pattern: validate, extract, hand off to ingestion."
+      },
+      {
+        "cite": "DocxProcessor.extract_text",
+        "decision": "ignore",
+        "reason": "The PDF processor is the closer pattern, so the Word one is not needed."
+      }
+    ],
+    "design_choices": [
+      {
+        "question": "Where does Excel upload live?",
+        "impact": "Decides whether the existing upload screen changes or a new screen is added.",
+        "options": ["Existing upload screen", "New upload screen"]
+      }
+    ],
+    "libraries": ["openpyxl"]
+  },
+  "settle": {
+    "summary": "Add Excel to the existing upload screen: one new processor that reads the visible sheets, and one change to the file-type check.",
+    "files": [
+      {
+        "path": "src/agents/excel_processor.py",
+        "action": "create",
+        "purpose": "Extract the visible sheets, following the PDF processor pattern.",
+        "cites": ["PdfProcessor.extract_text"]
+      },
+      {
+        "path": "src/agents/upload_validator.py",
+        "action": "modify",
+        "purpose": "Allow Excel workbooks in the file-type check.",
+        "cites": []
+      }
+    ],
+    "needs_people": [],
+    "reuse_decisions": [
+      {
+        "cite": "PdfProcessor.extract_text",
+        "decision": "extend",
+        "reason": "Excel extraction follows the same pattern: validate, extract, hand off to ingestion."
+      },
+      {
+        "cite": "DocxProcessor.extract_text",
+        "decision": "ignore",
+        "reason": "The PDF processor is the closer pattern, so the Word one is not needed."
+      }
+    ],
+    "design_choices": [],
+    "libraries": ["openpyxl"]
+  },
+  "change": {
+    "summary": "Changed as you asked: one processor reads the visible sheets and the existing file-type check allows Excel. The processor also logs each skipped sheet.",
+    "files": [
+      {
+        "path": "src/agents/excel_processor.py",
+        "action": "create",
+        "purpose": "Extract the visible sheets and log each skipped sheet.",
+        "cites": ["PdfProcessor.extract_text"]
+      },
+      {
+        "path": "src/agents/upload_validator.py",
+        "action": "modify",
+        "purpose": "Allow Excel workbooks in the file-type check.",
+        "cites": []
+      }
+    ],
+    "needs_people": [],
+    "reuse_decisions": [
+      {
+        "cite": "PdfProcessor.extract_text",
+        "decision": "extend",
+        "reason": "Excel extraction follows the same pattern: validate, extract, hand off to ingestion."
+      },
+      {
+        "cite": "DocxProcessor.extract_text",
+        "decision": "ignore",
+        "reason": "The PDF processor is the closer pattern, so the Word one is not needed."
+      }
+    ],
+    "design_choices": [],
+    "libraries": ["openpyxl"]
+  }
+}

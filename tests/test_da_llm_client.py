@@ -73,7 +73,7 @@ def test_fake_reviewer_names_its_role(make_settings):
 
 
 def test_unknown_role_is_rejected(make_settings):
-    with pytest.raises(ValueError, match="generator, reviewer"):
+    with pytest.raises(ValueError, match="generator, reviewer, tester"):
         get_llm_client("planner", make_settings())
 
 
@@ -191,3 +191,23 @@ def test_module_loads_without_anthropic_installed():
     assert lines[0] == "fake"
     assert "DA_ONPREM_URL is missing" in lines[1]
     assert "needs the anthropic library" in lines[2]
+
+
+# --- the tester role (Phase 4) ---
+
+
+def test_fake_tester_names_its_role(make_settings):
+    assert get_llm_client("tester", make_settings()).model == "fake-tester"
+
+
+def test_claude_tester_uses_its_own_model_when_set(make_settings, monkeypatch):
+    monkeypatch.setattr(anthropic, "Anthropic", FakeAnthropic)
+    settings = claude_settings(make_settings, claude_tester_model="test-tester-model")
+
+    assert get_llm_client("tester", settings).model == "test-tester-model"
+
+
+def test_claude_tester_with_no_model_uses_the_generator_model(make_settings, monkeypatch):
+    monkeypatch.setattr(anthropic, "Anthropic", FakeAnthropic)
+
+    assert get_llm_client("tester", claude_settings(make_settings)).model == "test-generator-model"

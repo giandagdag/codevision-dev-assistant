@@ -13,6 +13,7 @@ from urllib.parse import parse_qs
 from dash import ALL, Input, Output, State, ctx, no_update
 from dash.exceptions import PreventUpdate
 
+from agents import da_approach_flow as approach_flow
 from agents.da_discover_flow import (
     add_hint_and_search,
     confirm_discovery,
@@ -51,7 +52,9 @@ from layouts.da_developer_assistant_page import (
     START_KEY,
     STATE_ID,
     TEXT_ID,
+    approach_buttons,
     discover_buttons,
+    render_approach_workspace,
     render_discover_workspace,
     render_home,
     render_message_page,
@@ -59,10 +62,14 @@ from layouts.da_developer_assistant_page import (
     render_workspace,
 )
 from pydantic_classes.da_models import (
+    STATUS_APPROACH_PROPOSED,
     STATUS_CLARIFICATION,
     STATUS_DECISION_REQUIRED,
+    STATUS_DISCOVERY_CONFIRMED,
     STATUS_DRAFT,
+    STATUS_ESCALATION,
     STATUS_READY,
+    STATUS_READY_TO_BUILD,
 )
 
 # Problems the developer can understand and act on. Their messages are already plain words.
@@ -70,8 +77,11 @@ from pydantic_classes.da_models import (
 SHOWN_ERRORS = (UnderstandError, RulebookError, DatabaseBusyError, ConfigError)
 
 # Until the request is confirmed the Understand workspace is shown; from CONFIRMED_FOR_DISCOVERY
-# on, the Discover workspace (Phase 3).
+# on, the Discover workspace (Phase 3); from APPROACH_PROPOSED on, the Approach workspace
+# (Phase 4). DISCOVERY_CONFIRMED stays in the Discover workspace, with the Proceed to Approach
+# button. ESCALATION_REQUIRED is Approach's if an approach exists, otherwise Discover's.
 UNDERSTAND_STATUSES = (STATUS_DRAFT, STATUS_CLARIFICATION, STATUS_DECISION_REQUIRED, STATUS_READY)
+APPROACH_STATUSES = (STATUS_APPROACH_PROPOSED, STATUS_READY_TO_BUILD)
 
 
 # Enter sends, Shift+Enter makes a new line. Dash cannot tell them apart in Python, so this small
@@ -121,7 +131,17 @@ def show_page(search: str | None, refresh: int | None):
             view = get_understand_view(settings, request_id)
             if view.request.status in UNDERSTAND_STATUSES:
                 return render_workspace(view)
-            return render_discover_workspace(view, get_discovery_view(settings, request_id))
+            discovery = get_discovery_view(settings, request_id)
+            status = view.request.status
+            if status in APPROACH_STATUSES or (
+                status == STATUS_ESCALATION and approach_flow.has_approach(settings, request_id)
+            ):
+                approach = approach_flow.get_approach_view(settings, request_id)
+                return render_approach_workspace(view, discovery, approach)
+            if status == STATUS_DISCOVERY_CONFIRMED:
+                approach = approach_flow.get_approach_view(settings, request_id)
+                return render_discover_workspace(view, discovery, approach)
+            return render_discover_workspace(view, discovery)
         except (UnderstandError, DatabaseBusyError) as error:
             return render_message_page(str(error))
     if params.get("new"):
@@ -153,7 +173,9 @@ def perform_action(settings: Settings, trigger, text, state, refresh):
         if trigger == SEND_ID and request_id is None:
             view = create_understand_request(settings, text or "")
             return no_update, f"?request={view.request.request_id}", ""
-        if trigger == SEND_ID and state.get("discover"):
+        if state.get("approach") and trigger != SKIP_ID:
+            _approach_action(settings, trigger, request_id, revision, text)
+        elif trigger == SEND_ID and state.get("discover"):
             # In Discover the Send button is "Something's missing": the text is the hint.
             add_hint_and_search(settings, request_id, text or "", revision)
         elif trigger == SEND_ID:
@@ -172,6 +194,41 @@ def perform_action(settings: Settings, trigger, text, state, refresh):
         # Nothing was written. The text stays in the box so the developer can fix it.
         return no_update, no_update, str(error)
     return (refresh or 0) + 1, no_update, ""
+
+
+def _approach_action(settings: Settings, trigger, request_id: str, revision: int, text) -> None:
+    """The one Approach engine function a click stands for. Every check lives in the engine."""
+    if trigger == SEND_ID:
+        approach_flow.submit_text(settings, request_id, text or "", revision)
+        return
+    if not _is_choice(trigger):
+        raise PreventUpdate
+    view = approach_flow.get_approach_view(settings, request_id)
+    buttons = approach_buttons(view)
+    index = trigger["index"]
+    # An old window, or an index with no button behind it, gets the stale-window message.
+    if view.revision != revision or not 0 <= index < len(buttons):
+        raise StaleRevisionError(STALE_MESSAGE)
+    key, label = buttons[index]
+    actions = {
+        approach_flow.START_KEY: approach_flow.start_approach,
+        approach_flow.DECIDE_HELP_KEY: lambda s, r, v: approach_flow.choose_design_option(
+            s, r, label, v
+        ),
+        approach_flow.CHOOSE_KEY: lambda s, r, v: approach_flow.choose_design_option(
+            s, r, label, v
+        ),
+        approach_flow.ACCEPT_KEY: approach_flow.accept_approach,
+        approach_flow.CHANGE_KEY: approach_flow.request_change,
+        approach_flow.HELP_KEY: approach_flow.request_help,
+        approach_flow.WRITE_PLAN_KEY: approach_flow.write_test_plan_again,
+        approach_flow.ACCEPT_PLAN_KEY: approach_flow.accept_test_plan,
+        approach_flow.ADD_CASE_KEY: approach_flow.request_case,
+        approach_flow.CHANGE_APPROACH_KEY: approach_flow.request_plan_change,
+        approach_flow.KEEP_KEY: approach_flow.keep_case,
+        approach_flow.DISCARD_KEY: approach_flow.discard_case,
+    }
+    actions[key](settings, request_id, revision)
 
 
 def _is_choice(trigger) -> bool:

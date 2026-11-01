@@ -1,4 +1,4 @@
-"""Proves Phases 0, 1, 2A, 2C, 2D and 3 work end to end.
+"""Proves Phases 0, 1, 2A, 2C, 2D, 3 and 4 work end to end.
 
 Run: .venv\\Scripts\\python src\\da_smoke_check.py
 """
@@ -9,6 +9,7 @@ from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from agents import da_approach_flow as approach
 from agents.da_discover_flow import confirm_discovery, start_discovery
 from agents.da_llm_client import LLMClient, LLMClientError, get_llm_client
 from agents.da_search_index import FakeSearchIndex, search_safely
@@ -36,7 +37,12 @@ from db_table_functions.db_tbl_da_rulebook import (
 )
 from db_table_functions.db_tbl_da_understand import UnderstandError, get_confirmed_record
 from pydantic_classes.da_discovery_models import SearchFilters
-from pydantic_classes.da_models import STATUS_CONFIRMED, STATUS_DISCOVERY_CONFIRMED, StatusMoveError
+from pydantic_classes.da_models import (
+    STATUS_CONFIRMED,
+    STATUS_DISCOVERY_CONFIRMED,
+    STATUS_READY_TO_BUILD,
+    StatusMoveError,
+)
 from pydantic_classes.da_rulebook_models import Rulebook
 from web.da_fake_onprem_server import running_fake_onprem_server
 
@@ -57,6 +63,9 @@ SAMPLE_ANSWERS = (
 )
 SAMPLE_REFERENCE = "Use the existing PDF processing as a reference."
 SAMPLE_ONPREM_MODEL = "fake-qwen"
+SAMPLE_CASE = "A workbook where every visible sheet is empty should be rejected as empty."
+# The line every Tester test-plan prompt carries (see agents/da_tester_agent.py).
+TESTER_MARKER = "Task: write a test plan"
 EXPECTED_CRITERIA = 7  # the fake script's six criteria plus the one the hidden-sheet decision adds
 
 
@@ -78,6 +87,7 @@ def run_smoke_check(settings: Settings) -> int:
             _run_onprem_steps(Path(folder) / "smoke_understand.db", settings)
             _run_discover_steps(Path(folder) / "smoke_understand.db", settings)
             _run_reveal_step(Path(folder) / "smoke_understand.db", settings)
+            _run_approach_steps(Path(folder) / "smoke_understand.db", settings)
     except (
         ConfigError,
         LLMClientError,
@@ -277,6 +287,74 @@ def _run_reveal_step(db_path: Path, settings: Settings) -> None:
     if revealed != ["objective", "reason"]:
         raise UnderstandError(f"After question 1 the screen showed {revealed}.")
     print(f"18. After question 1 the Summary shows only: {', '.join(revealed)}")
+
+
+def _run_approach_steps(db_path: Path, settings: Settings) -> None:
+    """Items 19 to 21: Approach (Phase 4) from DISCOVERY_CONFIRMED to READY_TO_BUILD, first with
+    the fake provider and then with the onprem provider against the pretend server."""
+    demo = replace(settings, llm_provider="fake", db_path=db_path)
+    request_id = _discovery_confirmed_request(demo)
+    view = _run_approach(demo, request_id)
+    print(
+        f"19. {request_id}: Approach with the fake provider reached {view.request.status}: "
+        f"{len(view.approach.plan.files)} code files, {len(view.plan.cases)} test cases "
+        f"({view.developer_case_count} yours), gate {_ticks(view)}"
+    )
+
+    with running_fake_onprem_server() as server:
+        onprem = replace(
+            settings,
+            llm_provider="onprem",
+            onprem_url=server.url,
+            onprem_model=SAMPLE_ONPREM_MODEL,
+            onprem_api_key="",
+            onprem_verify=True,
+            db_path=db_path,
+        )
+        request_id = _discovery_confirmed_request(demo)
+        view = _run_approach(onprem, request_id)
+        sent = [call["body"]["messages"][-1]["content"] for call in server.seen]
+    print(
+        f"20. {request_id}: Approach with onprem against the pretend server reached "
+        f"{view.request.status}, gate {_ticks(view)}"
+    )
+
+    prompt = next(text for text in sent if TESTER_MARKER in text)
+    planned = [item.path for item in view.approach.plan.files]
+    criteria = [criterion.id for criterion in view.record.acceptance_criteria]
+    if not all(name in prompt for name in criteria) or any(path in prompt for path in planned):
+        raise UnderstandError("The Tester's prompt must hold the criteria and not the file plan.")
+    print(
+        f"21. The Tester's prompt held all {len(criteria)} criteria and none of the "
+        f"{len(planned)} planned file paths"
+    )
+
+
+def _run_approach(settings: Settings, request_id: str):
+    """Proceed, answer the design choice by its first button, accept both, add one case."""
+    view = approach.start_approach(settings, request_id, 0)
+    view = approach.choose_design_option(settings, request_id, view.buttons[0][1], view.revision)
+    view = approach.accept_approach(settings, request_id, view.revision)
+    view = approach.request_case(settings, request_id, view.revision)
+    view = approach.submit_text(settings, request_id, SAMPLE_CASE, view.revision)
+    view = approach.keep_case(settings, request_id, view.revision)
+    view = approach.accept_test_plan(settings, request_id, view.revision)
+    if view.request.status != STATUS_READY_TO_BUILD:
+        raise UnderstandError(f"Approach ended at {view.request.status}.")
+    return view
+
+
+def _discovery_confirmed_request(settings: Settings) -> str:
+    request_id = _confirmed_request(settings)
+    view = start_discovery(settings, request_id, 0)
+    view = confirm_discovery(settings, request_id, view.revision)
+    if view.request.status != STATUS_DISCOVERY_CONFIRMED:
+        raise UnderstandError(f"Discover ended at {view.request.status}.")
+    return request_id
+
+
+def _ticks(view) -> str:
+    return " ".join("yes" if check.passed else "no" for check in view.gate)
 
 
 def _confirmed_request(settings: Settings) -> str:
