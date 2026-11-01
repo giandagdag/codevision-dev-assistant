@@ -319,14 +319,9 @@ def _workspace(
     )
     if discovery:
         # Discover or Approach is under way: those tabs can be used. The newest one opens first.
-        panels = [dmc.TabsPanel(dmc.Box(panel, style=da_styles.PANEL_BODY), value="summary")]
-        panels.append(
-            dmc.TabsPanel(dmc.Box(discovery, style=da_styles.PANEL_BODY), value="discovery")
-        )
+        panels = [_tab_panel(panel, "summary"), _tab_panel(discovery, "discovery")]
         if approach:
-            panels.append(
-                dmc.TabsPanel(dmc.Box(approach, style=da_styles.PANEL_BODY), value="approach")
-            )
+            panels.append(_tab_panel(approach, "approach"))
         tabs = dmc.Tabs(
             [tab_list, *panels],
             value="approach" if approach else "discovery",
@@ -345,6 +340,14 @@ def _workspace(
         dmc.Box(top, mt="sm"),
         dmc.Box([chat, side], style=da_styles.WORKSPACE_GRID),
     ]
+
+
+def _tab_panel(content: list, value: str) -> dmc.TabsPanel:
+    """One right-panel tab: the same scrolling body as the plain Summary, inside a tab panel that
+    is limited to the height left in the column (see da_styles.TAB_PANEL)."""
+    return dmc.TabsPanel(
+        dmc.Box(content, style=da_styles.PANEL_BODY), value=value, style=da_styles.TAB_PANEL
+    )
 
 
 def _lock():
@@ -467,13 +470,12 @@ def _approach_composer(view: ApproachView | None) -> dmc.Box:
 
 def _approach_bar(buttons: list[tuple[str, str]], note: str) -> dmc.Box:
     shown = [
-        dmc.Button(
+        parts.choice_button(
             label,
-            id={"type": CHOICE_TYPE, "index": number},
-            variant="filled" if number == 0 else "light",
-            color="gray" if key in ("help", "decide_help") else "blue",
-            radius="xl",
-            size="sm",
+            {"type": CHOICE_TYPE, "index": number},
+            parts.SECONDARY
+            if key in ("help", "decide_help")
+            else (parts.PRIMARY if number == 0 else parts.NORMAL),
         )
         for number, (key, label) in enumerate(buttons)
     ]
@@ -604,13 +606,12 @@ def _discover_composer(view: DiscoveryView) -> dmc.Box:
 def _discover_bar(buttons: list[tuple[str, str]], note: str) -> dmc.Box:
     """The choice buttons as (key, label) pairs. The first one is the main action."""
     shown = [
-        dmc.Button(
+        parts.choice_button(
             label,
-            id={"type": CHOICE_TYPE, "index": number},
-            variant="filled" if number == 0 else "light",
-            color="gray" if key == ESCALATE_KEY else "blue",
-            radius="xl",
-            size="sm",
+            {"type": CHOICE_TYPE, "index": number},
+            parts.SECONDARY
+            if key == ESCALATE_KEY
+            else (parts.PRIMARY if number == 0 else parts.NORMAL),
         )
         for number, (key, label) in enumerate(buttons)
     ]
@@ -686,13 +687,12 @@ def _choices_bar(choices: list[str]) -> dmc.Box:
     # dashes, accents or emoji, which are not safe inside a component id. The callback looks the
     # text up again from the saved request (P19).
     buttons = [
-        dmc.Button(
+        parts.choice_button(
             option,
-            id={"type": CHOICE_TYPE, "index": index},
-            variant="filled" if option == PROCEED_OPTION else "light",
-            color="gray" if option == HELP_OPTION else "blue",
-            radius="xl",
-            size="sm",
+            {"type": CHOICE_TYPE, "index": index},
+            parts.SECONDARY
+            if option == HELP_OPTION
+            else (parts.PRIMARY if option == PROCEED_OPTION else parts.NORMAL),
         )
         for index, option in enumerate(choices)
     ]

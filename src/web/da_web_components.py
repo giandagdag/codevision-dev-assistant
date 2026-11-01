@@ -107,6 +107,30 @@ def stepper(current_step: int) -> dmc.Box:
     return dmc.Box(items, style=da_styles.STEPPER)
 
 
+PRIMARY, NORMAL, SECONDARY = "primary", "normal", "secondary"
+
+
+def choice_button(label: str, button_id: dict, kind: str = NORMAL, disabled: bool = False):
+    """The one place a choice button is built, for every screen (P21).
+
+    primary: filled blue, the main action. normal: light blue. secondary: the help and escalation
+    path (I need help deciding, Get help, Escalate): outlined, white with dark text and a thin
+    border, so it never looks disabled. A disabled button keeps Mantine's greyed-out look, so the
+    border colour is only added while the button can be clicked.
+    """
+    secondary = kind == SECONDARY
+    return dmc.Button(
+        label,
+        id=button_id,
+        variant="filled" if kind == PRIMARY else ("default" if secondary else "light"),
+        color="blue",
+        radius="xl",
+        size="sm",
+        disabled=disabled,
+        style=da_styles.SECONDARY_BUTTON_BORDER if secondary and not disabled else None,
+    )
+
+
 def chat_bubble(message: ChatMessage) -> dmc.Box:
     """One chat message with its time in Singapore time. The Discover marker is a divider."""
     if message.speaker == "system" and message.text == DISCOVER_DIVIDER:
