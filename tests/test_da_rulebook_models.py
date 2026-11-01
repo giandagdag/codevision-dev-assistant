@@ -264,6 +264,25 @@ def test_seed_has_the_phase_4_policy_values(seed_rulebook):
     assert [zone.name for zone in policy.flag_review_zones] == ["Security", "Login"]
 
 
+def test_seed_has_the_phase_5_policy_values(seed_rulebook):
+    policy = seed_rulebook.policy
+
+    assert policy.workspace_markers == ["src/web", "src/callbacks"]
+    assert policy.workspace_max_file_kb == 512
+
+
+def test_a_rulebook_saved_before_phase_5_loads_with_the_starter_values(seed_rulebook):
+    """Test 5-26."""
+    old = seed_rulebook.model_dump(mode="json")
+    del old["policy"]["workspace_markers"]
+    del old["policy"]["workspace_max_file_kb"]
+
+    loaded = Rulebook.model_validate(old)
+
+    assert loaded.policy.workspace_markers == ["src/web", "src/callbacks"]
+    assert loaded.policy.workspace_max_file_kb == 512
+
+
 def test_a_rulebook_saved_before_phase_4_loads_with_the_starter_values(seed_rulebook):
     old = seed_rulebook.model_dump(mode="json")
     for name in (

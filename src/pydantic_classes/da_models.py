@@ -50,8 +50,9 @@ ALLOWED_MOVES: dict[str, tuple[str, ...]] = {
     STATUS_NO_MATCH: (STATUS_DISCOVERY_CONFIRMED, STATUS_SEARCHING, STATUS_ESCALATION),
     STATUS_DISCOVERY_CONFIRMED: (STATUS_APPROACH_PROPOSED,),
     STATUS_APPROACH_PROPOSED: (STATUS_READY_TO_BUILD, STATUS_ESCALATION),
-    # Phase 6 adds the moves out of READY_TO_BUILD; the escalation inbox comes in Phase 10.
-    STATUS_READY_TO_BUILD: (),
+    # Phase 5 (Workspace): "Change the approach" and "Get help" from a blocked workspace check.
+    # Phase 6 adds the moves toward building; the escalation inbox comes in Phase 10.
+    STATUS_READY_TO_BUILD: (STATUS_APPROACH_PROPOSED, STATUS_ESCALATION),
     STATUS_ESCALATION: (),
 }
 

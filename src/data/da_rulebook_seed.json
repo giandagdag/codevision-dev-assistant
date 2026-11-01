@@ -133,6 +133,8 @@
     "approved_libraries": ["pydantic", "dash", "dash_mantine_components", "dash_iconify", "flask", "plotly", "requests", "pandas", "openpyxl"],
     "max_files": 5,
     "max_design_choices": 3,
+    "workspace_markers": ["src/web", "src/callbacks"],
+    "workspace_max_file_kb": 512,
     "flag_review_zones": [
       {"name": "Security", "description": "Encryption, key handling, and permission checks.", "examples": ["Encrypting a customer field", "Checking a user's role"], "path_patterns": ["*security*", "*crypto*", "*permission*"]},
       {"name": "Login", "description": "Sign-in, sessions, and passwords.", "examples": ["Login page", "Session timeout handling"], "path_patterns": ["*login*", "*session*", "*password*"]}

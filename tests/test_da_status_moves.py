@@ -33,6 +33,9 @@ SPEC_TABLE = {
     ("DISCOVERY_CONFIRMED", "APPROACH_PROPOSED"),
     ("APPROACH_PROPOSED", "READY_TO_BUILD"),
     ("APPROACH_PROPOSED", "ESCALATION_REQUIRED"),
+    # Phase 5, Workspace (spec section 2).
+    ("READY_TO_BUILD", "APPROACH_PROPOSED"),
+    ("READY_TO_BUILD", "ESCALATION_REQUIRED"),
 }
 
 # Every real move: 12 x 12 statuses minus the 12 "same status" pairs.
@@ -48,8 +51,11 @@ def test_confirmed_for_discovery_moves_only_to_searching():
 
 
 def test_final_statuses_have_no_moves_yet():
-    assert ALLOWED_MOVES["READY_TO_BUILD"] == ()
     assert ALLOWED_MOVES["ESCALATION_REQUIRED"] == ()
+
+
+def test_workspace_moves_out_of_ready_to_build():
+    assert ALLOWED_MOVES["READY_TO_BUILD"] == ("APPROACH_PROPOSED", "ESCALATION_REQUIRED")
 
 
 def test_approach_moves():

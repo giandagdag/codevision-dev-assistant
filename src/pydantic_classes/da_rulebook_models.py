@@ -118,6 +118,9 @@ DEFAULT_APPROVED_LIBRARIES = [
 ]
 DEFAULT_MAX_FILES = 5
 DEFAULT_MAX_DESIGN_CHOICES = 3
+# Phase 5: folders that must exist in a CodeVision clone, and the biggest file the browser reads.
+DEFAULT_WORKSPACE_MARKERS = ["src/web", "src/callbacks"]
+DEFAULT_WORKSPACE_MAX_FILE_KB = 512
 
 
 def _default_zones() -> list[FlagReviewZone]:
@@ -161,6 +164,9 @@ class Policy(_RulebookPart):
     max_files: int = Field(default=DEFAULT_MAX_FILES, ge=1)
     max_design_choices: int = Field(default=DEFAULT_MAX_DESIGN_CHOICES, ge=1)
     flag_review_zones: list[FlagReviewZone] = Field(default_factory=_default_zones)
+    # Phase 5 (Workspace), spec section 8. Same defaults idea: older versions still load.
+    workspace_markers: list[str] = Field(default_factory=lambda: list(DEFAULT_WORKSPACE_MARKERS))
+    workspace_max_file_kb: int = Field(default=DEFAULT_WORKSPACE_MAX_FILE_KB, ge=1)
 
     @field_validator("new_file_name_pattern")
     @classmethod
