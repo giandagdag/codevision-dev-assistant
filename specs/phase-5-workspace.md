@@ -1,7 +1,8 @@
 # Phase 5: Workspace
 
-Status: DRAFT v0.1 (1 Nov 2026). Decisions D-A to D-E are open for Gian (section 14). Defaults
-D-F to D-I (section 15) were set by Claude; say if you disagree.
+Status: APPROVED v1.0 (1 Nov 2026). Decisions D-A to D-E chosen by Gian: option 1 for all five
+(section 14). Defaults D-F to D-I (section 15) were set by Claude and not objected to. Q10 answered
+(section 16).
 Depends on: Phase 4 (READY_TO_BUILD, the accepted file plan). **Merged into `main` at a5f1368.**
 Next: Phase 6, Build + test loop (`specs/redesign-2026-10-31.md` section 5.4).
 Source of truth for the design: `specs/redesign-2026-10-31.md` sections 5.6, 5.7 (re-scan and rule R5.1
@@ -128,9 +129,10 @@ Blockers (the step becomes `ws_blocked`):
 - B7 **Tests folder in use:** the tests folder already holds files this request did not write (for
   example from an older attempt). "Move or delete tests/cvda_2026_0001/ first."
 
-Warnings (shown, never block):
-- **No .git folder:** "This folder is not a Git clone. You will not be able to commit from it." (See
-  open question Q10.)
+Information (shown, never blocks, not a warning):
+- **No .git folder:** "This folder is not a Git clone (for example a ZIP from Bitbucket). That is
+  fine: at Handoff you upload the changed files to Bitbucket yourself, and the Handoff list tells you
+  which ones." Saved in the check result so Phase 10 can word the Handoff steps for this case (Q10).
 
 When there is no blocker, in the same transaction: the baseline of every `modify` file is saved
 (D-H), the tests folder is written (D-A), and the step becomes `ws_ready`.
@@ -279,7 +281,7 @@ audited, as today.
 - Any Git command. The app never commits, pushes or pulls.
 - Admin screens for the new policy fields (Phase 11).
 
-## 14. Decisions for Gian (ranked options, recommendation first)
+## 14. Decisions (chosen by Gian, 1 Nov 2026: option 1 for all five)
 
 | # | Question | Options (ranked) | Recommendation |
 |---|---|---|---|
@@ -293,7 +295,7 @@ audited, as today.
 
 | # | Choice | Alternative | Why |
 |---|---|---|---|
-| D-F | A CodeVision folder is recognised by marker folders in the rulebook policy, plus a "you picked src" check; no `.git` is a warning only | Accept any folder | Picking the wrong folder is the most likely mistake. A warning for `.git` because of Q10 |
+| D-F | A CodeVision folder is recognised by marker folders in the rulebook policy, plus a "you picked src" check; no `.git` is information only | Accept any folder | Picking the wrong folder is the most likely mistake. A ZIP download from Bitbucket is a normal workspace (Q10) |
 | D-G | Fingerprints ignore line-ending style (`\r\n` vs `\n`) and a leading byte-order mark; writes keep a file's existing style | Raw bytes | On Windows, editors and Git flip line endings. With raw bytes every such flip would show as "changed by you" |
 | D-H | The server keeps the TEXT of every baseline, write and scan, not just the fingerprint | Fingerprints only | Restore (R5.4) and Phase 6 patching need the text. At work it sits in CodeVision's own database, next to the code it came from |
 | D-I | No new status; the workspace has its own state, and Phase 6 checks it before building | A WORKSPACE_READY status | A folder can be changed or lose permission at any time; a status cannot go back and forth like that cleanly |
@@ -304,9 +306,11 @@ audited, as today.
   run `typeof window.showDirectoryPicker` (expect `"function"`), then
   `await showDirectoryPicker({mode: "readwrite"})` and pick a scratch folder. Note how many prompts
   appear and whether "Allow on every visit" is offered. Cancel or pick a scratch folder only.
-- Q10 **New, important:** the handoff says Git is not installed on the work laptop, but also that
-  developers clone CodeVision on their laptops. Which is true for developers? If they download a ZIP
-  from Bitbucket instead, there is no `.git`, and Handoff's "commit from your clone" needs rethinking.
+- Q10 **Answered (Gian, 1 Nov):** Git is allowed on work laptops but not mandatory. Developers get
+  CodeVision either with `git clone` or by downloading a ZIP from the Bitbucket repo. Either folder
+  is a valid workspace. The generated files stay in that folder; the developer moves them to
+  Bitbucket himself (commit and push, or upload). The Developer Assistant never pushes. For Phase 10:
+  redesign 5.10 "commits from his clone" becomes "commits or uploads from his workspace".
 - Q11 Where do CodeVision's own tests live, and does the top `tests/` folder have an `__init__.py`?
   `python -m unittest` discovery only goes into folders that have one. If `tests/__init__.py` is
   missing, our `tests/<id>/` tests will not be found from the top folder (Phase 6 problem, found now).
@@ -325,7 +329,7 @@ audited, as today.
 | 5-6 | a plan file whose parent folder is missing | the check runs | blocker B5; no folder is created |
 | 5-7 | a `modify` file over the size limit, and one that is not UTF-8 | the check runs | B6 for each |
 | 5-8 | a tests folder holding a file this request did not write | the check runs | B7 |
-| 5-9 | a good folder with no `.git` | the check runs | it passes with the "not a Git clone" warning |
+| 5-9 | a good folder with no `.git` | the check runs | it passes; the "not a Git clone" information line shows and is saved in the check result |
 | 5-10 | a good folder | the check passes | baselines saved for every `modify` file; `tests/<id>/__init__.py` written and read back; step `ws_ready`; audit has `workspace_check_passed`, `workspace_baseline_taken`, `workspace_written` |
 | 5-11 | a write job | a path not in the job, or with `..`, reaches the writer | it is refused on both the browser and server side |
 | 5-12 | a file whose current fingerprint differs from `expected` | a write job runs | the job stops at that file, files before it stay written, the message names both lists, audit has `workspace_write_stopped` |
