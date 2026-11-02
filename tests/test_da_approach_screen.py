@@ -199,8 +199,10 @@ def test_4_29_a_whole_request_runs_through_the_buttons_to_ready_to_build(setting
     tree = draw(settings, request_id)
     text = all_text(tree)
     assert "READY TO BUILD" in text and by_id(tree, "da-ready-banner") is not None
-    assert page.BUILD_BUTTON in text
-    assert [b for b in components(tree, "Button") if page.BUILD_BUTTON in all_text(b)][0].disabled
+    # Phase 5 replaced the disabled Phase 4 button with the real folder button.
+    assert "Choose workspace folder" in text and "coming in Phase 5" not in text
+    chooser = [b for b in components(tree, "Button") if all_text(b) == "Choose workspace folder"][0]
+    assert not chooser.disabled
     assert buttons(tree) == []
     assert flow.get_approach_view(settings, request_id).request.status == "READY_TO_BUILD"
 

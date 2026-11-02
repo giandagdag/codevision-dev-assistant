@@ -16,6 +16,7 @@ from pydantic_classes.da_approach_models import (
 )
 from pydantic_classes.da_discovery_models import DiscoveryResult
 from pydantic_classes.da_models import STATUS_READY_TO_BUILD
+from pydantic_classes.da_workspace_models import CheckResult
 from styles import da_styles
 
 DRAFT_BANNER = "Draft: may change after your choices"
@@ -28,8 +29,22 @@ ID_BADGE_STYLES = {"label": {"overflow": "visible", "textOverflow": "clip"}}
 ACTION_LABELS = {"create": "New", "modify": "Change"}
 
 
-def approach_panel(view: ApproachView) -> list:
-    """The whole tab, top to bottom."""
+FOUND_IN_WORKSPACE = "Checked: found in your workspace"
+
+
+def workspace_note(path: str, check: CheckResult | None) -> str:
+    """What the workspace check says about a file the plan changes (spec section 9), or "" if no
+    check has run (or the folder itself was wrong, so nothing can be said about a file)."""
+    if check is None or any(item.code in ("B1", "B2") for item in check.blockers):
+        return ""
+    for blocker in check.blockers:
+        if blocker.code == "B3" and blocker.path == path:
+            return blocker.text
+    return FOUND_IN_WORKSPACE
+
+
+def approach_panel(view: ApproachView, check: CheckResult | None = None) -> list:
+    """The whole tab, top to bottom. `check` is the latest workspace check, if there is one."""
     approach = view.approach
     if approach is None:
         return [dmc.Text("No approach yet.", style=da_styles.EMPTY_TEXT)]
@@ -39,10 +54,10 @@ def approach_panel(view: ApproachView) -> list:
             dmc.Alert(DRAFT_BANNER, color="orange", variant="light", id="da-approach-draft")
         )
     parts += [
-        _section("File plan", _file_plan(view, approach), "da-file-plan"),
+        _section("File plan", _file_plan(view, approach, check), "da-file-plan"),
         _section("Reuse decisions", _reuse_table(view.discovery, approach), "da-reuse"),
         _section("Design decisions", _decisions(approach), "da-design-decisions"),
-        _section("Libraries and zones", _libraries_and_warnings(approach), "da-libraries"),
+        _section("Libraries and zones", _libraries_and_warnings(approach, check), "da-libraries"),
     ]
     if view.plan is not None:
         parts.append(_section("Test plan", _test_plan(view), "da-test-plan"))
@@ -71,7 +86,7 @@ def _section(title: str, body, section_id: str) -> dmc.Box:
 # --- file plan ---
 
 
-def _file_plan(view: ApproachView, approach: ApproachVersion):
+def _file_plan(view: ApproachView, approach: ApproachVersion, check: CheckResult | None = None):
     plan = approach.plan
     hit_names = {hit.hit_id: hit.symbol or hit.source_path for hit in _hits(view.discovery)}
     rows = []
@@ -80,7 +95,7 @@ def _file_plan(view: ApproachView, approach: ApproachVersion):
         if item.reuses:
             notes.append("Reuses " + ", ".join(hit_names.get(n, f"hit {n}") for n in item.reuses))
         if any(w.startswith(f"{item.path}: Not found in Discover") for w in approach.warnings):
-            notes.append("Not found in Discover")
+            notes.append(workspace_note(item.path, check) or "Not found in Discover")
         rows.append(
             dmc.TableTr(
                 [
@@ -221,7 +236,7 @@ def _decisions(approach: ApproachVersion):
 # --- libraries, zones and warnings ---
 
 
-def _libraries_and_warnings(approach: ApproachVersion):
+def _libraries_and_warnings(approach: ApproachVersion, check: CheckResult | None = None):
     chips = [
         dmc.Badge(name, variant="light", color="blue", tt="none")
         for name in approach.plan.libraries
@@ -230,7 +245,7 @@ def _libraries_and_warnings(approach: ApproachVersion):
         dmc.Group(
             [
                 DashIconify(icon="tabler:alert-triangle", width=16, color=da_styles.MUTED),
-                dmc.Text(warning, size="sm"),
+                dmc.Text(_warning_text(warning, approach, check), size="sm"),
             ],
             gap=6,
             wrap="nowrap",
@@ -239,6 +254,15 @@ def _libraries_and_warnings(approach: ApproachVersion):
         for warning in approach.warnings
     ] or [dmc.Text("No warnings.", style=da_styles.EMPTY_TEXT)]
     return dmc.Box([dmc.Group(chips, gap=6, mb=8), *lines])
+
+
+def _warning_text(warning: str, approach: ApproachVersion, check: CheckResult | None) -> str:
+    """The "Not found in Discover" warning, once the workspace check has settled it."""
+    for item in approach.plan.files:
+        if warning.startswith(f"{item.path}: Not found in Discover"):
+            note = workspace_note(item.path, check)
+            return f"{item.path}: {note}" if note else warning
+    return warning
 
 
 # --- test plan ---

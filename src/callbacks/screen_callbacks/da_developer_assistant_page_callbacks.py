@@ -14,6 +14,7 @@ from dash import ALL, Input, Output, State, ctx, no_update
 from dash.exceptions import PreventUpdate
 
 from agents import da_approach_flow as approach_flow
+from agents import da_workspace_flow as workspace_flow
 from agents.da_discover_flow import (
     add_hint_and_search,
     confirm_discovery,
@@ -29,6 +30,7 @@ from agents.da_understand_flow import (
     skip_optional,
     submit_answer,
 )
+from callbacks.screen_callbacks.da_workspace_callbacks import register_da_workspace_callbacks
 from configs.da_config import ConfigError, Settings, load_settings
 from db_table_functions.da_db import DatabaseBusyError
 from db_table_functions.db_tbl_da_rulebook import RulebookError
@@ -137,7 +139,12 @@ def show_page(search: str | None, refresh: int | None):
                 status == STATUS_ESCALATION and approach_flow.has_approach(settings, request_id)
             ):
                 approach = approach_flow.get_approach_view(settings, request_id)
-                return render_approach_workspace(view, discovery, approach)
+                workspace = (
+                    workspace_flow.get_workspace_view(settings, request_id)
+                    if status == STATUS_READY_TO_BUILD
+                    else None
+                )
+                return render_approach_workspace(view, discovery, approach, workspace)
             if status == STATUS_DISCOVERY_CONFIRMED:
                 approach = approach_flow.get_approach_view(settings, request_id)
                 return render_discover_workspace(view, discovery, approach)
@@ -173,7 +180,9 @@ def perform_action(settings: Settings, trigger, text, state, refresh):
         if trigger == SEND_ID and request_id is None:
             view = create_understand_request(settings, text or "")
             return no_update, f"?request={view.request.request_id}", ""
-        if state.get("approach") and trigger != SKIP_ID:
+        if state.get("workspace") and trigger != SKIP_ID:
+            _workspace_action(settings, trigger, request_id, revision)
+        elif state.get("approach") and trigger != SKIP_ID:
             _approach_action(settings, trigger, request_id, revision, text)
         elif trigger == SEND_ID and state.get("discover"):
             # In Discover the Send button is "Something's missing": the text is the hint.
@@ -194,6 +203,23 @@ def perform_action(settings: Settings, trigger, text, state, refresh):
         # Nothing was written. The text stays in the box so the developer can fix it.
         return no_update, no_update, str(error)
     return (refresh or 0) + 1, no_update, ""
+
+
+def _workspace_action(settings: Settings, trigger, request_id: str, revision: int) -> None:
+    """The one Workspace engine function a server-run button stands for (the browser-run buttons
+    never come here). An old window, or an index with no button behind it, is refused."""
+    if not _is_choice(trigger):
+        raise PreventUpdate
+    view = workspace_flow.get_workspace_view(settings, request_id)
+    index = trigger["index"]
+    if view.revision != revision or not 0 <= index < len(view.buttons):
+        raise StaleRevisionError(STALE_MESSAGE)
+    key = view.buttons[index][0]
+    actions = {
+        workspace_flow.CHANGE_APPROACH_KEY: workspace_flow.change_approach,
+        workspace_flow.HELP_KEY: workspace_flow.request_help,
+    }
+    actions[key](settings, request_id, revision)
 
 
 def _approach_action(settings: Settings, trigger, request_id: str, revision: int, text) -> None:
@@ -307,3 +333,5 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
         Output(KEYS_ID, "data"),
         Input(PAGE_CONTENT_ID, "children"),
     )
+
+    register_da_workspace_callbacks(app, lambda: get_settings())

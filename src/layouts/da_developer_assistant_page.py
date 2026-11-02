@@ -19,6 +19,13 @@ from agents.da_discover_flow import (
 from agents.da_understand_checks import MAX_MESSAGE_LENGTH
 from agents.da_understand_flow import ALWAYS_VISIBLE, HELP_OPTION, PROCEED_OPTION
 from layouts.da_approach_panel import approach_panel
+from layouts.da_workspace_panel import (
+    WS_BTN_TYPE,
+    WS_BUSY_TEXT,
+    build_panel,
+    workspace_chip,
+    workspace_stores,
+)
 from pydantic_classes.da_approach_models import ApproachView
 from pydantic_classes.da_discovery_models import DiscoveryView
 from pydantic_classes.da_models import (
@@ -32,6 +39,7 @@ from pydantic_classes.da_models import (
     Request,
 )
 from pydantic_classes.da_request_record_models import AcceptanceCriterion, UnderstandView
+from pydantic_classes.da_workspace_models import WorkspaceView
 from styles import da_styles
 from web import da_web_components as parts
 
@@ -74,8 +82,15 @@ ESCALATE_KEY = "escalate"
 PROCEED_DISCOVERY_OPTION = "Proceed to Discovery"
 SEARCH_AGAIN_OPTION = "Search again"
 BUSY_TEXT = "⏳ Searching approved sources…"
-BUILD_BUTTON = "📁 Choose workspace folder (coming in Phase 5)"
 APPROACH_BUSY_TEXT = "⏳ Working on it…"
+BUILD_LABEL = "Build (coming in Phase 6)"
+# What the note above the workspace buttons says at each step.
+WORKSPACE_NOTES: dict[str, str] = {
+    "start": "Choose your local CodeVision folder. Your browser asks you to allow it",
+    "ws_blocked": "This folder cannot be used yet. Choose another folder or get help",
+    "ws_ready": "Your workspace is ready",
+    "ws_fallback": "Your browser cannot reach the folder. Use the ZIP and upload instead",
+}
 # What the note above the Approach buttons says at each step.
 APPROACH_NOTES: dict[str, str] = {
     "start": "Press Proceed to Approach to plan how it will be built",
@@ -251,6 +266,9 @@ def _workspace(
     discovery: list | None = None,
     busy_text: str = "",
     approach: list | None = None,
+    chip=None,
+    build: list | None = None,
+    stores: list | None = None,
 ) -> list:
     top = dmc.Group(
         [
@@ -266,7 +284,9 @@ def _workspace(
                     dmc.Code(request_id) if request_id else None,
                 ]
             ),
-            parts.status_pill(status),
+            dmc.Group([chip, parts.status_pill(status)], gap="sm")
+            if chip
+            else parts.status_pill(status),
         ],
         justify="space-between",
         mb="sm",
@@ -309,6 +329,7 @@ def _workspace(
                     name == "Summary"
                     or (name == "Discovery" and discovery)
                     or (name == "Approach" and approach)
+                    or (name == "Build" and build)
                 ),
                 px="xs",
             )
@@ -322,6 +343,8 @@ def _workspace(
         panels = [_tab_panel(panel, "summary"), _tab_panel(discovery, "discovery")]
         if approach:
             panels.append(_tab_panel(approach, "approach"))
+        if build:
+            panels.append(_tab_panel(build, "build"))
         tabs = dmc.Tabs(
             [tab_list, *panels],
             value="approach" if approach else "discovery",
@@ -336,6 +359,7 @@ def _workspace(
     side = dmc.Paper(side_children, withBorder=True, radius="md", style=da_styles.COLUMN)
     return [
         dcc.Store(id=STATE_ID, data=state),
+        *(stores or []),
         parts.stepper(step),
         dmc.Box(top, mt="sm"),
         dmc.Box([chat, side], style=da_styles.WORKSPACE_GRID),
@@ -387,9 +411,39 @@ def render_discover_workspace(
 
 
 def render_approach_workspace(
-    understand: UnderstandView, discovery: DiscoveryView, view: ApproachView
+    understand: UnderstandView,
+    discovery: DiscoveryView,
+    view: ApproachView,
+    workspace: WorkspaceView | None = None,
 ) -> list:
-    """The workspace from APPROACH_PROPOSED on: Approach is step 3 and its tab opens first."""
+    """The workspace from APPROACH_PROPOSED on: Approach is step 3 and its tab opens first.
+
+    From READY_TO_BUILD on, `workspace` (Phase 5) adds the header chip, the folder buttons, and
+    the Build tab once the check has passed. The page state then carries the WORKSPACE revision,
+    because every button on this screen belongs to the workspace."""
+    if workspace is not None:
+        return _workspace(
+            title=view.request.title,
+            request_id=view.request.request_id,
+            status=view.request.status,
+            demo_mode=view.demo_mode,
+            messages=[parts.chat_bubble(message) for message in view.messages],
+            composer=_approach_composer(view, workspace),
+            panel=_summary_panel(understand),
+            state={
+                "request_id": view.request.request_id,
+                "revision": workspace.revision,
+                "approach": True,
+                "workspace": True,
+            },
+            step=APPROACH_STEP,
+            discovery=_discovery_panel(discovery),
+            busy_text=WS_BUSY_TEXT,
+            approach=approach_panel(view, workspace.check),
+            chip=workspace_chip(workspace),
+            build=build_panel(workspace) if workspace.step == "ws_ready" else None,
+            stores=workspace_stores(workspace),
+        )
     return _workspace(
         title=view.request.title,
         request_id=view.request.request_id,
@@ -412,7 +466,9 @@ def approach_buttons(view: ApproachView) -> list[tuple[str, str]]:
     return view.buttons
 
 
-def _approach_composer(view: ApproachView | None) -> dmc.Box:
+def _approach_composer(
+    view: ApproachView | None, workspace: WorkspaceView | None = None
+) -> dmc.Box:
     """The bottom of the chat in Approach: the buttons of the step, and a text box that opens
     only at the steps that take typed text (rule G1)."""
     buttons = view.buttons if view else []
@@ -451,7 +507,7 @@ def _approach_composer(view: ApproachView | None) -> dmc.Box:
                 dmc.Alert(
                     "READY TO BUILD", color="green", variant="light", mb="xs", id="da-ready-chat"
                 ),
-                dmc.Button(BUILD_BUTTON, disabled=True),
+                _workspace_buttons(workspace) if workspace is not None else None,
             ],
             style=da_styles.CHOICES_BAR,
             pb="xs",
@@ -466,6 +522,32 @@ def _approach_composer(view: ApproachView | None) -> dmc.Box:
         return controls
     note = (view.note if view else "") or APPROACH_NOTES.get(view.step if view else "", "")
     return dmc.Box([_approach_bar(buttons, note), controls])
+
+
+def _workspace_buttons(workspace: WorkspaceView) -> dmc.Box:
+    """The folder buttons of this workspace step. Browser-run buttons start JavaScript; the
+    server-run ones (Change the approach, Get help) use the normal choice-button path."""
+    shown = [
+        parts.choice_button(label, {"type": WS_BTN_TYPE, "index": key}, parts.PRIMARY)
+        for key, label in workspace.browser_buttons
+    ]
+    shown += [
+        parts.choice_button(
+            label,
+            {"type": CHOICE_TYPE, "index": number},
+            parts.SECONDARY if key == "help" else parts.NORMAL,
+        )
+        for number, (key, label) in enumerate(workspace.buttons)
+    ]
+    if workspace.step == "ws_ready":
+        shown.append(dmc.Button(BUILD_LABEL, disabled=True, id="da-ws-build-chat"))
+    note = workspace.note or WORKSPACE_NOTES.get(workspace.step, "")
+    return dmc.Box(
+        [
+            dmc.Group([_lock(), dmc.Text(note, size="xs", fw=600)]),
+            dmc.Group(shown, mt="xs", mb="xs"),
+        ]
+    )
 
 
 def _approach_bar(buttons: list[tuple[str, str]], note: str) -> dmc.Box:
