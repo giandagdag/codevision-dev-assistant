@@ -402,8 +402,13 @@ def compute_gate(
     confirmed_round: int,
     state: ApproachState | None,
     plan: TestPlanVersion | None,
+    confirmed_round_record_version: int | None = None,
 ) -> list[GateCheck]:
-    """The 4 checks. A false check carries a plain sentence saying why."""
+    """The 4 checks. A false check carries a plain sentence saying why.
+
+    `confirmed_round_record_version` is the request version the confirmed Discover round was
+    built from (N2). None means the caller has no such round to compare, so only the round
+    numbers are checked."""
     checks = []
     ok = approach is not None and approach.record_version == request_version
     checks.append(
@@ -418,12 +423,18 @@ def compute_gate(
         )
     )
     ok = approach is not None and approach.discovery_round == saved_rounds == confirmed_round
+    stale_record = (
+        confirmed_round_record_version is not None
+        and confirmed_round_record_version != request_version
+    )
     checks.append(
         GateCheck(
             name=GATE_NAMES[1],
-            passed=ok,
+            passed=ok and not stale_record,
             detail=(
-                f"Round {saved_rounds} confirmed"
+                "The confirmed Discover round was built from an older version of the request."
+                if ok and stale_record
+                else f"Round {saved_rounds} confirmed"
                 if ok
                 else "The approach was not built from the latest confirmed Discover round."
             ),

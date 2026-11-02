@@ -55,6 +55,7 @@ from db_table_functions.da_db import begin_write, open_db
 from db_table_functions.db_tbl_da_approach import (
     ApproachError,
     confirmed_discovery_round,
+    confirmed_round_record_version,
     ensure_approach_tables,
     first_call_failed,
     highest_test_number,
@@ -368,7 +369,8 @@ def request_help(
     """Get help: ESCALATION_REQUIRED with an open item (rule G6). The inbox comes in Phase 10."""
     now = now or datetime.now(UTC)
     snap = _snapshot(settings, request_id, base_revision)
-    _require_step(snap, "review", "limit_reason", "tests")
+    # tests_pending is included so a Tester that stays down is not a dead end (P24).
+    _require_step(snap, "review", "limit_reason", "tests_pending", "tests")
     with _turn(settings.db_path, request_id, base_revision, now) as turn:
         step = turn.state.step
         open_item = f"{ESCALATED_PREFIX}{step}"
@@ -1017,14 +1019,16 @@ def _version_details(version: ApproachVersion) -> dict:
 
 def _gate(conn: sqlite3.Connection, request: Request, state: ApproachState | None):
     request_id = request.request_id
+    confirmed_round = confirmed_discovery_round(conn, request_id)
     return compute_gate(
         read_confirmed_record(conn, request_id, request.version),
         request.version,
         read_latest_approach(conn, request_id),
         count_rounds(conn, request_id),
-        confirmed_discovery_round(conn, request_id),
+        confirmed_round,
         state,
         read_latest_plan(conn, request_id),
+        confirmed_round_record_version(conn, request_id, confirmed_round),
     )
 
 
@@ -1084,7 +1088,7 @@ def _screen_for(
     if step == "limit_reason":
         return [*change, (HELP_KEY, HELP_BUTTON)], prompt, note
     if step == "tests_pending":
-        return [(WRITE_PLAN_KEY, WRITE_PLAN_OPTION)], "", ""
+        return [(WRITE_PLAN_KEY, WRITE_PLAN_OPTION), (HELP_KEY, HELP_BUTTON)], "", ""
     if step == "tests":
         return [
             (ACCEPT_PLAN_KEY, ACCEPT_PLAN_OPTION),

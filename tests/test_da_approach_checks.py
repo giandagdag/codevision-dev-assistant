@@ -468,3 +468,23 @@ def test_each_gate_check_can_fail_alone():
     assert gate(plan=make_test_plan(ids=("AC-1", "AC-2")))[3].detail == "AC-3 has no test case."
     assert gate(plan=None)[3].detail == "There is no test plan yet."
     assert [c.passed for c in gate(approach=None, state=None, plan=None)] == [False] * 4
+
+
+def test_5_30_a_round_built_from_an_older_record_version_fails_check_2_in_plain_words():
+    # The approach is for v2 and the round is the confirmed one, but the round was built from v1.
+    checks = gate(
+        request_version=2,
+        approach=make_version(record_version=2),
+        confirmed_round_record_version=1,
+    )
+
+    assert [c.passed for c in checks] == [True, False, True, True]
+    assert checks[1].detail == (
+        "The confirmed Discover round was built from an older version of the request."
+    )
+
+
+def test_5_30_a_round_built_from_the_current_record_version_passes_check_2():
+    checks = gate(confirmed_round_record_version=1)
+
+    assert checks[1].passed and checks[1].detail == "Round 2 confirmed"
