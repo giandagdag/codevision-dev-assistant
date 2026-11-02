@@ -362,7 +362,8 @@ def rescan_results(
 
 def _file_outcome(fact: FileFact | None, last: str | None):
     if fact is None or not fact.exists or fact.text is None:
-        return "missing"
+        # A planned new file that was never written is not "missing": there is nothing to lose.
+        return "missing" if last is not None else "unchanged"
     return "unchanged" if last is not None and fingerprint(fact.text) == last else "changed"
 
 

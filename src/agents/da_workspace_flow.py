@@ -232,8 +232,9 @@ def save_check(
                 {"path": report.stopped.path, "reason": report.stopped.reason},
             )
             tx.say("assistant", stop_message(job, report))
-            return get_workspace_view(settings, request_id)
-        _save_ready(tx, snap, facts, result, "picker", base_revision)
+        else:
+            _save_ready(tx, snap, facts, result, "picker", base_revision)
+    # Read the view only after the write has been committed.
     return get_workspace_view(settings, request_id)
 
 
@@ -322,7 +323,7 @@ def prepare_download(
             "system", "workspace_written",
             {"mode": "download", "files": {i.path: fingerprint(i.text) for i in job.files}},
         )
-        already = any(m.text == DOWNLOAD_ADVICE for m in read_messages(conn, request_id))
+        already = any(DOWNLOAD_ADVICE in m.text for m in read_messages(conn, request_id))
         tx.say("developer", DOWNLOAD_LABEL)
         tx.say("assistant", "The ZIP has the tests folder. " + ("" if already else DOWNLOAD_ADVICE))
         save_workspace_state(conn, snap.state, base_revision, now)
@@ -368,10 +369,16 @@ def change_approach(
             raise WorkspaceError("The approach is not at its final step, so it cannot be reopened.")
         approach_revision = approach_state.revision
         approach_state.step = "change"
-        approach_state.change_from_tests = False
+        # Row 5-19: the counter goes up now (G9). The flag tells the Approach change step that
+        # this change is already counted, so it is not counted a second time when sent.
+        approach_state.change_count += 1
+        approach_state.change_from_tests = True
         tx.say("developer", CHANGE_APPROACH_OPTION)
         tx.move_to(STATUS_APPROACH_PROPOSED)
-        tx.audit("developer", "approach_reopened", {"from": "ws_blocked"})
+        tx.audit(
+            "developer", "approach_reopened",
+            {"from": "ws_blocked", "change_count": approach_state.change_count},
+        )
         tx.say("assistant", TEXT_PROMPTS["change"] + ".")
         save_approach_state(conn, approach_state, approach_revision, now)
         # The old check no longer matches a changed plan, so the workspace starts over.
@@ -646,9 +653,11 @@ def _scan_text(result) -> str:
         parts.append(f"{missing} file{'s' if missing != 1 else ''} missing")
     if not parts:
         return "No changes found since the last check."
+    total = changed + new + missing
+    pronoun = "It" if total == 1 else "They"
     return (
         ", ".join(parts).capitalize()
-        + ". They will be checked when the build runs (Phase 6 onwards)."
+        + f". {pronoun} will be checked when the build runs (Phase 6 onwards)."
     )
 
 

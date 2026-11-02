@@ -385,7 +385,7 @@ def test_5_17_an_edited_file_is_changed_and_an_untouched_one_is_unchanged():
     result = outcomes(scan(facts))
 
     assert result[MODIFY] == "changed"
-    assert result[CREATE] == "missing"
+    assert result[CREATE] == "unchanged"
 
 
 def test_a_file_with_only_a_line_ending_flip_is_unchanged():
@@ -422,3 +422,17 @@ def test_5_18_a_scan_with_a_path_outside_the_plan_is_refused():
 
     with pytest.raises(checks.FactsProblem):
         scan(facts)
+
+
+def test_a_planned_new_file_that_was_never_written_is_not_missing():
+    result = outcomes(scan(good_facts()))
+
+    assert result[CREATE] == "unchanged"  # CREATE has no known fingerprint yet
+
+
+def test_a_written_file_that_is_gone_is_missing():
+    known = {CREATE: checks.fingerprint("y\n")}
+
+    result = checks.rescan_results(good_facts(), [MODIFY, CREATE], known, REQUEST_ID, set())
+
+    assert {item.path: item.outcome for item in result.items}[CREATE] == "missing"
