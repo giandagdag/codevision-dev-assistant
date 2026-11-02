@@ -358,6 +358,64 @@ acting on an old view is refused with the usual "updated in another window" mess
 The smoke check adds items 19 (fake provider to READY TO BUILD), 20 (the same against the pretend
 server) and 21 (the Tester's prompt holds the criteria and not the file plan).
 
+## How Phase 5 works
+
+Phase 5 is the **Workspace**: after READY TO BUILD, the app connects to your own copy of CodeVision
+on your laptop, checks that the file plan fits that folder, takes a fingerprint of every planned
+file, and proves that writing and reading back works. Phase 6 then writes the real code through
+the same door. (AS400 comparison: the workspace is your own source library. The app may `ADDPFM`
+and `CHGPFM` only the members on the approved change form, nothing else in the library. A
+fingerprint is the member's last-changed stamp, but exact. **Re-scan** is `DSPFD` over those
+members to see which ones somebody touched.)
+
+**The key fact: the Python server cannot touch your laptop.** Only the browser can, and only after
+you pick the folder in the browser's own window and click Allow. So JavaScript in the page
+(`src/web/da_workspace.js`) reads and writes files. Python decides what may be written and keeps
+the record. They talk in four hops, each a Dash callback:
+
+1. **Click** (browser): you press **Choose workspace folder**; the page collects *facts* about the
+   folder (does `src/web` exist, does each planned file exist, what does it say).
+2. **Judge** (server): plain Python turns the facts into blockers B1 to B7 or into a *write job*.
+3. **Write** (browser): the page runs the job. Before overwriting a file it checks the file still
+   has the fingerprint the server expects (the **edit guard**: your edits are never overwritten).
+4. **Save** (server): ONE database save holds the state, the file rows, the audit events and the
+   chat lines together.
+
+In Phase 5 the only real file written is `tests/<request id>/__init__.py`. The code files come in
+Phase 6. If the folder has a problem you get **Choose another folder**, **Change the approach**
+(back to APPROACH PROPOSED, counts as one of the 3 changes) or **Get help** (the workspace step
+stays `ws_blocked`; the open item reads `Escalated in Workspace: ws_blocked`).
+
+**Fallback.** If the browser has no folder picker, or you refuse it, **Download ZIP** gives you the
+files with a `READ_ME_FIRST.txt`, and **Upload folder to check** lets the app check your folder
+(only the planned files and the tests folder are read; the rest is never opened).
+
+**Fingerprints** ignore the line-ending style and a leading byte-order mark (Windows editors flip
+those). The app keeps a file's own line-ending style when it changes it. The server recomputes
+every fingerprint itself and never trusts the browser's.
+
+**Two new rulebook policy fields:** `workspace_markers` (folders that must exist, starter
+`src/web`, `src/callbacks`) and `workspace_max_file_kb` (512). Older rulebook versions load with
+these values.
+
+**Carried fixes.** **Get help** now also shows at the "Write the test plan" step (P24), `.vscode/` is
+ignored by Git (P25), and gate check 2 now also needs the confirmed Discover round to be built
+from the latest request version (N2).
+
+**Check it at home.**
+- Tests: `.venv\Scripts\python -m pytest`. The real-browser tests need Playwright 1.63.0 and its
+  browser (cloud session only); on your laptop they are **skipped**, and the skip text says which
+  rows were not proven. Do not run `playwright install`.
+- Smoke check items 22 and 23 run READY TO BUILD to `ws_ready` with a pretend folder and then find
+  one changed file.
+- By hand: run the screen on `http://127.0.0.1:8050` (it counts as a secure page) with
+  `DA_LLM_PROVIDER=fake`, take a request to READY TO BUILD and press **Choose workspace folder**.
+  Pick a **COPY** of the repo, not your working folder. Steps for the live test at work are in
+  `docs/workspace-work-test.md`.
+
+**Stale windows.** The workspace keeps its own revision number (`da_workspace_state`). A second
+window acting on an old view is refused with the usual "updated in another window" message.
+
 ## Notes for the move to CodeVision
 
 - **The audit-table triggers are SQLite-only.** The append-only guarantee comes from two SQLite
@@ -396,6 +454,15 @@ server) and 21 (the Tester's prompt holds the criteria and not the file plan).
   `data/da_approach_fake_script.json` and `data/da_tester_fake_script.json` are for home. The
   `da_approach_versions` and `da_test_plans` tables use SQLite triggers (append-only). Phase 4
   also made `is_vague_then` in `da_understand_checks.py` public (it was private).
+- **Phase 5 files:** `agents/da_workspace_flow.py`, `agents/da_workspace_checks.py`,
+  `db_table_functions/db_tbl_da_workspace.py`, `pydantic_classes/da_workspace_models.py`,
+  `layouts/da_workspace_panel.py`, `callbacks/screen_callbacks/da_workspace_callbacks.py`,
+  `web/da_workspace.js` and `web/da_workspace_bridge.py`, the two new policy fields, and the screen
+  edits. The JavaScript is read from its file at start-up and put inside the Dash callbacks, so
+  CodeVision's own `assets` folder needs no change. `web/da_fake_browser_folder.py` is for home
+  (tests and smoke check). The three workspace tables use SQLite triggers (append-only), like the
+  others. **Check at work (Q8):** the browser's folder picker may be switched off by IT policy
+  (`edge://policy`, look for "FileSystem"); the ZIP and upload fallback is the safety net.
 - `dash`, `dash-mantine-components` and `dash-iconify` are in `requirements.txt` at the work
   versions. Dash pulls in Flask; home gets 3.1.3, work has 3.1.2.
 - **Check at work that Dash clientside callbacks (inline JavaScript) are allowed.** Enter-to-send

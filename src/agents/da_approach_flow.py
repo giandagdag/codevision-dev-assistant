@@ -498,7 +498,7 @@ def accept_test_plan(
             turn.say(
                 "assistant",
                 "All 4 gates passed. READY TO BUILD. The next step is choosing your workspace "
-                "folder, which comes in Phase 5.",
+                "folder with the button below.",
             )
     return get_approach_view(settings, request_id)
 
