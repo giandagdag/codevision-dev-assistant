@@ -20,6 +20,8 @@ from agents.da_understand_checks import MAX_MESSAGE_LENGTH
 from agents.da_understand_flow import ALWAYS_VISIBLE, HELP_OPTION, PROCEED_OPTION
 from layouts.da_approach_panel import approach_panel
 from layouts.da_workspace_panel import (
+    USE_KEY,
+    USE_LABEL,
     WS_BUSY_TEXT,
     build_panel,
     workspace_chip,
@@ -533,6 +535,11 @@ def _workspace_buttons(workspace: WorkspaceView) -> dmc.Box:
         parts.choice_button(label, ws_button_id(key, "bar"), parts.PRIMARY)
         for key, label in workspace.browser_buttons
     ]
+    if workspace.step == "start":
+        # Hidden until the browser finds a remembered folder; then it reads "Use <name>" (D-B).
+        use = parts.choice_button(USE_LABEL, ws_button_id(USE_KEY, "bar"), parts.NORMAL)
+        use.style = {"display": "none"}
+        shown.insert(0, use)
     shown += [
         parts.choice_button(
             label,

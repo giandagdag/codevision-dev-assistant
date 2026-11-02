@@ -84,7 +84,9 @@ def test_5_12_an_edit_between_the_job_and_the_write_stops_the_job(settings, requ
     message = texts(after, "assistant")[-1]
     assert "Written: none" in message and f"Not written: {INIT}" in message
     assert folder.files[INIT] == "# the developer changed this\n"  # not overwritten
-    assert after.revision == view.revision  # the stop saves no state change
+    assert after.revision == view.revision + 1  # the stop still bumps it, so a replay is stale
+    with pytest.raises(StaleRevisionError):
+        flow.save_check(settings, request_id, facts, report, view.revision)
 
 
 def test_5_12_files_before_the_stop_stay_written_in_a_longer_job():
@@ -176,3 +178,29 @@ def test_a_workspace_action_before_ready_to_build_is_refused(make_settings):
 
     with pytest.raises(Exception, match="no approach|READY TO BUILD"):
         flow.picker_cancelled(settings, request_id, 0)
+
+
+def test_a_read_back_that_differs_from_what_was_sent_is_refused(settings, request_id):
+    folder = good_folder()
+    facts = facts_of(settings, request_id, folder)
+    job = flow.judge_facts(settings, request_id, facts, 0).job
+    other = "# something else entirely\n"
+    report = WriteReport(
+        written=[WrittenFile(path=job.files[0].path, text=other, fingerprint=fingerprint(other))]
+    )
+
+    with pytest.raises(WorkspaceError, match="read back differently"):
+        flow.save_check(settings, request_id, facts, report, 0)
+
+    assert flow.get_workspace_view(settings, request_id).revision == 0
+
+
+def test_a_developer_edit_to_the_tests_file_is_not_overwritten_by_a_recheck(settings, request_id):
+    folder = good_folder()
+    view, _ = pick(settings, request_id, folder)
+    folder.edit(INIT, "# my own notes\n")  # same folder, edited after the app wrote it
+
+    view, _ = pick(settings, request_id, folder, view.revision)
+
+    assert folder.files[INIT] == "# my own notes\n"
+    assert "Re-scan first" in texts(view, "assistant")[-1]

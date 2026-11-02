@@ -289,3 +289,31 @@ def test_5_24_upload_sends_only_planned_and_tests_files(make_page, tmp_path):
         f"codevision/{TESTS}/test_mine.py",
     }
     assert [f["name"] for f in facts["tests_files"]] == ["test_mine.py"]
+
+
+def test_reconnect_re_allows_the_remembered_folder_and_with_none_opens_the_picker(make_page):
+    page = make_page()
+    page.evaluate(SEED_JS, TREE)
+    assert pick(page, "reconnect")["kind"] == "facts"  # nothing remembered yet: the picker
+
+    again = pick(page, "reconnect")  # now a folder is remembered
+
+    assert again == {"kind": "reconnected"}
+    report = run(page, job(page, [(f"{TESTS}/__init__.py", "# x\n", "absent")]))
+    assert report["stopped"] is None  # the folder is connected again
+
+
+def test_a_non_utf8_file_stops_the_edit_guard_instead_of_being_guessed(make_page):
+    page = make_page()
+    page.evaluate(SEED_JS, TREE)
+    pick(page)
+    page.evaluate("""async () => {
+      const root = await navigator.storage.getDirectory();
+      const handle = await root.getFileHandle('bad.py', {create: true});
+      const w = await handle.createWritable();
+      await w.write(new Uint8Array([0xff, 0xfe, 0xfa])); await w.close();
+    }""")
+
+    report = run(page, job(page, [("bad.py", "x\n", fingerprint("x\n"))]))
+
+    assert "not a UTF-8" in report["stopped"]["reason"]

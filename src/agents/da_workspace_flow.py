@@ -232,6 +232,9 @@ def save_check(
                 {"path": report.stopped.path, "reason": report.stopped.reason},
             )
             tx.say("assistant", stop_message(job, report))
+            # The revision still goes up, so a replay of this save is refused as stale (W2).
+            stopped_state = snap.state or WorkspaceState(request_id=request_id)
+            save_workspace_state(tx.conn, stopped_state, base_revision, now)
         else:
             _save_ready(tx, snap, facts, result, "picker", base_revision)
     # Read the view only after the write has been committed.
@@ -508,11 +511,14 @@ def _init_job(
     Without facts (download mode) the last write is the reference."""
     path = tests_init_path(request_id)
     known = {}
-    if facts is not None:
+    same_folder = snap.state is not None and facts is not None and (
+        snap.state.folder_name == facts.folder_name
+    )
+    if facts is not None and not same_folder:
         found = next((f for f in facts.tests_files if f.name == TESTS_INIT_NAME), None)
         if found is not None and found.text is not None:
             known[path] = (fingerprint(found.text), line_ending_of(found.text))
-    elif path in snap.known:
+    if path in snap.known and (facts is None or same_folder):
         item = snap.known[path]
         known[path] = (item.fingerprint, item.line_ending)
     return build_write_job(request_id, folder_name, [(path, TESTS_INIT_TEXT)], known)

@@ -202,8 +202,14 @@
     }
     // The edit guard (R5.1): the file must still be what the server last saw.
     let current = null;
-    try { current = new TextDecoder().decode(await (await (await dir.getFileHandle(name)).getFile()).arrayBuffer()); }
-    catch (error) { current = null; }
+    let handleNow = null;
+    try { handleNow = await dir.getFileHandle(name); } catch (error) { handleNow = null; }
+    if (handleNow) {
+      try {
+        const bytes = await (await handleNow.getFile()).arrayBuffer();
+        current = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      } catch (error) { return item.path + " is not a UTF-8 text file. Re-scan first."; }
+    }
     if (item.expected === ABSENT) {
       if (current !== null) { return item.path + " already exists. Re-scan first."; }
     } else if (current === null || (await fingerprint(current)) !== item.expected) {
@@ -245,6 +251,16 @@
     return { kind: "facts", facts: await collectFacts(root, ctx) };
   }
 
+  // Reconnect (W4): the chip said "Needs your OK". Re-allow the remembered folder; with none
+  // remembered, fall back to the picker. Returns "reconnected" so the screen only redraws.
+  async function reconnect(ctx) {
+    const remembered = await loadHandle();
+    if (!remembered) { return choose(ctx, false); }
+    if (!(await ensurePermission(remembered))) { return { kind: "cancelled" }; }
+    root = remembered;
+    return { kind: "reconnected" };
+  }
+
   async function scan(ctx) {
     const handle = root || (await loadHandle());
     if (!handle || !(await ensurePermission(handle))) { return { kind: "cancelled" }; }
@@ -261,6 +277,7 @@
   async function handle(key, ctx) {
     if (key === "choose" || key === "change_folder" || key === "retry_picker") { return choose(ctx, false); }
     if (key === "use_remembered") { return choose(ctx, true); }
+    if (key === "reconnect") { return reconnect(ctx); }
     if (key === "rescan") { return scan(ctx); }
     if (key === "download") { return { kind: "download" }; }
     if (key === "upload") { return upload(ctx); }

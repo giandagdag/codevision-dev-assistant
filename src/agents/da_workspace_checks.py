@@ -298,6 +298,7 @@ def verify_report(job: WriteJob, report: WriteReport) -> None:
     """Refuse a report that names a path outside the job, repeats one, or carries a hash that
     the server cannot reproduce (W3, P13)."""
     allowed = {item.path for item in job.files}
+    sent = {item.path: fingerprint(item.text) for item in job.files}
     seen: set[str] = set()
     for item in report.written:
         if item.path not in allowed or item.path in seen or path_problem(item.path):
@@ -306,6 +307,11 @@ def verify_report(job: WriteJob, report: WriteReport) -> None:
         if fingerprint(item.text) != item.fingerprint:
             raise FactsProblem(
                 f"The browser and the server disagree about {item.path}. Nothing was saved."
+            )
+        # What was read back must be what was sent: otherwise the write went wrong.
+        if item.fingerprint != sent[item.path]:
+            raise FactsProblem(
+                f"{item.path} was read back differently from what was written. Nothing was saved."
             )
     if report.stopped is not None and report.stopped.path not in allowed:
         raise FactsProblem(

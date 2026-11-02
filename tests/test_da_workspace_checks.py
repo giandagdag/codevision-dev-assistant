@@ -343,6 +343,13 @@ def test_a_report_in_a_different_order_is_refused():
         checks.verify_report(job, WriteReport(written=[written(CREATE)]))
 
 
+def test_a_read_back_that_is_not_what_was_sent_is_refused():
+    job = job_of(CREATE)
+
+    with pytest.raises(checks.FactsProblem, match="read back differently"):
+        checks.verify_report(job, WriteReport(written=[written(CREATE, "other text\n")]))
+
+
 def test_5_12_a_stopped_report_names_both_lists():
     job = job_of(MODIFY, CREATE)
     report = WriteReport(

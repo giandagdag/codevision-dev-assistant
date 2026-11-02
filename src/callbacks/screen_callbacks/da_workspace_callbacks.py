@@ -22,6 +22,7 @@ from db_table_functions.da_db import DatabaseBusyError
 from db_table_functions.db_tbl_da_understand import UnderstandError
 from layouts.da_developer_assistant_page import BUSY_ID, MESSAGE_ID, REFRESH_ID
 from layouts.da_workspace_panel import (
+    USE_KEY,
     WS_BTN_TYPE,
     WS_CTX_ID,
     WS_EVENT_ID,
@@ -31,6 +32,7 @@ from layouts.da_workspace_panel import (
     WS_PERM_OK_ID,
     WS_REPORT_ID,
     WS_SINK_ID,
+    ws_button_id,
 )
 from pydantic_classes.da_workspace_models import FolderFacts, WriteReport
 from web.da_workspace_bridge import clientside_function
@@ -65,6 +67,16 @@ return window.daWorkspace.chip().then((chip) => (
     chip.permission === 'granted'
         ? [{{}}, {{display: 'none'}}]
         : [{{display: 'none'}}, {{}}]
+));
+"""
+
+
+# D-B: at the start step, show "Use <name>" if this browser remembers a folder.
+USE_BODY = """
+const nothing = window.dash_clientside.no_update;
+if (!ctx || ctx.step !== 'start') { return [nothing, nothing]; }
+return window.daWorkspace.chip().then((chip) => (
+    chip.name ? [{}, 'Use ' + chip.name] : [{display: 'none'}, nothing]
 ));
 """
 
@@ -177,6 +189,13 @@ def register_da_workspace_callbacks(app, current_settings) -> None:
         Output(WS_SINK_ID, "data"),
         Input(WS_PACK_ID, "data"),
         prevent_initial_call=True,
+    )
+    app.clientside_callback(
+        clientside_function("content, ctx", USE_BODY),
+        Output(ws_button_id(USE_KEY, "bar"), "style"),
+        Output(ws_button_id(USE_KEY, "bar"), "children"),
+        Input("da-page-content", "children"),
+        State(WS_CTX_ID, "data"),
     )
     app.clientside_callback(
         clientside_function("content, ctx", CHIP_BODY),

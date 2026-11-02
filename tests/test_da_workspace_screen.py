@@ -55,7 +55,12 @@ def test_5_1_before_a_folder_the_chip_says_none_and_choose_is_active(settings, r
     tree = draw(request_id)
 
     assert "No workspace chosen" in chip_text(tree)
-    assert button_labels(tree, panel.WS_BTN_TYPE) == ["Choose workspace folder"]
+    # "Use <name>" is drawn hidden; the browser shows it when it remembers a folder (D-B).
+    assert button_labels(tree, panel.WS_BTN_TYPE) == [
+        "Use remembered folder",
+        "Choose workspace folder",
+    ]
+    assert by_id(tree, panel.ws_button_id("use_remembered", "bar")).style == {"display": "none"}
     wanted = "Choose workspace folder"
     chooser = [b for b in components(tree, "Button") if all_text(b) == wanted][0]
     assert not chooser.disabled
@@ -90,9 +95,11 @@ def test_a_ready_workspace_shows_the_chip_buttons_the_build_tab_and_the_approach
     assert "codevision" in chip and "✅" in chip and "Re-scan" in chip and "Change" in chip
     # The chip has Re-scan and Change, plus a Reconnect the browser shows only when it needs
     # your OK again (W4); the button bar under the chat repeats Re-scan and Change.
-    assert button_labels(tree, panel.WS_BTN_TYPE) == [
-        "Re-scan", "Change", "Reconnect", "Re-scan", "Change"
-    ]
+    # Re-scan is also in the Build tab (spec section 6).
+    labels = button_labels(tree, panel.WS_BTN_TYPE)
+    assert sorted(labels) == sorted(
+        ["Re-scan", "Change", "Reconnect", "Re-scan", "Change", "Re-scan"]
+    )
     assert by_id(tree, panel.WS_PERM_NEEDS_ID).style == {"display": "none"}
     assert not tab(tree, "Build").disabled
     text = all_text(by_id(tree, "da-ws-summary"))
@@ -333,12 +340,13 @@ def test_register_attaches_the_workspace_hops():
 
     hops = app._callback_list[3:]
 
-    assert len(hops) == 6
+    assert len(hops) == 7
     click_hop = hops[0]
     assert click_hop["prevent_initial_call"] is True
     assert click_hop["clientside_function"]["function_name"]
     outputs = [h["output"] for h in hops]
     assert "da-ws-event.data" in outputs[0] and "da-ws-report.data" in outputs[2]
+    assert any("use_remembered" in str(out) for out in outputs)
     assert hops[1]["running"]["running"] == {"da-busy.style": {"display": "block"}}
 
 
@@ -363,3 +371,16 @@ def test_no_two_buttons_on_the_workspace_screen_share_an_id(settings, request_id
     ] + [b.id for b in components(tree, "Button") if isinstance(getattr(b, "id", None), str)]
 
     assert len(ids) == len(set(ids))
+
+
+def test_a_reconnected_event_only_redraws_and_adds_no_chat_line(settings, request_id):
+    pick(settings, request_id, good_folder())
+    before = len(flow.get_workspace_view(settings, request_id).messages)
+    ctx = ctx_of(settings, request_id)
+
+    refresh, job, pack, message = wcb.handle_workspace_event(
+        settings, {"kind": "reconnected", "nonce": 1}, ctx, 4
+    )
+
+    assert (refresh, job, message) == (5, None, "")
+    assert len(flow.get_workspace_view(settings, request_id).messages) == before

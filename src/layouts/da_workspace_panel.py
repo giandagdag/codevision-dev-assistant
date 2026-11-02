@@ -26,6 +26,8 @@ WS_PERM_NEEDS_ID = "da-ws-perm-needs"
 WS_BUSY_TEXT = "⏳ Checking your folder…"
 NOT_CODEVISION = "Not a CodeVision folder"
 RECONNECT_KEY = "reconnect"
+USE_KEY = "use_remembered"
+USE_LABEL = "Use remembered folder"
 BUILD_BUTTON = "Build (coming in Phase 6)"
 
 STATUS_OUTCOME_TEXT = {
@@ -147,6 +149,10 @@ def build_panel(view: WorkspaceView) -> list:
         lines += [dmc.Text(text, size="xs", c=da_styles.MUTED) for text in view.check.info]
     if view.last_scan is not None:
         lines.append(_scan_block(view))
+    if view.step == "ws_ready" and view.mode == "picker":
+        lines.append(
+            parts.choice_button("Re-scan", ws_button_id("rescan", "tab"), parts.NORMAL)
+        )
     lines.append(dmc.Button(BUILD_BUTTON, disabled=True, id="da-ws-build"))
     return [dmc.Stack(lines, gap="sm")]
 
