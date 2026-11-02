@@ -12,6 +12,7 @@ from db_table_functions.db_tbl_da_rulebook import (
     load_rulebook_file,
     publish_first_version,
 )
+from tests.da_browser import _chromium, make_page  # noqa: F401  (browser fixtures, skip when missing)
 
 SEED_PUBLISHED_AT = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
 
