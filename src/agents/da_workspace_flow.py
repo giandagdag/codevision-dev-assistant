@@ -233,6 +233,7 @@ def save_check(
             )
             tx.say("assistant", stop_message(job, report))
             # The revision still goes up, so a replay of this save is refused as stale (W2).
+            # (A first-ever stop saves a state that is still at step `start`.)
             stopped_state = snap.state or WorkspaceState(request_id=request_id)
             save_workspace_state(tx.conn, stopped_state, base_revision, now)
         else:
