@@ -19,6 +19,17 @@ def test_fake_provider_prints_the_approach_items_19_to_21(make_settings, capsys)
     assert "21. The Tester's prompt held all 7 criteria and none of the 2 planned" in output
 
 
+def test_fake_provider_prints_the_workspace_items_22_and_23(make_settings, capsys):
+    exit_code = run_smoke_check(make_settings())
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "22. CVDA-" in output and "workspace ready in folder codevision-copy" in output
+    assert "1 baselines taken, 1 tests file written (tests/cvda_" in output
+    assert "23. Re-scan found 1 file changed by the developer" in output
+    assert "(src/agents/upload_validator.py); the step stays ws_ready" in output
+
+
 def test_fake_provider_prints_the_first_four_items(make_settings, capsys):
     exit_code = run_smoke_check(make_settings())
 

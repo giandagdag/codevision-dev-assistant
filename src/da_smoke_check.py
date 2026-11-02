@@ -10,6 +10,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from agents import da_approach_flow as approach
+from agents import da_workspace_flow as workspace
 from agents.da_discover_flow import confirm_discovery, start_discovery
 from agents.da_llm_client import LLMClient, LLMClientError, get_llm_client
 from agents.da_search_index import FakeSearchIndex, search_safely
@@ -44,6 +45,7 @@ from pydantic_classes.da_models import (
     StatusMoveError,
 )
 from pydantic_classes.da_rulebook_models import Rulebook
+from web.da_fake_browser_folder import FakeBrowserFolder
 from web.da_fake_onprem_server import running_fake_onprem_server
 
 SAMPLE_TITLE = "Smoke check: sample change to a made-up loan program"
@@ -295,6 +297,7 @@ def _run_approach_steps(db_path: Path, settings: Settings) -> None:
     demo = replace(settings, llm_provider="fake", db_path=db_path)
     request_id = _discovery_confirmed_request(demo)
     view = _run_approach(demo, request_id)
+    fake_request_id = request_id
     print(
         f"19. {request_id}: Approach with the fake provider reached {view.request.status}: "
         f"{len(view.approach.plan.files)} code files, {len(view.plan.cases)} test cases "
@@ -328,6 +331,53 @@ def _run_approach_steps(db_path: Path, settings: Settings) -> None:
         f"21. The Tester's prompt held all {len(criteria)} criteria and none of the "
         f"{len(planned)} planned file paths"
     )
+    _run_workspace_steps(demo, fake_request_id)
+
+
+def _run_workspace_steps(settings: Settings, request_id: str) -> None:
+    """Items 22 and 23: the Workspace (Phase 5) with a pretend browser folder. It goes from
+    READY_TO_BUILD to ws_ready, then a re-scan finds one file the developer changed."""
+    view = workspace.get_workspace_view(settings, request_id)
+    folder = _pretend_codevision_folder(view)
+    facts = folder.facts(view.planned_paths, view.markers, request_id, view.max_file_kb)
+    judgement = workspace.judge_facts(settings, request_id, facts, view.revision)
+    if judgement.job is None:
+        blocker = judgement.view.check.blockers[0]
+        raise UnderstandError(f"The pretend folder was blocked: {blocker.text}")
+    report = folder.run_job(judgement.job)
+    view = workspace.save_check(settings, request_id, facts, report, view.revision)
+    if view.step != "ws_ready" or view.request.status != STATUS_READY_TO_BUILD:
+        raise UnderstandError(f"The workspace ended at {view.step}.")
+    tests_file = [path for path in folder.files if path.startswith("tests/")]
+    print(
+        f"22. {request_id}: workspace ready in folder {view.folder_name}: "
+        f"{len([r for r in view.rows if r.baseline_at])} baselines taken, "
+        f"{len(tests_file)} tests file written ({tests_file[0]})"
+    )
+
+    edited = next(row.path for row in view.rows if row.action == "modify")
+    folder.edit(edited, folder.files[edited] + "# changed by the developer\n")
+    facts = folder.facts(view.planned_paths, view.markers, request_id, view.max_file_kb)
+    view = workspace.rescan(settings, request_id, facts, view.revision)
+    changed = [row.path for row in view.rows if row.status == "Changed by you"]
+    still_ready = view.step == "ws_ready" and view.request.status == STATUS_READY_TO_BUILD
+    if changed != [edited] or not still_ready:
+        raise UnderstandError(f"The re-scan listed {changed}, not {[edited]}.")
+    print(f"23. Re-scan found 1 file changed by the developer ({edited}); the step stays ws_ready")
+
+
+def _pretend_codevision_folder(view) -> FakeBrowserFolder:
+    """A made-up CodeVision clone that fits the plan: marker folders, and every file the plan
+    changes with some made-up text."""
+    folder = FakeBrowserFolder(name="codevision-copy")
+    for marker in view.markers:
+        folder.files[f"{marker}/da_pretend.py"] = "# made up\n"
+    for row in view.rows:
+        if row.action == "modify":
+            folder.files[row.path] = "def made_up():\n    return 1\n"
+        elif row.action == "create":
+            folder.extra_folders.add(row.path.rsplit("/", 1)[0])
+    return folder
 
 
 def _run_approach(settings: Settings, request_id: str):
