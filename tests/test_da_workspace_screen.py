@@ -58,7 +58,8 @@ def test_5_1_before_a_folder_the_chip_says_none_and_choose_is_active(settings, r
     assert button_labels(tree, panel.WS_BTN_TYPE) == ["Choose workspace folder"]
     wanted = "Choose workspace folder"
     chooser = [b for b in components(tree, "Button") if all_text(b) == wanted][0]
-    assert not chooser.disabled and chooser.id == {"type": panel.WS_BTN_TYPE, "index": "choose"}
+    assert not chooser.disabled
+    assert chooser.id == panel.ws_button_id("choose", "bar")
     assert tab(tree, "Build").disabled  # the Build tab waits for a ready workspace
     assert "READY TO BUILD" in all_text(tree)
     state = by_id(tree, page.STATE_ID).data
@@ -349,3 +350,16 @@ def test_every_clientside_hop_carries_the_browser_script_once():
     assert function.count("window.daWorkspace = {") == 1
     assert function.startswith("function(job) {") and "daWorkspace.write(job)" in function
     assert workspace_script().count("showDirectoryPicker") >= 1
+
+
+def test_no_two_buttons_on_the_workspace_screen_share_an_id(settings, request_id):
+    """Dash cannot tell two components with one id apart: a click went nowhere (found in the
+    real-browser test, where the chip and the bar both had Re-scan)."""
+    pick(settings, request_id, good_folder())
+    tree = draw(request_id)
+
+    ids = [
+        str(b.id) for b in components(tree, "Button") if isinstance(getattr(b, "id", None), dict)
+    ] + [b.id for b in components(tree, "Button") if isinstance(getattr(b, "id", None), str)]
+
+    assert len(ids) == len(set(ids))

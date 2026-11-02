@@ -143,3 +143,22 @@ async (path) => {
   } catch (error) { return false; }
 }
 """
+
+
+@pytest.fixture
+def make_live_page(_chromium):
+    """Open a page of a running app (not the blank test page). Same stand-ins as make_page."""
+    contexts = []
+
+    def build(url: str, picker: bool = True):
+        context = _chromium.new_context(accept_downloads=True)
+        contexts.append(context)
+        page = context.new_page()
+        page.add_init_script(INIT_SCRIPT)
+        page.add_init_script(PICKER_SCRIPT if picker else "delete window.showDirectoryPicker;")
+        page.goto(url)
+        return page
+
+    yield build
+    for context in contexts:
+        context.close()

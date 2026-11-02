@@ -20,11 +20,12 @@ from agents.da_understand_checks import MAX_MESSAGE_LENGTH
 from agents.da_understand_flow import ALWAYS_VISIBLE, HELP_OPTION, PROCEED_OPTION
 from layouts.da_approach_panel import approach_panel
 from layouts.da_workspace_panel import (
-    WS_BTN_TYPE,
     WS_BUSY_TEXT,
     build_panel,
     workspace_chip,
+    workspace_hop_stores,
     workspace_stores,
+    ws_button_id,
 )
 from pydantic_classes.da_approach_models import ApproachView
 from pydantic_classes.da_discovery_models import DiscoveryView
@@ -118,6 +119,7 @@ def layout() -> list:
     return [
         dcc.Store(id=REFRESH_ID, data=0),
         dcc.Store(id=KEYS_ID),
+        *workspace_hop_stores(),
         dmc.Box(id=PAGE_CONTENT_ID, style=da_styles.PAGE),
     ]
 
@@ -528,7 +530,7 @@ def _workspace_buttons(workspace: WorkspaceView) -> dmc.Box:
     """The folder buttons of this workspace step. Browser-run buttons start JavaScript; the
     server-run ones (Change the approach, Get help) use the normal choice-button path."""
     shown = [
-        parts.choice_button(label, {"type": WS_BTN_TYPE, "index": key}, parts.PRIMARY)
+        parts.choice_button(label, ws_button_id(key, "bar"), parts.PRIMARY)
         for key, label in workspace.browser_buttons
     ]
     shown += [

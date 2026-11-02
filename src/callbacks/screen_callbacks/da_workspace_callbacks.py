@@ -139,7 +139,7 @@ def register_da_workspace_callbacks(app, current_settings) -> None:
     app.clientside_callback(
         clientside_function("clicks, ctx", CLICK_BODY),
         Output(WS_EVENT_ID, "data"),
-        Input({"type": WS_BTN_TYPE, "index": ALL}, "n_clicks"),
+        Input({"type": WS_BTN_TYPE, "index": ALL, "where": ALL}, "n_clicks"),
         State(WS_CTX_ID, "data"),
         prevent_initial_call=True,
     )

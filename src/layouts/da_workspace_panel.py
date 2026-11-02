@@ -54,10 +54,19 @@ def workspace_context(view: WorkspaceView) -> dict:
 
 
 def workspace_stores(view: WorkspaceView) -> list:
-    """The stores the four-hop chain uses. They are drawn with the page, so each redraw starts
-    them empty again."""
+    """The store that tells the browser script where the request stands (revision, plan paths).
+    It is redrawn with the page, so it always holds the current values."""
+    return [dcc.Store(id=WS_CTX_ID, data=workspace_context(view))]
+
+
+def workspace_hop_stores() -> list:
+    """The hand-over stores of the four-hop chain. They are drawn ONCE, with the page itself.
+
+    Why: a Dash memory store that is drawn again gets its old value back and announces it as a
+    change. Redrawn after every step, an old "facts" event would start the whole chain again
+    and again (found in the real-browser test). Drawn once, they only change when a click does.
+    """
     return [
-        dcc.Store(id=WS_CTX_ID, data=workspace_context(view)),
         dcc.Store(id=WS_EVENT_ID),
         dcc.Store(id=WS_JOB_ID),
         dcc.Store(id=WS_REPORT_ID),
@@ -66,8 +75,14 @@ def workspace_stores(view: WorkspaceView) -> list:
     ]
 
 
+def ws_button_id(key: str, where: str) -> dict:
+    """A browser-run button's id. `where` (chip or bar) keeps two buttons with the same key from
+    sharing one id, which Dash cannot tell apart."""
+    return {"type": WS_BTN_TYPE, "index": key, "where": where}
+
+
 def _ws_button(label: str, key: str) -> dmc.Button:
-    return parts.choice_button(label, {"type": WS_BTN_TYPE, "index": key}, parts.NORMAL)
+    return parts.choice_button(label, ws_button_id(key, "chip"), parts.NORMAL)
 
 
 def _blocked_by_folder(check: CheckResult | None) -> bool:
