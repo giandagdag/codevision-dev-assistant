@@ -510,3 +510,43 @@ def test_codevision_modules_are_read_from_a_src_folder(tmp_path):
     (tmp_path / "notes.txt").write_text("x\n")
 
     assert checks.list_codevision_modules(tmp_path) == {"agents", "da_main"}
+
+
+# --- reading the Generator's replies ---
+
+
+def test_clean_code_reply_removes_think_blocks_and_one_whole_fence():
+    assert checks.clean_code_reply("<think>x</think>\n```python\nx = 1\n```") == "x = 1\n"
+    assert checks.clean_code_reply("```\na = 1\nb = 2\n```\n") == "a = 1\nb = 2\n"
+    assert checks.clean_code_reply("plain = 1") == "plain = 1\n"
+    assert checks.clean_code_reply("  \n ") == ""
+
+
+def test_parse_edit_blocks_reads_every_block_and_allows_an_empty_replacement():
+    reply = (
+        "Here you go:\n"
+        "<<<<<<< FIND\n    return True\n=======\n    return 1\n    # done\n>>>>>>> REPLACE\n"
+        "<<<<<<< FIND\nold_line\n=======\n>>>>>>> REPLACE\n"
+    )
+
+    edits = checks.parse_edit_blocks(reply)
+
+    assert [(e.find, e.replace) for e in edits] == [
+        ("    return True", "    return 1\n    # done"),
+        ("old_line", ""),
+    ]
+
+
+def test_parse_edit_blocks_returns_nothing_for_a_reply_without_blocks():
+    assert checks.parse_edit_blocks("def validate(path):\n    return 1\n") == []
+    assert checks.parse_edit_blocks("<<<<<<< FIND\n\n=======\nx\n>>>>>>> REPLACE") == []
+
+
+def test_blocks_from_a_reply_apply_to_a_file(policy):
+    edits = checks.parse_edit_blocks(
+        "<<<<<<< FIND\n    return True\n=======\n    return False\n>>>>>>> REPLACE"
+    )
+
+    text, problems = checks.apply_edits(ORIGINAL, edits, MODIFY)
+
+    assert problems == [] and text == "def validate(path):\n    return False\n"

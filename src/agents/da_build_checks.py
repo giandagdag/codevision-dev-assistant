@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agents.da_approach_checks import library_name, matches_any, normalise_path
+from agents.da_understand_agent import strip_think_block
 from agents.da_workspace_checks import (
     apply_line_ending,
     line_ending_of,
@@ -473,6 +474,36 @@ def apply_edits(
             continue
         text = text.replace(find, normalise(edit.replace), 1)
     return apply_line_ending(text, ending), problems
+
+
+# --- reading the Generator's replies (plan P6, refined in step 7) ---
+
+_CODE_FENCE = re.compile(r"^```[A-Za-z]*\s*\n(.*?)\n?```$", re.DOTALL)
+_EDIT_BLOCK = re.compile(r"<<<<<<< FIND\n(.*?)\n=======\n(.*?)\n?>>>>>>> REPLACE", re.DOTALL)
+
+
+def clean_code_reply(text: str) -> str:
+    """The reply as plain code: a leading think block and a whole-reply code fence are removed.
+    Empty text stays empty."""
+    cleaned = strip_think_block(text).strip()
+    fenced = _CODE_FENCE.match(cleaned)
+    if fenced:
+        cleaned = fenced.group(1).strip("\n")
+    return cleaned + "\n" if cleaned else ""
+
+
+def parse_edit_blocks(text: str) -> list[FileEdit]:
+    """Edit blocks in the visible FIND / REPLACE format:
+
+    <<<<<<< FIND / the exact old text / ======= / the new text / >>>>>>> REPLACE
+
+    An empty list means the reply had no usable block."""
+    body = clean_code_reply(text)
+    return [
+        FileEdit(find=match.group(1), replace=match.group(2))
+        for match in _EDIT_BLOCK.finditer(body)
+        if match.group(1).strip()
+    ]
 
 
 # --- which files to fix, and the failure report (spec section 7) ---

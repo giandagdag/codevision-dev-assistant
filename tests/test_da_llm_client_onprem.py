@@ -399,3 +399,15 @@ def test_tester_uses_its_own_onprem_model_when_set(make_settings):
 
 def test_tester_with_no_onprem_model_uses_the_generator_model(make_settings):
     assert get_llm_client("tester", onprem_settings(make_settings)).model == "test-qwen"
+
+
+def test_http_400_raises_the_too_large_error_the_build_looks_for(
+    make_settings, monkeypatch, sleeps
+):
+    """Phase 6: the Build treats 'too large' as 'not the code's fault', so it needs its own type."""
+    from agents.da_llm_client import ContextTooLargeError
+
+    client = make_client(make_settings, FakePost(reply_with(400, None, "too long")), monkeypatch)
+
+    with pytest.raises(ContextTooLargeError):
+        client.complete("hi")

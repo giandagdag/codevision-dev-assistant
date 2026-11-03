@@ -1,0 +1,45 @@
+{
+ "_about": "Made-up scripted replies for DA_LLM_PROVIDER=fake in Build (Phase 6). Round 1 of excel_processor.py has a bug (hidden sheets are not skipped), so some tests fail; the fix round repairs only that file. The fake plan creates src/agents/excel_processor.py and modifies src/agents/upload_validator.py.",
+ "contract": {
+  "files": [
+   {
+    "path": "src/agents/excel_processor.py",
+    "items": [
+     {
+      "name": "read_sheets",
+      "kind": "function",
+      "args": [
+       "workbook"
+      ],
+      "summary": "Return the rows of every visible, non-empty sheet by sheet name; raise ValueError when there is none."
+     }
+    ]
+   },
+   {
+    "path": "src/agents/upload_validator.py",
+    "items": [
+     {
+      "name": "validate",
+      "kind": "function",
+      "args": [
+       "path"
+      ],
+      "summary": "Say whether the file type is allowed (pdf, docx and xlsx)."
+     }
+    ]
+   }
+  ]
+ },
+ "code": {
+  "src/agents/excel_processor.py": {
+   "first": "\"\"\"Read the sheets of an Excel workbook (made-up example).\"\"\"\n\n\ndef read_sheets(workbook):\n    sheets = {name: sheet[\"rows\"] for name, sheet in workbook.items() if sheet[\"rows\"]}\n    if not sheets:\n        raise ValueError(\"The workbook has no readable sheets.\")\n    return sheets\n",
+   "fixed": "\"\"\"Read the sheets of an Excel workbook (made-up example).\"\"\"\n\n\ndef read_sheets(workbook):\n    sheets = {\n        name: sheet[\"rows\"]\n        for name, sheet in workbook.items()\n        if sheet[\"rows\"] and not sheet.get(\"hidden\")\n    }\n    if not sheets:\n        raise ValueError(\"The workbook has no readable sheets.\")\n    return sheets\n"
+  }
+ },
+ "edits": {
+  "src/agents/upload_validator.py": {
+   "find": "return True",
+   "replace": "return str(path).lower().endswith((\".pdf\", \".docx\", \".xlsx\"))"
+  }
+ }
+}
