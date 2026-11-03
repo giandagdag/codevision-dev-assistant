@@ -139,3 +139,32 @@ def test_facts_the_server_cannot_trust_are_refused_and_nothing_is_saved(settings
         flow.judge_facts(settings, request_id, facts, 0)
 
     assert flow.get_workspace_view(settings, request_id).revision == 0
+
+
+def test_5_32_p29_the_practice_folder_from_the_work_test_passes_the_check(settings, request_id):
+    from tests.da_workspace_play import practice_folder
+
+    view, _ = pick(settings, request_id, practice_folder())
+
+    assert view.step == "ws_ready"  # a copy of the real repo would stop at B3
+    assert view.check.blockers == []
+
+
+def test_5_32_p29_the_work_test_docs_build_exactly_that_folder_with_command_prompt():
+    from pathlib import Path
+
+    from tests.da_workspace_play import PRACTICE_FILE, PRACTICE_FOLDERS, PRACTICE_TEXT
+
+    docs = (Path(__file__).resolve().parent.parent / "docs" / "workspace-work-test.md").read_text(
+        encoding="utf-8"
+    )
+
+    for folder in PRACTICE_FOLDERS:
+        assert f"mkdir C:\\Dev\\practice\\{folder.replace('/', chr(92))}" in docs
+    one_line = PRACTICE_TEXT.strip()
+    assert f"echo {one_line}> C:\\Dev\\practice\\{PRACTICE_FILE.replace('/', chr(92))}" in docs
+    assert "Command Prompt" in docs
+    # Part 1 (DevTools) is gone: no console steps, no PowerShell steps.
+    assert "F12" not in docs and "await showDirectoryPicker" not in docs
+    assert "typeof window" not in docs
+    assert "Do not pick a copy of the real CodeVision" in docs

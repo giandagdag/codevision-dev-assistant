@@ -22,6 +22,7 @@ from db_table_functions.da_db import DatabaseBusyError
 from db_table_functions.db_tbl_da_understand import UnderstandError
 from layouts.da_developer_assistant_page import BUSY_ID, MESSAGE_ID, REFRESH_ID
 from layouts.da_workspace_panel import (
+    RECONNECT_KEY,
     USE_KEY,
     WS_BTN_TYPE,
     WS_CTX_ID,
@@ -62,12 +63,17 @@ CHIP_BODY = f"""
 const ok = document.getElementById('{WS_PERM_OK_ID}');
 const needs = document.getElementById('{WS_PERM_NEEDS_ID}');
 const nothing = window.dash_clientside.no_update;
-if (!ok || !needs || !ctx || !ctx.folder_name) {{ return [nothing, nothing]; }}
-return window.daWorkspace.chip().then((chip) => (
-    chip.permission === 'granted'
-        ? [{{}}, {{display: 'none'}}]
-        : [{{display: 'none'}}, {{}}]
-));
+if (!ok || !needs || !ctx || !ctx.folder_name) {{ return [nothing, nothing, nothing]; }}
+// The Reconnect button exists only at ws_ready; the chip text is status only.
+return window.daWorkspace.chip().then((chip) => {{
+    const granted = chip.permission === 'granted';
+    const reconnect = ctx.step === 'ws_ready'
+        ? (granted ? {{display: 'none'}} : {{}})
+        : nothing;
+    return granted
+        ? [{{}}, {{display: 'none'}}, reconnect]
+        : [{{display: 'none'}}, {{}}, reconnect];
+}});
 """
 
 
@@ -201,6 +207,7 @@ def register_da_workspace_callbacks(app, current_settings) -> None:
         clientside_function("content, ctx", CHIP_BODY),
         Output(WS_PERM_OK_ID, "style"),
         Output(WS_PERM_NEEDS_ID, "style"),
+        Output(ws_button_id(RECONNECT_KEY, "bar"), "style"),
         Input("da-page-content", "children"),
         State(WS_CTX_ID, "data"),
     )

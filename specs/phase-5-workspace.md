@@ -3,6 +3,10 @@
 Status: APPROVED v1.0 (1 Nov 2026). Decisions D-A to D-E chosen by Gian: option 1 for all five
 (section 14). Defaults D-F to D-I (section 15) were set by Claude and not objected to. Q10 answered
 (section 16).
+**v1.1 (3 Nov 2026), after Gian's work test:** P29 (practice folder instead of "a copy of the repo",
+Command Prompt steps, no DevTools part) and P30 (Re-scan, Change and Reconnect only as chat buttons;
+the header chip shows status only; no Re-scan in the Build tab). Edited: sections 1, 3, 6, 9, 11,
+16, 17, 18. Rows 5-1 to 5-30 are unchanged; 5-31 and 5-32 are new.
 Depends on: Phase 4 (READY_TO_BUILD, the accepted file plan). **Merged into `main` at a5f1368.**
 Next: Phase 6, Build + test loop (`specs/redesign-2026-10-31.md` section 5.4).
 Source of truth for the design: `specs/redesign-2026-10-31.md` sections 5.6, 5.7 (re-scan and rule R5.1
@@ -10,7 +14,9 @@ only) and 5.10 (the final fingerprint check, later).
 Visual reference: `docs/CodeVision_Developer_Assistant_Demo.html`. Read only the chat script entry
 `/*28*/` (in the `MAIN` list), the function `chip` (the header chip) and the constant `WS_FILES` (the
 file status table). Note: the demo shows a full path `C:\Dev\codevision`. The browser only ever tells
-the page the folder's NAME (`codevision`), never the full path. Show the name only.
+the page the folder's NAME (`codevision`), never the full path. Show the name only. Also note: the
+demo's chip carries a Re-scan button; in the build the chip is status only (P30) and Re-scan sits
+under the chat.
 Build: fresh Claude Code session, Sonnet, branch `phase-5`.
 
 ## In plain words
@@ -58,7 +64,7 @@ with its own revision number, like Approach.
 | `ws_picking` | picker open | The browser's own window. Cancel returns to start with "No folder chosen" | Folder picked and allowed: step `ws_checking` |
 | `ws_checking` | folder allowed | Chat: "Checking your folder". Busy state | The browser runs the workspace check (section 4) and returns the results in one go |
 | `ws_blocked` | the check found a blocker | The list of blockers in plain words. Buttons **Choose another folder**, **Change the approach**, **Get help** | See W5 and W6 |
-| `ws_ready` | the check passed | Chat: the folder name, the warnings if any, "Tests folder created". Build tab shows the file table. Disabled button **Build (coming in Phase 6)**. Header chip shows **Re-scan** and **Change** | End of Phase 5 |
+| `ws_ready` | the check passed | Chat: the folder name, the warnings if any, "Tests folder created". Build tab shows the file table. Disabled button **Build (coming in Phase 6)**. Header chip shows the folder name and a tick (status only). Chat buttons: **Re-scan** and **Change** (and **Reconnect**, only when the browser needs your OK again, W4) | End of Phase 5 |
 | `ws_fallback` | picker not available, or refused | Buttons **Download ZIP**, **Upload folder to check**, **Try the folder picker again** | Section 7 |
 
 Rules for the flow:
@@ -70,14 +76,15 @@ Rules for the flow:
 - W3: The server never trusts a path from the browser. It only accepts results for paths it put in
   the job. The browser never writes a path that is not in the job (R1 checked on both sides).
 - W4: The browser asks for permission only after a click (browsers require this). On page load it may
-  only CHECK whether permission is still there; if not, the chip says "Needs your OK" and shows a
-  **Reconnect** button.
+  only CHECK whether permission is still there; if not, the chip says "Needs your OK" and a
+  **Reconnect** button appears under the chat (it is drawn hidden and the browser shows it, again on
+  every redraw and on "My recent requests" reopen; it exists at `ws_ready` only).
 - W5: **Change the approach** from `ws_blocked` moves the request back to APPROACH_PROPOSED and opens
   the Approach change box (Phase 4 rule G4 applies from there: re-accept, new Tester plan, re-accept).
   This uses the Phase 4 change counter (G9).
 - W6: **Get help** moves the request to ESCALATION_REQUIRED with open item
   `Escalated in Workspace: <step>`, as Approach does.
-- W7: **Change** (on the chip, at `ws_ready`) re-opens the picker. A different folder runs the full
+- W7: **Change** (a button under the chat, at `ws_ready`) re-opens the picker. A different folder runs the full
   check again and takes a new baseline. Nothing is deleted from the old folder.
 - W8: Re-scan is allowed at `ws_ready` at any time and never changes the step or the status.
 
@@ -95,10 +102,12 @@ Phase 6 will add "workspace ready" as a condition before BUILDING.
 | Chip | When |
 |---|---|
 | 📁 No workspace chosen | No folder linked to this request |
-| 📁 codevision · Needs your OK · **Reconnect** | Folder remembered, but the browser wants permission again (new visit) |
-| 📁 codevision · ✅ · **Re-scan** · **Change** | Linked and allowed, check passed |
+| 📁 codevision · Needs your OK | Folder remembered, but the browser wants permission again (new visit). The **Reconnect** button is under the chat |
+| 📁 codevision · ✅ | Linked and allowed, check passed. **Re-scan** and **Change** are under the chat |
 | 📁 codevision · ⚠️ Not a CodeVision folder | Check found the folder is wrong (section 4, B1 or B2) |
-| 📁 Download mode · **Upload folder** | Fallback in use |
+| 📁 Download mode | Fallback in use. **Download ZIP** and **Upload folder** are under the chat (at `ws_ready` in download mode: **Download ZIP** and **Upload folder to re-scan**) |
+
+The chip never holds a button (P30). Every action is a chat button, once.
 
 ## 4. The workspace check (browser reads, server judges)
 
@@ -163,7 +172,8 @@ file's line-ending style. New files get `\n`.
 
 ## 6. Re-scan
 
-Allowed at `ws_ready`, from the chip or the Build tab. The browser reads only: every planned file,
+Allowed at `ws_ready`, from the **Re-scan** button under the chat (in download mode: **Upload folder
+to re-scan**). The browser reads only: every planned file,
 and the names and text of files inside this request's tests folder. Nothing else is opened (R1).
 
 Result per file, compared with its last known fingerprint (last write, else baseline):
@@ -210,7 +220,7 @@ older rulebook versions still load.
 
 Use the existing `da_web_components` helpers where they exist.
 
-- **Header chip** as section 3, on every step from READY_TO_BUILD onwards.
+- **Header chip** as section 3 (status only, no buttons), on every step from READY_TO_BUILD onwards.
 - **Approach tab:** unchanged, except the "Not found in Discover" warning now reads "Checked: found in
   your workspace" or the B3 blocker text, once a check has run.
 - **Build tab** becomes available (no longer greyed) from `ws_ready`, with only the workspace panel:
@@ -219,10 +229,10 @@ Use the existing `da_web_components` helpers where they exist.
      Changed by you, Missing), and the baseline time for `modify` files. The tests folder row shows
      "Created".
   3. The last re-scan result, if any.
-  4. Disabled **Build (coming in Phase 6)**.
+  4. Disabled **Build (coming in Phase 6)**. The tab holds no Re-scan button (P30).
 - The composer follows the 2D control: buttons only on every workspace step.
 - "My recent requests" reopens at the same step. If the browser needs permission again, the chip says
-  so and the developer clicks **Reconnect** (W4).
+  so and a **Reconnect** button appears under the chat; the developer clicks it (W4).
 
 How the page runs browser code: Dash clientside callbacks (JavaScript that runs in the page). They may
 return a promise (Dash 2.4 and later; work has 3.4.0). The JavaScript must ship as part of our own
@@ -261,8 +271,10 @@ audited, as today.
   and report (stop rule). No test switch is added to the app itself.
 - **Smoke check:** run a full request from READY_TO_BUILD to `ws_ready` with a fake browser bridge,
   then a re-scan that finds one changed file.
-- **Home check by Gian:** on `http://127.0.0.1:8050` (it counts as a secure page). Pick a COPY of the
-  repo, not the working folder.
+- **Home check by Gian:** on `http://127.0.0.1:8050` (it counts as a secure page). Pick the small
+  **practice folder** (P29): `src\web`, `src\callbacks` and a one-line `src\agents\upload_validator.py`.
+  Not a copy of the repo: the fake plan modifies that file, which the repo does not have, so a repo
+  copy always stops at B3. The Command Prompt steps are in `docs/workspace-work-test.md`.
 
 ## 12. Carried forward (small fixes in this phase)
 
@@ -302,10 +314,11 @@ audited, as today.
 
 ## 16. Open questions (for the work test, round 2)
 
-- Q8 live test (still to do): on the CodeVision page in Chrome, then Edge, open DevTools Console and
-  run `typeof window.showDirectoryPicker` (expect `"function"`), then
-  `await showDirectoryPicker({mode: "readwrite"})` and pick a scratch folder. Note how many prompts
-  appear and whether "Allow on every visit" is offered. Cancel or pick a scratch folder only.
+- Q8 live test (still to do, 3 Nov change): PowerShell and DevTools are blocked on the work laptop,
+  so the picker is tried through the real screen, in Chrome, then Edge, with the practice folder
+  (P29). Press **Choose workspace folder**. Note whether the folder window opens (if not, the app
+  offers the ZIP fallback), how many prompts appear, and whether "Allow on every visit" is offered.
+  Pick the practice folder only.
 - Q10 **Answered (Gian, 1 Nov):** Git is allowed on work laptops but not mandatory. Developers get
   CodeVision either with `git clone` or by downloading a ZIP from the Bitbucket repo. Either folder
   is a valid workspace. The generated files stay in that folder; the developer moves them to
@@ -351,9 +364,11 @@ audited, as today.
 | 5-28 | Approach step `tests_pending` (P24) | the screen is drawn | Get help is offered and works |
 | 5-29 | `.gitignore` (P25) | it is read | it lists `.vscode/` |
 | 5-30 | a Discover round built from record v1 while the latest confirmed record is v2 (N2, if D-E is 1) | the gate runs | check 2 is false and named in plain words |
+| 5-31 | a request at any workspace step (P30) | the screen is drawn | the header chip has no button; Re-scan, Change, Reconnect (and the fallback buttons) appear once each, under the chat; the Build tab has no Re-scan; Reconnect is hidden until the browser needs your OK, and is shown again after any redraw |
+| 5-32 | the practice folder (P29): `src\web`, `src\callbacks` and a one-line `src\agents\upload_validator.py` | the check runs on the fake plan | it passes; and `docs/workspace-work-test.md` builds exactly that folder with Command Prompt lines |
 
 Plus: `pytest` 0 failures, `ruff check` 0 problems, smoke check passes, code reviewer 0 Must fix, and a
-home check by Gian on `127.0.0.1:8050` with a COPY of the repo as the workspace.
+home check by Gian on `127.0.0.1:8050` with the practice folder (P29) as the workspace.
 
 ## 18. Files the builder will touch (for planning, not a limit)
 
@@ -363,4 +378,4 @@ home check by Gian on `127.0.0.1:8050` with a COPY of the repo as the workspace.
 `web/da_workspace.js`), `layouts/da_developer_assistant_page.py`, the page callbacks,
 `web/da_web_components.py` (chip, Build tab), `agents/da_approach_flow.py` (P24, N2),
 `da_smoke_check.py`, `.gitignore`, `README.md`, `CLAUDE.md` ("Current phase"), a new
-`docs/workspace-work-test.md` (the Q8 live test steps from section 16), and the matching tests.
+`docs/workspace-work-test.md` (the Q8 live test steps from section 16, as Command Prompt steps with the practice folder), and the matching tests.

@@ -69,8 +69,8 @@ the program that holds the change form, decides what may be changed, and keeps t
 13. **Callbacks**: the four hops above plus the routing of server-only buttons; stale checks (5-25 at the screen level).
 14. **End-to-end in a real browser** (test 5-27): Dash app on `127.0.0.1` against a temp database with the `fake` provider, seeded to READY_TO_BUILD with the Phase 4 test helper, picker stand-in, click through to `ws_ready`, check the file exists in that folder. Also fallback: picker removed, Download ZIP and Upload folder.
 15. **Smoke check** (`da_smoke_check.py`, items 22 and 23): READY_TO_BUILD to `ws_ready` with the fake browser folder, then a re-scan that finds one changed file.
-16. **Docs:** README section; `docs/workspace-work-test.md` (Q8 live test steps, plus Q11 and Q12 questions); `CLAUDE.md` table unchanged.
-17. **Finish:** full `pytest`, `ruff`, smoke check, browser check, `code-reviewer` (max 3 rounds), commit, push `phase-5`. Gian does the home check on `127.0.0.1:8050` with a COPY of the repo and merges himself.
+16. **Docs:** README section; `docs/workspace-work-test.md` (Command Prompt steps with the practice folder, the Q8 observations, plus Q11 and Q12 questions; DevTools part removed 3 Nov); `CLAUDE.md` table unchanged.
+17. **Finish:** full `pytest`, `ruff`, smoke check, browser check, `code-reviewer` (max 3 rounds), commit, push `phase-5`. Gian does the home check on `127.0.0.1:8050` with the practice folder (P29) and merges himself.
 
 ## Files touched
 
@@ -102,3 +102,14 @@ for Gian.
 Spec edits (sections 1, 3, 6, 9) are made after this addendum is approved. Row numbers 5-1 to 5-30 do
 not change. Tests that change: `test_da_workspace_screen.py` (button lists, chip), the browser and
 e2e tests that clicked the chip's Re-scan (they click the bar's).
+
+Added after plan review (0 Must fix, 3 Should fix, all taken):
+- Spec sections 11, 16, 17, 18 and plan steps 16 and 17 carried the old "COPY" and DevTools wording
+  and are updated too. The practice folder also replaces "a COPY of the repo" for the home check.
+- Download mode at `ws_ready` shows **Download ZIP** and **Upload folder to re-scan** under the chat
+  (the chip shows only "Download mode"); a test covers it.
+- **Reconnect** is drawn hidden at `ws_ready` only; the browser script re-applies show/hide on every
+  redraw and on "My recent requests" reopen. Tests: hidden by default (screen), shown when the
+  browser says "prompt", still right after a redraw, hidden after reconnecting (real browser).
+- The docs, the P29 test and the fake plan share one list (`PRACTICE_FOLDERS`, `PRACTICE_FILE` in
+  `tests/da_workspace_play.py`) so they cannot drift apart. New spec rows 5-31 (P30) and 5-32 (P29).

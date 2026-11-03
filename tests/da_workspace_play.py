@@ -11,12 +11,25 @@ CREATE = "src/agents/excel_processor.py"
 MODIFY = "src/agents/upload_validator.py"
 ORIGINAL = "def validate(path):\n    return True\n"
 
+# The practice folder from docs/workspace-work-test.md (P29): what the fake plan needs. The docs
+# test reads these same lists, so the docs and the tests cannot drift apart.
+PRACTICE_FOLDERS = ("src/web", "src/callbacks", "src/agents")
+PRACTICE_FILE = MODIFY
+PRACTICE_TEXT = "def validate(path): return True\n"
+
 
 def ready_to_build_id(settings) -> str:
     request_id = discovery_confirmed_id(settings)
     view = at_tests(settings, request_id)
     approach_flow.accept_test_plan(settings, request_id, view.revision)
     return request_id
+
+
+def practice_folder() -> FakeBrowserFolder:
+    """The practice folder from the work-test steps: three empty folders and one one-line file."""
+    return FakeBrowserFolder(
+        name="practice", files={PRACTICE_FILE: PRACTICE_TEXT}, folders=set(PRACTICE_FOLDERS)
+    )
 
 
 def good_folder(name: str = "codevision", **changes) -> FakeBrowserFolder:

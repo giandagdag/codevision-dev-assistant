@@ -20,6 +20,7 @@ from agents.da_understand_checks import MAX_MESSAGE_LENGTH
 from agents.da_understand_flow import ALWAYS_VISIBLE, HELP_OPTION, PROCEED_OPTION
 from layouts.da_approach_panel import approach_panel
 from layouts.da_workspace_panel import (
+    RECONNECT_KEY,
     USE_KEY,
     USE_LABEL,
     WS_BUSY_TEXT,
@@ -548,6 +549,13 @@ def _workspace_buttons(workspace: WorkspaceView) -> dmc.Box:
         )
         for number, (key, label) in enumerate(workspace.buttons)
     ]
+    if workspace.step == "ws_ready" and workspace.mode == "picker":
+        # Drawn hidden; the browser shows it only when it needs your OK again (W4).
+        reconnect = parts.choice_button(
+            "Reconnect", ws_button_id(RECONNECT_KEY, "bar"), parts.NORMAL
+        )
+        reconnect.style = {"display": "none"}
+        shown.append(reconnect)
     if workspace.step == "ws_ready":
         shown.append(dmc.Button(BUILD_LABEL, disabled=True, id="da-ws-build-chat"))
     note = workspace.note or WORKSPACE_NOTES.get(workspace.step, "")

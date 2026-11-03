@@ -410,8 +410,11 @@ from the latest request version (N2).
   one changed file.
 - By hand: run the screen on `http://127.0.0.1:8050` (it counts as a secure page) with
   `DA_LLM_PROVIDER=fake`, take a request to READY TO BUILD and press **Choose workspace folder**.
-  Pick a **COPY** of the repo, not your working folder. Steps for the live test at work are in
-  `docs/workspace-work-test.md`.
+  Pick the small **practice folder**, not your working folder and not a copy of the repo. The
+  fake plan changes `src\agents\upload_validator.py`, which the repo does not have, so a repo
+  copy always stops at blocker B3. The Command Prompt steps that build the practice folder (it
+  needs `src\web`, `src\callbacks` and a one-line `src\agents\upload_validator.py`) are in
+  `docs/workspace-work-test.md`; they work at home too.
 
 **Stale windows.** The workspace keeps its own revision number (`da_workspace_state`). A second
 window acting on an old view is refused with the usual "updated in another window" message.

@@ -83,25 +83,15 @@ def ws_button_id(key: str, where: str) -> dict:
     return {"type": WS_BTN_TYPE, "index": key, "where": where}
 
 
-def _ws_button(label: str, key: str) -> dmc.Button:
-    return parts.choice_button(label, ws_button_id(key, "chip"), parts.NORMAL)
-
-
 def _blocked_by_folder(check: CheckResult | None) -> bool:
     return check is not None and any(item.code in ("B1", "B2") for item in check.blockers)
 
 
 def workspace_chip(view: WorkspaceView) -> dmc.Group:
-    """The header chip (spec section 3)."""
+    """The header chip (spec section 3). It shows STATUS ONLY: the folder name and its state. It
+    has no buttons; Re-scan, Change and Reconnect are buttons under the chat (work test, P30)."""
     if view.mode == "download" and view.step in ("ws_fallback", "ws_ready", "ws_blocked"):
-        return dmc.Group(
-            [
-                dmc.Text("📁 Download mode", size="sm", fw=600),
-                _ws_button("Upload folder", "upload"),
-            ],
-            gap=6,
-            id="da-ws-chip",
-        )
+        return dmc.Group([dmc.Text("📁 Download mode", size="sm", fw=600)], gap=6, id="da-ws-chip")
     if not view.folder_name or view.step == "start":
         return dmc.Group(
             [dmc.Text("📁 No workspace chosen", size="sm", c=da_styles.MUTED)],
@@ -115,20 +105,9 @@ def workspace_chip(view: WorkspaceView) -> dmc.Group:
         )
     # The browser decides which of the next two is shown (it alone knows if permission is still
     # there; W4). Until it answers, the "needs your OK" variant stays hidden.
-    ready = dmc.Group(
-        [
-            dmc.Text("✅", size="sm"),
-            *([_ws_button("Re-scan", "rescan"), _ws_button("Change", "change_folder")]
-              if view.step == "ws_ready" else []),
-        ],
-        gap=6,
-        id=WS_PERM_OK_ID,
-    )
-    needs = dmc.Group(
-        [dmc.Text("Needs your OK", size="sm", c="orange"), _ws_button("Reconnect", RECONNECT_KEY)],
-        gap=6,
-        id=WS_PERM_NEEDS_ID,
-        style={"display": "none"},
+    ready = dmc.Text("✅", size="sm", id=WS_PERM_OK_ID)
+    needs = dmc.Text(
+        "Needs your OK", size="sm", c="orange", id=WS_PERM_NEEDS_ID, style={"display": "none"}
     )
     return dmc.Group([name, ready, needs], gap=6, id="da-ws-chip")
 
@@ -149,10 +128,6 @@ def build_panel(view: WorkspaceView) -> list:
         lines += [dmc.Text(text, size="xs", c=da_styles.MUTED) for text in view.check.info]
     if view.last_scan is not None:
         lines.append(_scan_block(view))
-    if view.step == "ws_ready" and view.mode == "picker":
-        lines.append(
-            parts.choice_button("Re-scan", ws_button_id("rescan", "tab"), parts.NORMAL)
-        )
     lines.append(dmc.Button(BUILD_BUTTON, disabled=True, id="da-ws-build"))
     return [dmc.Stack(lines, gap="sm")]
 

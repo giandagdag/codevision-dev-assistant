@@ -84,7 +84,7 @@ def test_a_blocked_folder_shows_the_blockers_the_chip_and_the_three_ways_out(set
     assert button_labels(tree, page.CHOICE_TYPE) == ["Change the approach", "Get help"]
 
 
-def test_a_ready_workspace_shows_the_chip_buttons_the_build_tab_and_the_approach_note(
+def test_5_31_a_ready_workspace_has_a_status_only_chip_the_build_tab_and_the_approach_note(
     settings, request_id
 ):
     pick(settings, request_id, good_folder())
@@ -92,14 +92,12 @@ def test_a_ready_workspace_shows_the_chip_buttons_the_build_tab_and_the_approach
     tree = draw(request_id)
 
     chip = chip_text(tree)
-    assert "codevision" in chip and "✅" in chip and "Re-scan" in chip and "Change" in chip
-    # The chip has Re-scan and Change, plus a Reconnect the browser shows only when it needs
-    # your OK again (W4); the button bar under the chat repeats Re-scan and Change.
-    # Re-scan is also in the Build tab (spec section 6).
-    labels = button_labels(tree, panel.WS_BTN_TYPE)
-    assert sorted(labels) == sorted(
-        ["Re-scan", "Change", "Reconnect", "Re-scan", "Change", "Re-scan"]
-    )
+    assert "codevision" in chip and "✅" in chip
+    # P30: the chip is status only. Re-scan, Change and Reconnect are chat buttons, once each.
+    assert [b for b in components(by_id(tree, "da-ws-chip"), "Button")] == []
+    assert sorted(button_labels(tree, panel.WS_BTN_TYPE)) == ["Change", "Re-scan", "Reconnect"]
+    reconnect = by_id(tree, panel.ws_button_id("reconnect", "bar"))
+    assert reconnect.style == {"display": "none"}  # the browser shows it only when it must
     assert by_id(tree, panel.WS_PERM_NEEDS_ID).style == {"display": "none"}
     assert not tab(tree, "Build").disabled
     text = all_text(by_id(tree, "da-ws-summary"))
@@ -138,12 +136,46 @@ def test_5_22_the_fallback_step_offers_the_zip_upload_and_the_picker_again(setti
     tree = draw(request_id)
 
     assert button_labels(tree, panel.WS_BTN_TYPE) == [
-        "Upload folder",  # in the chip
         "Download ZIP",
         "Upload folder to check",
         "Try the folder picker again",
     ]
     assert "Download mode" in chip_text(tree)
+    assert components(by_id(tree, "da-ws-chip"), "Button") == []  # status only (P30)
+
+
+def test_5_31_download_mode_at_ready_offers_zip_and_upload_in_the_bar_only(settings, request_id):
+    view = flow.use_fallback(settings, request_id, "unsupported", 0)
+    flow.check_uploaded(
+        settings, request_id, facts_of(settings, request_id, good_folder()), view.revision
+    )
+
+    tree = draw(request_id)
+
+    assert flow.get_workspace_view(settings, request_id).step == "ws_ready"
+    assert button_labels(tree, panel.WS_BTN_TYPE) == ["Download ZIP", "Upload folder to re-scan"]
+    assert components(by_id(tree, "da-ws-chip"), "Button") == []
+    assert "Download mode" in chip_text(tree)
+
+
+def test_5_31_the_build_tab_has_no_re_scan_button(settings, request_id):
+    pick(settings, request_id, good_folder())
+    view = flow.get_workspace_view(settings, request_id)
+
+    buttons_in_tab = components(panel.build_panel(view), "Button")
+
+    assert [getattr(b, "id", None) for b in buttons_in_tab] == ["da-ws-build"]  # disabled Build
+    assert buttons_in_tab[0].disabled is True
+    assert button_labels(draw(request_id), panel.WS_BTN_TYPE).count("Re-scan") == 1
+
+
+def test_5_31_reconnect_is_drawn_only_at_ws_ready(settings, request_id):
+    assert "Reconnect" not in button_labels(draw(request_id), panel.WS_BTN_TYPE)
+    folder = good_folder()
+    del folder.files["src/callbacks/da_calls.py"]
+    pick(settings, request_id, folder)
+
+    assert "Reconnect" not in button_labels(draw(request_id), panel.WS_BTN_TYPE)
 
 
 def test_a_workspace_step_has_no_typed_input(settings, request_id):

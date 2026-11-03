@@ -162,3 +162,41 @@ def test_5_22_to_5_24_the_fallback_in_the_real_browser(
     assert view.step == "ws_ready" and view.mode == "download"
     opened = page.evaluate("() => window.__opened")
     assert not any(name.endswith("secret_notes.py") for name in opened)
+
+
+def test_5_31_p30_reconnect_is_hidden_until_the_browser_needs_your_ok_and_survives_redraws(
+    make_live_page, live_url, settings, request_id
+):
+    page = make_live_page(live_url)
+    button(page, "Choose workspace folder").wait_for(timeout=WAIT_MS)
+    page.evaluate(SEED_JS, FOLDER)
+    button(page, "Choose workspace folder").click()
+    wait_for_text(page, "passed the check")
+    reconnect = button(page, "Reconnect")
+    needs = page.get_by_text("Needs your OK")
+    page.wait_for_function("() => document.querySelector('#da-ws-chip') !== null")
+    assert not reconnect.is_visible() and not needs.is_visible()  # permission is granted
+    assert page.locator("#da-ws-chip button").count() == 0  # the chip has no buttons
+
+    # The browser now wants permission again (as on a new visit). A redraw (Re-scan) re-asks.
+    # Re-scan asks once (a click may ask); the browser still "forgets" afterwards, until Reconnect.
+    page.evaluate(
+        """() => {
+          window.__asked = 0;
+          FileSystemHandle.prototype.queryPermission = async () =>
+            window.__asked >= 2 ? 'granted' : 'prompt';
+          FileSystemHandle.prototype.requestPermission = async () => {
+            window.__asked += 1;
+            return 'granted';
+          };
+        }"""
+    )
+    button(page, "Re-scan").click()
+    needs.wait_for(state="visible", timeout=WAIT_MS)
+    assert reconnect.is_visible() and not page.get_by_text("✅").first.is_visible()
+
+    reconnect.click()
+    reconnect.wait_for(state="hidden", timeout=WAIT_MS)
+    assert page.evaluate("() => window.__asked") == 2
+    assert not needs.is_visible()
+    assert flow.get_workspace_view(settings, request_id).step == "ws_ready"
