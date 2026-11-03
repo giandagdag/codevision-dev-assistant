@@ -1,4 +1,4 @@
-# Workspace: live test at work (Phase 5, questions Q8, Q11, Q12)
+# Workspace: live test at work (Phase 5, questions Q8, Q11, Q12; Phase 6 edit 3 Nov)
 
 Why: the cloud tests use a pretend folder picker. Only your real Chrome or Edge can prove the
 real one works on a work laptop. This takes about 10 minutes. PowerShell and the browser DevTools
@@ -53,16 +53,16 @@ example your whole user folder or system folders; see Q12.)
    - How many prompts did you see?
    - Was **Allow on every visit** offered?
    - Did the browser refuse the folder?
-4. Expected: the chat says your folder passed the check and the tests folder was created. The
-   header chip shows the folder name and a tick (it has no buttons; the buttons are under the
-   chat). In Command Prompt, check that the app wrote only the tests folder:
+4. Expected: the chat says your folder passed the check. The header chip shows the folder name
+   and a tick (it has no buttons; the buttons are under the chat). Since Phase 6 the check
+   **writes nothing** to your folder. In Command Prompt, check there is no `tests` folder:
 
 ```
-dir /s /b C:\Dev\practice\tests
+dir /s /b C:\Dev\practice
 ```
 
-   You should see `C:\Dev\practice\tests\cvda_2026_0001\__init__.py` (the number is your request
-   number). Nothing else in the practice folder changes.
+   You should see only the five paths from step 1. If you did the Phase 5 test earlier and a
+   `tests` folder is there, delete it: `rmdir /s /q C:\Dev\practice\tests`.
 
 Optional, in Edge: open `edge://policy` and search for `FileSystem`. Write down anything that is
 set to blocked. (Skip this if the page does not open.)
@@ -87,14 +87,14 @@ echo # edited by me>> C:\Dev\practice\src\agents\upload_validator.py
 
 ## Questions to answer
 
-- **Q8:** Did the folder window open in Chrome and in Edge? How many prompts? Was "Allow on every
-  visit" offered?
-- **Q11:** Where do CodeVision's own tests live? Does the top `tests\` folder have an
-  `__init__.py`? (`python -m unittest` only goes into folders that have one. If `tests\__init__.py`
-  is missing, our `tests\<id>\` tests will not be found from the top folder. That is a Phase 6
-  problem, found now.) To look, in Command Prompt: `dir C:\path\to\your\codevision\tests`.
-- **Q12:** Where do developers keep their clone? A folder like `C:\Dev\codevision` is fine.
-  Chrome refuses some folders.
+- **Q8: Answered (3 Nov).** The folder picker works in Chrome on the work laptop and "Allow on
+  every visit" is offered.
+- **Q11: Decided (3 Nov).** CodeVision has no automated tests and no `tests\` folder. Tests run
+  only in the server sandbox and stay in the app (Phase 6). Nothing is written to your `tests\`.
+  If the Phase 5 test left a `tests\cvda_...\__init__.py` in your folder, delete it by hand.
+- **Q12: Answered (3 Nov).** Developers keep CodeVision on the C drive, usually
+  `Desktop\codevision`. Chrome allows folders inside the Desktop, but not the Desktop itself.
+  Pick your codevision folder, for example `Desktop\codevision`.
 
 ## If something goes wrong
 

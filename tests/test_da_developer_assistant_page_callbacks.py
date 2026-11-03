@@ -241,7 +241,8 @@ def test_unknown_trigger_does_nothing(settings):
 def test_register_attaches_the_callbacks_and_the_busy_state():
     app = Dash(__name__, suppress_callback_exceptions=True)
     cb.register_da_developer_assistant_page_callbacks(app)
-    draw, action, enter = app._callback_list[:3]  # the Workspace hops come after these
+    # The build poll and the Workspace hops come after these three.
+    draw, action, enter = app._callback_list[:3]
     assert draw["prevent_initial_call"] is False  # it must draw on first load
     assert action["prevent_initial_call"] is True
     # Busy mode: Send spins, the text box and Skip cannot be used a second time.

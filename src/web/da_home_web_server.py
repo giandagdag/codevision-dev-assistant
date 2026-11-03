@@ -17,6 +17,7 @@ import dash_mantine_components as dmc  # noqa: E402
 from dash import Dash, dcc  # noqa: E402
 from dash_iconify import DashIconify  # noqa: E402
 
+from agents.da_build_runner import recover_interrupted_builds  # noqa: E402
 from callbacks.screen_callbacks.da_developer_assistant_page_callbacks import (  # noqa: E402
     get_settings,
     register_da_developer_assistant_page_callbacks,
@@ -100,6 +101,10 @@ def main() -> int:
     except (ConfigError, RulebookError, DatabaseBusyError) as error:
         print(error)
         return 1
+    # At start-up no build can really still be running, so one marked running was cut off by a
+    # restart. Mark it paused; Try again resumes it from the last saved step (spec section 10).
+    for request_id in recover_interrupted_builds(settings):
+        print(f"Build of {request_id} was paused by the restart. Open it and press Try again.")
     create_app().run(host=HOST, port=PORT, debug=False)
     return 0
 

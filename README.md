@@ -381,14 +381,15 @@ the record. They talk in four hops, each a Dash callback:
 4. **Save** (server): ONE database save holds the state, the file rows, the audit events and the
    chat lines together.
 
-In Phase 5 the only real file written is `tests/<request id>/__init__.py`. The code files come in
-Phase 6. If the folder has a problem you get **Choose another folder**, **Change the approach**
+(Phase 5 first wrote `tests/<request id>/__init__.py` to prove the write door works. **Phase 6
+removed that:** the check now writes nothing, and tests never go to your folder. See "How Phase 6
+works".) If the folder has a problem you get **Choose another folder**, **Change the approach**
 (back to APPROACH PROPOSED, counts as one of the 3 changes) or **Get help** (the workspace step
 stays `ws_blocked`; the open item reads `Escalated in Workspace: ws_blocked`).
 
 **Fallback.** If the browser has no folder picker, or you refuse it, **Download ZIP** gives you the
 files with a `READ_ME_FIRST.txt`, and **Upload folder to check** lets the app check your folder
-(only the planned files and the tests folder are read; the rest is never opened).
+(only the planned files are read; the rest is never opened).
 
 **Fingerprints** ignore the line-ending style and a leading byte-order mark (Windows editors flip
 those). The app keeps a file's own line-ending style when it changes it. The server recomputes
@@ -418,6 +419,73 @@ from the latest request version (N2).
 
 **Stale windows.** The workspace keeps its own revision number (`da_workspace_state`). A second
 window acting on an old view is refused with the usual "updated in another window" message.
+
+## How Phase 6 works
+
+Phase 6 is the **Build + test loop**: this is where code is finally written. (AS400 comparison: the
+whole build is a batch job you submit with `SBMJOB` and check later with `WRKSBMJOB`. The tests are
+a signed-off UAT script that the programmer may not edit. Layer A is the compile listing. Layer B
+is a job in its own subsystem with its own `QTEMP` and a maximum run time.)
+
+What happens when you press **Build** (after your workspace is ready):
+
+1. **Pre-build re-scan.** The page reads your planned files once more. If you changed one, your
+   text is the starting text (nothing is lost).
+2. **Contract.** The Generator (Qwen at work) writes only the public names and arguments of each
+   planned file. The Tester sees this, never any code.
+3. **Tests, then frozen.** The Tester turns the accepted test plan into `unittest` code, one test
+   per case, named like `test_t6_ac4_empty_sheets_rejected`. They are saved and never edited.
+4. **Code, one file per AI call.** A new file is written whole. An existing file gets edit blocks
+   (`<<<<<<< FIND` ... `=======` ... `>>>>>>> REPLACE`) that must each match exactly once.
+5. **Layer A** (plain Python, no AI): syntax, planned files only, protected files, allowed imports
+   (a blocked module always beats an approved library), risky calls, the agreed names.
+6. **Layer B** (the sandbox): the frozen tests run on the **server**, in a separate Python process,
+   in a temporary folder, with an empty environment (no keys) and a time limit (60 s, then the
+   whole process tree is ended). The folder is deleted afterwards.
+7. **Rounds.** One shared budget of 3. A failed round sends a plain failure report back and only
+   the failing files are fixed. The AI not answering, a prompt that is too big, or a restart
+   **never** uses a round: the build pauses and **Try again** resumes it.
+8. **Result.** A pass is **Ready with warnings** (the warning says the independent Tester review,
+   Layer C, comes in Phase 7). The budget used up is **Not passing** (red). Never "Approved".
+9. **Write.** The page writes the code files by itself when the build is done and your folder is
+   allowed (otherwise press **Reconnect**). It is the Phase 5 write job: it creates **no** folders
+   and never overwrites a file you changed (the edit guard). **The tests are never written to your
+   folder.** CodeVision has no automated tests today, so you test the change by hand on your
+   laptop, as before; the tests and their results stay on the **Tests** tab.
+
+The build runs on a background thread in the server. The page asks for progress every 3 seconds;
+you can leave and come back (**My recent requests**). If the server restarts mid-build, the build
+is paused with "The server restarted during your build." and **Try again** carries on without
+rewriting finished files. At most 2 builds run at once on one server; the others wait their turn.
+
+**Honest limits.** The sandbox is a separate process with a time limit and no secrets. It does
+**not** block the network at operating-system level and does **not** cap memory. Layer A's import
+and call rules are the guard. Question Q14 (d) asks the CodeVision team about more.
+
+**Six new rulebook policy fields** (older versions load with these starter values):
+`build_max_rounds` 3, `build_test_timeout_seconds` 60, `build_max_prompt_chars` 60000,
+`build_max_parallel` 2, `build_blocked_imports`, `build_sandbox_exclude`. The protected-file and
+approved-library lists are the **Phase 4 ones** (one list each, so Approach and Build agree).
+
+**Setting.** `DA_SANDBOX_SOURCE_DIR` in `.env`: the CodeVision folder (the one holding `src`) the
+sandbox copies from. At home with `DA_LLM_PROVIDER=fake` leave it empty: the made-up folder under
+`tests/fixtures/da_reference_codevision/` is used.
+
+**Check it at home.**
+- Tests: `.venv\Scripts\python -m pytest`. The sandbox tests start real Python processes (no AI,
+  no internet). The real-browser tests are skipped on your laptop if Playwright is missing.
+- Smoke check items 24 and 25 run a whole build (fake provider, real sandbox, pretend folder).
+- By hand: run the screen on `http://127.0.0.1:8050` with `DA_LLM_PROVIDER=fake`, take a request
+  to **READY TO BUILD**, pick the practice folder from `docs/workspace-work-test.md`, press
+  **Build**, leave the page and come back, then look at the **Build** and **Tests** tabs. Check
+  that your folder got the code files and **no** `tests` folder.
+- At work: `docs/build-work-test.md` (questions Q14 and Q15, Command Prompt only).
+
+**Phase 5 changes made here (section 15.1 of the spec).** The workspace check no longer writes
+anything. The writer creates no folders. There is no tests-folder blocker (B7) and no "New in tests
+folder" re-scan result. The ZIP and the upload hold and send code files only. A different folder
+with the **same name** as the linked one is no longer silently accepted: pick it with **Change**
+to link it on purpose (P26).
 
 ## Notes for the move to CodeVision
 

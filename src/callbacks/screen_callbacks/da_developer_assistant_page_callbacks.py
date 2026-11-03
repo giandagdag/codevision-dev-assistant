@@ -14,6 +14,8 @@ from dash import ALL, Input, Output, State, ctx, no_update
 from dash.exceptions import PreventUpdate
 
 from agents import da_approach_flow as approach_flow
+from agents import da_build_flow as build_flow
+from agents import da_build_runner as build_runner
 from agents import da_workspace_flow as workspace_flow
 from agents.da_discover_flow import (
     add_hint_and_search,
@@ -39,6 +41,7 @@ from db_table_functions.db_tbl_da_understand import (
     StaleRevisionError,
     UnderstandError,
 )
+from layouts.da_build_panel import POLL_ID
 from layouts.da_developer_assistant_page import (
     BUSY_ID,
     CHOICE_TYPE,
@@ -65,12 +68,15 @@ from layouts.da_developer_assistant_page import (
 )
 from pydantic_classes.da_models import (
     STATUS_APPROACH_PROPOSED,
+    STATUS_BUILDING,
     STATUS_CLARIFICATION,
     STATUS_DECISION_REQUIRED,
     STATUS_DISCOVERY_CONFIRMED,
     STATUS_DRAFT,
     STATUS_ESCALATION,
+    STATUS_NOT_PASSING,
     STATUS_READY,
+    STATUS_READY_FOR_REVIEW,
     STATUS_READY_TO_BUILD,
 )
 
@@ -83,7 +89,20 @@ SHOWN_ERRORS = (UnderstandError, RulebookError, DatabaseBusyError, ConfigError)
 # (Phase 4). DISCOVERY_CONFIRMED stays in the Discover workspace, with the Proceed to Approach
 # button. ESCALATION_REQUIRED is Approach's if an approach exists, otherwise Discover's.
 UNDERSTAND_STATUSES = (STATUS_DRAFT, STATUS_CLARIFICATION, STATUS_DECISION_REQUIRED, STATUS_READY)
-APPROACH_STATUSES = (STATUS_APPROACH_PROPOSED, STATUS_READY_TO_BUILD)
+APPROACH_STATUSES = (
+    STATUS_APPROACH_PROPOSED,
+    STATUS_READY_TO_BUILD,
+    STATUS_BUILDING,
+    STATUS_READY_FOR_REVIEW,
+    STATUS_NOT_PASSING,
+)
+# The statuses where the request has a workspace and a build to draw.
+WORKSPACE_STATUSES = (
+    STATUS_READY_TO_BUILD,
+    STATUS_BUILDING,
+    STATUS_READY_FOR_REVIEW,
+    STATUS_NOT_PASSING,
+)
 
 
 # Enter sends, Shift+Enter makes a new line. Dash cannot tell them apart in Python, so this small
@@ -139,12 +158,15 @@ def show_page(search: str | None, refresh: int | None):
                 status == STATUS_ESCALATION and approach_flow.has_approach(settings, request_id)
             ):
                 approach = approach_flow.get_approach_view(settings, request_id)
-                workspace = (
-                    workspace_flow.get_workspace_view(settings, request_id)
-                    if status == STATUS_READY_TO_BUILD
-                    else None
+                has_build = status in WORKSPACE_STATUSES or (
+                    status == STATUS_ESCALATION
+                    and build_flow.get_state(settings, request_id).build_number > 0
                 )
-                return render_approach_workspace(view, discovery, approach, workspace)
+                workspace = (
+                    workspace_flow.get_workspace_view(settings, request_id) if has_build else None
+                )
+                build = build_flow.get_build_view(settings, request_id) if has_build else None
+                return render_approach_workspace(view, discovery, approach, workspace, build)
             if status == STATUS_DISCOVERY_CONFIRMED:
                 approach = approach_flow.get_approach_view(settings, request_id)
                 return render_discover_workspace(view, discovery, approach)
@@ -180,7 +202,9 @@ def perform_action(settings: Settings, trigger, text, state, refresh):
         if trigger == SEND_ID and request_id is None:
             view = create_understand_request(settings, text or "")
             return no_update, f"?request={view.request.request_id}", ""
-        if state.get("workspace") and trigger != SKIP_ID:
+        if state.get("build") and trigger != SKIP_ID:
+            _build_action(settings, trigger, request_id, revision)
+        elif state.get("workspace") and trigger != SKIP_ID:
             _workspace_action(settings, trigger, request_id, revision)
         elif state.get("approach") and trigger != SKIP_ID:
             _approach_action(settings, trigger, request_id, revision, text)
@@ -203,6 +227,34 @@ def perform_action(settings: Settings, trigger, text, state, refresh):
         # Nothing was written. The text stays in the box so the developer can fix it.
         return no_update, no_update, str(error)
     return (refresh or 0) + 1, no_update, ""
+
+
+def _build_action(settings: Settings, trigger, request_id: str, revision: int) -> None:
+    """The one Build engine function a server-run button stands for. An old window, or an index
+    with no button behind it, is refused. A build that (re)starts is handed to the runner."""
+    if not _is_choice(trigger):
+        raise PreventUpdate
+    view = build_flow.get_build_view(settings, request_id)
+    index = trigger["index"]
+    if view.revision != revision or not 0 <= index < len(view.buttons):
+        raise StaleRevisionError(STALE_MESSAGE)
+    actions = {
+        build_flow.STOP_KEY: build_flow.stop_build,
+        build_flow.TRY_AGAIN_KEY: build_flow.try_again,
+        build_flow.CHANGE_APPROACH_KEY: build_flow.change_approach,
+        build_flow.HELP_KEY: build_flow.request_help,
+    }
+    state = actions[view.buttons[index][0]](settings, request_id, revision)
+    if state.step == "b_running":
+        build_runner.submit_build(settings, request_id)
+
+
+def poll_build(n_intervals, state, refresh):
+    """Every 3 seconds while a build runs: redraw, so the progress list is current. The page
+    asks again only while the Interval is on; the redraw switches it off when the build ends."""
+    if not n_intervals or not state or not state.get("build"):
+        raise PreventUpdate
+    return (refresh or 0) + 1
 
 
 def _workspace_action(settings: Settings, trigger, request_id: str, revision: int) -> None:
@@ -333,5 +385,14 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
         Output(KEYS_ID, "data"),
         Input(PAGE_CONTENT_ID, "children"),
     )
+
+    # Phase 6: while a build runs the page redraws itself every 3 seconds (spec section 10).
+    app.callback(
+        Output(REFRESH_ID, "data", allow_duplicate=True),
+        Input(POLL_ID, "n_intervals"),
+        State(STATE_ID, "data"),
+        State(REFRESH_ID, "data"),
+        prevent_initial_call=True,
+    )(poll_build)
 
     register_da_workspace_callbacks(app, lambda: get_settings())

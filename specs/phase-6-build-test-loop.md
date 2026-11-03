@@ -29,6 +29,16 @@ states `running`, `r1` and `written`. Ignore its `rescan` state and its last sta
 ignore the Tests tab (Phase 7).
 Build: fresh Claude Code session, Sonnet, branch `phase-6`.
 
+**Decision D-M (Gian, 3 Nov 2026, while building): Build reuses the Phase 4 lists.** Section 11 listed
+`build_protected_files` and `build_approved_libraries` as new policy fields. Phase 4 already has
+`protected_files` and `approved_libraries`, with different lists, and two lists could disagree
+(Approach would allow a library that Build then blocks). Build now reads the **Phase 4 fields**
+(wherever this spec says `build_protected_files` or `build_approved_libraries`, read `protected_files`
+and `approved_libraries`); only the other six policy fields are new. Their starter values are the
+Phase 4 seed values. A module in `build_blocked_imports` is **never** allowed, even if it is also in
+`approved_libraries` (the seed approves `requests`; `requests` is blocked). This changes section 5
+(A3, A4), section 11, section 21 and the wording of row 6-31 (it checks the six new fields only).
+
 ## In plain words
 
 After Phase 5 the app knows the file plan, the accepted test plan, and has a live connection to the

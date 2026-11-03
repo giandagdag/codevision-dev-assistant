@@ -161,8 +161,8 @@ def test_a_really_disabled_button_still_differs_from_the_outlined_ones(settings)
 
     tree = draw_approach(settings, request_id)
 
-    # The Build button shows in the chat and again in the Build tab; check the one in the chat.
-    build = [b for b in components(tree, "Button") if getattr(b, "id", "") == "da-ws-build-chat"][0]
+    # Send is disabled while the text box is paused (Approach is button-driven at this step).
+    send = [b for b in components(tree, "Button") if getattr(b, "id", "") == "da-send"][0]
     # No border colour of our own and no outlined variant: Mantine draws it greyed out.
-    assert build.disabled is True
-    assert getattr(build, "style", None) is None and getattr(build, "variant", None) is None
+    assert send.disabled is True
+    assert getattr(send, "style", None) is None and getattr(send, "variant", None) is None

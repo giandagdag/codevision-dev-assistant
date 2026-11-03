@@ -76,7 +76,7 @@ def test_5_27_a_request_runs_from_ready_to_build_to_ws_ready_in_a_real_browser(
     assert view.step == "ws_ready" and view.folder_name  # the folder NAME only, never a path
     assert "/" not in view.folder_name and "\\" not in view.folder_name
     assert view.request.status == "READY_TO_BUILD"
-    assert page.get_by_text("Build (coming in Phase 6)").count() >= 1
+    assert button(page, "Build").is_enabled()  # 6-1: a real Build button, not "coming in Phase 6"
     assert page.evaluate("() => window.__opened.includes('secret_notes.py')") is False
     assert page.get_by_role("tab", name="Build").is_enabled()
 

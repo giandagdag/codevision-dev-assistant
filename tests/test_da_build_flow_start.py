@@ -112,3 +112,44 @@ def test_a_request_that_is_not_ready_to_build_cannot_start(settings):
 
     with pytest.raises(BuildError):
         flow.start_build(settings, request_id, 0)
+
+
+def test_6_2_a_planned_file_edited_before_build_is_saved_as_scanned_and_is_the_starting_text(
+    settings, request_id
+):
+    from agents import da_build_loop as loop
+    from db_table_functions.da_db import open_db
+    from db_table_functions.db_tbl_da_workspace import read_file_versions
+    from tests.da_build_play import MODIFY, ORIGINAL, RecordingFactory
+    from tests.da_workspace_play import facts_of, good_folder
+
+    folder = good_folder()  # the same pretend folder the fixture linked
+    edited = ORIGINAL + "# edited by the developer before pressing Build\n"
+    folder.edit(MODIFY, edited)
+    facts = facts_of(settings, request_id, folder)
+
+    state = flow.start_build(settings, request_id, 0, facts=facts)
+
+    assert state.step == "b_running"
+    with open_db(settings.db_path) as conn:
+        last = read_file_versions(conn, request_id, MODIFY)[-1]
+    assert (last.kind, last.text) == ("scanned", edited)
+    assert flow.PRESCAN_MESSAGE in chat(settings, request_id, "assistant")
+    assert events_of(settings, request_id, "build_prescan")[0].details == {"changed": 1}
+    factory = RecordingFactory()
+    loop.run_build(settings, request_id, factory)
+    assert any(
+        edited in prompt for prompt in factory.code_calls()
+    )  # the build starts from HIS text
+
+
+def test_6_2_an_unchanged_folder_scans_nothing_and_a_foreign_path_is_refused(settings, request_id):
+    from tests.da_workspace_play import facts_of, good_folder
+
+    facts = facts_of(settings, request_id, good_folder())
+    facts.files[0].path = "src/secret.py"
+
+    with pytest.raises(BuildError, match="not in the file plan"):
+        flow.start_build(settings, request_id, 0, facts=facts)
+
+    assert flow.get_state(settings, request_id).step == "start"  # nothing was saved

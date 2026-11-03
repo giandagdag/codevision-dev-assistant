@@ -17,6 +17,8 @@ from dash import ALL, Input, Output, State, no_update
 from dash.exceptions import PreventUpdate
 from pydantic import ValidationError
 
+from agents import da_build_flow as build_flow
+from agents import da_build_runner as build_runner
 from agents import da_workspace_flow as flow
 from db_table_functions.da_db import DatabaseBusyError
 from db_table_functions.db_tbl_da_understand import UnderstandError
@@ -40,6 +42,7 @@ from web.da_workspace_bridge import clientside_function
 
 SHOWN_ERRORS = (UnderstandError, DatabaseBusyError)
 UNEXPECTED = "The browser sent something unexpected. Nothing was saved. Please try again."
+NOT_CONNECTED = "Your folder is not connected right now. Press Reconnect, then the write runs."
 
 # Hop 1. Called straight from the click, so the browser still allows the picker to open.
 CLICK_BODY = """
@@ -93,7 +96,7 @@ def handle_workspace_event(settings, event, ctx, refresh):
         raise PreventUpdate
     request_id, revision = ctx["request_id"], ctx["ws_revision"]
     try:
-        return _dispatch(settings, event, request_id, revision, refresh or 0)
+        return _dispatch(settings, event, request_id, revision, refresh or 0, ctx)
     except ValidationError:
         return no_update, no_update, no_update, UNEXPECTED
     except SHOWN_ERRORS as error:
@@ -101,9 +104,32 @@ def handle_workspace_event(settings, event, ctx, refresh):
         return no_update, no_update, no_update, str(error)
 
 
-def _dispatch(settings, event: dict, request_id: str, revision: int, refresh: int):
+def _dispatch(settings, event: dict, request_id: str, revision: int, refresh: int, ctx=None):
     kind = event.get("kind")
     again = refresh + 1
+    build_revision = (ctx or {}).get("build_revision", 0)
+    if kind in ("build_facts", "rebuild_facts"):
+        # The browser re-scanned the planned files; the server starts (or restarts) the build and
+        # hands it to the background runner. The Build page then polls (spec sections 1 and 10).
+        facts = FolderFacts.model_validate(event["facts"])
+        if kind == "build_facts":
+            build_flow.start_build(settings, request_id, build_revision, facts=facts)
+        else:
+            build_flow.rebuild_after_stop(settings, request_id, facts, build_revision)
+        build_runner.submit_build(settings, request_id)
+        return again, None, no_update, ""
+    if kind == "build_write":
+        job = build_flow.prepare_write(settings, request_id, build_revision)
+        return no_update, job.model_dump(mode="json") | {"nonce": event["nonce"]}, no_update, ""
+    if kind == "build_download":
+        job, readme = build_flow.prepare_build_download(settings, request_id, build_revision)
+        pack = {
+            "files": [{"path": item.path, "text": item.text} for item in job.files],
+            "readme_name": flow.README_NAME,
+            "readme": readme,
+            "nonce": event["nonce"],
+        }
+        return again, None, pack, ""
     if kind == "facts":
         facts = FolderFacts.model_validate(event["facts"])
         judgement = flow.judge_facts(settings, request_id, facts, revision)
@@ -144,6 +170,8 @@ def finish_workspace_write(settings, report, event, ctx, refresh):
     if not report or not event or not ctx:
         raise PreventUpdate
     try:
+        if event.get("kind") == "build_write":
+            return _finish_build_write(settings, report, ctx, refresh)
         facts = FolderFacts.model_validate(event["facts"])
         written = WriteReport.model_validate({k: v for k, v in report.items() if k != "nonce"})
         flow.save_check(settings, ctx["request_id"], facts, written, ctx["ws_revision"])
@@ -152,6 +180,32 @@ def finish_workspace_write(settings, report, event, ctx, refresh):
     except SHOWN_ERRORS as error:
         return no_update, str(error)
     return (refresh or 0) + 1, ""
+
+
+def _finish_build_write(settings, report, ctx, refresh):
+    """Hop 4 of the automatic write at b_done: the browser ran the build's write job."""
+    if report.get("not_connected"):
+        return no_update, NOT_CONNECTED  # nothing is saved: this is not a stopped write
+    ignore = ("nonce", "not_connected")
+    written = WriteReport.model_validate({k: v for k, v in report.items() if k not in ignore})
+    build_flow.save_write(
+        settings, ctx["request_id"], written, ctx["build_revision"], ctx.get("mode") or "picker"
+    )
+    return (refresh or 0) + 1, ""
+
+
+# The automatic write (D-E): once a build is done and the page is open with the folder allowed,
+# ask the server for the write job. It never prompts: with no permission it waits for Reconnect.
+AUTO_WRITE_BODY = """
+const nothing = window.dash_clientside.no_update;
+if (!ctx || !ctx.auto_write || ctx.mode === 'download') { return nothing; }
+if (window.__daAutoWrite === ctx.build_revision) { return nothing; }
+return window.daWorkspace.chip().then((chip) => {
+    if (chip.permission !== 'granted') { return nothing; }
+    window.__daAutoWrite = ctx.build_revision;
+    return { kind: 'build_write', nonce: Date.now() };
+});
+"""
 
 
 def register_da_workspace_callbacks(app, current_settings) -> None:
@@ -196,6 +250,13 @@ def register_da_workspace_callbacks(app, current_settings) -> None:
         clientside_function("pack", DOWNLOAD_BODY),
         Output(WS_SINK_ID, "data"),
         Input(WS_PACK_ID, "data"),
+        prevent_initial_call=True,
+    )
+    app.clientside_callback(
+        clientside_function("content, ctx", AUTO_WRITE_BODY),
+        Output(WS_EVENT_ID, "data", allow_duplicate=True),
+        Input("da-page-content", "children"),
+        State(WS_CTX_ID, "data"),
         prevent_initial_call=True,
     )
     app.clientside_callback(

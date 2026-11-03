@@ -512,7 +512,8 @@ class _Run:
                 )
                 self._note(
                     tx,
-                    f"Layer B: {layer_b.passed} of {len(layer_b.tests)} tests passed",
+                    f"Layer B: {layer_b.passed} of {len(layer_b.tests)} tests passed "
+                    f"(time limit {self.inp.policy.build_test_timeout_seconds} seconds per run)",
                     "done" if layer_b.ok else "failed",
                     self._layer_b_line,
                 )

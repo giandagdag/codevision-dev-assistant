@@ -265,8 +265,16 @@
     return { kind: "scan_facts", facts: await collectFacts(root, ctx) };
   }
 
+  // Runs a job the server approved. After a page reload `root` is empty, so the remembered folder
+  // is used, but only if permission is STILL granted: this never asks (it may run without a
+  // click, for the automatic write at the end of a build, D-E). With no folder it reports
+  // `not_connected`, which the server does NOT save as a stopped write.
   async function write(job) {
-    if (!root) { return { written: [], stopped: { path: job.files[0].path, reason: "No folder is connected. Choose the folder again." } }; }
+    const handle = root || (await loadHandle());
+    if (!handle || (await permissionOf(handle)) !== "granted") {
+      return { written: [], stopped: null, not_connected: true };
+    }
+    root = handle;
     return runJob(root, job);
   }
 
@@ -277,6 +285,14 @@
     if (key === "use_remembered") { return choose(ctx, true); }
     if (key === "reconnect") { return reconnect(ctx); }
     if (key === "rescan") { return scan(ctx); }
+    if (key === "build" || key === "rebuild") {
+      // The pre-build re-scan (B1): read the planned files, then the server starts the build.
+      // In download mode there is no folder handle, so the re-scan is the folder upload.
+      const found = ctx.mode === "download" ? await upload(ctx) : await scan(ctx);
+      if (found.kind !== "scan_facts" && found.kind !== "upload_facts") { return found; }
+      return { ...found, kind: key === "build" ? "build_facts" : "rebuild_facts" };
+    }
+    if (key === "build_download") { return { kind: "build_download" }; }
     if (key === "download") { return { kind: "download" }; }
     if (key === "upload") { return upload(ctx); }
     return { kind: "cancelled" };

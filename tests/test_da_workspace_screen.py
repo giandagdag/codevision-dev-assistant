@@ -95,7 +95,12 @@ def test_5_31_a_ready_workspace_has_a_status_only_chip_the_build_tab_and_the_app
     assert "codevision" in chip and "✅" in chip
     # P30: the chip is status only. Re-scan, Change and Reconnect are chat buttons, once each.
     assert [b for b in components(by_id(tree, "da-ws-chip"), "Button")] == []
-    assert sorted(button_labels(tree, panel.WS_BTN_TYPE)) == ["Change", "Re-scan", "Reconnect"]
+    assert sorted(button_labels(tree, panel.WS_BTN_TYPE)) == [
+        "Build",
+        "Change",
+        "Re-scan",
+        "Reconnect",
+    ]
     reconnect = by_id(tree, panel.ws_button_id("reconnect", "bar"))
     assert reconnect.style == {"display": "none"}  # the browser shows it only when it must
     assert by_id(tree, panel.WS_PERM_NEEDS_ID).style == {"display": "none"}
@@ -105,7 +110,9 @@ def test_5_31_a_ready_workspace_has_a_status_only_chip_the_build_tab_and_the_app
     table = all_text(by_id(tree, "da-ws-files"))
     assert MODIFY in table and "Change" in table and "New" in table
     assert "Created" not in table and "tests/" not in table  # C1: no tests-folder row
-    assert by_id(tree, "da-ws-build").disabled and by_id(tree, "da-ws-build-chat").disabled
+    # 6-1: Build is a real, enabled, browser-run button now (not the old disabled one).
+    build = by_id(tree, panel.ws_button_id("build", "bar"))
+    assert not getattr(build, "disabled", False) and build.children == "Build"
     assert "Checked: found in your workspace" in all_text(by_id(tree, "da-file-plan"))
 
 
@@ -154,7 +161,11 @@ def test_5_31_download_mode_at_ready_offers_zip_and_upload_in_the_bar_only(setti
     tree = draw(request_id)
 
     assert flow.get_workspace_view(settings, request_id).step == "ws_ready"
-    assert button_labels(tree, panel.WS_BTN_TYPE) == ["Download ZIP", "Upload folder to re-scan"]
+    assert button_labels(tree, panel.WS_BTN_TYPE) == [
+        "Download ZIP",
+        "Upload folder to re-scan",
+        "Build",  # in download mode the pre-build re-scan is the upload (JavaScript)
+    ]
     assert components(by_id(tree, "da-ws-chip"), "Button") == []
     assert "Download mode" in chip_text(tree)
 
@@ -165,8 +176,7 @@ def test_5_31_the_build_tab_has_no_re_scan_button(settings, request_id):
 
     buttons_in_tab = components(panel.build_panel(view), "Button")
 
-    assert [getattr(b, "id", None) for b in buttons_in_tab] == ["da-ws-build"]  # disabled Build
-    assert buttons_in_tab[0].disabled is True
+    assert buttons_in_tab == []  # the Build button is under the chat, once (P30)
     assert button_labels(draw(request_id), panel.WS_BTN_TYPE).count("Re-scan") == 1
 
 
@@ -371,9 +381,9 @@ def test_register_attaches_the_workspace_hops():
     app = Dash(__name__, suppress_callback_exceptions=True)
     cb.register_da_developer_assistant_page_callbacks(app)
 
-    hops = app._callback_list[3:]
+    hops = app._callback_list[4:]  # after draw, action, enter-to-send and the build poll
 
-    assert len(hops) == 7
+    assert len(hops) == 8
     click_hop = hops[0]
     assert click_hop["prevent_initial_call"] is True
     assert click_hop["clientside_function"]["function_name"]

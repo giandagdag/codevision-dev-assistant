@@ -19,6 +19,7 @@ from agents.da_discover_flow import (
 from agents.da_understand_checks import MAX_MESSAGE_LENGTH
 from agents.da_understand_flow import ALWAYS_VISIBLE, HELP_OPTION, PROCEED_OPTION
 from layouts.da_approach_panel import approach_panel
+from layouts.da_build_panel import build_tab, poll_interval, tests_tab
 from layouts.da_workspace_panel import (
     RECONNECT_KEY,
     USE_KEY,
@@ -31,6 +32,7 @@ from layouts.da_workspace_panel import (
     ws_button_id,
 )
 from pydantic_classes.da_approach_models import ApproachView
+from pydantic_classes.da_build_models import BuildView
 from pydantic_classes.da_discovery_models import DiscoveryView
 from pydantic_classes.da_models import (
     STATUS_CONFIRMED,
@@ -41,6 +43,7 @@ from pydantic_classes.da_models import (
     STATUS_SEARCHING,
     STATUS_SIMILAR_FOUND,
     Request,
+    display_status,
 )
 from pydantic_classes.da_request_record_models import AcceptanceCriterion, UnderstandView
 from pydantic_classes.da_workspace_models import WorkspaceView
@@ -77,6 +80,7 @@ ID_BADGE_STYLES = {"label": {"overflow": "visible", "textOverflow": "clip"}}
 UNDERSTAND_STEP = 1
 DISCOVER_STEP = 2
 APPROACH_STEP = 3
+BUILD_STEP = 4
 # The Discover buttons use the same pattern id as the Understand choices (the callbacks tell them
 # apart by the workspace state). Their ids are plain ASCII keys, never the label: Dash cannot read
 # the click count of a button whose id holds an emoji (it matches ids as escaped text).
@@ -87,8 +91,19 @@ PROCEED_DISCOVERY_OPTION = "Proceed to Discovery"
 SEARCH_AGAIN_OPTION = "Search again"
 BUSY_TEXT = "⏳ Searching approved sources…"
 APPROACH_BUSY_TEXT = "⏳ Working on it…"
-BUILD_LABEL = "Build (coming in Phase 6)"
+BUILD_LABEL = "Build"
+BUILD_KEY = "build"
 # What the note above the workspace buttons says at each step.
+BUILD_NOTES: dict[str, str] = {
+    "b_running": "The build is running on the server. You can leave this page",
+    "b_round_failed": "The build is running on the server. You can leave this page",
+    "b_interrupted": "The build paused. Try again, stop it, or get help",
+    "b_unable": "I could not write tests. Try again, change the approach, or get help",
+    "b_done": "The build is finished. Your code files are being written to your folder",
+    "b_written": "The build is finished and written to your folder",
+    "b_write_stopped": "The write stopped because you changed a file",
+    "escalated": "This request was handed to a senior developer",
+}
 WORKSPACE_NOTES: dict[str, str] = {
     "start": "Choose your local CodeVision folder. Your browser asks you to allow it",
     "ws_blocked": "This folder cannot be used yet. Choose another folder or get help",
@@ -274,6 +289,9 @@ def _workspace(
     chip=None,
     build: list | None = None,
     stores: list | None = None,
+    tests: list | None = None,
+    poll=None,
+    open_tab: str | None = None,
 ) -> list:
     top = dmc.Group(
         [
@@ -335,6 +353,7 @@ def _workspace(
                     or (name == "Discovery" and discovery)
                     or (name == "Approach" and approach)
                     or (name == "Build" and build)
+                    or (name == "Tests" and tests)
                 ),
                 px="xs",
             )
@@ -350,9 +369,11 @@ def _workspace(
             panels.append(_tab_panel(approach, "approach"))
         if build:
             panels.append(_tab_panel(build, "build"))
+        if tests:
+            panels.append(_tab_panel(tests, "tests"))
         tabs = dmc.Tabs(
             [tab_list, *panels],
-            value="approach" if approach else "discovery",
+            value=open_tab or ("approach" if approach else "discovery"),
             style={**da_styles.COLUMN, "flex": 1},
         )
         side_children = [tabs]
@@ -365,6 +386,7 @@ def _workspace(
     return [
         dcc.Store(id=STATE_ID, data=state),
         *(stores or []),
+        *([poll] if poll is not None else []),
         parts.stepper(step),
         dmc.Box(top, mt="sm"),
         dmc.Box([chat, side], style=da_styles.WORKSPACE_GRID),
@@ -420,6 +442,7 @@ def render_approach_workspace(
     discovery: DiscoveryView,
     view: ApproachView,
     workspace: WorkspaceView | None = None,
+    build: BuildView | None = None,
 ) -> list:
     """The workspace from APPROACH_PROPOSED on: Approach is step 3 and its tab opens first.
 
@@ -427,27 +450,40 @@ def render_approach_workspace(
     the Build tab once the check has passed. The page state then carries the WORKSPACE revision,
     because every button on this screen belongs to the workspace."""
     if workspace is not None:
+        # Once a build has started, every button on this screen belongs to the BUILD (its own
+        # revision); before that, to the workspace.
+        building = build is not None and build.state.step != "start"
+        state = {
+            "request_id": view.request.request_id,
+            "revision": build.revision if building else workspace.revision,
+            "approach": True,
+            "workspace": True,
+        }
+        if building:
+            state["build"] = True
+        if building:
+            build_content = build_tab(build)
+        else:
+            build_content = build_panel(workspace) if workspace.step == "ws_ready" else None
         return _workspace(
             title=view.request.title,
             request_id=view.request.request_id,
             status=view.request.status,
             demo_mode=view.demo_mode,
             messages=[parts.chat_bubble(message) for message in view.messages],
-            composer=_approach_composer(view, workspace),
+            composer=_approach_composer(view, workspace, build if building else None),
             panel=_summary_panel(understand),
-            state={
-                "request_id": view.request.request_id,
-                "revision": workspace.revision,
-                "approach": True,
-                "workspace": True,
-            },
-            step=APPROACH_STEP,
+            state=state,
+            step=BUILD_STEP if building else APPROACH_STEP,
             discovery=_discovery_panel(discovery),
             busy_text=WS_BUSY_TEXT,
             approach=approach_panel(view, workspace.check),
             chip=workspace_chip(workspace),
-            build=build_panel(workspace) if workspace.step == "ws_ready" else None,
-            stores=workspace_stores(workspace),
+            build=build_content,
+            stores=workspace_stores(workspace, build),
+            tests=tests_tab(build) if building else None,
+            poll=poll_interval(build) if building else None,
+            open_tab="build" if building else None,
         )
     return _workspace(
         title=view.request.title,
@@ -472,7 +508,9 @@ def approach_buttons(view: ApproachView) -> list[tuple[str, str]]:
 
 
 def _approach_composer(
-    view: ApproachView | None, workspace: WorkspaceView | None = None
+    view: ApproachView | None,
+    workspace: WorkspaceView | None = None,
+    build: BuildView | None = None,
 ) -> dmc.Box:
     """The bottom of the chat in Approach: the buttons of the step, and a text box that opens
     only at the steps that take typed text (rule G1)."""
@@ -506,6 +544,8 @@ def _approach_composer(
         ],
         style=da_styles.COMPOSER if text_open else {**da_styles.COMPOSER, "opacity": 0.6},
     )
+    if build is not None and not (view is not None and view.step == "escalated"):
+        return dmc.Box([_build_bar(build), controls])
     if view is not None and view.request.status == STATUS_READY_TO_BUILD:
         done = dmc.Box(
             [
@@ -527,6 +567,50 @@ def _approach_composer(
         return controls
     note = (view.note if view else "") or APPROACH_NOTES.get(view.step if view else "", "")
     return dmc.Box([_approach_bar(buttons, note), controls])
+
+
+def _build_bar(build: BuildView) -> dmc.Box:
+    """The buttons under the chat once a build has started (spec section 1). Browser-run ones
+    (Re-scan and build again) start JavaScript; server-run ones use the normal choice path."""
+    shown = [
+        parts.choice_button(label, ws_button_id(key, "bar"), parts.PRIMARY)
+        for key, label in build.browser_buttons
+    ]
+    shown += [
+        parts.choice_button(
+            label,
+            {"type": CHOICE_TYPE, "index": number},
+            parts.SECONDARY if key == "help" else parts.NORMAL,
+        )
+        for number, (key, label) in enumerate(build.buttons)
+    ]
+    if build.auto_write and build.mode == "picker":
+        # Drawn hidden; the browser shows it only when it needs your OK again (D-E, W4).
+        reconnect = parts.choice_button(
+            "Reconnect", ws_button_id(RECONNECT_KEY, "bar"), parts.NORMAL
+        )
+        reconnect.style = {"display": "none"}
+        shown.append(reconnect)
+    if build.auto_write and build.mode == "download":
+        download = ws_button_id("build_download", "bar")
+        shown.append(parts.choice_button("Download ZIP", download, parts.PRIMARY))
+    status = dmc.Alert(
+        display_status(build.request_status),
+        color="red" if build.request_status == "NOT_PASSING" else "blue",
+        variant="light",
+        mb="xs",
+        id="da-build-chat-status",
+    )
+    note = BUILD_NOTES.get(build.state.step, "")
+    return dmc.Box(
+        [
+            status,
+            dmc.Group([_lock(), dmc.Text(note, size="xs", fw=600)]),
+            dmc.Group(shown, mt="xs", mb="xs"),
+        ],
+        style=da_styles.CHOICES_BAR,
+        pb="xs",
+    )
 
 
 def _workspace_buttons(workspace: WorkspaceView) -> dmc.Box:
@@ -557,7 +641,10 @@ def _workspace_buttons(workspace: WorkspaceView) -> dmc.Box:
         reconnect.style = {"display": "none"}
         shown.append(reconnect)
     if workspace.step == "ws_ready":
-        shown.append(dmc.Button(BUILD_LABEL, disabled=True, id="da-ws-build-chat"))
+        # Browser-run: the page re-scans your folder first (B1), then the server starts the build.
+        shown.append(
+            parts.choice_button(BUILD_LABEL, ws_button_id(BUILD_KEY, "bar"), parts.PRIMARY)
+        )
     note = workspace.note or WORKSPACE_NOTES.get(workspace.step, "")
     return dmc.Box(
         [

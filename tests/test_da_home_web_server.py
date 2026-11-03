@@ -47,3 +47,23 @@ def test_it_tells_you_to_run_the_loader_when_no_rulebook_exists(make_settings, m
     make_app(make_settings, monkeypatch)
     assert server.main() == 1
     assert "da_load_starter_rulebook.py" in capsys.readouterr().out
+
+
+def test_start_up_pauses_a_build_that_was_running_when_the_server_stopped(
+    make_settings, published_rulebook, monkeypatch, capsys
+):
+    """Row 6-27 at the real start-up path."""
+    from agents import da_build_flow as build_flow
+    from tests.da_build_play import ready_with_workspace
+
+    monkeypatch.setattr(server.Dash, "run", lambda self, **kwargs: None, raising=True)
+    settings = make_settings()
+    request_id, _ = ready_with_workspace(settings)
+    build_flow.start_build(settings, request_id, 0)  # marked running, but no thread: a restart
+    monkeypatch.setattr(server, "get_settings", lambda: settings)
+
+    assert server.main() == 0
+
+    state = build_flow.get_state(settings, request_id)
+    assert (state.step, state.message) == ("b_interrupted", build_flow.SERVER_RESTART_MESSAGE)
+    assert request_id in capsys.readouterr().out

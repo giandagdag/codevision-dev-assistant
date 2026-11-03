@@ -110,7 +110,7 @@ logger = get_logger(__name__)
 BUILD_KEY, BUILD_LABEL = "build", "Build"
 STOP_KEY, STOP_LABEL = "stop_build", "Stop build"
 TRY_AGAIN_KEY, TRY_AGAIN_LABEL = "try_again", "Try again"
-REBUILD_KEY, REBUILD_LABEL = "rescan_and_build", "Re-scan and build again"
+REBUILD_KEY, REBUILD_LABEL = "rebuild", "Re-scan and build again"
 CHANGE_APPROACH_KEY = "change_approach"
 HELP_KEY = "help"
 
@@ -121,6 +121,7 @@ HELP_STEPS = ("b_interrupted", "b_unable", "b_done", "b_written", "b_write_stopp
 UNABLE_MESSAGE = "I could not write tests from your plan."
 DONT_EDIT_MESSAGE = "Please don't edit the planned files until I finish."
 STARTED_MESSAGE = "Building. This takes a few minutes. You can leave this page."
+PRESCAN_MESSAGE = "Checking your folder before I start."
 SERVER_RESTART_MESSAGE = "The server restarted during your build."
 
 
@@ -169,10 +170,17 @@ class BuildTx:
 
 
 def start_build(
-    settings, request_id: str, base_revision: int, now: datetime | None = None
+    settings,
+    request_id: str,
+    base_revision: int,
+    now: datetime | None = None,
+    facts: FolderFacts | None = None,
 ) -> BuildState:
     """Build (B1, B4). The request must be READY_TO_BUILD with workspace step `ws_ready`.
-    Starts a new build number with a fresh budget. The loop is run by the caller (the runner)."""
+    Starts a new build number with a fresh budget. The loop is run by the caller (the runner).
+
+    `facts` is the pre-build re-scan from the browser (B1): a planned file the developer changed
+    is saved as a `scanned` row, and his text becomes the starting text for the build (D-K)."""
     now = now or datetime.now(UTC)
     with _write(settings.db_path) as conn:
         request = _require_request(conn, request_id)
@@ -184,6 +192,10 @@ def start_build(
             raise BuildError("There is no accepted approach to build.")
         number = next_build_number(conn, request_id)
         tx = BuildTx(conn, request, state, now)
+        if facts is not None:
+            changed = _save_prescan(tx, approach_state.accepted_approach_version, facts)
+            tx.say("assistant", PRESCAN_MESSAGE)
+            tx.audit("system", "build_prescan", {"changed": changed})
         tx.set(
             build_number=number,
             step="b_running",
@@ -460,6 +472,35 @@ def rebuild_after_stop(
             message="",
         )
         return _save(tx, base_revision)
+
+
+def _save_prescan(tx: BuildTx, approach_version: int, facts: FolderFacts) -> int:
+    """Take the developer's current text of every changed planned file as a `scanned` row."""
+    approach = _approach_by_number(tx.conn, tx.request.request_id, approach_version)
+    planned = [normalise_path(item.path) for item in approach.plan.files]
+    try:
+        verify_facts(facts, planned)
+    except FactsProblem as error:
+        raise BuildError(str(error)) from error
+    known = {}
+    for path in planned:
+        versions = read_file_versions(tx.conn, tx.request.request_id, path)
+        if versions:
+            known[path] = versions[-1].fingerprint
+    texts = {normalise_path(f.path): f.text for f in facts.files}
+    changed = [
+        item.path
+        for item in rescan_results(facts, planned, known).items
+        if item.outcome == "changed"
+    ]
+    for path in changed:
+        if texts.get(path) is not None:
+            _insert_scanned(tx, path, texts[path], approach_version)
+    return len(changed)
+
+
+def _approach_by_number(conn: sqlite3.Connection, request_id: str, number: int):
+    return {v.approach_version: v for v in read_approach_versions(conn, request_id)}[number]
 
 
 def _job_for(conn: sqlite3.Connection, request_id: str, state: BuildState) -> WriteJob:

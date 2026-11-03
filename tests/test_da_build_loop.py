@@ -176,8 +176,9 @@ def test_the_progress_list_tells_the_story_and_shows_layer_c_as_coming_later(set
     texts = [(line.text, line.state) for line in lines]
     assert ("Function names agreed", "done") in texts
     assert ("Tester wrote 9 tests (frozen)", "done") in texts
-    assert ("Layer B: 6 of 9 tests passed", "failed") in texts
-    assert ("Layer B: 9 of 9 tests passed", "done") in texts
+    limit = "(time limit 60 seconds per run)"
+    assert (f"Layer B: 6 of 9 tests passed {limit}", "failed") in texts
+    assert (f"Layer B: 9 of 9 tests passed {limit}", "done") in texts
     assert texts[-1] == ("Layer C: independent Tester review (coming in Phase 7)", "pending")
     assert [line.line_number for line in lines] == sorted({item.line_number for item in lines})
 
