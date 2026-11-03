@@ -9,6 +9,7 @@ AS400 picture: SBMJOB. These actions submit, hold, end or ask for help with the 
 the job itself, writing its log to the database as it goes.
 """
 
+import ast
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -18,6 +19,7 @@ from pathlib import Path
 
 from agents.da_approach_checks import normalise_path
 from agents.da_approach_flow import CAP_MESSAGE, CHANGE_APPROACH_OPTION, HELP_BUTTON, TEXT_PROMPTS
+from agents.da_build_checks import case_ids_from_method, find_test_methods
 from agents.da_workspace_checks import (
     FactsProblem,
     build_write_job,
@@ -33,9 +35,14 @@ from db_table_functions.da_db import begin_write, open_db
 from db_table_functions.db_tbl_da_approach import (
     read_approach_state,
     read_approach_versions,
+    read_test_plans,
     save_approach_state,
 )
-from db_table_functions.db_tbl_da_audit import ensure_audit_table, insert_audit_event
+from db_table_functions.db_tbl_da_audit import (
+    ensure_audit_table,
+    insert_audit_event,
+    list_audit_events,
+)
 from db_table_functions.db_tbl_da_build import (
     BuildError,
     close_build_run,
@@ -45,10 +52,17 @@ from db_table_functions.db_tbl_da_build import (
     read_build_revision,
     read_build_run,
     read_build_state,
+    read_frozen_files,
     read_latest_code,
+    read_progress,
+    read_rounds,
     save_build_state,
 )
-from db_table_functions.db_tbl_da_requests import read_request, update_request
+from db_table_functions.db_tbl_da_requests import (
+    get_rulebook_for_request,
+    read_request,
+    update_request,
+)
 from db_table_functions.db_tbl_da_rulebook import ensure_rulebook_tables
 from db_table_functions.db_tbl_da_understand import (
     STALE_MESSAGE,
@@ -63,7 +77,13 @@ from db_table_functions.db_tbl_da_workspace import (
     save_workspace_state,
 )
 from pydantic_classes.da_approach_models import MAX_CHANGES
-from pydantic_classes.da_build_models import BuildRun, BuildState
+from pydantic_classes.da_build_models import (
+    BuildFileRow,
+    BuildRun,
+    BuildState,
+    BuildView,
+    TestRow,
+)
 from pydantic_classes.da_models import (
     STATUS_APPROACH_PROPOSED,
     STATUS_BUILDING,
@@ -508,6 +528,240 @@ def _written_text(report: WriteReport, mode: WorkspaceMode) -> str:
     return (
         f"Wrote {count} code file{'s' if count != 1 else ''} {where}: {names}. "
         "Try it yourself: start CodeVision on your laptop and test the change by hand."
+    )
+
+
+# --- what the screen shows ---
+
+
+def get_build_view(settings, request_id: str) -> BuildView:
+    """Everything the Build tab, the Tests tab and the chat buttons need, read on one connection
+    (no lock held)."""
+    policy = get_rulebook_for_request(settings.db_path, request_id).rulebook.policy
+    with open_db(settings.db_path) as conn:
+        ensure_build_tables(conn)
+        ensure_workspace_tables(conn)
+        conn.execute("BEGIN")
+        request = _require_request(conn, request_id)
+        saved = read_build_state(conn, request_id)
+        state = saved or BuildState(request_id=request_id)
+        revision = read_build_revision(conn, request_id)
+        workspace = read_workspace_state(conn, request_id)
+        approach_state = read_approach_state(conn, request_id)
+        if state.build_number == 0:
+            return _view(request.status, state, revision, policy, workspace, approach_state)
+        number = state.build_number
+        approach = _approach_of(conn, request_id, state)
+        plans = {p.plan_version: p for p in read_test_plans(conn, request_id)}
+        cases = plans[approach_state.accepted_plan_version].cases if approach_state else []
+        frozen = read_frozen_files(conn, request_id, state.approach_version)
+        code = read_latest_code(conn, request_id, number)
+        known = {
+            normalise_path(i.path): read_file_versions(conn, request_id, normalise_path(i.path))
+            for i in approach.plan.files
+        }
+        stopped = [
+            e.details.get("path", "")
+            for e in list_audit_events(settings.db_path, request_id)
+            if e.event_type == "workspace_write_stopped"
+        ]
+        return _view(
+            request.status,
+            state,
+            revision,
+            policy,
+            workspace,
+            approach_state,
+            run=read_build_run(conn, request_id, number),
+            progress=read_progress(conn, request_id, number),
+            rounds=read_rounds(conn, request_id, number),
+            cases=cases,
+            frozen=frozen,
+            approach=approach,
+            code=code,
+            known=known,
+            stopped_path=stopped[-1] if stopped else "",
+        )
+
+
+def _view(
+    status,
+    state,
+    revision,
+    policy,
+    workspace,
+    approach_state,
+    *,
+    run=None,
+    progress=(),
+    rounds=(),
+    cases=(),
+    frozen=None,
+    approach=None,
+    code=None,
+    known=None,
+    stopped_path="",
+) -> BuildView:
+    frozen = frozen or {}
+    test_code = frozen["test"].text if "test" in frozen else ""
+    results = _latest_results(rounds)
+    tests = _test_rows(cases, test_code, results)
+    rows = _build_rows(approach, code or {}, known or {}, state)
+    capped = bool(approach_state and approach_state.change_count >= MAX_CHANGES)
+    server, browser = _build_buttons(state, capped)
+    last = rounds[-1] if rounds else None
+    kind, text = _banner(
+        state, status, run, last, len(cases), policy.build_max_rounds, stopped_path
+    )
+    taken = int((run.ended_at - run.started_at).total_seconds()) if run and run.ended_at else 0
+    passing = ""
+    if last and last.layer_b:
+        passing = f"{last.layer_b.passed} of {len(last.layer_b.tests)}"
+    return BuildView(
+        state=state,
+        revision=revision,
+        request_status=status,
+        banner_kind=kind,
+        banner_text=text,
+        run=run,
+        progress=list(progress),
+        rounds=list(rounds),
+        max_rounds=policy.build_max_rounds,
+        time_limit=policy.build_test_timeout_seconds,
+        tests=tests,
+        test_code=test_code,
+        rows=rows,
+        label=run.label if run else "",
+        buttons=server,
+        browser_buttons=browser,
+        polling=state.step in RUNNING_STEPS,
+        auto_write=state.step == "b_done" and state.write_state == "not_written",
+        folder_name=workspace.folder_name if workspace else "",
+        mode=workspace.mode if workspace else "picker",
+        seconds_taken=taken,
+        tests_passing=passing,
+    )
+
+
+def _latest_results(rounds) -> dict[str, str]:
+    """test id -> its newest result, from the newest round that ran the tests."""
+    for record in reversed(list(rounds)):
+        if record.layer_b is not None:
+            found = {}
+            for item in record.layer_b.tests:
+                ids = case_ids_from_method(item.name)
+                if ids:
+                    found[ids[0]] = item.result
+            return found
+    return {}
+
+
+def _test_rows(cases, test_code: str, results: dict[str, str]) -> list[TestRow]:
+    docs = {}
+    if test_code:
+        try:
+            for name, method in find_test_methods(ast.parse(test_code)).items():
+                ids = case_ids_from_method(name)
+                if ids:
+                    docs[ids[0]] = (ast.get_docstring(method) or "").split("\n")[0]
+        except SyntaxError:
+            pass
+    return [
+        TestRow(
+            test_id=case.test_id,
+            criterion_id=case.criterion_id,
+            yours=case.source == "developer",
+            description=docs.get(case.test_id) or case.expect,
+            result=results.get(case.test_id, ""),
+        )
+        for case in cases
+    ]
+
+
+def _build_rows(approach, code, known, state) -> list[BuildFileRow]:
+    if approach is None:
+        return []
+    rows = []
+    for item in approach.plan.files:
+        path = normalise_path(item.path)
+        built = code.get(path)
+        last = known.get(path) or []
+        written = bool(
+            built
+            and last
+            and last[-1].kind == "written"
+            and last[-1].fingerprint == built.fingerprint
+        )
+        rows.append(
+            BuildFileRow(
+                path=path,
+                action="New" if item.action == "create" else "Change",
+                status="Written" if written else ("Not written yet" if built else "Waiting"),
+            )
+        )
+    return rows
+
+
+def _build_buttons(state: BuildState, capped: bool):
+    """(server buttons, browser buttons) for one build step (spec section 1 table)."""
+    step = state.step
+    if step in RUNNING_STEPS:
+        return [(STOP_KEY, STOP_LABEL)], []
+    if step == "b_interrupted":
+        return [
+            (TRY_AGAIN_KEY, TRY_AGAIN_LABEL),
+            (STOP_KEY, STOP_LABEL),
+            (HELP_KEY, HELP_BUTTON),
+        ], []
+    if step == "b_unable":
+        change = [] if capped else [(CHANGE_APPROACH_KEY, CHANGE_APPROACH_OPTION)]
+        return [(TRY_AGAIN_KEY, TRY_AGAIN_LABEL), *change, (HELP_KEY, HELP_BUTTON)], []
+    if step in ("b_done", "b_written"):
+        return [(HELP_KEY, HELP_BUTTON)], []
+    if step == "b_write_stopped":
+        return [(HELP_KEY, HELP_BUTTON)], [(REBUILD_KEY, REBUILD_LABEL)]
+    return [], []
+
+
+def _banner(state, status, run, last, cases: int, limit: int, stopped_path: str):
+    step = state.step
+    if step in RUNNING_STEPS:
+        if last is not None and not (last.layer_a.ok and last.layer_b and last.layer_b.ok):
+            return "red", _failed_banner(last, cases, limit)
+        number = last.round + 1 if last else 1
+        return "blue", (
+            f"Round {number} of {limit}. Running on the server. "
+            "You can leave this page and come back."
+        )
+    if step == "b_interrupted":
+        return "orange", f"The build paused: {state.message}"
+    if step == "b_unable":
+        return "orange", f"{UNABLE_MESSAGE} {state.message}".strip()
+    if step == "b_write_stopped":
+        return "orange", (
+            f"You changed {stopped_path} while I was building. Nothing after it was written."
+        )
+    if step in ("b_done", "b_written"):
+        label = run.label if run else ""
+        colour = "red" if status == STATUS_NOT_PASSING else "green"
+        if step == "b_done":
+            colour = "blue"
+            return colour, "Built, not written yet. Open this request with your workspace allowed."
+        return colour, f"{label}. The code files are in your folder."
+    return "", ""
+
+
+def _failed_banner(last, cases: int, limit: int) -> str:
+    report = last.failure_report
+    files = ", ".join(path.rsplit("/", 1)[-1] for path in (report.files_to_fix if report else []))
+    failed = last.layer_b.failed if last.layer_b else 0
+    head = (
+        f"Round {last.round} of {limit}: {failed} of {cases} tests failed."
+        if last.layer_b
+        else f"Round {last.round} of {limit}: the code did not pass the checks."
+    )
+    return (
+        f"{head} Only {files} is regenerated. Tests stay frozen. 1 shared budget of {limit} rounds."
     )
 
 

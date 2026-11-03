@@ -242,3 +242,58 @@ class ProgressLine(_Shape):
     state: ProgressState
     started_at: AwareDatetime | None = None
     ended_at: AwareDatetime | None = None
+
+
+# --- what the screen shows (Build tab, Tests tab, chat buttons) ---
+
+
+class TestRow(BaseModel):
+    """One line of the frozen test list on the Tests tab."""
+
+    __test__ = False
+
+    test_id: str
+    criterion_id: str
+    yours: bool = False
+    description: str
+    # The newest result of this test: pass, fail, error, skipped, or "" when it has not run.
+    result: str = ""
+
+
+class BuildFileRow(BaseModel):
+    """One line of the Build tab file table."""
+
+    path: str
+    action: str
+    status: str
+
+
+class BuildView(BaseModel):
+    """Everything the screen needs to draw the build of one request."""
+
+    state: BuildState
+    # The revision a window sends back with its next action. 0 means no build row yet.
+    revision: int
+    request_status: str
+    banner_kind: str = ""  # "", "blue", "red", "green" or "orange"
+    banner_text: str = ""
+    run: BuildRun | None = None
+    progress: list[ProgressLine] = Field(default_factory=list)
+    rounds: list[RoundRecord] = Field(default_factory=list)
+    max_rounds: int = 3
+    time_limit: int = 60
+    tests: list[TestRow] = Field(default_factory=list)
+    test_code: str = ""
+    rows: list[BuildFileRow] = Field(default_factory=list)
+    label: str = ""
+    # Server buttons (Stop, Try again, Get help...) and browser buttons (Build, Re-scan...).
+    buttons: list[tuple[str, str]] = Field(default_factory=list)
+    browser_buttons: list[tuple[str, str]] = Field(default_factory=list)
+    note: str = ""
+    # The page asks again every 3 seconds while this is true, and writes by itself when it is.
+    polling: bool = False
+    auto_write: bool = False
+    folder_name: str = ""
+    mode: str = "picker"
+    seconds_taken: int = 0
+    tests_passing: str = ""
