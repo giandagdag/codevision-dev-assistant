@@ -221,8 +221,11 @@ class _Run:
             starts = {}
             for item in approach.plan.files:
                 versions_of = read_file_versions(conn, self.request_id, _clean(item.path))
-                if item.action == "modify" and versions_of:
-                    starts[_clean(item.path)] = versions_of[-1].text  # the newest known text
+                if versions_of:
+                    # The newest known text of a file that exists in his folder: his own edit
+                    # (a re-scan), or what an earlier build wrote. A new file with such a text
+                    # is treated like an old one, so his edits are patched, never overwritten.
+                    starts[_clean(item.path)] = versions_of[-1].text
             progress = read_progress(conn, self.request_id, number)
             self.inp = _Inputs(
                 request=request,
@@ -367,7 +370,8 @@ class _Run:
         self, path: str, number: int, contract: Contract, tests: str, failures: str
     ) -> tuple[str, list[LayerAProblem]]:
         """One file per AI call. A new file is the whole reply; an old file gets edit blocks."""
-        action = next(i.action for i in self.inp.planned if _clean(i.path) == path)
+        planned_action = next(i.action for i in self.inp.planned if _clean(i.path) == path)
+        action = "modify" if path in self.inp.start_texts else planned_action
         base = (
             self.inp.code[path].text
             if path in self.inp.code

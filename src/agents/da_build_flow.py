@@ -18,10 +18,21 @@ from pathlib import Path
 
 from agents.da_approach_checks import normalise_path
 from agents.da_approach_flow import CAP_MESSAGE, CHANGE_APPROACH_OPTION, HELP_BUTTON, TEXT_PROMPTS
+from agents.da_workspace_checks import (
+    FactsProblem,
+    build_write_job,
+    fingerprint,
+    line_ending_of,
+    rescan_results,
+    stop_message,
+    verify_facts,
+    verify_report,
+)
 from da_logging import get_logger
 from db_table_functions.da_db import begin_write, open_db
 from db_table_functions.db_tbl_da_approach import (
     read_approach_state,
+    read_approach_versions,
     save_approach_state,
 )
 from db_table_functions.db_tbl_da_audit import ensure_audit_table, insert_audit_event
@@ -34,6 +45,7 @@ from db_table_functions.db_tbl_da_build import (
     read_build_revision,
     read_build_run,
     read_build_state,
+    read_latest_code,
     save_build_state,
 )
 from db_table_functions.db_tbl_da_requests import read_request, update_request
@@ -45,6 +57,8 @@ from db_table_functions.db_tbl_da_understand import (
 )
 from db_table_functions.db_tbl_da_workspace import (
     ensure_workspace_tables,
+    insert_workspace_file,
+    read_file_versions,
     read_workspace_state,
     save_workspace_state,
 )
@@ -61,6 +75,14 @@ from pydantic_classes.da_models import (
     Request,
 )
 from pydantic_classes.da_request_record_models import Speaker
+from pydantic_classes.da_workspace_models import (
+    FolderFacts,
+    WorkspaceFile,
+    WorkspaceMode,
+    WriteJob,
+    WriteReport,
+    WrittenFile,
+)
 
 logger = get_logger(__name__)
 
@@ -281,6 +303,212 @@ def get_revision(settings, request_id: str) -> int:
     with open_db(settings.db_path) as conn:
         ensure_build_tables(conn)
         return read_build_revision(conn, request_id)
+
+
+# --- writing the code files to the developer's folder (spec section 9) ---
+
+
+def prepare_write(settings, request_id: str, base_revision: int) -> WriteJob:
+    """Hop 1 of the write: the job for the browser. Code files only, in file-plan order; the test
+    file is never in it (the job builder refuses tests/). Nothing is saved yet."""
+    with open_db(settings.db_path) as conn:
+        ensure_build_tables(conn)
+        ensure_workspace_tables(conn)
+        conn.execute("BEGIN")
+        _check_revision(conn, request_id, base_revision)
+        state = read_build_state(conn, request_id)
+        _require_step(state or BuildState(request_id=request_id), "b_done")
+        return _job_for(conn, request_id, state)
+
+
+def save_write(
+    settings,
+    request_id: str,
+    report: WriteReport,
+    base_revision: int,
+    mode: WorkspaceMode = "picker",
+    now: datetime | None = None,
+) -> BuildState:
+    """Hop 2 of the write: the browser ran the job. ONE transaction saves the `written` rows,
+    the audit event, the chat line and the new step. The job is rebuilt here from the saved
+    code and the server accepts only paths that are in it (rule W3)."""
+    now = now or datetime.now(UTC)
+    with _turn(settings.db_path, request_id, base_revision, now) as tx:
+        _require_step(tx.state, "b_done")
+        job = _job_for(tx.conn, request_id, tx.state)
+        try:
+            verify_report(job, report)
+        except FactsProblem as error:
+            raise BuildError(str(error)) from error
+        approach_version = tx.state.approach_version
+        for item in report.written:
+            _insert_written(tx, item, mode, approach_version)
+        if report.written:
+            tx.audit(
+                "system",
+                "workspace_written",
+                {"mode": mode, "files": {i.path: fingerprint(i.text) for i in report.written}},
+            )
+        if report.stopped is not None:
+            tx.audit(
+                "system",
+                "workspace_write_stopped",
+                {"path": report.stopped.path, "reason": report.stopped.reason},
+            )
+            tx.say("assistant", stop_message(job, report))
+            tx.set(step="b_write_stopped", write_state="stopped")
+        else:
+            tx.say("assistant", _written_text(report, mode))
+            tx.set(step="b_written", write_state="written")
+    return get_state(settings, request_id)
+
+
+def prepare_build_download(
+    settings, request_id: str, base_revision: int, now: datetime | None = None
+) -> tuple[WriteJob, str]:
+    """Download mode (spec section 9): the ZIP holds the build's code files only. The files are
+    recorded as `written` with mode download, as Phase 5 did, and the readme is returned."""
+    from agents.da_workspace_flow import readme_text
+
+    job = prepare_write(settings, request_id, base_revision)
+    report = WriteReport(
+        written=[
+            WrittenFile(path=f.path, text=f.text, fingerprint=fingerprint(f.text))
+            for f in job.files
+        ]
+    )
+    save_write(settings, request_id, report, base_revision, "download", now)
+    return job, readme_text(job)
+
+
+def rebuild_after_stop(
+    settings,
+    request_id: str,
+    facts: FolderFacts,
+    base_revision: int,
+    now: datetime | None = None,
+) -> BuildState:
+    """Re-scan and build again (B9), only from b_write_stopped. The re-scan takes the developer's
+    current text of every changed planned file as a `scanned` row; the new build starts from it
+    with a fresh budget and the same frozen tests. Phase 6 never overwrites what he changed:
+    choosing between his version and the AI's is Phase 8."""
+    now = now or datetime.now(UTC)
+    with _write(settings.db_path) as conn:
+        request = _require_request(conn, request_id)
+        _check_revision(conn, request_id, base_revision)
+        state = read_build_state(conn, request_id)
+        _require_step(state or BuildState(request_id=request_id), "b_write_stopped")
+        approach = _approach_of(conn, request_id, state)
+        planned = [normalise_path(item.path) for item in approach.plan.files]
+        try:
+            verify_facts(facts, planned)
+        except FactsProblem as error:
+            raise BuildError(str(error)) from error
+        known = {}
+        for path in planned:
+            versions = read_file_versions(conn, request_id, path)
+            if versions:
+                known[path] = versions[-1].fingerprint
+        found = rescan_results(facts, planned, known)
+        tx = BuildTx(conn, request, state, now)
+        texts = {normalise_path(f.path): f.text for f in facts.files}
+        changed = [item.path for item in found.items if item.outcome == "changed"]
+        for path in changed:
+            if texts.get(path) is not None:
+                _insert_scanned(tx, path, texts[path], approach.approach_version)
+        number = next_build_number(conn, request_id)
+        insert_build_run(
+            conn,
+            BuildRun(
+                request_id=request_id,
+                build_number=number,
+                approach_version=state.approach_version,
+                started_at=now,
+            ),
+        )
+        tx.say("developer", REBUILD_LABEL)
+        tx.audit("system", "build_prescan", {"changed": len(changed)})
+        tx.move_to(STATUS_BUILDING)
+        tx.audit("developer", "build_started", {"build": number, "after_stop": True})
+        tx.say("assistant", STARTED_MESSAGE)
+        tx.say("assistant", DONT_EDIT_MESSAGE)
+        tx.set(
+            build_number=number,
+            step="b_running",
+            current_round=0,
+            write_state="not_written",
+            message="",
+        )
+        return _save(tx, base_revision)
+
+
+def _job_for(conn: sqlite3.Connection, request_id: str, state: BuildState) -> WriteJob:
+    approach = _approach_of(conn, request_id, state)
+    workspace = read_workspace_state(conn, request_id)
+    code = read_latest_code(conn, request_id, state.build_number)
+    planned = [normalise_path(item.path) for item in approach.plan.files]
+    known = {}
+    for path in planned:
+        versions = read_file_versions(conn, request_id, path)
+        if versions:  # the newest known text: baseline, his re-scan, or an earlier write
+            known[path] = (versions[-1].fingerprint, versions[-1].line_ending)
+    items = [(path, code[path].text) for path in planned if path in code]
+    folder = workspace.folder_name if workspace and workspace.folder_name else "your folder"
+    try:
+        return build_write_job(request_id, folder, items, known)
+    except FactsProblem as error:
+        raise BuildError(str(error)) from error
+
+
+def _approach_of(conn: sqlite3.Connection, request_id: str, state: BuildState):
+    versions = {v.approach_version: v for v in read_approach_versions(conn, request_id)}
+    return versions[state.approach_version]
+
+
+def _insert_written(tx: BuildTx, item: WrittenFile, mode: WorkspaceMode, approach_version: int):
+    insert_workspace_file(
+        tx.conn,
+        WorkspaceFile(
+            request_id=tx.request.request_id,
+            path=item.path,
+            file_version=1,
+            kind="written",
+            text=item.text,
+            fingerprint=fingerprint(item.text),
+            line_ending=line_ending_of(item.text),
+            mode=mode,
+            approach_version=approach_version,
+        ),
+        tx.now,
+    )
+
+
+def _insert_scanned(tx: BuildTx, path: str, text: str, approach_version: int) -> None:
+    insert_workspace_file(
+        tx.conn,
+        WorkspaceFile(
+            request_id=tx.request.request_id,
+            path=path,
+            file_version=1,
+            kind="scanned",
+            text=text,
+            fingerprint=fingerprint(text),
+            line_ending=line_ending_of(text),
+            mode="picker",
+            approach_version=approach_version,
+        ),
+        tx.now,
+    )
+
+
+def _written_text(report: WriteReport, mode: WorkspaceMode) -> str:
+    count = len(report.written)
+    where = "to your folder" if mode == "picker" else "into the ZIP"
+    names = ", ".join(item.path for item in report.written)
+    return (
+        f"Wrote {count} code file{'s' if count != 1 else ''} {where}: {names}. "
+        "Try it yourself: start CodeVision on your laptop and test the change by hand."
+    )
 
 
 # --- helpers shared with the loop ---

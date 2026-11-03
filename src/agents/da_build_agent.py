@@ -183,6 +183,10 @@ def _scripted_tests(prompt: str, switches: frozenset[str]) -> str:
 def _scripted_code(prompt: str, script: dict, switches: frozenset[str]) -> str:
     path = _FILE_LINE.search(prompt).group(1).strip()
     fixing = FAILURE_HEADING in prompt
+    if path in script["code"] and "Action: modify" in prompt:
+        # A new file that already exists in the folder (an earlier build wrote it): edit blocks.
+        edit = script["modify_edits"][path]["fixed" if fixing else "first"]
+        return f"<<<<<<< FIND\n{edit['find']}\n=======\n{edit['replace']}\n>>>>>>> REPLACE\n"
     if path in script["code"]:
         versions = script["code"][path]
         use_fixed = fixing and "always_fail" not in switches

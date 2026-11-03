@@ -41,5 +41,17 @@
    "find": "return True",
    "replace": "return str(path).lower().endswith((\".pdf\", \".docx\", \".xlsx\"))"
   }
+ },
+ "modify_edits": {
+  "src/agents/excel_processor.py": {
+   "first": {
+    "find": "def read_sheets(workbook):",
+    "replace": "def read_sheets(workbook):"
+   },
+   "fixed": {
+    "find": "if sheet[\"rows\"]}",
+    "replace": "if sheet[\"rows\"] and not sheet.get(\"hidden\")}"
+   }
+  }
  }
 }
