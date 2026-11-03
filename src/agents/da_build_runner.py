@@ -96,7 +96,7 @@ def _work(settings: Settings, key: Key, client_factory) -> None:
     try:
         if _wait_for_slot(settings, key):
             try:
-                loop.run_build(settings, request_id, client_factory)
+                loop.run_build(settings, request_id, client_factory, build_number=key[1])
             finally:
                 with _condition:
                     _active.discard(key)

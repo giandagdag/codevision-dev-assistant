@@ -138,12 +138,16 @@ def run_build(
     request_id: str,
     client_factory: Callable[[Settings, str], object] | None = None,
     now_fn: Callable[[], datetime] | None = None,
+    build_number: int | None = None,
 ) -> str:
-    """Run (or resume) the running build of a request to its end. Returns what happened:
+    """Run (or resume) the running build of a request to its end. With `build_number`, only that
+    build is run: if the request has moved on to a newer one (Stop, then Build), this returns
+    `cancelled` and leaves the newer build to its own thread. Returns what happened:
     `done`, `interrupted`, `unable` or `cancelled`. Never raises for anything the code or the AI
     did; an unexpected error pauses the build with a plain message instead of leaving it
     marked running for ever."""
     run = _Run(settings, request_id, client_factory or agent.get_build_client, now_fn)
+    run.expected_build = build_number
     return run.go()
 
 
@@ -153,6 +157,7 @@ class _Run:
         self.request_id = request_id
         self.client_factory = client_factory
         self.now_fn = now_fn or (lambda: datetime.now(UTC))
+        self.expected_build: int | None = None
         self.inp: _Inputs
         self.reference: Path
         self.context: agent.BuildContext
@@ -227,6 +232,8 @@ class _Run:
             request = _require_request(conn, self.request_id)
             state = read_build_state(conn, self.request_id)
             if state is None or state.step not in RUNNING_STEPS:
+                raise _Cancelled
+            if self.expected_build is not None and state.build_number != self.expected_build:
                 raise _Cancelled
             approach_state = read_approach_state(conn, self.request_id)
             versions = {

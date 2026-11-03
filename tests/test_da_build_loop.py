@@ -342,3 +342,15 @@ def test_a_failure_before_the_inputs_are_read_pauses_the_build_instead_of_leavin
     assert outcome == "interrupted"
     state = build_state(settings, request_id)
     assert state.step == "b_interrupted" and "could not start" in state.message
+
+
+def test_a_thread_for_an_older_build_does_not_run_the_newer_build(settings, request_id):
+    """Code review round 2: run_build(build_number=...) runs only that build."""
+    flow.start_build(settings, request_id, 0)  # build 1 is the running build
+    factory = RecordingFactory()
+
+    assert loop.run_build(settings, request_id, factory, build_number=7) == "cancelled"
+
+    assert factory.calls == []  # nothing was asked of the AI
+    assert flow.get_state(settings, request_id).step == "b_running"  # and nothing was changed
+    assert loop.run_build(settings, request_id, build_number=1) == "done"
