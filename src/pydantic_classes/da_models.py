@@ -22,6 +22,10 @@ STATUS_ESCALATION = "ESCALATION_REQUIRED"
 # Phase 4 (Approach), spec section 2.
 STATUS_APPROACH_PROPOSED = "APPROACH_PROPOSED"
 STATUS_READY_TO_BUILD = "READY_TO_BUILD"
+# Phase 6 (Build + test loop), spec section 2. TESTING and TESTER_REVIEW are not used yet.
+STATUS_BUILDING = "BUILDING"
+STATUS_READY_FOR_REVIEW = "READY_FOR_REVIEW"
+STATUS_NOT_PASSING = "NOT_PASSING"
 
 STATUSES: tuple[str, ...] = (
     STATUS_DRAFT,
@@ -36,6 +40,9 @@ STATUSES: tuple[str, ...] = (
     STATUS_ESCALATION,
     STATUS_APPROACH_PROPOSED,
     STATUS_READY_TO_BUILD,
+    STATUS_BUILDING,
+    STATUS_READY_FOR_REVIEW,
+    STATUS_NOT_PASSING,
 )
 
 # The only moves allowed: the spec 3.1 table, plus the Discover moves of Phase 3 (spec section 2).
@@ -51,8 +58,20 @@ ALLOWED_MOVES: dict[str, tuple[str, ...]] = {
     STATUS_DISCOVERY_CONFIRMED: (STATUS_APPROACH_PROPOSED,),
     STATUS_APPROACH_PROPOSED: (STATUS_READY_TO_BUILD, STATUS_ESCALATION),
     # Phase 5 (Workspace): "Change the approach" and "Get help" from a blocked workspace check.
-    # Phase 6 adds the moves toward building; the escalation inbox comes in Phase 10.
-    STATUS_READY_TO_BUILD: (STATUS_APPROACH_PROPOSED, STATUS_ESCALATION),
+    # Phase 6 (Build): Build starts a build. The escalation inbox comes in Phase 10.
+    STATUS_READY_TO_BUILD: (STATUS_APPROACH_PROPOSED, STATUS_BUILDING, STATUS_ESCALATION),
+    # Stop build and "unable to write tests" go back to READY_TO_BUILD; a pass or a used-up
+    # budget ends in READY_FOR_REVIEW or NOT_PASSING (spec section 2).
+    STATUS_BUILDING: (
+        STATUS_READY_TO_BUILD,
+        STATUS_READY_FOR_REVIEW,
+        STATUS_NOT_PASSING,
+        STATUS_ESCALATION,
+    ),
+    # Get help, or "Re-scan and build again" after the edit guard stopped the write (B9).
+    # Refine (Phase 8) adds the other ways out of these two.
+    STATUS_READY_FOR_REVIEW: (STATUS_BUILDING, STATUS_ESCALATION),
+    STATUS_NOT_PASSING: (STATUS_BUILDING, STATUS_ESCALATION),
     STATUS_ESCALATION: (),
 }
 

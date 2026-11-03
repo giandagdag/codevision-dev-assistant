@@ -36,14 +36,24 @@ SPEC_TABLE = {
     # Phase 5, Workspace (spec section 2).
     ("READY_TO_BUILD", "APPROACH_PROPOSED"),
     ("READY_TO_BUILD", "ESCALATION_REQUIRED"),
+    # Phase 6, Build (spec section 2).
+    ("READY_TO_BUILD", "BUILDING"),
+    ("BUILDING", "READY_TO_BUILD"),
+    ("BUILDING", "READY_FOR_REVIEW"),
+    ("BUILDING", "NOT_PASSING"),
+    ("BUILDING", "ESCALATION_REQUIRED"),
+    ("READY_FOR_REVIEW", "ESCALATION_REQUIRED"),
+    ("NOT_PASSING", "ESCALATION_REQUIRED"),
+    ("READY_FOR_REVIEW", "BUILDING"),
+    ("NOT_PASSING", "BUILDING"),
 }
 
-# Every real move: 12 x 12 statuses minus the 12 "same status" pairs.
+# Every real move: 15 x 15 statuses minus the 15 "same status" pairs.
 REAL_MOVES = list(permutations(STATUSES, 2))
 
 
-def test_there_are_132_real_moves():
-    assert len(REAL_MOVES) == 132
+def test_there_are_210_real_moves():
+    assert len(REAL_MOVES) == 210
 
 
 def test_confirmed_for_discovery_moves_only_to_searching():
@@ -54,8 +64,24 @@ def test_final_statuses_have_no_moves_yet():
     assert ALLOWED_MOVES["ESCALATION_REQUIRED"] == ()
 
 
-def test_workspace_moves_out_of_ready_to_build():
-    assert ALLOWED_MOVES["READY_TO_BUILD"] == ("APPROACH_PROPOSED", "ESCALATION_REQUIRED")
+def test_moves_out_of_ready_to_build():
+    assert set(ALLOWED_MOVES["READY_TO_BUILD"]) == {
+        "APPROACH_PROPOSED",
+        "BUILDING",
+        "ESCALATION_REQUIRED",
+    }
+
+
+def test_build_moves():
+    assert set(ALLOWED_MOVES["BUILDING"]) == {
+        "READY_TO_BUILD",
+        "READY_FOR_REVIEW",
+        "NOT_PASSING",
+        "ESCALATION_REQUIRED",
+    }
+    # Only Get help and "Re-scan and build again" leave a finished build before Phase 8.
+    for finished in ("READY_FOR_REVIEW", "NOT_PASSING"):
+        assert set(ALLOWED_MOVES[finished]) == {"BUILDING", "ESCALATION_REQUIRED"}
 
 
 def test_approach_moves():
