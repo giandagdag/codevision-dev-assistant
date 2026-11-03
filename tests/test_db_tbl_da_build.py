@@ -31,6 +31,7 @@ from pydantic_classes.da_build_models import (
     BuildFile,
     BuildRun,
     BuildState,
+    FailureReport,
     LayerAProblem,
     LayerAResult,
     LayerBResult,
@@ -208,8 +209,9 @@ def test_a_round_keeps_both_layers_and_the_report(db_path, request_id):
                 round=1,
                 layer_a=layer_a,
                 layer_b=layer_b,
-                failure_report="T-1 failed",
+                failure_report=FailureReport(timed_out=True, running_test="test_t1_ac1_x"),
                 timed_out=True,
+                files_to_fix=["src/agents/a.py"],
             ),
             T0,
         )
@@ -223,6 +225,9 @@ def test_a_round_keeps_both_layers_and_the_report(db_path, request_id):
     assert [r.round for r in rounds] == [1, 2]
     assert rounds[0].layer_a.problems[0].code == "A5"
     assert rounds[0].layer_b.running_test == "test_t1_ac1_x" and rounds[0].timed_out
+    assert rounds[0].files_to_fix == ["src/agents/a.py"] and rounds[1].files_to_fix == []
+    assert rounds[0].failure_report.running_test == "test_t1_ac1_x"
+    assert rounds[1].failure_report is None
     assert rounds[1].layer_b is None and not rounds[1].timed_out
 
 

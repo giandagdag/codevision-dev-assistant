@@ -210,3 +210,19 @@ def test_tester_models_are_empty_by_default_and_read_when_set():
     )
 
     assert (settings.claude_tester_model, settings.onprem_tester_model) == ("t-claude", "t-llama")
+
+
+def test_sandbox_source_dir_is_empty_by_default():
+    assert load_settings(env_file=None, environ={}).sandbox_source_dir is None
+    assert (
+        load_settings(env_file=None, environ={"DA_SANDBOX_SOURCE_DIR": "  "}).sandbox_source_dir
+        is None
+    )
+
+
+def test_sandbox_source_dir_reads_an_absolute_folder_and_a_project_relative_one(tmp_path):
+    absolute = load_settings(env_file=None, environ={"DA_SANDBOX_SOURCE_DIR": str(tmp_path)})
+    relative = load_settings(env_file=None, environ={"DA_SANDBOX_SOURCE_DIR": "tests/fixtures/x"})
+
+    assert absolute.sandbox_source_dir == tmp_path
+    assert relative.sandbox_source_dir == PROJECT_ROOT / "tests" / "fixtures" / "x"

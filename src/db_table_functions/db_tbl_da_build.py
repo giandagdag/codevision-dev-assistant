@@ -29,6 +29,7 @@ from pydantic_classes.da_build_models import (
     BuildFile,
     BuildRun,
     BuildState,
+    FailureReport,
     LayerAResult,
     LayerBResult,
     ProgressLine,
@@ -103,6 +104,7 @@ CREATE TABLE IF NOT EXISTS da_build_rounds (
     layer_b        TEXT,
     failure_report TEXT NOT NULL,
     timed_out      INTEGER NOT NULL,
+    files_to_fix   TEXT NOT NULL DEFAULT '[]',
     created_at     TEXT NOT NULL,
     PRIMARY KEY (request_id, build_number, round)
 );
@@ -343,15 +345,16 @@ def read_frozen_files(
 def insert_round(conn: sqlite3.Connection, item: RoundRecord, now: datetime) -> None:
     conn.execute(
         "INSERT INTO da_build_rounds (request_id, build_number, round, layer_a, layer_b,"
-        " failure_report, timed_out, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        " failure_report, timed_out, files_to_fix, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             item.request_id,
             item.build_number,
             item.round,
             item.layer_a.model_dump_json(),
             item.layer_b.model_dump_json() if item.layer_b else None,
-            item.failure_report,
+            item.failure_report.model_dump_json() if item.failure_report else "",
             1 if item.timed_out else 0,
+            json.dumps(item.files_to_fix),
             to_db_time(now),
         ),
     )
@@ -438,8 +441,13 @@ def _to_round(row: sqlite3.Row) -> RoundRecord:
         round=row["round"],
         layer_a=LayerAResult.model_validate_json(row["layer_a"]),
         layer_b=LayerBResult.model_validate_json(row["layer_b"]) if row["layer_b"] else None,
-        failure_report=row["failure_report"],
+        failure_report=(
+            FailureReport.model_validate_json(row["failure_report"])
+            if row["failure_report"]
+            else None
+        ),
         timed_out=bool(row["timed_out"]),
+        files_to_fix=json.loads(row["files_to_fix"]),
         created_at=datetime.fromisoformat(row["created_at"]),
     )
 

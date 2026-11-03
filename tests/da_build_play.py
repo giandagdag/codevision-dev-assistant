@@ -45,3 +45,106 @@ def make_context(seed_rulebook, cases: int = 9, **policy_changes) -> BuildContex
         cases=make_cases(cases),
         policy=policy,
     )
+
+
+# --- a request ready to build, and ways to look at what the build saved ---
+
+
+def ready_with_workspace(settings, folder=None):
+    """A request at READY_TO_BUILD with workspace step ws_ready in a pretend folder."""
+    from tests.da_workspace_play import good_folder, pick, ready_to_build_id
+
+    request_id = ready_to_build_id(settings)
+    folder = folder or good_folder()
+    pick(settings, request_id, folder)
+    return request_id, folder
+
+
+def build_state(settings, request_id):
+    from agents import da_build_flow as flow
+
+    return flow.get_state(settings, request_id)
+
+
+def request_status(settings, request_id) -> str:
+    from db_table_functions.db_tbl_da_requests import get_request
+
+    return get_request(settings.db_path, request_id).status
+
+
+def event_types(settings, request_id) -> list[str]:
+    from tests.da_approach_play import event_types as approach_event_types
+
+    return approach_event_types(settings, request_id)
+
+
+class RecordingFactory:
+    """A client factory for the loop that remembers every prompt, by role, and the AI model."""
+
+    def __init__(self):
+        from agents import da_build_agent as agent
+
+        self.agent = agent
+        self.calls: list[tuple[str, str]] = []
+
+    def __call__(self, settings, role):
+        real = self.agent.get_build_client(settings, role)
+        calls = self.calls
+
+        class Recorder:
+            model = real.model
+
+            def complete(self, prompt, system=None):
+                calls.append((role, prompt))
+                return real.complete(prompt, system)
+
+        return Recorder()
+
+    def prompts(self, role=None):
+        return [prompt for who, prompt in self.calls if role in (None, who)]
+
+    def code_calls(self):
+        marker = self.agent.CODE_MARKER
+        return [p for p in self.prompts() if marker in p]
+
+
+def chat(settings, request_id, speaker=None) -> list[str]:
+    """The chat lines saved for a request, oldest first."""
+    from db_table_functions.da_db import open_db
+    from db_table_functions.db_tbl_da_understand import read_messages
+
+    with open_db(settings.db_path) as conn:
+        found = read_messages(conn, request_id)
+    return [m.text for m in found if speaker is None or m.speaker == speaker]
+
+
+def rounds_of(settings, request_id, build=1):
+    from db_table_functions.da_db import open_db
+    from db_table_functions.db_tbl_da_build import read_rounds
+
+    with open_db(settings.db_path) as conn:
+        return read_rounds(conn, request_id, build)
+
+
+def files_of(settings, request_id, build=1, kind=None):
+    from db_table_functions.da_db import open_db
+    from db_table_functions.db_tbl_da_build import read_build_files
+
+    with open_db(settings.db_path) as conn:
+        return read_build_files(conn, request_id, build, kind)
+
+
+def run_row(settings, request_id, build=1):
+    from db_table_functions.da_db import open_db
+    from db_table_functions.db_tbl_da_build import read_build_run
+
+    with open_db(settings.db_path) as conn:
+        return read_build_run(conn, request_id, build)
+
+
+def progress_of(settings, request_id, build=1):
+    from db_table_functions.da_db import open_db
+    from db_table_functions.db_tbl_da_build import read_progress
+
+    with open_db(settings.db_path) as conn:
+        return read_progress(conn, request_id, build)

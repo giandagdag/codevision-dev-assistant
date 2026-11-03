@@ -63,6 +63,9 @@ class Settings:
     # decides (redesign M1).
     claude_tester_model: str = ""
     onprem_tester_model: str = ""
+    # Phase 6: the CodeVision folder (the one that holds src/) the sandbox copies from (D-A).
+    # None = not set; with the fake provider the made-up test folder is used instead.
+    sandbox_source_dir: Path | None = None
 
 
 def load_settings(
@@ -117,6 +120,7 @@ def load_settings(
         ),
         claude_tester_model=read("DA_CLAUDE_TESTER_MODEL"),
         onprem_tester_model=read("DA_ONPREM_TESTER_MODEL"),
+        sandbox_source_dir=_parse_folder(read("DA_SANDBOX_SOURCE_DIR")),
     )
 
 
@@ -125,6 +129,14 @@ def _read_auth_prefix(values: Mapping[str, str | None]) -> str:
     # prefix", which a custom key header (for example x-api-key) needs.
     raw = values.get("DA_ONPREM_AUTH_PREFIX")
     return DEFAULT_ONPREM_AUTH_PREFIX if raw is None else raw
+
+
+def _parse_folder(raw: str) -> Path | None:
+    """A folder setting. Empty means not set. A relative path is read from the project folder."""
+    if not raw.strip():
+        return None
+    path = Path(raw.strip()).expanduser()
+    return path if path.is_absolute() else PROJECT_ROOT / path
 
 
 def _parse_verify(raw: str) -> bool | str:

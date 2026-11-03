@@ -223,8 +223,12 @@ class RoundRecord(_Shape):
     round: int = Field(ge=1)
     layer_a: LayerAResult
     layer_b: LayerBResult | None = None
-    failure_report: str = ""
+    # None when the round passed. Plain code builds it (build_failure_report), not the AI.
+    failure_report: FailureReport | None = None
     timed_out: bool = False
+    # The planned files the next round will send to the Generator again (decision D-J). Saved so
+    # a build that pauses between rounds can pick up exactly where it stopped.
+    files_to_fix: list[str] = Field(default_factory=list)
     created_at: AwareDatetime | None = None
 
 
