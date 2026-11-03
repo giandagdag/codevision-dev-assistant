@@ -139,8 +139,6 @@
       looks_like_src: aboveSrc && !Object.values(markers).some(Boolean),
       has_git: await hasGit(root),
       files: [],
-      tests_exists: false,
-      tests_files: [],
     };
     for (const path of ctx.planned_paths) {
       const parts = path.split("/");
@@ -150,16 +148,6 @@
       if (!found.file) { facts.files.push({ path, exists: false, parent_exists: parent }); continue; }
       const file = await found.file.getFile();
       facts.files.push({ path, exists: true, parent_exists: true, ...(await readFileObject(file, ctx.max_file_kb)) });
-    }
-    const testsDir = await dirAt(root, ctx.tests_folder.replace(/\/$/, "").split("/"));
-    facts.tests_exists = !!testsDir;
-    if (testsDir) {
-      for await (const [name, handle] of testsDir.entries()) {
-        if (handle.kind !== "file") { continue; }
-        const file = await handle.getFile();
-        const read = await readFileObject(file, ctx.max_file_kb);
-        facts.tests_files.push({ name, text: read.text ?? null, fingerprint: read.fingerprint ?? null });
-      }
     }
     return facts;
   }
@@ -175,9 +163,8 @@
   async function runJob(root, job) {
     const report = { written: [], stopped: null };
     const allowed = new Set(job.files.map((f) => f.path));
-    const creatable = new Set(job.creatable_folders);
     for (const item of job.files) {
-      const reason = await writeOne(root, item, allowed, creatable);
+      const reason = await writeOne(root, item, allowed);
       if (typeof reason === "string") { report.stopped = { path: item.path, reason }; break; }
       report.written.push(reason);
     }
@@ -186,7 +173,7 @@
 
   // Returns a stop reason (string) or the written record. Every guard is checked here AND on
   // the server (rule W3).
-  async function writeOne(root, item, allowed, creatable) {
+  async function writeOne(root, item, allowed) {
     const problem = pathProblem(item.path);
     if (problem || !allowed.has(item.path)) { return item.path + " is not allowed."; }
     const parts = item.path.split("/");
@@ -195,7 +182,8 @@
     let walked = "";
     for (const part of parts) {
       walked = walked ? walked + "/" + part : part;
-      try { dir = await dir.getDirectoryHandle(part, { create: creatable.has(walked) }); }
+      // The writer creates NO folders at all (Phase 6, C2): a missing folder is a refusal.
+      try { dir = await dir.getDirectoryHandle(part); }
       catch (error) {
         return "The folder " + walked + " does not exist, and the app does not create it.";
       }
@@ -231,7 +219,8 @@
 
   function pickerAvailable() { return !!window.showDirectoryPicker && window.isSecureContext; }
 
-  async function choose(ctx, remembered) {
+  // `linking` is true only for the Change button: the developer says "yes, link this one".
+  async function choose(ctx, remembered, linking) {
     if (!pickerAvailable()) { return { kind: "fallback", reason: "unsupported" }; }
     let handle;
     try {
@@ -246,6 +235,14 @@
       if (error && error.name === "AbortError") { return { kind: "cancelled" }; }
       return { kind: "fallback", reason: "refused" };
     }
+    // P26: a different folder that has the same NAME as the linked one is not the linked folder.
+    // isSameEntry compares the folders themselves, so only a real second folder is stopped.
+    if (!remembered && !linking && ctx.folder_name && handle.name === ctx.folder_name) {
+      const previous = await loadHandle();
+      if (previous && !(await handle.isSameEntry(previous))) {
+        return { kind: "different_folder", name: handle.name };
+      }
+    }
     root = handle;
     await saveHandle(handle);
     return { kind: "facts", facts: await collectFacts(root, ctx) };
@@ -255,7 +252,7 @@
   // remembered, fall back to the picker. Returns "reconnected" so the screen only redraws.
   async function reconnect(ctx) {
     const remembered = await loadHandle();
-    if (!remembered) { return choose(ctx, false); }
+    if (!remembered) { return choose(ctx, false, false); }
     if (!(await ensurePermission(remembered))) { return { kind: "cancelled" }; }
     root = remembered;
     return { kind: "reconnected" };
@@ -275,7 +272,8 @@
 
   // Which button was pressed on the screen. Called straight from the click, so the picker works.
   async function handle(key, ctx) {
-    if (key === "choose" || key === "change_folder" || key === "retry_picker") { return choose(ctx, false); }
+    if (key === "change_folder") { return choose(ctx, false, true); }
+    if (key === "choose" || key === "retry_picker") { return choose(ctx, false, false); }
     if (key === "use_remembered") { return choose(ctx, true); }
     if (key === "reconnect") { return reconnect(ctx); }
     if (key === "rescan") { return scan(ctx); }
@@ -291,7 +289,7 @@
     return { name: remembered.name, permission: await permissionOf(remembered) };
   }
 
-  // --- fallback: upload a folder (spec section 7). Only planned and tests files are read. ---
+  // --- fallback: upload a folder (spec section 7). Only planned files are read. ---
 
   function upload(ctx) {
     return new Promise((resolve) => {
@@ -328,20 +326,13 @@
     const aboveSrc = stripped.length > 0 && stripped.every(under) && !Object.values(markers).some(Boolean);
     const facts = {
       folder_name: folderName, markers, looks_like_src: aboveSrc, has_git: under(".git"),
-      files: [], tests_exists: false, tests_files: [],
+      files: [],
     };
     for (const path of ctx.planned_paths) {
       const parent = path.includes("/") ? under(path.slice(0, path.lastIndexOf("/"))) : true;
       const file = byPath.get(path);
       if (!file) { facts.files.push({ path, exists: false, parent_exists: parent }); continue; }
       facts.files.push({ path, exists: true, parent_exists: true, ...(await readFileObject(file, ctx.max_file_kb)) });
-    }
-    const folder = ctx.tests_folder.replace(/\/$/, "");
-    facts.tests_exists = under(folder);
-    for (const key of keys) {
-      if (!key.startsWith(folder + "/") || key.slice(folder.length + 1).includes("/")) { continue; }
-      const read = await readFileObject(byPath.get(key), ctx.max_file_kb);
-      facts.tests_files.push({ name: key.slice(folder.length + 1), text: read.text ?? null, fingerprint: read.fingerprint ?? null });
     }
     return facts;
   }

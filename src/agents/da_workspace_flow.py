@@ -19,8 +19,6 @@ from pathlib import Path
 from agents.da_approach_checks import normalise_path
 from agents.da_approach_flow import CAP_MESSAGE, CHANGE_APPROACH_OPTION, HELP_BUTTON, TEXT_PROMPTS
 from agents.da_workspace_checks import (
-    TESTS_INIT_NAME,
-    TESTS_INIT_TEXT,
     FactsProblem,
     build_write_job,
     check_facts,
@@ -28,8 +26,6 @@ from agents.da_workspace_checks import (
     line_ending_of,
     rescan_results,
     stop_message,
-    tests_folder,
-    tests_init_path,
     verify_facts,
     verify_report,
 )
@@ -110,7 +106,7 @@ DOWNLOAD_ADVICE = (
 NO_FOLDER_TEXT = "No folder chosen."
 
 README_NAME = "READ_ME_FIRST.txt"
-SCAN_KINDS = ("unchanged", "changed", "missing", "new_in_tests")
+SCAN_KINDS = ("unchanged", "changed", "missing")
 
 
 @dataclass
@@ -254,9 +250,8 @@ def rescan(
     snap = _snapshot(settings, request_id, base_revision)
     _require_step(snap, "ws_ready")
     known = {path: item.fingerprint for path, item in snap.known.items()}
-    names = _written_names(snap.known, request_id)
     try:
-        result = rescan_results(facts, snap.planned_paths, known, request_id, names)
+        result = rescan_results(facts, snap.planned_paths, known)
     except FactsProblem as error:
         raise WorkspaceError(str(error)) from error
     with _write(settings.db_path) as conn:
@@ -284,6 +279,30 @@ def picker_cancelled(
         tx = _begin(conn, request_id, base_revision, now)
         tx.say("assistant", NO_FOLDER_TEXT)
     return get_workspace_view(settings, request_id)
+
+
+def different_folder(
+    settings, request_id: str, base_revision: int, now: datetime | None = None
+) -> WorkspaceView:
+    """The picked folder has the linked folder's NAME but is another folder (P26). One chat
+    line; nothing is linked and the revision does not move. The name comes from the saved
+    link, not from the browser (rule W3)."""
+    now = now or datetime.now(UTC)
+    snap = _snapshot(settings, request_id, base_revision)
+    _require_step(snap, "start", "ws_blocked", "ws_ready", "ws_fallback")
+    name = snap.state.folder_name if snap.state else ""
+    if not name:
+        raise WorkspaceError(
+            "No folder is linked to this request yet, so there is nothing to compare."
+        )
+    with _write(settings.db_path) as conn:
+        tx = _begin(conn, request_id, base_revision, now)
+        tx.say("assistant", different_folder_text(name))
+    return get_workspace_view(settings, request_id)
+
+
+def different_folder_text(name: str) -> str:
+    return f"This is a different folder that is also called {name}. Use Change to link it."
 
 
 def use_fallback(
@@ -317,19 +336,21 @@ def prepare_download(
     _require_step(snap, "ws_fallback", "ws_ready")
     if snap.state.mode != "download":
         raise WorkspaceError("Download mode is not in use for this request.")
-    job = _init_job(snap, request_id, snap.state.folder_name or "your folder")
+    job = _empty_job(request_id, snap.state.folder_name or "your folder")
     with _write(settings.db_path) as conn:
         tx = _begin(conn, request_id, base_revision, now)
         for item in job.files:
             _insert_file(tx, snap, item.path, item.text, "written", "download")
         tx.audit("developer", "workspace_fallback_used", {"which": "download"})
-        tx.audit(
-            "system", "workspace_written",
-            {"mode": "download", "files": {i.path: fingerprint(i.text) for i in job.files}},
-        )
+        if job.files:  # before a build there is nothing to hand over, so nothing to journal
+            tx.audit(
+                "system",
+                "workspace_written",
+                {"mode": "download", "files": {i.path: fingerprint(i.text) for i in job.files}},
+            )
         already = any(DOWNLOAD_ADVICE in m.text for m in read_messages(conn, request_id))
         tx.say("developer", DOWNLOAD_LABEL)
-        tx.say("assistant", "The ZIP has the tests folder. " + ("" if already else DOWNLOAD_ADVICE))
+        tx.say("assistant", "The ZIP is ready. " + ("" if already else DOWNLOAD_ADVICE))
         save_workspace_state(conn, snap.state, base_revision, now)
     return DownloadPackage(job, readme_text(job), get_workspace_view(settings, request_id))
 
@@ -443,8 +464,8 @@ def get_workspace_view(settings, request_id: str) -> WorkspaceView:
     step: WorkspaceStep = state.step if state else "start"
     mode: WorkspaceMode = state.mode if state else "picker"
     capped = approach_state is not None and approach_state.change_count >= MAX_CHANGES
-    rows = _file_rows(approach, known, baselines, scan, request_id)
-    server, browser, note = _buttons_for(step, mode, capped)
+    rows = _file_rows(approach, known, baselines, scan)
+    server, browser, note = _buttons_for(step, mode, capped, bool(state and state.folder_name))
     return WorkspaceView(
         request=request,
         messages=messages,
@@ -459,7 +480,6 @@ def get_workspace_view(settings, request_id: str) -> WorkspaceView:
         browser_buttons=browser,
         note=note,
         open_item=approach_state.open_item if approach_state else "",
-        tests_folder=tests_folder(request_id) + "/",
         revision=revision,
         planned_paths=[normalise_path(item.path) for item in approach.plan.files],
         markers=policy.workspace_markers,
@@ -473,7 +493,7 @@ def readme_text(job: WriteJob) -> str:
     lines = [
         "Developer Assistant: files to copy into your CodeVision folder",
         "",
-        "1. Unzip this file into the folder that contains src and tests (your CodeVision folder).",
+        "1. Unzip this file into the folder that contains src (your CodeVision folder).",
         "2. Say yes if your computer asks to merge folders.",
         "3. Back in the Developer Assistant, press Upload folder to check.",
         "",
@@ -487,51 +507,20 @@ def readme_text(job: WriteJob) -> str:
 
 
 def _evaluate(snap: _Snap, facts: FolderFacts, request_id: str) -> tuple[CheckResult, WriteJob]:
-    """Check the facts and build the job the server would allow. Pure, nothing is saved."""
+    """Check the facts. Pure, nothing is saved. The job is empty: the check writes nothing
+    (Phase 6, C1). It stays a job so the browser steps of Phase 5 keep their shape."""
     try:
-        verify_facts(facts, snap.planned_paths, request_id)
+        verify_facts(facts, snap.planned_paths)
         result = check_facts(
-            facts,
-            snap.planned,
-            snap.policy,
-            request_id,
-            _written_names(snap.known, request_id),
-            snap.state.folder_name if snap.state else "",
+            facts, snap.planned, snap.policy, snap.state.folder_name if snap.state else ""
         )
-        job = _init_job(snap, request_id, facts.folder_name, facts)
     except FactsProblem as error:
         raise WorkspaceError(str(error)) from error
-    return result, job
+    return result, _empty_job(request_id, facts.folder_name)
 
 
-def _init_job(
-    snap: _Snap, request_id: str, folder_name: str, facts: FolderFacts | None = None
-) -> WriteJob:
-    """The tests-folder __init__.py job. With facts, the file must be as THIS folder shows it
-    (absent, or the one this request wrote there), so picking a different folder works (W7).
-    Without facts (download mode) the last write is the reference."""
-    path = tests_init_path(request_id)
-    known = {}
-    same_folder = snap.state is not None and facts is not None and (
-        snap.state.folder_name == facts.folder_name
-    )
-    if facts is not None and not same_folder:
-        found = next((f for f in facts.tests_files if f.name == TESTS_INIT_NAME), None)
-        if found is not None and found.text is not None:
-            known[path] = (fingerprint(found.text), line_ending_of(found.text))
-    if path in snap.known and (facts is None or same_folder):
-        item = snap.known[path]
-        known[path] = (item.fingerprint, item.line_ending)
-    return build_write_job(request_id, folder_name, [(path, TESTS_INIT_TEXT)], known)
-
-
-def _written_names(known: dict[str, WorkspaceFile], request_id: str) -> set[str]:
-    prefix = tests_folder(request_id) + "/"
-    return {
-        path.removeprefix(prefix)
-        for path, item in known.items()
-        if path.startswith(prefix) and item.kind == "written"
-    }
+def _empty_job(request_id: str, folder_name: str) -> WriteJob:
+    return build_write_job(request_id, folder_name, [], {})
 
 
 def _verify(check) -> None:
@@ -546,7 +535,8 @@ def _save_blocked(
 ) -> None:
     tx.audit("developer", "workspace_chosen", {"folder": facts.folder_name})
     tx.audit(
-        "system", "workspace_check_failed",
+        "system",
+        "workspace_check_failed",
         {"blockers": [{"code": b.code, "path": b.path} for b in result.blockers]},
     )
     for warning in result.warnings:
@@ -571,7 +561,8 @@ def _save_written(tx: _Tx, snap: _Snap, report: WriteReport, mode: WorkspaceMode
         _insert_file(tx, snap, item.path, item.text, "written", mode)
     if report.written:
         tx.audit(
-            "system", "workspace_written",
+            "system",
+            "workspace_written",
             {"mode": mode, "files": {i.path: fingerprint(i.text) for i in report.written}},
         )
 
@@ -592,13 +583,7 @@ def _save_ready(
     tx.audit("system", "workspace_baseline_taken", {"files": baselines})
     for warning in result.warnings:
         tx.say("assistant", warning)
-    folder = tests_folder(tx.request.request_id) + "/"
-    tail = (
-        "Tests folder created."
-        if mode == "picker"
-        else "Download the ZIP to get the tests folder."
-    )
-    tx.say("assistant", f"Your folder {facts.folder_name} passed the check. {tail} ({folder})")
+    tx.say("assistant", f"Your folder {facts.folder_name} passed the check.")
     for line in result.info:
         tx.say("assistant", line)
     previous = snap.state
@@ -617,14 +602,11 @@ def _save_ready(
 
 
 def _save_scanned(tx: _Tx, snap: _Snap, facts: FolderFacts, result, mode: WorkspaceMode) -> None:
-    """Keep the text of every file the developer changed or added (a `scanned` row)."""
+    """Keep the text of every planned file the developer changed (a `scanned` row)."""
     file_texts = {normalise_path(f.path): f.text for f in facts.files}
-    tests_texts = {
-        f"{tests_folder(tx.request.request_id)}/{f.name}": f.text for f in facts.tests_files
-    }
     for item in result.items:
-        if item.outcome in ("changed", "new_in_tests"):
-            text = file_texts.get(item.path, tests_texts.get(item.path))
+        if item.outcome == "changed":
+            text = file_texts.get(item.path)
             if text is not None:
                 _insert_file(tx, snap, item.path, text, "scanned", mode)
 
@@ -649,18 +631,15 @@ def _insert_file(tx: _Tx, snap: _Snap, path: str, text: str, kind, mode: Workspa
 
 def _scan_text(result) -> str:
     changed = result.count("changed")
-    new = result.count("new_in_tests")
     missing = result.count("missing")
     parts = []
     if changed:
         parts.append(f"{changed} file{'s' if changed != 1 else ''} changed by you")
-    if new:
-        parts.append(f"{new} new file{'s' if new != 1 else ''} in the tests folder")
     if missing:
         parts.append(f"{missing} file{'s' if missing != 1 else ''} missing")
     if not parts:
         return "No changes found since the last check."
-    total = changed + new + missing
+    total = changed + missing
     pronoun = "It" if total == 1 else "They"
     return (
         ", ".join(parts).capitalize()
@@ -668,7 +647,7 @@ def _scan_text(result) -> str:
     )
 
 
-def _file_rows(approach: ApproachVersion, known, baselines, scan, request_id: str) -> list[FileRow]:
+def _file_rows(approach: ApproachVersion, known, baselines, scan) -> list[FileRow]:
     outcomes = {item.path: item.outcome for item in scan.items} if scan else {}
     rows = []
     for planned in approach.plan.files:
@@ -690,21 +669,16 @@ def _file_rows(approach: ApproachVersion, known, baselines, scan, request_id: st
                 baseline_at=baselines.get(path) if planned.action == "modify" else None,
             )
         )
-    init = tests_init_path(request_id)
-    rows.append(
-        FileRow(
-            path=tests_folder(request_id) + "/",
-            action="tests",
-            status="Created" if init in known else "Not written yet",
-        )
-    )
     return rows
 
 
-def _buttons_for(step: str, mode: str, capped: bool):
-    """(server buttons, browser buttons, note) for one step (spec section 1 table)."""
+def _buttons_for(step: str, mode: str, capped: bool, linked: bool = False):
+    """(server buttons, browser buttons, note) for one step (spec section 1 table). Once a
+    folder has been linked, Change is also offered at start, so a same-named different folder
+    (P26) can be linked on purpose."""
     if step == "start":
-        return [], [(CHOOSE_KEY, CHOOSE_LABEL)], ""
+        change = [(CHANGE_FOLDER_KEY, CHANGE_FOLDER_LABEL)] if linked else []
+        return [], [(CHOOSE_KEY, CHOOSE_LABEL), *change], ""
     if step == "ws_blocked":
         server = [] if capped else [(CHANGE_APPROACH_KEY, CHANGE_APPROACH_OPTION)]
         server.append((HELP_KEY, HELP_BUTTON))
@@ -717,11 +691,15 @@ def _buttons_for(step: str, mode: str, capped: bool):
             return [], [(DOWNLOAD_KEY, DOWNLOAD_LABEL), upload], ""
         return [], [(RESCAN_KEY, RESCAN_LABEL), (CHANGE_FOLDER_KEY, CHANGE_FOLDER_LABEL)], ""
     if step == "ws_fallback":
-        return [], [
-            (DOWNLOAD_KEY, DOWNLOAD_LABEL),
-            (UPLOAD_KEY, UPLOAD_LABEL),
-            (RETRY_PICKER_KEY, RETRY_PICKER_LABEL),
-        ], ""
+        return (
+            [],
+            [
+                (DOWNLOAD_KEY, DOWNLOAD_LABEL),
+                (UPLOAD_KEY, UPLOAD_LABEL),
+                (RETRY_PICKER_KEY, RETRY_PICKER_LABEL),
+            ],
+            "",
+        )
     return [], [], ""
 
 

@@ -25,7 +25,7 @@ def test_fake_provider_prints_the_workspace_items_22_and_23(make_settings, capsy
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "22. CVDA-" in output and "workspace ready in folder codevision-copy" in output
-    assert "1 baselines taken, 1 tests file written (tests/cvda_" in output
+    assert "1 baselines taken, nothing written (tests stay in the app)" in output
     assert "23. Re-scan found 1 file changed by the developer" in output
     assert "(src/agents/upload_validator.py); the step stays ws_ready" in output
 

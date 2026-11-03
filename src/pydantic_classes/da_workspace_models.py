@@ -20,7 +20,7 @@ WorkspaceStep = Literal["start", "ws_blocked", "ws_ready", "ws_fallback", "escal
 WorkspaceMode = Literal["picker", "download"]
 FileKind = Literal["baseline", "written", "scanned"]
 LineEnding = Literal["\n", "\r\n"]
-ScanOutcome = Literal["unchanged", "changed", "missing", "new_in_tests"]
+ScanOutcome = Literal["unchanged", "changed", "missing"]
 
 # The word the edit guard uses for "this file must not exist yet".
 ABSENT = "absent"
@@ -49,17 +49,6 @@ class FileFact(_Shape):
     not_utf8: bool = False
 
 
-class TestsFileFact(_Shape):
-    """A file found inside this request's tests folder."""
-
-    # Tell pytest this is not a test class, in case a test file imports it.
-    __test__ = False
-
-    name: str
-    text: str | None = None
-    fingerprint: str | None = None
-
-
 class FolderFacts(_Shape):
     """Everything the check needs to know about the picked folder (spec section 4)."""
 
@@ -70,15 +59,13 @@ class FolderFacts(_Shape):
     looks_like_src: bool = False
     has_git: bool = False
     files: list[FileFact] = Field(default_factory=list)
-    tests_exists: bool = False
-    tests_files: list[TestsFileFact] = Field(default_factory=list)
 
 
 # --- the check result ---
 
 
 class Blocker(_Shape):
-    code: str  # B1 to B7
+    code: str  # B1 to B6
     text: str
     path: str = ""
 
@@ -111,8 +98,6 @@ class WriteJob(_Shape):
     request_id: str = Field(pattern=REQUEST_ID_PATTERN)
     folder_name: str
     files: list[JobFile]
-    # Folders the browser may create: only the tests folder (spec section 5).
-    creatable_folders: list[str] = Field(default_factory=list)
 
 
 class WrittenFile(_Shape):
@@ -185,7 +170,7 @@ class FileRow(_Shape):
     """One line of the Build tab file table."""
 
     path: str
-    action: Literal["create", "modify", "tests"]
+    action: Literal["create", "modify"]
     status: Literal["Not written yet", "Written", "Changed by you", "Missing", "Created"]
     baseline_at: AwareDatetime | None = None
 
@@ -207,7 +192,6 @@ class WorkspaceView(BaseModel):
     browser_buttons: list[tuple[str, str]]
     note: str
     open_item: str
-    tests_folder: str
     revision: int
     # What the browser needs to run a job without asking the server first.
     planned_paths: list[str]

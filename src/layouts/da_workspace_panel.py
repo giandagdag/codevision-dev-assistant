@@ -37,7 +37,7 @@ STATUS_OUTCOME_TEXT = {
     "Missing": "Missing",
     "Created": "Created",
 }
-ACTION_TEXT = {"create": "New", "modify": "Change", "tests": "Tests"}
+ACTION_TEXT = {"create": "New", "modify": "Change"}
 
 
 def workspace_context(view: WorkspaceView) -> dict:
@@ -48,7 +48,6 @@ def workspace_context(view: WorkspaceView) -> dict:
         "planned_paths": view.planned_paths,
         "markers": view.markers,
         "max_file_kb": view.max_file_kb,
-        "tests_folder": view.tests_folder,
         "step": view.step,
         "mode": view.mode,
         "folder_name": view.folder_name,
@@ -165,7 +164,6 @@ def _scan_block(view: WorkspaceView) -> dmc.Box:
         "unchanged": "Unchanged",
         "changed": "Changed by you",
         "missing": "Missing",
-        "new_in_tests": "New in tests folder",
     }
     items = [
         dmc.Text(f"{labels[item.outcome]}: {item.path}", size="xs", ff="monospace")

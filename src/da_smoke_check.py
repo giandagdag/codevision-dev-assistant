@@ -348,11 +348,12 @@ def _run_workspace_steps(settings: Settings, request_id: str) -> None:
     view = workspace.save_check(settings, request_id, facts, report, view.revision)
     if view.step != "ws_ready" or view.request.status != STATUS_READY_TO_BUILD:
         raise UnderstandError(f"The workspace ended at {view.step}.")
-    tests_file = [path for path in folder.files if path.startswith("tests/")]
+    if any(path.startswith("tests/") for path in folder.files):
+        raise UnderstandError("The check wrote a tests folder. It must write nothing.")
     print(
         f"22. {request_id}: workspace ready in folder {view.folder_name}: "
-        f"{len([r for r in view.rows if r.baseline_at])} baselines taken, "
-        f"{len(tests_file)} tests file written ({tests_file[0]})"
+        f"{len([r for r in view.rows if r.baseline_at])} baselines taken, nothing written "
+        "(tests stay in the app)"
     )
 
     edited = next(row.path for row in view.rows if row.action == "modify")

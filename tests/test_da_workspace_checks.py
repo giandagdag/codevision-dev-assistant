@@ -8,7 +8,6 @@ from pydantic_classes.da_workspace_models import (
     ABSENT,
     FileFact,
     FolderFacts,
-    TestsFileFact,
     WriteReport,
     WriteStop,
     WrittenFile,
@@ -17,7 +16,7 @@ from pydantic_classes.da_workspace_models import (
 REQUEST_ID = "CVDA-2026-0001"
 MODIFY = "src/callbacks/da_demo_callbacks.py"
 CREATE = "src/web/da_demo_helper.py"
-TESTS = "tests/cvda_2026_0001"
+TESTS = "tests/cvda_2026_0001"  # where Phase 5 used to write; Phase 6 never does
 
 
 @pytest.fixture
@@ -46,8 +45,8 @@ def good_facts(**changes) -> FolderFacts:
     return FolderFacts(**values)
 
 
-def run_check(facts, policy, written=None, remembered=""):
-    return checks.check_facts(facts, plan(), policy, REQUEST_ID, written, remembered)
+def run_check(facts, policy, remembered=""):
+    return checks.check_facts(facts, plan(), policy, remembered)
 
 
 def codes(result):
@@ -190,23 +189,14 @@ def test_5_7_a_file_over_the_limit_and_a_file_that_is_not_utf8_are_b6(policy):
     assert codes(run_check(too_big_in_browser, policy)) == ["B6"]
 
 
-def test_5_8_a_tests_folder_with_a_foreign_file_is_b7(policy):
-    facts = good_facts(
-        tests_exists=True, tests_files=[TestsFileFact(name="test_old.py", text="pass\n")]
-    )
+def test_6_38_an_old_tests_folder_in_the_workspace_is_not_looked_at_and_does_not_block(policy):
+    """Phase 6 drops blocker B7: tests never go to the workspace, so the folder is not read."""
+    assert "tests_files" not in FolderFacts.model_fields  # the browser no longer reports it
+    assert "tests_exists" not in FolderFacts.model_fields
 
-    result = run_check(facts, policy, written={"__init__.py"})
+    result = run_check(good_facts(), policy)
 
-    assert codes(result) == ["B7"]
-    assert "tests/cvda_2026_0001/" in result.blockers[0].text
-
-
-def test_files_this_request_wrote_do_not_block_the_tests_folder(policy):
-    facts = good_facts(
-        tests_exists=True, tests_files=[TestsFileFact(name="__init__.py", text="# x\n")]
-    )
-
-    assert run_check(facts, policy, written={"__init__.py"}).passed
+    assert result.passed and "B7" not in codes(result)
 
 
 def test_5_9_a_good_folder_without_git_passes_with_the_information_line(policy):
@@ -250,7 +240,7 @@ def test_a_path_outside_the_plan_is_refused():
     facts = good_facts(files=[FileFact(path="src/secret.py", exists=True, parent_exists=True)])
 
     with pytest.raises(checks.FactsProblem, match="not in the file plan"):
-        checks.verify_facts(facts, [MODIFY, CREATE], REQUEST_ID)
+        checks.verify_facts(facts, [MODIFY, CREATE])
 
 
 def test_a_browser_fingerprint_that_differs_is_refused():
@@ -261,7 +251,7 @@ def test_a_browser_fingerprint_that_differs_is_refused():
     )
 
     with pytest.raises(checks.FactsProblem, match="disagree"):
-        checks.verify_facts(facts, [MODIFY, CREATE], REQUEST_ID)
+        checks.verify_facts(facts, [MODIFY, CREATE])
 
 
 def test_a_correct_browser_fingerprint_is_accepted():
@@ -272,7 +262,7 @@ def test_a_correct_browser_fingerprint_is_accepted():
         ]
     )
 
-    checks.verify_facts(facts, [MODIFY, CREATE], REQUEST_ID)
+    checks.verify_facts(facts, [MODIFY, CREATE])
 
 
 # --- the write job and the edit guard (5-11 to 5-13) ---
@@ -290,7 +280,13 @@ def test_the_job_expects_absent_for_a_new_file_and_the_known_fingerprint_otherwi
     ]
     assert job.files[0].text == "x = 2\r\n"  # 5-16: the file's own style
     assert job.files[1].text == "y\n"
-    assert job.creatable_folders == ["tests", TESTS]
+    assert "creatable_folders" not in type(job).model_fields  # 6-36: the writer makes no folders
+
+
+def test_6_37_a_job_with_a_path_under_tests_is_refused():
+    for path in (f"{TESTS}/test_x.py", "tests/anything.py", "Tests/Upper.py"):
+        with pytest.raises(checks.FactsProblem, match="never written to your folder"):
+            checks.build_write_job(REQUEST_ID, "codevision", [(path, "x")], {})
 
 
 def test_a_job_with_an_unsafe_path_is_never_built():
@@ -367,14 +363,9 @@ def test_5_12_a_stopped_report_names_both_lists():
 # --- re-scan (5-17, 5-18) ---
 
 
-def scan(facts, written_names=None):
-    known = {
-        MODIFY: checks.fingerprint("x = 1\n"),
-        f"{TESTS}/__init__.py": checks.fingerprint("# x\n"),
-    }
-    return checks.rescan_results(
-        facts, [MODIFY, CREATE], known, REQUEST_ID, written_names or {"__init__.py"}
-    )
+def scan(facts):
+    known = {MODIFY: checks.fingerprint("x = 1\n")}
+    return checks.rescan_results(facts, [MODIFY, CREATE], known)
 
 
 def outcomes(result):
@@ -406,22 +397,15 @@ def test_a_file_with_only_a_line_ending_flip_is_unchanged():
     assert outcomes(scan(facts))[MODIFY] == "unchanged"
 
 
-def test_5_18_an_extra_file_in_the_tests_folder_is_new_in_tests():
-    facts = good_facts(
-        tests_files=[
-            TestsFileFact(name="__init__.py", text="# x\n"),
-            TestsFileFact(name="test_mine.py", text="pass\n"),
-        ]
-    )
+def test_6_39_a_re_scan_reads_planned_files_only_and_has_no_new_in_tests_result():
+    """Phase 6 (C4): the tests folder is not read, and 'new in tests' no longer exists."""
+    from pydantic_classes.da_workspace_models import ScanItem
 
-    result = outcomes(scan(facts))
+    result = scan(good_facts())
 
-    assert result[f"{TESTS}/test_mine.py"] == "new_in_tests"
-    assert result[f"{TESTS}/__init__.py"] == "unchanged"
-
-
-def test_a_tests_file_the_app_wrote_that_is_gone_is_missing():
-    assert outcomes(scan(good_facts()))[f"{TESTS}/__init__.py"] == "missing"
+    assert {item.path for item in result.items} == {MODIFY, CREATE}
+    assert not any("tests" in item.path for item in result.items)
+    assert "new_in_tests" not in ScanItem.model_fields["outcome"].annotation.__args__
 
 
 def test_5_18_a_scan_with_a_path_outside_the_plan_is_refused():
@@ -440,6 +424,6 @@ def test_a_planned_new_file_that_was_never_written_is_not_missing():
 def test_a_written_file_that_is_gone_is_missing():
     known = {CREATE: checks.fingerprint("y\n")}
 
-    result = checks.rescan_results(good_facts(), [MODIFY, CREATE], known, REQUEST_ID, set())
+    result = checks.rescan_results(good_facts(), [MODIFY, CREATE], known)
 
     assert {item.path: item.outcome for item in result.items}[CREATE] == "missing"

@@ -123,6 +123,8 @@ def _dispatch(settings, event: dict, request_id: str, revision: int, refresh: in
         flow.use_fallback(settings, request_id, event.get("reason", "refused"), revision)
     elif kind == "cancelled":
         flow.picker_cancelled(settings, request_id, revision)
+    elif kind == "different_folder":
+        flow.different_folder(settings, request_id, revision)
     elif kind == "download":
         package = flow.prepare_download(settings, request_id, revision)
         pack = {

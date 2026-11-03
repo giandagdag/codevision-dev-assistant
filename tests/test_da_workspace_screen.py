@@ -103,7 +103,8 @@ def test_5_31_a_ready_workspace_has_a_status_only_chip_the_build_tab_and_the_app
     text = all_text(by_id(tree, "da-ws-summary"))
     assert text.startswith("Workspace: codevision. Checked ") and text.endswith(".")
     table = all_text(by_id(tree, "da-ws-files"))
-    assert MODIFY in table and "Change" in table and "New" in table and "Created" in table
+    assert MODIFY in table and "Change" in table and "New" in table
+    assert "Created" not in table and "tests/" not in table  # C1: no tests-folder row
     assert by_id(tree, "da-ws-build").disabled and by_id(tree, "da-ws-build-chat").disabled
     assert "Checked: found in your workspace" in all_text(by_id(tree, "da-file-plan"))
 
@@ -247,8 +248,7 @@ def test_the_whole_chain_with_the_pretend_folder_reaches_ws_ready(settings, requ
     refresh, job, pack, message = wcb.handle_workspace_event(settings, event, ctx, 5)
 
     assert refresh is no_update and pack is no_update and message == ""
-    assert [f["path"] for f in job["files"]] == ["tests/cvda_2026_0001/__init__.py"]
-    assert job["files"][0]["expected"] == "absent"
+    assert job["files"] == []  # the check writes nothing (C1)
     report = folder.run_job(flow.WriteJob.model_validate(
         {k: v for k, v in job.items() if k != "nonce"}
     )).model_dump(mode="json") | {"nonce": 2}
@@ -258,7 +258,8 @@ def test_the_whole_chain_with_the_pretend_folder_reaches_ws_ready(settings, requ
     assert (refresh, message) == (6, "")
     view = flow.get_workspace_view(settings, request_id)
     assert view.step == "ws_ready"
-    assert "Tests folder created" in " ".join(texts(view, "assistant"))
+    assert "passed the check" in " ".join(texts(view, "assistant"))
+    assert "Tests folder" not in " ".join(texts(view, "assistant"))
 
 
 def test_a_blocked_folder_ends_at_hop_two_with_a_refresh(settings, request_id):
@@ -305,7 +306,7 @@ def test_5_23_the_download_event_hands_the_browser_the_zip_pieces(settings, requ
     )
 
     assert refresh == 1 and job is None
-    assert [f["path"] for f in pack["files"]] == ["tests/cvda_2026_0001/__init__.py"]
+    assert pack["files"] == []  # C5: code files only, and a build has not made any yet
     assert pack["readme_name"] == "READ_ME_FIRST.txt" and "Unzip" in pack["readme"]
 
 
@@ -416,3 +417,17 @@ def test_a_reconnected_event_only_redraws_and_adds_no_chat_line(settings, reques
 
     assert (refresh, job, message) == (5, None, "")
     assert len(flow.get_workspace_view(settings, request_id).messages) == before
+
+
+def test_6_32_a_different_folder_event_adds_the_wording_and_links_nothing(settings, request_id):
+    folder = good_folder()
+    view, _ = pick(settings, request_id, folder)
+    ctx = ctx_of(settings, request_id)
+
+    refresh, *_ = wcb.handle_workspace_event(
+        settings, {"kind": "different_folder", "nonce": 9, "name": "codevision"}, ctx, 0
+    )
+
+    after = flow.get_workspace_view(settings, request_id)
+    assert refresh == 1 and after.step == "ws_ready" and after.revision == view.revision
+    assert texts(after, "assistant")[-1].startswith("This is a different folder that is also")

@@ -12,7 +12,7 @@ from werkzeug.serving import make_server
 
 from agents import da_workspace_flow as flow
 from callbacks.screen_callbacks import da_developer_assistant_page_callbacks as cb
-from tests.da_browser import READ_JS, SEED_JS
+from tests.da_browser import HAS_DIR_JS, READ_JS, SEED_JS
 from tests.da_workspace_play import MODIFY, ORIGINAL, ready_to_build_id
 from web import da_home_web_server as server_module
 
@@ -70,7 +70,8 @@ def test_5_27_a_request_runs_from_ready_to_build_to_ws_ready_in_a_real_browser(
     button(page, "Choose workspace folder").click()
     wait_for_text(page, "passed the check")
 
-    assert page.evaluate(READ_JS, INIT).startswith("# Tests for this request")
+    assert page.evaluate(READ_JS, INIT) is None  # C1: the check wrote no tests folder
+    assert page.evaluate(HAS_DIR_JS, "tests") is False
     view = flow.get_workspace_view(settings, request_id)
     assert view.step == "ws_ready" and view.folder_name  # the folder NAME only, never a path
     assert "/" not in view.folder_name and "\\" not in view.folder_name
@@ -145,7 +146,7 @@ def test_5_22_to_5_24_the_fallback_in_the_real_browser(
     target = tmp_path / "pack.zip"
     download.value.save_as(target)
     with zipfile.ZipFile(target) as archive:
-        assert sorted(archive.namelist()) == sorted([INIT, "READ_ME_FIRST.txt"])
+        assert archive.namelist() == ["READ_ME_FIRST.txt"]  # C5: code files only; no build yet
     wait_for_text(page, "upload your folder before every new download")
 
     folder = tmp_path / "codevision"

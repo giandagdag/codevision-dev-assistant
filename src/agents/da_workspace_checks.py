@@ -9,7 +9,7 @@ and the server always recomputes it from the text it receives (rule W3: never tr
 import hashlib
 from collections.abc import Iterable
 
-from agents.da_approach_checks import folder_for_tests, normalise_path
+from agents.da_approach_checks import normalise_path
 from pydantic_classes.da_approach_models import PlannedFile
 from pydantic_classes.da_rulebook_models import Policy
 from pydantic_classes.da_workspace_models import (
@@ -22,14 +22,11 @@ from pydantic_classes.da_workspace_models import (
     LineEnding,
     ScanItem,
     ScanResult,
-    TestsFileFact,
     WriteJob,
     WriteReport,
 )
 
 BYTE_ORDER_MARK = "﻿"
-TESTS_INIT_NAME = "__init__.py"
-TESTS_INIT_TEXT = "# Tests for this request are written here by the Developer Assistant.\n"
 
 NOT_GIT_INFO = (
     "This folder is not a Git clone (for example a ZIP from Bitbucket). That is fine: at Handoff "
@@ -83,15 +80,6 @@ def path_problem(path: str) -> str:
     return ""
 
 
-def tests_folder(request_id: str) -> str:
-    """tests/<request id in lower case with _> with no trailing slash."""
-    return folder_for_tests(request_id).rstrip("/")
-
-
-def tests_init_path(request_id: str) -> str:
-    return f"{tests_folder(request_id)}/{TESTS_INIT_NAME}"
-
-
 def parent_of(path: str) -> str:
     return path.rsplit("/", 1)[0] if "/" in path else ""
 
@@ -99,7 +87,7 @@ def parent_of(path: str) -> str:
 # --- the facts from the browser ---
 
 
-def verify_facts(facts: FolderFacts, allowed_paths: Iterable[str], request_id: str) -> None:
+def verify_facts(facts: FolderFacts, allowed_paths: Iterable[str]) -> None:
     """Refuse facts the server cannot trust (W3, P13): paths outside the plan, or a browser
     fingerprint that differs from the one computed here."""
     allowed = {normalise_path(path) for path in allowed_paths}
@@ -107,10 +95,6 @@ def verify_facts(facts: FolderFacts, allowed_paths: Iterable[str], request_id: s
         if normalise_path(item.path) not in allowed:
             raise FactsProblem(f"The browser reported {item.path}, which is not in the file plan.")
         _verify_hash(item.path, item.text, item.fingerprint)
-    for item in facts.tests_files:
-        if "/" in item.name or path_problem(item.name):
-            raise FactsProblem(f"The browser reported an odd tests-folder name: {item.name}.")
-        _verify_hash(f"{tests_folder(request_id)}/{item.name}", item.text, item.fingerprint)
 
 
 def _verify_hash(path: str, text: str | None, browser_hash: str | None) -> None:
@@ -124,12 +108,10 @@ def check_facts(
     facts: FolderFacts,
     files: list[PlannedFile],
     policy: Policy,
-    request_id: str,
-    written_names: set[str] | None = None,
     remembered_folder: str = "",
 ) -> CheckResult:
-    """The workspace check (spec section 4). Blockers B1 to B7, plus shown-only information."""
-    written_names = written_names or set()
+    """The workspace check (spec section 4). Blockers B1 to B6, plus shown-only information.
+    (B7, the tests-folder blocker, was dropped in Phase 6: tests never go to the workspace.)"""
     blockers: list[Blocker] = []
     warnings: list[str] = []
     if remembered_folder and remembered_folder != facts.folder_name:
@@ -140,7 +122,6 @@ def check_facts(
     blockers.extend(folder_blockers)
     if not folder_blockers:
         blockers.extend(_file_blockers(facts, files, policy))
-        blockers.extend(_tests_blockers(facts, request_id, written_names))
     info = [] if facts.has_git else [NOT_GIT_INFO]
     return CheckResult(
         passed=not blockers,
@@ -244,20 +225,6 @@ def _missing_folder(path: str) -> Blocker:
     )
 
 
-def _tests_blockers(facts: FolderFacts, request_id: str, written_names: set[str]) -> list[Blocker]:
-    foreign = sorted(item.name for item in facts.tests_files if item.name not in written_names)
-    if not foreign:
-        return []
-    folder = folder_for_tests(request_id)
-    return [
-        Blocker(
-            code="B7",
-            path=folder,
-            text=f"Move or delete {folder} first. It holds files this request did not write.",
-        )
-    ]
-
-
 # --- the write job (spec section 5) ---
 
 
@@ -268,22 +235,20 @@ def build_write_job(
     known: dict[str, tuple[str, LineEnding]],
 ) -> WriteJob:
     """One JobFile per (path, text). `known` maps a path to the (fingerprint, line ending) the
-    file must have right now; a path that is not there is new and must be absent."""
+    file must have right now; a path that is not there is new and must be absent. A write job
+    holds code files only: any path under tests/ is refused (Phase 6, tests stay in the app)."""
     job_files = []
     for path, text in items:
         problem = path_problem(path)
         if problem:
             raise FactsProblem(problem)
+        if normalise_path(path).lower().startswith("tests/"):
+            raise FactsProblem(f"{path}: tests are never written to your folder.")
         expected, ending = known.get(path, (ABSENT, "\n"))
         job_files.append(
             JobFile(path=path, text=apply_line_ending(text, ending), expected=expected)
         )
-    return WriteJob(
-        request_id=request_id,
-        folder_name=folder_name,
-        files=job_files,
-        creatable_folders=["tests", tests_folder(request_id)],
-    )
+    return WriteJob(request_id=request_id, folder_name=folder_name, files=job_files)
 
 
 def edit_guard_allows(current_text: str | None, expected: str) -> bool:
@@ -339,30 +304,18 @@ def stop_message(job: WriteJob, report: WriteReport) -> str:
 
 
 def rescan_results(
-    facts: FolderFacts,
-    planned_paths: list[str],
-    known: dict[str, str],
-    request_id: str,
-    written_names: set[str],
+    facts: FolderFacts, planned_paths: list[str], known: dict[str, str]
 ) -> ScanResult:
-    """Compare what the browser reads now with the last known fingerprints. `known` maps a path
-    (planned file, or a tests-folder file the app wrote) to its last write, else its baseline."""
-    verify_facts(facts, planned_paths, request_id)
+    """Compare what the browser reads now with the last known fingerprints. `known` maps a
+    planned file to its last write, else its baseline. Only planned files are read (Phase 6)."""
+    verify_facts(facts, planned_paths)
     by_path = {normalise_path(item.path): item for item in facts.files}
-    items: list[ScanItem] = []
-    for path in planned_paths:
-        fact = by_path.get(normalise_path(path))
-        items.append(ScanItem(path=path, outcome=_file_outcome(fact, known.get(path))))
-    folder = tests_folder(request_id)
-    for item in facts.tests_files:
-        path = f"{folder}/{item.name}"
-        if item.name not in written_names:
-            items.append(ScanItem(path=path, outcome="new_in_tests"))
-        else:
-            items.append(ScanItem(path=path, outcome=_tests_outcome(item, known.get(path))))
-    found = {item.name for item in facts.tests_files}
-    for name in sorted(written_names - found):
-        items.append(ScanItem(path=f"{folder}/{name}", outcome="missing"))
+    items = [
+        ScanItem(
+            path=path, outcome=_file_outcome(by_path.get(normalise_path(path)), known.get(path))
+        )
+        for path in planned_paths
+    ]
     return ScanResult(items=items)
 
 
@@ -371,9 +324,3 @@ def _file_outcome(fact: FileFact | None, last: str | None):
         # A planned new file that was never written is not "missing": there is nothing to lose.
         return "missing" if last is not None else "unchanged"
     return "unchanged" if last is not None and fingerprint(fact.text) == last else "changed"
-
-
-def _tests_outcome(item: TestsFileFact, last: str | None):
-    if item.text is None:
-        return "missing"
-    return "unchanged" if last is not None and fingerprint(item.text) == last else "changed"

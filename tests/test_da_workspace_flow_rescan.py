@@ -76,7 +76,7 @@ def test_a_rescan_with_nothing_changed_says_so(settings, request_id, ready):
     assert after.last_scan.count("unchanged") >= 1
 
 
-def test_5_18_an_extra_file_in_the_tests_folder_is_listed_and_nothing_else_is_read(
+def test_6_39_a_re_scan_reads_planned_files_only_even_with_a_tests_folder_in_the_workspace(
     settings, request_id, ready
 ):
     folder, view = ready
@@ -87,14 +87,12 @@ def test_5_18_an_extra_file_in_the_tests_folder_is_listed_and_nothing_else_is_re
     after = do_rescan(settings, request_id, folder, view.revision)
 
     outcomes = {item.path: item.outcome for item in after.last_scan.items}
-    assert outcomes[f"{TESTS}/test_mine.py"] == "new_in_tests"
-    allowed = set(after.planned_paths) | {f"{TESTS}/__init__.py", f"{TESTS}/test_mine.py"}
-    assert set(folder.reads) <= allowed
+    assert set(outcomes) == set(after.planned_paths)  # no 'New in tests folder' result exists
+    assert set(folder.reads) <= set(after.planned_paths)
     assert "src/agents/secret_notes.py" not in folder.reads
+    assert not any(path.startswith("tests/") for path in folder.reads)
     with open_db(settings.db_path) as conn:
-        assert [v.kind for v in read_file_versions(conn, request_id, f"{TESTS}/test_mine.py")] == [
-            "scanned"
-        ]
+        assert read_file_versions(conn, request_id, f"{TESTS}/test_mine.py") == []
 
 
 def test_a_missing_planned_file_is_listed_as_missing(settings, request_id, ready):
