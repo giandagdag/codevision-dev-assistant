@@ -129,7 +129,13 @@ def test_build_numbers_count_up_and_a_run_closes_once(db_path, request_id):
         assert count_open_builds(conn) == 0
         with pytest.raises(sqlite3.DatabaseError, match="closed build"):
             close_build_run(
-                conn, request_id, 1, ended_at=T1, rounds_used=3, result_status="x", label="x",
+                conn,
+                request_id,
+                1,
+                ended_at=T1,
+                rounds_used=3,
+                result_status="x",
+                label="x",
                 stop_reason="",
             )
 
@@ -141,7 +147,13 @@ def test_closing_a_build_that_does_not_exist_is_refused(db_path, request_id):
         ensure_build_tables(conn)
         with pytest.raises(BuildError):
             close_build_run(
-                conn, request_id, 9, ended_at=T1, rounds_used=0, result_status="", label="",
+                conn,
+                request_id,
+                9,
+                ended_at=T1,
+                rounds_used=0,
+                result_status="",
+                label="",
                 stop_reason="",
             )
 

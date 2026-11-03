@@ -389,8 +389,7 @@ def read_progress(
 ) -> list[ProgressLine]:
     """The newest row of each line number, in line order."""
     rows = conn.execute(
-        "SELECT * FROM da_build_progress WHERE request_id = ? AND build_number = ?"
-        " ORDER BY seq",
+        "SELECT * FROM da_build_progress WHERE request_id = ? AND build_number = ? ORDER BY seq",
         (request_id, build_number),
     ).fetchall()
     latest = {row["line_number"]: row for row in rows}  # later rows overwrite earlier ones

@@ -99,7 +99,7 @@ def _file_problems(reply: ApproachReply, policy: Policy) -> list[str]:
                 f"{path} is not in an allowed folder. Use one of: "
                 f"{', '.join(policy.allowed_folders)}."
             )
-        elif _matches_any(lower, policy.protected_files):
+        elif matches_any(lower, policy.protected_files):
             problems.append(
                 f"{path} is protected. List it under needs_people with the reason instead."
             )
@@ -133,7 +133,7 @@ def _needs_people_problems(reply: ApproachReply) -> list[str]:
     return problems
 
 
-def _matches_any(lower_path: str, patterns: list[str]) -> bool:
+def matches_any(lower_path: str, patterns: list[str]) -> bool:
     return any(fnmatchcase(lower_path, pattern.lower()) for pattern in patterns)
 
 
@@ -174,18 +174,18 @@ def _reuse_problems(reply: ApproachReply, discovery: DiscoveryResult) -> list[st
     return problems
 
 
-def _library_name(name: str) -> str:
+def library_name(name: str) -> str:
     return name.strip().lower().replace("-", "_")
 
 
 def _library_problems(reply: ApproachReply, policy: Policy) -> list[str]:
-    approved = {_library_name(name) for name in policy.approved_libraries}
+    approved = {library_name(name) for name in policy.approved_libraries}
     allowed = approved | {name.lower() for name in sys.stdlib_module_names}
     return [
         f"Library '{name}' is not in the Python standard library or on the approved list "
         f"({', '.join(policy.approved_libraries)})."
         for name in reply.libraries
-        if _library_name(name) not in allowed
+        if library_name(name) not in allowed
     ]
 
 
@@ -283,7 +283,7 @@ def compute_warnings(
         warnings.append(f"A person must change {normalise_path(person.path)}: {person.reason}.")
     for zone in policy.flag_review_zones:
         paths = [normalise_path(item.path).lower() for item in reply.files]
-        if any(_matches_any(path, zone.path_patterns) for path in paths):
+        if any(matches_any(path, zone.path_patterns) for path in paths):
             zones.append(zone.name)
             warnings.append(
                 f"Touches {zone.name}. A named senior becomes a required reviewer at the "
