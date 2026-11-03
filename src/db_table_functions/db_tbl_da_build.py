@@ -204,11 +204,11 @@ def save_build_state(
 
 
 def read_running_requests(conn: sqlite3.Connection) -> list[str]:
-    """Requests whose build is marked running. Used at server start-up (spec section 10)."""
+    """Requests whose build is marked running (including between rounds). Used at server
+    start-up, when no build can really still be running (spec section 10)."""
     rows = conn.execute("SELECT request_id, state FROM da_build_state").fetchall()
-    return [
-        row["request_id"] for row in rows if json.loads(row["state"]).get("step") == "b_running"
-    ]
+    running = ("b_running", "b_round_failed")
+    return [row["request_id"] for row in rows if json.loads(row["state"]).get("step") in running]
 
 
 # --- builds ---

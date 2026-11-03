@@ -198,6 +198,9 @@ class _Run:
     # --- reading ---
 
     def _load(self) -> None:
+        # The rulebook is read BEFORE the read transaction below. Opening a second connection
+        # while one is open can deadlock when another build is saving at the same moment.
+        rulebook = get_rulebook_for_request(self.settings.db_path, self.request_id).rulebook
         with open_db(self.settings.db_path) as conn:
             ensure_build_tables(conn)
             ensure_workspace_tables(conn)
@@ -224,12 +227,8 @@ class _Run:
             self.inp = _Inputs(
                 request=request,
                 state=state,
-                charter=get_rulebook_for_request(
-                    self.settings.db_path, self.request_id
-                ).rulebook.charter,
-                policy=get_rulebook_for_request(
-                    self.settings.db_path, self.request_id
-                ).rulebook.policy,
+                charter=rulebook.charter,
+                policy=rulebook.policy,
                 record=record,
                 approach=approach,
                 cases=plans[approach_state.accepted_plan_version].cases,
