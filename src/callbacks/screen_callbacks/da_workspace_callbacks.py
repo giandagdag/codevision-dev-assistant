@@ -196,15 +196,22 @@ def _finish_build_write(settings, report, ctx, refresh):
 
 # The automatic write (D-E): once a build is done and the page is open with the folder allowed,
 # ask the server for the write job. It never prompts: with no permission it waits for Reconnect.
+#
+# The event is sent with set_props after a short delay, NOT returned from the callback. Why: a
+# returned value would continue the SAME Dash cascade (redraw, auto-write, save, redraw), and
+# Dash does not run a callback twice in one cascade, so the final redraw after the save was
+# silently skipped (found in the real-browser test). A set_props call starts a new cascade.
 AUTO_WRITE_BODY = """
 const nothing = window.dash_clientside.no_update;
 if (!ctx || !ctx.auto_write || ctx.mode === 'download') { return nothing; }
 if (window.__daAutoWrite === ctx.build_revision) { return nothing; }
-return window.daWorkspace.chip().then((chip) => {
-    if (chip.permission !== 'granted') { return nothing; }
+window.daWorkspace.chip().then((chip) => {
+    if (chip.permission !== 'granted') { return; }
     window.__daAutoWrite = ctx.build_revision;
-    return { kind: 'build_write', nonce: Date.now() };
+    setTimeout(() => window.dash_clientside.set_props('da-ws-event',
+        { data: { kind: 'build_write', nonce: Date.now() } }), 50);
 });
+return nothing;
 """
 
 
@@ -254,7 +261,7 @@ def register_da_workspace_callbacks(app, current_settings) -> None:
     )
     app.clientside_callback(
         clientside_function("content, ctx", AUTO_WRITE_BODY),
-        Output(WS_EVENT_ID, "data", allow_duplicate=True),
+        Output(WS_SINK_ID, "data", allow_duplicate=True),
         Input("da-page-content", "children"),
         State(WS_CTX_ID, "data"),
         prevent_initial_call=True,

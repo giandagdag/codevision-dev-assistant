@@ -545,7 +545,7 @@ def _approach_composer(
         style=da_styles.COMPOSER if text_open else {**da_styles.COMPOSER, "opacity": 0.6},
     )
     if build is not None and not (view is not None and view.step == "escalated"):
-        return dmc.Box([_build_bar(build), controls])
+        return dmc.Box([_build_bar(build, workspace), controls])
     if view is not None and view.request.status == STATUS_READY_TO_BUILD:
         done = dmc.Box(
             [
@@ -560,7 +560,9 @@ def _approach_composer(
         return dmc.Box([done, controls])
     if view is not None and view.step == "escalated":
         done = dmc.Box(
-            dmc.Text(view.open_item, size="sm"), style=da_styles.CHOICES_BAR, pb="xs"
+            [dmc.Text(view.open_item, size="sm"), _hidden_reconnect(workspace)],
+            style=da_styles.CHOICES_BAR,
+            pb="xs",
         )
         return dmc.Box([done, controls])
     if not buttons:
@@ -569,7 +571,18 @@ def _approach_composer(
     return dmc.Box([_approach_bar(buttons, note), controls])
 
 
-def _build_bar(build: BuildView) -> dmc.Box:
+def _hidden_reconnect(workspace: WorkspaceView | None):
+    """The Reconnect button, drawn hidden; the browser shows it only when it needs your OK again
+    (D-E, W4). It must exist whenever the workspace step is ws_ready: the browser script sets its
+    style on every redraw, and Dash refuses an Output on a button that is not on the page."""
+    if workspace is None or workspace.step != "ws_ready" or workspace.mode != "picker":
+        return None
+    button = parts.choice_button("Reconnect", ws_button_id(RECONNECT_KEY, "bar"), parts.NORMAL)
+    button.style = {"display": "none"}
+    return button
+
+
+def _build_bar(build: BuildView, workspace: WorkspaceView | None = None) -> dmc.Box:
     """The buttons under the chat once a build has started (spec section 1). Browser-run ones
     (Re-scan and build again) start JavaScript; server-run ones use the normal choice path."""
     shown = [
@@ -584,12 +597,8 @@ def _build_bar(build: BuildView) -> dmc.Box:
         )
         for number, (key, label) in enumerate(build.buttons)
     ]
-    if build.auto_write and build.mode == "picker":
-        # Drawn hidden; the browser shows it only when it needs your OK again (D-E, W4).
-        reconnect = parts.choice_button(
-            "Reconnect", ws_button_id(RECONNECT_KEY, "bar"), parts.NORMAL
-        )
-        reconnect.style = {"display": "none"}
+    reconnect = _hidden_reconnect(workspace)
+    if reconnect is not None:
         shown.append(reconnect)
     if build.auto_write and build.mode == "download":
         download = ws_button_id("build_download", "bar")

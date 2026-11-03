@@ -175,10 +175,14 @@ def test_6_40_the_download_event_gives_the_zip_pieces_for_the_code_files_only(se
     assert flow.get_state(settings, request_id).step == "b_written"
 
 
-def test_the_auto_write_script_never_prompts_and_fires_once_per_build_revision():
+def test_the_auto_write_script_never_prompts_fires_once_and_starts_a_fresh_cascade():
     body = wcb.AUTO_WRITE_BODY
 
     assert "chip.permission !== 'granted'" in body  # no permission: wait for Reconnect
     assert "requestPermission" not in body
-    assert "window.__daAutoWrite === ctx.build_revision" in body
+    assert "window.__daAutoWrite === ctx.build_revision" in body  # once per build revision
     assert "ctx.mode === 'download'" in body  # in download mode the developer presses the button
+    # It must NOT return the event (that would continue the same Dash cascade and the redraw
+    # after the save would be skipped); set_props starts a new one.
+    assert "dash_clientside.set_props('da-ws-event'" in body
+    assert "return { kind" not in body

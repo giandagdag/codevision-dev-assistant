@@ -10,6 +10,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from agents import da_approach_flow as approach
+from agents import da_build_flow as build
+from agents import da_build_loop as build_loop
 from agents import da_workspace_flow as workspace
 from agents.da_discover_flow import confirm_discovery, start_discovery
 from agents.da_llm_client import LLMClient, LLMClientError, get_llm_client
@@ -331,10 +333,11 @@ def _run_approach_steps(db_path: Path, settings: Settings) -> None:
         f"21. The Tester's prompt held all {len(criteria)} criteria and none of the "
         f"{len(planned)} planned file paths"
     )
-    _run_workspace_steps(demo, fake_request_id)
+    folder = _run_workspace_steps(demo, fake_request_id)
+    _run_build_steps(demo, fake_request_id, folder)
 
 
-def _run_workspace_steps(settings: Settings, request_id: str) -> None:
+def _run_workspace_steps(settings: Settings, request_id: str) -> FakeBrowserFolder:
     """Items 22 and 23: the Workspace (Phase 5) with a pretend browser folder. It goes from
     READY_TO_BUILD to ws_ready, then a re-scan finds one file the developer changed."""
     view = workspace.get_workspace_view(settings, request_id)
@@ -365,6 +368,38 @@ def _run_workspace_steps(settings: Settings, request_id: str) -> None:
     if changed != [edited] or not still_ready:
         raise UnderstandError(f"The re-scan listed {changed}, not {[edited]}.")
     print(f"23. Re-scan found 1 file changed by the developer ({edited}); the step stays ws_ready")
+    return folder
+
+
+def _run_build_steps(settings: Settings, request_id: str, folder: FakeBrowserFolder) -> None:
+    """Items 24 and 25: the Build + test loop (Phase 6) with the fake provider, the REAL sandbox
+    (a separate Python process on the made-up reference folder) and the pretend browser folder.
+    It goes from ws_ready through BUILDING to READY_FOR_REVIEW, then writes the code files."""
+    view = workspace.get_workspace_view(settings, request_id)
+    facts = folder.facts(view.planned_paths, view.markers, request_id, view.max_file_kb)
+    build.start_build(settings, request_id, build.get_revision(settings, request_id), facts=facts)
+    outcome = build_loop.run_build(settings, request_id)
+    shown = build.get_build_view(settings, request_id)
+    if outcome != "done" or shown.request_status != "READY_FOR_REVIEW" or shown.run is None:
+        raise UnderstandError(
+            f"The build ended as {outcome} at {shown.state.step}: {shown.banner_text}"
+        )
+    print(
+        f"24. {request_id}: build {shown.run.build_number} reached READY_FOR_REVIEW "
+        f"({shown.label}) in {shown.run.rounds_used} rounds, "
+        f"{shown.tests_passing} frozen tests passing"
+    )
+
+    revision = build.get_revision(settings, request_id)
+    job = build.prepare_write(settings, request_id, revision)
+    report = folder.run_job(job)
+    state = build.save_write(settings, request_id, report, revision)
+    if state.step != "b_written" or any(path.startswith("tests/") for path in folder.files):
+        raise UnderstandError(f"The write ended at {state.step}, or a tests folder was written.")
+    print(
+        f"25. {len(report.written)} code files written to the pretend folder (no tests folder); "
+        f"the step is {state.step}"
+    )
 
 
 def _pretend_codevision_folder(view) -> FakeBrowserFolder:
@@ -375,7 +410,7 @@ def _pretend_codevision_folder(view) -> FakeBrowserFolder:
         folder.files[f"{marker}/da_pretend.py"] = "# made up\n"
     for row in view.rows:
         if row.action == "modify":
-            folder.files[row.path] = "def made_up():\n    return 1\n"
+            folder.files[row.path] = "def validate(path):\n    return True\n"
         elif row.action == "create":
             folder.extra_folders.add(row.path.rsplit("/", 1)[0])
     return folder
@@ -409,9 +444,7 @@ def _ticks(view) -> str:
 
 
 def _confirmed_request(settings: Settings) -> str:
-    view = create_understand_request(
-        settings, SAMPLE_FIRST_MESSAGE, developer_id=SAMPLE_DEVELOPER
-    )
+    view = create_understand_request(settings, SAMPLE_FIRST_MESSAGE, developer_id=SAMPLE_DEVELOPER)
     request_id = view.request.request_id
     for answer in SAMPLE_ANSWERS:
         view = submit_answer(settings, request_id, answer, view.revision)
