@@ -173,10 +173,28 @@ class _Run:
         except Exception as error:  # noqa: BLE001 - a thread must never die silently
             logger.exception("The build stopped on an unexpected error.")
             if not hasattr(self, "inp"):
-                return "interrupted"  # nothing was read yet; start-up recovery will pick it up
+                return self._pause_early(f"The build could not start ({type(error).__name__}).")
             return self._pause(
                 "interrupted", f"An unexpected error stopped the build ({type(error).__name__})."
             )
+
+    def _pause_early(self, message: str) -> str:
+        """The build failed before its inputs were read. Best effort: mark it paused, so the page
+        shows Try again instead of 'running' for ever. If even that fails, start-up recovery
+        picks it up."""
+        try:
+            with _write(self.settings.db_path) as conn:
+                state = read_build_state(conn, self.request_id)
+                if state is None or state.step not in RUNNING_STEPS:
+                    return "cancelled"
+                tx = BuildTx(conn, _require_request(conn, self.request_id), state, self.now_fn())
+                tx.audit("system", "build_interrupted", {"why": message, "kind": "interrupted"})
+                tx.say("assistant", f"The build paused: {message}")
+                tx.set(step="b_interrupted", message=message)
+                save_build_state(conn, tx.state, state.revision, tx.now)
+        except Exception:  # noqa: BLE001
+            logger.exception("The build could not even be marked as paused.")
+        return "interrupted"
 
     def _pause(self, kind: str, message: str) -> str:
         try:
@@ -416,7 +434,7 @@ class _Run:
                     kind="code",
                     text=text,
                     fingerprint=fingerprint(text),
-                    made_by="generator",
+                    made_by="system" if problems else "generator",
                 ),
                 tx.now,
             )
@@ -426,8 +444,13 @@ class _Run:
         return text, problems
 
     def _saved_this_round(self, path: str, number: int) -> BuildFile | None:
+        """The file already written in this round, if it was written cleanly. A file saved with
+        problems (made_by "system": its edit blocks did not match) is NOT skipped on a resume, so
+        a pause can never turn its failure into a pass."""
         saved = self.inp.code.get(path)
-        return saved if saved is not None and saved.round == number else None
+        if saved is None or saved.round != number or saved.made_by == "system":
+            return None
+        return saved
 
     def _layer_a(
         self, generated: dict[str, str], contract: Contract, problems: list[LayerAProblem]

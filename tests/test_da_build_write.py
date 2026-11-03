@@ -264,3 +264,19 @@ def test_6_40_download_mode_gives_a_zip_of_the_code_files_only(settings, built, 
         assert read_file_versions(conn, request_id, CREATE)[-1].mode == "download"
     assert "into the ZIP" in chat(settings, request_id, "assistant")[-1]
     assert files_of(settings, request_id, kind="test")  # the tests stay in the app
+
+
+def test_a_report_without_a_stop_must_list_every_file_of_the_job(settings, built):
+    """Code review round 1: an empty or short report must not become 'written'."""
+    request_id, folder = built
+    job = flow.prepare_write(settings, request_id, revision(settings, request_id))
+    short = folder.run_job(job)
+    short.written.pop()  # the browser "forgot" the last file
+
+    with pytest.raises(BuildError, match="does not list every file"):
+        flow.save_write(settings, request_id, short, revision(settings, request_id))
+    with pytest.raises(BuildError, match="does not list every file"):
+        flow.save_write(settings, request_id, WriteReport(), revision(settings, request_id))
+
+    state = build_state(settings, request_id)
+    assert (state.step, state.write_state) == ("b_done", "not_written")

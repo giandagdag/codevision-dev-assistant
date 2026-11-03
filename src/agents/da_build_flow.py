@@ -372,6 +372,10 @@ def save_write(
             verify_report(job, report)
         except FactsProblem as error:
             raise BuildError(str(error)) from error
+        written_paths = [i.path for i in report.written]
+        if report.stopped is None and written_paths != [f.path for f in job.files]:
+            # A report that says "no stop" must have written EVERY file of the job.
+            raise BuildError("The browser's report does not list every file. Nothing was saved.")
         approach_version = tx.state.approach_version
         for item in report.written:
             _insert_written(tx, item, mode, approach_version)
@@ -579,6 +583,13 @@ def get_build_view(settings, request_id: str) -> BuildView:
     """Everything the Build tab, the Tests tab and the chat buttons need, read on one connection
     (no lock held)."""
     policy = get_rulebook_for_request(settings.db_path, request_id).rulebook.policy
+    # Read BEFORE the read transaction below: a second connection opened while it is open can
+    # deadlock with a build that is saving at the same moment (plan item P18).
+    stopped = [
+        e.details.get("path", "")
+        for e in list_audit_events(settings.db_path, request_id)
+        if e.event_type == "workspace_write_stopped"
+    ]
     with open_db(settings.db_path) as conn:
         ensure_build_tables(conn)
         ensure_workspace_tables(conn)
@@ -601,11 +612,6 @@ def get_build_view(settings, request_id: str) -> BuildView:
             normalise_path(i.path): read_file_versions(conn, request_id, normalise_path(i.path))
             for i in approach.plan.files
         }
-        stopped = [
-            e.details.get("path", "")
-            for e in list_audit_events(settings.db_path, request_id)
-            if e.event_type == "workspace_write_stopped"
-        ]
         return _view(
             request.status,
             state,

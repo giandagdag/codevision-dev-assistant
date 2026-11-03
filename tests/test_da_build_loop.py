@@ -309,3 +309,36 @@ def test_a_missing_reference_folder_pauses_before_any_ai_call(
 
     assert outcome == "interrupted" and factory.calls == []
     assert "DA_SANDBOX_SOURCE_DIR" in build_state(settings, request_id).message
+
+
+def test_a_file_whose_edit_blocks_failed_is_not_kept_as_finished_for_a_resume(
+    settings, request_id, monkeypatch
+):
+    """Code review round 1: a pause must not turn a failed edit into a pass."""
+    switches(monkeypatch, "bad_edit")
+
+    build(settings, request_id)
+
+    rows = [f for f in files_of(settings, request_id, kind="code") if f.path == MODIFY]
+    assert rows[0].round == 1 and rows[0].made_by == "system"  # marked: not a clean file
+    assert all(
+        f.made_by == "generator"
+        for f in files_of(settings, request_id, kind="code")
+        if f.path == CREATE
+    )
+
+
+def test_a_failure_before_the_inputs_are_read_pauses_the_build_instead_of_leaving_it_running(
+    settings, request_id, monkeypatch
+):
+    def boom(self):
+        raise RuntimeError("database busy")
+
+    monkeypatch.setattr(loop._Run, "_load", boom)
+    flow.start_build(settings, request_id, 0)
+
+    outcome = loop.run_build(settings, request_id)
+
+    assert outcome == "interrupted"
+    state = build_state(settings, request_id)
+    assert state.step == "b_interrupted" and "could not start" in state.message

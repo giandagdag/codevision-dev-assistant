@@ -171,6 +171,9 @@ def _run(root: Path, test_id: str, timeout_seconds: int) -> LayerBResult:
         process.wait(timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
         timed_out = True
+    finally:
+        # Always end the whole group, not only on a timeout: a test that exits normally but
+        # leaves a background child must not leave it running on the shared server.
         _end_process_tree(process)
     output = capture.finish()
     return _read_results(root, output, capture.cut, timed_out, timeout_seconds, process.returncode)

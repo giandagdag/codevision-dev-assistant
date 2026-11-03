@@ -550,3 +550,30 @@ def test_blocks_from_a_reply_apply_to_a_file(policy):
     text, problems = checks.apply_edits(ORIGINAL, edits, MODIFY)
 
     assert problems == [] and text == "def validate(path):\n    return False\n"
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "import os as o\n\ndef extra():\n    o.system('ls')\n",
+        "import importlib\n\ndef extra():\n    importlib.import_module('subprocess')\n",
+        "import builtins\n\ndef extra():\n    builtins.eval('1')\n",
+        "import os\n\ndef extra():\n    os.fork()\n",
+        "import os\n\ndef extra():\n    os.posix_spawn('/bin/ls', [], {})\n",
+        "import asyncio\n\ndef extra():\n    asyncio.create_subprocess_exec('ls')\n",
+        "from importlib import import_module\n",
+        "from builtins import eval\n",
+    ],
+)
+def test_a5_closes_the_cheap_ways_round_the_risky_call_rule(policy, code):
+    """Code review round 1: an alias, importlib, builtins, fork, posix_spawn and asyncio
+    subprocess calls are refused like os.system."""
+    result = layer_a(policy, ORIGINAL + "\n" + code)
+
+    assert "A5" in codes(result)
+
+
+def test_a5_still_allows_ordinary_os_and_asyncio_use(policy):
+    code = "import os\nimport asyncio\n\ndef extra(p):\n    return os.path.join(p, 'x')\n"
+
+    assert layer_a(policy, ORIGINAL + "\n" + code).ok

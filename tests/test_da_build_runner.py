@@ -220,3 +220,27 @@ def test_6_27_try_again_after_a_restart_does_not_regenerate_finished_files(setti
     assert all("Round: 2" in p for p in first_file_asked)  # never asked again for round 1
     assert run_row(settings, request_id).rounds_used == 2
     assert request_status(settings, request_id) == "READY_FOR_REVIEW"
+
+
+def test_stop_then_build_again_while_the_old_thread_is_still_busy_runs_the_new_build(settings):
+    """Code review round 1: the old thread (stuck in a slow AI call) must not stand in for the
+    new build's thread, or the new build would show 'running' for ever."""
+    request_id = ready_with_workspace(settings)[0]
+    started(settings, request_id)
+    factory = GatedFactory()
+    old = runner.submit_build(settings, request_id, factory)
+    assert wait_for(lambda: factory.reached)  # the old build is inside its first AI call
+
+    flow.stop_build(settings, request_id, flow.get_revision(settings, request_id))
+    second = started(settings, request_id)
+    new = runner.submit_build(settings, request_id, factory)
+    factory.gate.set()  # the slow AI call finally returns
+    old.join(timeout=90)
+    new.join(timeout=90)
+
+    assert new is not old and second.build_number == 2
+    state = build_state(settings, request_id)
+    assert (state.build_number, state.step) == (2, "b_done")
+    assert request_status(settings, request_id) == "READY_FOR_REVIEW"
+    assert run_row(settings, request_id, 1).ended_at is not None  # build 1 stayed stopped
+    assert run_row(settings, request_id, 2).label == "Ready with warnings"

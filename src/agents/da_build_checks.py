@@ -308,29 +308,54 @@ def imported_modules(tree: ast.AST) -> list[tuple[str, list[str], int]]:
     return found
 
 
-def _called_name(node: ast.Call) -> str:
+def _import_aliases(tree: ast.AST) -> dict[str, str]:
+    """`import os as o` gives {"o": "os"}, so o.system(...) is read as os.system(...)."""
+    aliases = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.asname:
+                    aliases[alias.asname] = alias.name
+    return aliases
+
+
+def _called_name(node: ast.Call, aliases: dict[str, str] | None = None) -> str:
     """eval for eval(...), os.system for os.system(...), x.write_text for x.write_text(...)"""
     func = node.func
     if isinstance(func, ast.Name):
         return func.id
     if isinstance(func, ast.Attribute):
         base = func.value.id if isinstance(func.value, ast.Name) else ""
+        base = (aliases or {}).get(base, base)
         return f"{base}.{func.attr}" if base else f"._.{func.attr}"
     return ""
 
 
+# Modules whose risky functions are named in full. Cheap, common ways round the plain rules are
+# closed (an alias, importlib, builtins, fork, posix_spawn, asyncio subprocess). Layer A is a
+# guard, not a jail: the sandbox's honest limits are in the plan and the README.
+RISKY_MODULE_CALLS = {
+    "builtins": RISKY_NAMES,
+    "importlib": ("import_module", "__import__"),
+    "asyncio": ("create_subprocess_exec", "create_subprocess_shell"),
+    "os": ("fork", "forkpty", "posix_spawn", "posix_spawnp", "system", "popen"),
+}
+
+
 def _risky_call_problems(tree: ast.AST, subject: str) -> list[str]:
     problems = []
+    aliases = _import_aliases(tree)
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
-            name = _called_name(node)
+            name = _called_name(node, aliases)
             if _is_risky(name):
                 problems.append(f"Line {node.lineno}: {name}() is not allowed in {subject}.")
-        elif isinstance(node, ast.ImportFrom) and node.module == "os":
+        elif isinstance(node, ast.ImportFrom) and node.module in RISKY_MODULE_CALLS:
             problems += [
-                f"Line {node.lineno}: importing {alias.name} from os is not allowed in {subject}."
+                f"Line {node.lineno}: importing {alias.name} from {node.module} is not allowed "
+                f"in {subject}."
                 for alias in node.names
-                if _is_risky(f"os.{alias.name}")
+                if _is_risky(f"{node.module}.{alias.name}")
             ]
     return problems
 
@@ -338,10 +363,10 @@ def _risky_call_problems(tree: ast.AST, subject: str) -> list[str]:
 def _is_risky(name: str) -> bool:
     if name in RISKY_NAMES:
         return True
-    if not name.startswith("os."):
-        return False
-    call = name.split(".", 1)[1]
-    return call in RISKY_OS_CALLS or call.startswith(RISKY_OS_PREFIXES)
+    module, _, call = name.partition(".")
+    if module == "os" and (call in RISKY_OS_CALLS or call.startswith(RISKY_OS_PREFIXES)):
+        return True
+    return call in RISKY_MODULE_CALLS.get(module, ())
 
 
 @dataclass(frozen=True)

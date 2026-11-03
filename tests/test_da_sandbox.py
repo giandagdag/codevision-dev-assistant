@@ -296,3 +296,21 @@ def test_a_process_that_dies_without_results_is_reported_as_an_error():
 
     assert result.ran and result.failed == 1
     assert result.tests[0].name == "(test run)"
+
+
+def test_a_child_left_running_by_a_test_that_ended_normally_is_still_ended(tmp_path):
+    """Code review round 1: the whole process group is ended after every run, not only on a
+    timeout."""
+    pid_file = tmp_path / "child.pid"
+    text = body(
+        "import subprocess, sys",
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])",
+        f"open({str(pid_file)!r}, 'w').write(str(child.pid))",
+    )
+
+    result = run(text)
+
+    assert result.ok and not result.timed_out  # the test itself passed and finished
+    child = int(pid_file.read_text())
+    time.sleep(0.3)
+    assert not is_alive(child)

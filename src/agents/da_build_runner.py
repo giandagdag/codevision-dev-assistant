@@ -41,9 +41,13 @@ logger = get_logger(__name__)
 WAIT_SECONDS = 1.0
 
 _condition = threading.Condition()
-_active: set[str] = set()
-_waiting: list[str] = []
-_threads: dict[str, threading.Thread] = {}
+# Everything is keyed by (request id, build number): after Stop build the old thread may still be
+# finishing an AI call or a sandbox run, and a new build of the same request must get its own
+# thread (found in code review round 1).
+Key = tuple[str, int]
+_active: set[Key] = set()
+_waiting: list[Key] = []
+_threads: dict[Key, threading.Thread] = {}
 
 
 def waiting_text(ahead: int) -> str:
@@ -55,22 +59,31 @@ def submit_build(
     request_id: str,
     client_factory: Callable[[Settings, str], object] | None = None,
 ) -> threading.Thread:
-    """Run the request's running build on a background thread. Submitting a request that
-    already has a live thread does nothing (one build at a time per request, rule B4)."""
+    """Run the request's running build on a background thread. Submitting a build that already
+    has a live thread does nothing (one thread per build, rule B4). A NEW build number gets a new
+    thread even if the old build's thread has not noticed Stop yet."""
+    key = (request_id, _build_number(settings, request_id))
     with _condition:
-        existing = _threads.get(request_id)
+        existing = _threads.get(key)
         if existing is not None and existing.is_alive():
             return existing
         thread = threading.Thread(
             target=_work,
-            args=(settings, request_id, client_factory),
-            name=f"da-build-{request_id}",
+            args=(settings, key, client_factory),
+            name=f"da-build-{request_id}-{key[1]}",
             daemon=True,  # a server shutdown must not wait for a build
         )
-        _threads[request_id] = thread
-        _waiting.append(request_id)
+        _threads[key] = thread
+        _waiting.append(key)
     thread.start()
     return thread
+
+
+def _build_number(settings: Settings, request_id: str) -> int:
+    with open_db(settings.db_path) as conn:
+        ensure_build_tables(conn)
+        state = read_build_state(conn, request_id)
+    return state.build_number if state else 0
 
 
 def active_count() -> int:
@@ -78,60 +91,62 @@ def active_count() -> int:
         return len(_active)
 
 
-def _work(settings: Settings, request_id: str, client_factory) -> None:
+def _work(settings: Settings, key: Key, client_factory) -> None:
+    request_id = key[0]
     try:
-        if _wait_for_slot(settings, request_id):
+        if _wait_for_slot(settings, key):
             try:
                 loop.run_build(settings, request_id, client_factory)
             finally:
                 with _condition:
-                    _active.discard(request_id)
+                    _active.discard(key)
                     _condition.notify_all()
     except Exception:  # noqa: BLE001 - a thread must never die without a log line
         logger.exception("The background build of %s stopped on an error.", request_id)
         with _condition:
-            _active.discard(request_id)
-            if request_id in _waiting:
-                _waiting.remove(request_id)
+            _active.discard(key)
+            if key in _waiting:
+                _waiting.remove(key)
             _condition.notify_all()
 
 
-def _wait_for_slot(settings: Settings, request_id: str) -> bool:
+def _wait_for_slot(settings: Settings, key: Key) -> bool:
     """Wait first in first out for a free slot. False if the build was stopped while waiting."""
+    request_id = key[0]
     limit = get_rulebook_for_request(
         settings.db_path, request_id
     ).rulebook.policy.build_max_parallel
     announced = -1
     while True:
         with _condition:
-            if _waiting and _waiting[0] == request_id and len(_active) < limit:
-                _waiting.remove(request_id)
-                _active.add(request_id)
+            if _waiting and _waiting[0] == key and len(_active) < limit:
+                _waiting.remove(key)
+                _active.add(key)
                 return True
-            position = _waiting.index(request_id)
+            position = _waiting.index(key)
             ahead = max(0, len(_active) + position - limit + 1)
             if ahead == announced:
                 _condition.wait(timeout=WAIT_SECONDS)
-        if not _still_running(settings, request_id):
-            _leave_queue(request_id)
+        if not _still_running(settings, key):
+            _leave_queue(key)
             return False
         if ahead != announced:
             announced = ahead
             _note_waiting(settings, request_id, ahead)
 
 
-def _leave_queue(request_id: str) -> None:
+def _leave_queue(key: Key) -> None:
     with _condition:
-        if request_id in _waiting:
-            _waiting.remove(request_id)
+        if key in _waiting:
+            _waiting.remove(key)
         _condition.notify_all()
 
 
-def _still_running(settings: Settings, request_id: str) -> bool:
+def _still_running(settings: Settings, key: Key) -> bool:
     with open_db(settings.db_path) as conn:
         ensure_build_tables(conn)
-        state = read_build_state(conn, request_id)
-    return state is not None and state.step in RUNNING_STEPS
+        state = read_build_state(conn, key[0])
+    return state is not None and state.build_number == key[1] and state.step in RUNNING_STEPS
 
 
 def _note_waiting(settings: Settings, request_id: str, ahead: int) -> None:
