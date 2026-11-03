@@ -315,4 +315,4 @@ def test_bad_json_from_the_tester_leaves_the_plan_to_be_written_again(
         view = flow.accept_approach(settings, request_id, view.revision)
 
     assert view.step == "tests_pending" and view.plan is None
-    assert view.buttons == [("write_plan", "Write the test plan")]
+    assert view.buttons == [("write_plan", "Write the test plan"), ("help", "Get help")]

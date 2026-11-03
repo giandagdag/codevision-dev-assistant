@@ -7,11 +7,13 @@ import pytest
 from agents import da_approach_flow as approach
 from agents import da_discover_flow as discover
 from agents import da_understand_flow as understand
+from agents import da_workspace_flow as workspace_flow
 from layouts import da_developer_assistant_page as page
 from styles import da_styles
 from tests import da_play
 from tests.da_approach_play import at_tests, discovery_confirmed_id, proposed
 from tests.da_tree import all_text, components
+from tests.da_workspace_play import good_folder, pick
 from web import da_web_components as parts
 
 pytestmark = pytest.mark.usefixtures("published_rulebook")
@@ -29,10 +31,14 @@ def button(tree, label):
 
 
 def draw_approach(settings, request_id):
+    status = approach.get_approach_view(settings, request_id).request.status
     return page.render_approach_workspace(
         understand.get_understand_view(settings, request_id),
         discover.get_discovery_view(settings, request_id),
         approach.get_approach_view(settings, request_id),
+        workspace_flow.get_workspace_view(settings, request_id)
+        if status == "READY_TO_BUILD"
+        else None,
     )
 
 
@@ -150,10 +156,13 @@ def test_a_really_disabled_button_still_differs_from_the_outlined_ones(settings)
     request_id = discovery_confirmed_id(settings)
     view = at_tests(settings, request_id)
     approach.accept_test_plan(settings, request_id, view.revision)
+    # The Build button shows once the workspace is ready (Phase 5), so reach that step first.
+    pick(settings, request_id, good_folder())
 
     tree = draw_approach(settings, request_id)
 
-    build = button(tree, page.BUILD_BUTTON)
+    # The Build button shows in the chat and again in the Build tab; check the one in the chat.
+    build = [b for b in components(tree, "Button") if getattr(b, "id", "") == "da-ws-build-chat"][0]
     # No border colour of our own and no outlined variant: Mantine draws it greyed out.
     assert build.disabled is True
     assert getattr(build, "style", None) is None and getattr(build, "variant", None) is None

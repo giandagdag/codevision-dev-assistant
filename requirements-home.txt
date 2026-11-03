@@ -8,3 +8,7 @@ anthropic==2.3.0
 # Dev tools
 pytest==9.1.1
 ruff==0.17.2
+
+# Browser tests for Phase 5 (skipped, not failed, when missing). Matches the browser in the
+# cloud container. Never run "playwright install" here.
+playwright==1.63.0

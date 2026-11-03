@@ -85,7 +85,7 @@ def test_the_approach_stays_accepted_when_the_tester_fails_and_a_button_retries(
     )
 
     assert view.step == "tests_pending" and view.plan is None
-    assert view.buttons == [("write_plan", "Write the test plan")]
+    assert view.buttons == [("write_plan", "Write the test plan"), ("help", "Get help")]
     assert events_of(settings, request_id, "approach_accepted")
     assert "The Tester is down" in texts(view, "assistant")[-1]
     assert [c.name for c in view.gate if c.passed] == ["Request confirmed", "Discover done",
@@ -248,3 +248,16 @@ def test_text_and_buttons_at_the_wrong_tests_step_are_refused(settings, request_
         flow.keep_case(settings, request_id, view.revision)
     with pytest.raises(ApproachError):
         flow.accept_approach(settings, request_id, view.revision)
+
+
+def test_5_28_get_help_is_offered_and_works_when_the_tester_stays_down(settings, request_id):
+    view = at_review(settings, request_id)
+    view = flow.accept_approach(
+        settings, request_id, view.revision, tester=FailingClient("The Tester is down")
+    )
+    assert ("help", "Get help") in view.buttons
+
+    view = flow.request_help(settings, request_id, view.revision)
+
+    assert view.request.status == "ESCALATION_REQUIRED" and view.step == "escalated"
+    assert view.open_item == "Escalated in Approach: tests_pending"

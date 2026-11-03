@@ -19,3 +19,6 @@ desktop.ini
 
 # Local logs, for example rejected AI replies (Phase 2C)
 logs/
+
+# Editor settings (Phase 5, P25)
+.vscode/

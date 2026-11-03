@@ -278,6 +278,18 @@ def confirmed_discovery_round(conn: sqlite3.Connection, request_id: str) -> int:
     return json.loads(row["details"]).get("round", 0) if row else 0
 
 
+def confirmed_round_record_version(
+    conn: sqlite3.Connection, request_id: str, discovery_round: int
+) -> int | None:
+    """The request version a saved Discover round was built from (gate check 2, N2), or None
+    if that round is not saved."""
+    row = conn.execute(
+        "SELECT record_version FROM da_discovery_results WHERE request_id = ? AND round = ?",
+        (request_id, discovery_round),
+    ).fetchone()
+    return row["record_version"] if row else None
+
+
 # --- rows to models ---
 
 
