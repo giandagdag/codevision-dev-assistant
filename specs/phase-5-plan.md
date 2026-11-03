@@ -88,3 +88,17 @@ Any code file write (only `tests/<id>/__init__.py`), side-by-side view, sending 
 - Smoke item numbers (22, 23) are confirmed against the file at step 15.
 - Dash dynamic buttons only exist after a redraw; clientside callbacks use pattern-matching ids.
 - Cloud headless Chromium may behave differently from Gian's Chrome; step 1 and the work test (Q8) cover the gap.
+
+## Addendum, 3 Nov 2026: work test results (P29, P30)
+
+Gian's work test (one batch). Same branch, `phase-5` (not merged yet). Two items, no new decisions
+for Gian.
+
+| # | Change | Done when |
+|---|---|---|
+| P29 | Docs only. README and `docs/workspace-work-test.md` told Gian to pick a COPY of the repo, but the fake plan modifies `src/agents/upload_validator.py`, which the repo does not have, so the check always stops at B3. New text: make a **practice folder** with `src\web`, `src\callbacks` and a one-line `src\agents\upload_validator.py`, in **Command Prompt** steps (PowerShell and DevTools are blocked on the work laptop). Part 1 (DevTools) is removed from the work test; the picker questions (Q8) are answered by trying the real screen | The docs show Command Prompt steps that build exactly the folder the fake plan needs; a test builds that folder from the same file list and the check passes |
+| P30 | Re-scan, Change and Reconnect appeared twice. They stay **only as chat buttons** (the bar under the chat). The header chip becomes **status only**: folder name and state, no buttons. The Build tab's Re-scan button is removed. Reconnect becomes a chat button that is drawn hidden and shown by the browser only when it needs your OK again (same trick as "Use remembered folder"). Download mode's "Upload folder" chip button also goes (the bar already has it) | No button in the chip or the Build tab; the bar has them once; tests updated; spec sections 1 (W4, W7, ws_ready row), 3, 6 and 9 say the same |
+
+Spec edits (sections 1, 3, 6, 9) are made after this addendum is approved. Row numbers 5-1 to 5-30 do
+not change. Tests that change: `test_da_workspace_screen.py` (button lists, chip), the browser and
+e2e tests that clicked the chip's Re-scan (they click the bar's).
