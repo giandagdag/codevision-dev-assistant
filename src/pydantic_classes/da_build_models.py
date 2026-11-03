@@ -130,6 +130,8 @@ class LayerBResult(_Shape):
     # The test that was running when the time limit ended the run.
     running_test: str = ""
     output_cut: bool = False
+    # What the run printed, cut at 200 KB by the sandbox (spec section 6).
+    output: str = ""
     tests: list[TestOutcome] = Field(default_factory=list)
     error: str = ""
 
