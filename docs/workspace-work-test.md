@@ -21,7 +21,8 @@ echo def validate(path): return True> C:\Dev\practice\src\agents\upload_validato
 dir /s /b C:\Dev\practice
 ```
 
-The last line lists what you made. You should see these four paths (the first three are folders):
+The last line lists what you made. You should see these five paths, in any order (the first four
+are folders, the last one is the file):
 
 ```
 C:\Dev\practice\src
@@ -45,6 +46,8 @@ example your whole user folder or system folders; see Q12.)
    - If **no window opens** and the chat says "I cannot reach your folder from this page", the
      browser has no folder picker (or IT switched it off). Write that down. The ZIP and upload
      buttons are the fallback.
+   - If you **close or cancel** the window, the chat says "No folder chosen." That is not a
+     problem with the browser. Just press the button again.
 2. Pick `C:\Dev\practice` and click the allow button (usually **Edit files** or **Allow**).
 3. Write down:
    - How many prompts did you see?
