@@ -37,7 +37,6 @@ The database is the truth, not the thread (a restart marks it `b_interrupted`).
 | P10 | Labels are plain strings stored on `da_build_runs.label` (`Ready with warnings`, `Not passing`) and the chat-only `Unable to assess`. The fixed warning text is a constant tested by exact match | D-F |
 | P11 | The write at `b_done` reuses `build_write_job` from `da_workspace_checks.py` with `creatable_folders=[]` after C2. The job holds code files only, in file-plan order; the builder refuses any path starting `tests/` (6-37) | Spec section 9 |
 | P12 | `tests/da_workspace_play.py` and `da_approach_play.py` get a `ready_to_build_with_workspace_id` helper (request at `ws_ready` in a fake browser folder), so build tests start from a real saved state. No existing helper is changed | Surgical |
-
 | P13 | Flag-for-review zones (spec section 5, last paragraph): zones exist in the rulebook, so step 8 records which planned files fall in a zone, using the same matcher Approach uses (`zones_touched` on the approach version is already saved by Phase 4). Phase 6 only copies it into the `build_passed` / `build_not_passing` audit details as `zones_touched`; it never blocks. Test in step 8 | Spec says record, Phase 10 uses it |
 | P14 | The CLAUDE.md stop rules (test fails after 2 fixes, spec unclear, review caps, photos) apply to every step, not only steps 6 and 9 | Reviewer finding |
 

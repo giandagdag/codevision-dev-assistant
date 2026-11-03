@@ -121,6 +121,27 @@ DEFAULT_MAX_DESIGN_CHOICES = 3
 # Phase 5: folders that must exist in a CodeVision clone, and the biggest file the browser reads.
 DEFAULT_WORKSPACE_MARKERS = ["src/web", "src/callbacks"]
 DEFAULT_WORKSPACE_MAX_FILE_KB = 512
+# Phase 6 (Build + test loop), spec section 11. Made-up starter values; real ones are set at work.
+# The protected-file and approved-library lists are NOT repeated here: Build reuses the Phase 4
+# lists so Approach and Build can never disagree (decision D-M).
+DEFAULT_BUILD_MAX_ROUNDS = 3
+DEFAULT_BUILD_TEST_TIMEOUT_SECONDS = 60
+DEFAULT_BUILD_MAX_PROMPT_CHARS = 60000
+DEFAULT_BUILD_MAX_PARALLEL = 2
+DEFAULT_BUILD_BLOCKED_IMPORTS = [
+    "subprocess",
+    "socket",
+    "ctypes",
+    "multiprocessing",
+    "urllib",
+    "http",
+    "requests",
+    "ftplib",
+    "smtplib",
+    "telnetlib",
+    "webbrowser",
+]
+DEFAULT_BUILD_SANDBOX_EXCLUDE = [".env", "*.db", ".git", "*.key", "*.pem"]
 
 
 def _default_zones() -> list[FlagReviewZone]:
@@ -167,6 +188,20 @@ class Policy(_RulebookPart):
     # Phase 5 (Workspace), spec section 8. Same defaults idea: older versions still load.
     workspace_markers: list[str] = Field(default_factory=lambda: list(DEFAULT_WORKSPACE_MARKERS))
     workspace_max_file_kb: int = Field(default=DEFAULT_WORKSPACE_MAX_FILE_KB, ge=1)
+    # Phase 6 (Build + test loop), spec section 11. Bounds stop a typo from making a build
+    # endless (rounds, time limit) or unable to send anything (prompt size).
+    build_max_rounds: int = Field(default=DEFAULT_BUILD_MAX_ROUNDS, ge=1, le=5)
+    build_test_timeout_seconds: int = Field(
+        default=DEFAULT_BUILD_TEST_TIMEOUT_SECONDS, ge=1, le=600
+    )
+    build_max_prompt_chars: int = Field(default=DEFAULT_BUILD_MAX_PROMPT_CHARS, ge=1000)
+    build_max_parallel: int = Field(default=DEFAULT_BUILD_MAX_PARALLEL, ge=1, le=10)
+    build_blocked_imports: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_BUILD_BLOCKED_IMPORTS)
+    )
+    build_sandbox_exclude: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_BUILD_SANDBOX_EXCLUDE)
+    )
 
     @field_validator("new_file_name_pattern")
     @classmethod
