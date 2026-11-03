@@ -1,7 +1,23 @@
 # Phase 6: Build + test loop
 
-Status: APPROVED v1.0 (3 Nov 2026). Decisions D-A to D-F chosen by Gian: option 1 for all six
+Status: APPROVED v1.1 (3 Nov 2026). Decisions D-A to D-F chosen by Gian: option 1 for all six
 (section 17). Defaults D-G to D-L (section 18) were set by Claude and not objected to.
+
+**What changed in v1.1 (Gian's work-test answers, 3 Nov 2026):**
+1. Q11 decided: **tests run only in the server sandbox.** CodeVision has no automated tests today;
+   developers test their changes by hand on their laptop. Test files are never written to the
+   workspace and never go to Bitbucket. The write job writes planned code files only. Tests and
+   their results stay in the app (Tests tab). Changed: sections "In plain words", 3, 8, 9, 12, 14,
+   20, 21.
+2. Phase 6 removes Phase 5's tests-folder behaviour (new section 15.1, tests 6-35 to 6-40). Phase 5's
+   D-A purpose (prove the write door) was met by the 3 Nov work test. Phase 5 merges as is.
+3. The sandbox always creates `tests/__init__.py` and `tests/<id>/__init__.py` inside its own
+   temporary folder (section 6), since CodeVision has no `tests/` folder.
+4. Q15 reworded (section 19).
+5. Work laptop limits: PowerShell and DevTools are blocked. Developer instructions use Command
+   Prompt only (sections 14, 19, 21).
+6. Q12 answered, Q8 answered, Q14 (a) answered: Linux, the OCP server (section 19).
+7. Phase 8 carry-forward note added (section 15.2).
 Depends on: Phase 5 (`ws_ready`, the write job, the edit guard). **Phase 5 is built on branch
 `phase-5` but not merged yet. Do not start this build until `phase-5` is merged into `main`.**
 Next: Phase 7, Independent Tester (Layer C, `specs/redesign-2026-10-31.md` section 5.5).
@@ -26,16 +42,20 @@ developer's folder. Phase 6 is where code finally gets written:
    temporary folder, with a **60-second time limit** (Q13 allows this).
 5. Tests fail: a plain failure report goes back to the Generator, which fixes **only the failing
    files**. One shared budget of **3 rounds**.
-6. At pass, or when the budget runs out (with a red label), the code and tests are written to the
+6. At pass, or when the budget runs out (with a red label), the **code files** are written to the
    developer's folder through the **Phase 5 write job**. That write job is the only door to the
    workspace. Phase 6 adds no new way to write.
+7. **The tests never leave the app.** CodeVision has no automated tests, so the tests and their
+   results live on the Tests tab only. The developer tests the change by hand on his laptop, as
+   today.
 
 Layer C (the Independent Tester's review) is Phase 7. In Phase 6 its slot on screen says "Coming in
 Phase 7" (D-F decides the label this gives).
 
 AS400 comparisons:
 - The frozen tests are like a signed-off UAT script: the programmer may not edit the script to make
-  his program pass.
+  his program pass. The script stays with the test team (the app); only the program goes into the
+  developer's library.
 - Layer A is like the compile step: CRTBNDRPG either gives a clean listing or a list of errors.
 - Layer B is like `SBMJOB` into a separate batch subsystem with its own `QTEMP` and a maximum CPU
   time: the job cannot touch the interactive session, its scratch library vanishes when it ends,
@@ -130,8 +150,9 @@ and one line each on what they do. Plain-code checks: valid JSON, only planned c
 valid Python names, `modify` files keep every existing public name they list. Saved and frozen.
 
 **Step 2, the tests.** One Tester call. Input: the accepted test plan, the criteria, and the contract.
-**Never any code text.** Output: one test file, `tests/<id>/test_<id>.py`, using only `unittest`
-(built in) and `unittest.mock`. Plain-code checks:
+**Never any code text.** Output: one test file, using only `unittest` (built in) and
+`unittest.mock`. It is stored in the app and only ever placed on disk inside the sandbox, as
+`tests/<id>/test_<id>.py` (section 6). It is never written to the workspace. Plain-code checks:
 - it parses (`ast`),
 - every case in the accepted test plan has exactly one test method, named
   `test_<case id>_<criterion id>_<short words>`, for example `test_t6_ac4_empty_sheets_rejected`.
@@ -185,18 +206,23 @@ in a zone if the rulebook already has zones; the PR summary uses it in Phase 10.
 ## 6. Layer B (the sandbox, Q13)
 
 **What goes in the temporary folder (D-A option 1):**
-1. A copy of the reference copy's Python source tree (`src/`, plus the top `tests/__init__.py` if it
-   exists). Never `.env`, `*.db`, `.git`, or anything matching `build_sandbox_exclude`.
+1. A copy of the reference copy's Python source tree (`src/`). Never `.env`, `*.db`, `.git`, or
+   anything matching `build_sandbox_exclude`.
 2. On top: this round's version of every planned code file.
-3. The frozen test file and `tests/<id>/__init__.py`. If the reference copy has no
-   `tests/__init__.py`, the sandbox adds an empty one (Q11).
+3. The sandbox's own tests folder, always created here (CodeVision has no `tests/` folder, Q11):
+   empty `tests/__init__.py` and `tests/<id>/__init__.py`, plus the frozen test file as
+   `tests/<id>/test_<id>.py`. These exist only inside the temporary folder.
 4. Our small runner script (new, `src/agents/da_sandbox_runner.py`), copied in.
+
+Where `tests/` sits (top folder or inside `src/`) and the working folder follow the Q15 answer, so
+that the test file imports CodeVision modules the same way CodeVision imports its own.
 
 **How it runs:**
 - A separate process: the server's own Python (`sys.executable`) running the runner script in
   isolated mode (`-I`), working folder = the temporary folder.
 - **No secrets:** the process gets a fresh, nearly empty environment (only what Python needs to
-  start, such as `PATH` and `SYSTEMROOT` on Windows). No `DA_*` keys, no API keys.
+  start on the Linux OCP server, such as `PATH`, with `HOME` and `TMPDIR` pointing at the temporary
+  folder). No `DA_*` keys, no API keys.
 - **Time limit:** `build_test_timeout_seconds` (60). At the limit the whole process tree is ended,
   the run is "Timed out", the report names the test that was running, and the round counts as failed.
 - **Output limit:** captured output is cut at 200 KB.
@@ -207,8 +233,8 @@ in a zone if the rulebook already has zones; the PR summary uses it in Phase 10.
 
 **Honest limits (say them in the plan, do not hide them):** a separate process with a time limit and
 no secrets is not a full jail. It does not block the network at the operating-system level and does
-not cap memory on Windows. Layer A's import and call rules plus "no keys in the environment" are the
-guard. Q14 asks the CodeVision team whether the server can add more.
+not cap memory. Layer A's import and call rules plus "no keys in the environment" are the guard.
+Q14 (d) asks the CodeVision team whether the OCP server can add more.
 
 **A run that cannot start** (Python missing, folder cannot be made, reference copy not found) is not
 the code's fault: step `b_interrupted`, no round used.
@@ -232,19 +258,20 @@ the code's fault: step `b_interrupted`, no round used.
 
 | Situation | Status | Label (D-F option 1) | Written to workspace? |
 |---|---|---|---|
-| All tests pass, Layer A clean | READY_FOR_REVIEW | **Ready with warnings**, with the fixed warning "The independent Tester review (Layer C) is not built yet." | Yes |
-| Budget used, still failing | NOT_PASSING | **Not passing** (red). The last round's failure report stays on the Build tab | Yes (redesign B4), with the red label in the app |
+| All tests pass, Layer A clean | READY_FOR_REVIEW | **Ready with warnings**, with the fixed warning "The independent Tester review (Layer C) is not built yet." | Yes, code files only |
+| Budget used, still failing | NOT_PASSING | **Not passing** (red). The last round's failure report stays on the Build tab | Yes, code files only (redesign B4), with the red label in the app |
 | Tests could not be written | READY_TO_BUILD (step `b_unable`) | Unable to assess (chat only) | No |
 
 The label lives in the app, never inside the code files (no generated comments about it).
 
 ## 9. Writing to the workspace (Phase 5 write job only)
 
-- One write job per build, built by the Phase 5 job builder: every planned code file, then the frozen
-  test file. `tests/<id>/__init__.py` already exists from Phase 5.
+- One write job per build, built by the Phase 5 job builder: **every planned code file, nothing
+  else.** The test file is never in a write job (the job builder refuses any path under `tests/`).
 - `expected` per file: for `modify`, the starting text's fingerprint (baseline, or the pre-build
-  re-scan, B1); for `create` and the test file, "absent" on the first write of this request, else the
-  last `written` fingerprint.
+  re-scan, B1); for `create`, "absent" on the first write of this request, else the last `written`
+  fingerprint.
+- No folder is ever created. Every planned file's parent folder already exists (Phase 5 blocker B5).
 - The browser runs it exactly as Phase 5 section 5: walk the path, refuse anything not in the job,
   edit guard, write, read back, report fingerprints. The server saves `written` rows and the audit
   event as in Phase 5.
@@ -254,8 +281,8 @@ The label lives in the app, never inside the code files (no generated comments a
   **Reconnect** (Phase 5 W4); after his click the write runs.
 - **Edit guard stop:** `b_write_stopped` (B9). Files before the stop stay written, the message lists
   both groups, as in Phase 5.
-- **Download mode** (Phase 5 fallback): Download ZIP holds the build's files with full paths, with
-  the same "upload your folder before every new download" line.
+- **Download mode** (Phase 5 fallback): Download ZIP holds the build's code files only, with full
+  paths, with the same "upload your folder before every new download" line.
 
 ## 10. Running in the background (D-D option 1)
 
@@ -303,11 +330,14 @@ Use the existing `da_web_components` helpers where they exist.
   - `r1`: red banner and the failure report table, with "Only `<file>` is regenerated. Tests stay
     frozen. 1 shared budget of 3 rounds."
   - `written`: green banner (or red for NOT_PASSING), the Phase 5 file table with Status "Written",
-    "Your turn" (run CodeVision, run the tests yourself with the command from Q15, edit then Re-scan),
-    "This build" (rounds used, tests passing, time taken).
+    "Your turn": "Try it yourself: start CodeVision on your laptop and test the change by hand.",
+    then "Edit anything, then click Re-scan" and "Tell me if a requirement is missing". No line about
+    running tests (they stay in the app). "This build" (rounds used, tests passing, time taken).
   - `not_written`: "Built, not written yet. Open this request with your workspace allowed."
-- **Tests tab:** in Phase 6 only the frozen test list: test ID, criterion ID, "Yours" tag, one-line
-  description, and the result of each round. The Tester's 7-check report is Phase 7.
+- **Tests tab:** the only place the tests live. In Phase 6: the frozen test list (test ID, criterion
+  ID, "Yours" tag, one-line description), the result of each round, and a **View test code** toggle
+  that shows the frozen test file read-only. One line under the list: "These tests run on the
+  CodeVision server. They are not copied to your folder." The Tester's 7-check report is Phase 7.
 - **Header chip:** unchanged from Phase 5, plus P26's new wording (section 15).
 - **Composer:** buttons only on every build step (2D control).
 - "My recent requests" reopens at the same step, with live progress if the build is still running.
@@ -350,13 +380,15 @@ fingerprint), `code_generated` (system, path, round), `layer_a_result` (system),
 - **Pretend work server** (127.0.0.1:8070): answers the build prompts with the same fixed script, so
   the onprem connector path is tested end to end.
 - **Playwright (cloud session only):** as in Phase 5, the private test folder stands in for the
-  picker. A full request from READY_TO_BUILD reaches `b_written` and the code and test files exist in
-  that folder with the reported fingerprints.
+  picker. A full request from READY_TO_BUILD reaches `b_written`; the code files exist in that
+  folder with the reported fingerprints, and no `tests/` folder exists there.
 - **Smoke check:** a full request from `ws_ready` through BUILDING (fake provider, real sandbox, fake
   browser bridge) to READY_FOR_REVIEW, then `b_written`.
 - **Home check by Gian:** on `http://127.0.0.1:8050` with `DA_LLM_PROVIDER=fake` and a COPY of the
-  repo as the workspace. Leave the page during the build and come back. Then run the written tests
-  himself with the Q15 command.
+  repo as the workspace. Leave the page during the build and come back. Check that only code files
+  were written (no `tests/` folder), then open the Tests tab to see the tests and their results.
+- **Instructions for work developers** (README, `docs/build-work-test.md`, any on-screen command):
+  Command Prompt only. PowerShell and DevTools are blocked on work laptops.
 
 ## 15. Carried forward
 
@@ -364,6 +396,31 @@ fingerprint), `code_generated` (system, path, round), `layer_a_result` (system),
 |---|---|
 | P26 | A different folder with the same name as the linked one currently gets "Re-scan first". The browser compares the picked folder with the remembered one (`isSameEntry`). Different folder, same name: "This is a different folder that is also called codevision. Use **Change** to link it." Test: same name, different folder gives the new wording; same folder still passes |
 | Q7 | Server context limit per model: still unknown. Phase 6 does not depend on the answer: `build_max_prompt_chars` and the HTTP 400 handling (section 4) stop cleanly. When the limit is known, set the policy value from it (roughly 3 characters per token, minus room for the reply) |
+
+### 15.1 Phase 5 tests-folder behaviour removed (v1.1)
+
+Phase 5 merges as is. Phase 6 then removes everything that touches a tests folder in the workspace,
+because tests never go there (Q11). Phase 5's D-A purpose, proving the write door on a real laptop,
+was met by the 3 Nov work test.
+
+| ID | Phase 5 behaviour | Phase 6 change |
+|---|---|---|
+| C1 | The workspace check writes `tests/<id>/__init__.py` (Phase 5 section 4, D-A) | No write at the workspace check. A passing check saves baselines only, then `ws_ready`. Chat drops "Tests folder created"; the Build tab file table drops the tests folder row |
+| C2 | The writer may create `tests/` and `tests/<id>/` (Phase 5 section 5 step 1) | The writer creates **no folders at all**. A job path whose parent folder is missing is refused |
+| C3 | Blocker B7 "Tests folder in use" | Dropped. The browser no longer collects tests folder facts |
+| C4 | Re-scan reads planned files and the tests folder; result "New in tests folder" | Re-scan reads **planned files only**. The "New in tests folder" result is dropped |
+| C5 | Fallback ZIP holds `tests/<id>/__init__.py`; upload sends planned and tests folder files | ZIP holds **code files only**; upload sends **planned files only** |
+| C6 | Phase 5 "Words": the tests folder is "the only folder the app may create" | Word removed: the app creates no folder in the workspace |
+
+Old rows already saved for `tests/<id>/__init__.py` (home test data only) stay in the tables and are
+ignored. Requests already at `ws_ready` keep working. Developers who got the file from the Phase 5
+work test delete it by hand.
+
+### 15.2 Note for the Phase 8 spec (no work in Phase 6)
+
+The developer adds test cases **in the app** (as in Phase 4 "Add a test case"), not as files in his
+folder. Redesign section 5.7's "his new tests", and the tests-folder parts of R2 and R4, need
+rewording in the Phase 8 spec.
 
 ## 16. Out of scope
 
@@ -376,6 +433,7 @@ fingerprint), `code_generated` (system, path, round), `layer_a_result` (system),
   fingerprint check (Phase 10).
 - Admin screens for the new policy fields, the new metrics (Phase 11).
 - Any Git command. The app never commits, pushes or pulls.
+- Writing tests to the workspace or Bitbucket, in any phase (Q11). Tests stay in the app.
 - Building again from READY_FOR_REVIEW or NOT_PASSING (except B9). That is Refine (Phase 8).
 
 ## 17. Decisions (chosen by Gian, 3 Nov 2026: option 1 for all six)
@@ -388,6 +446,13 @@ fingerprint), `code_generated` (system, path, round), `layer_a_result` (system),
 | D-D | How does a build that takes minutes run? | 1. A background thread in the server, progress saved to the database, the page polls every 3 s. 2. Dash background callbacks (needs `diskcache` or Celery, a new library). 3. A separate worker program on the server | **1**: no new library, nothing new for the CodeVision team to run, and the database keeps the truth across a restart (section 10). Option 3 is sturdier at scale; revisit if many developers build at once |
 | D-E | When are the files written to the folder? | 1. Automatically as soon as the build is done and the page is open with permission (else on next open, or after Reconnect). 2. A **Write to my workspace** button. 3. Each file as soon as it is generated | **1**: matches the redesign ("written at pass") and the demo; the edit guard makes it safe. Option 2 adds a click every build. Option 3 writes code that has not passed, mid-round |
 | D-F | Which label at pass, while Layer C does not exist yet? | 1. **Ready with warnings**, with the fixed warning "The independent Tester review (Layer C) is not built yet." 2. **Ready for your review** (green) 3. A temporary fifth label "Tests passing" | **1**: honest and uses only the four agreed labels. Green would claim a check that never ran. Option 3 adds a label Phase 7 must remove |
+
+**v1.1 check of the choices against the 3 Nov answers:** D-A, D-B, D-C, D-E and D-F stand unchanged
+(D-E now writes code files only; D-A's sandbox always builds its own tests folder). **D-D stands but
+has one new risk:** OCP can run several copies of CodeVision and restarts them on every deploy. The
+restart is already handled (section 10). If Q14 (e) says "several copies", the builder stops and
+asks before building section 10, because the progress poll may reach a copy that is not running the
+build, and `build_max_parallel` would count per copy.
 
 ## 18. Defaults Claude chose (say if you disagree)
 
@@ -403,20 +468,29 @@ fingerprint), `code_generated` (system, path, round), `layer_a_result` (system),
 ## 19. Open questions (for the work test, round 2)
 
 - **Q7** (carried): the server's context limit per model name. Sets `build_max_prompt_chars`.
-- **Q11** (carried from Phase 5): does CodeVision's top `tests/` folder have an `__init__.py`? The
-  sandbox adds one if needed (section 6), but the developer's own run in his folder needs it too.
-- **Q14** (new, for the CodeVision team): (a) is the CodeVision server Windows or Linux? (b) the
-  folder of the deployed CodeVision source on the server (the reference copy, D-A), and how close it
-  is to Bitbucket `main`; (c) does importing any CodeVision module connect to a database, the LLM or
-  a file share at import time; (d) can the server account running CodeVision be blocked from the
-  network for child processes, or limited in memory?
-- **Q15** (new): how do CodeVision's existing `unittest` tests import CodeVision code (for example
-  `from web.web_components import ...` run from `src/`, or `from src.web...` run from the top), and
-  which command do developers use to run them? This sets the test file's imports, the sandbox's
-  working folder, and the "run the tests yourself" line on the Build tab.
+- **Q11 Decided (Gian, 3 Nov):** CodeVision has no automated tests and no `tests/` folder.
+  Developers test their changes by hand on their laptop. Tests run only in the server sandbox and
+  stay in the app (section 15.1).
+- **Q14** (for the CodeVision team): (a) **Answered (Gian, 3 Nov): Linux, the OCP server.** Still
+  open: (b) the folder of the deployed CodeVision source on the OCP server (the reference copy,
+  D-A), and how close it is to Bitbucket `main`; (c) does importing any CodeVision module connect to
+  a database, the LLM or a file share at import time; (d) can child processes started by CodeVision
+  be blocked from the network, or limited in memory; (e) does CodeVision run as one copy or several
+  copies on OCP, and do the copies share one database? (Affects D-D, see section 17 note.)
+- **Q15** (reworded, 3 Nov): Which folder and command do developers use to start CodeVision on their
+  laptop, and how do CodeVision modules import each other (for example
+  `from web.web_components import ...` run from `src`)? This sets the sandbox's working folder and
+  the test file's imports.
+- **Q8 Answered (Gian, 3 Nov):** the folder picker works in Chrome on the work laptop, and "Allow on
+  every visit" is offered.
+- **Q12 Answered (Gian, 3 Nov):** developers keep CodeVision on the C drive, usually
+  `Desktop\codevision`. Chrome allows folders inside the Desktop, but not the Desktop itself. The
+  picker hint can say: "Pick your codevision folder, for example Desktop\codevision."
+- **Work laptop limits (3 Nov):** PowerShell and DevTools are blocked. Every developer instruction
+  uses Command Prompt only.
 
-Questions about photos: none needed for this spec. If Q15 is easier to answer with a photo of one
-existing test file's first 10 lines, cover names and paths first.
+Questions about photos: none needed for this spec. If Q15 is easier to answer with a photo of
+CodeVision's start command or one module's first 10 lines, cover names and paths first.
 
 ## 20. Done when (every line becomes a test, Given / When / Then)
 
@@ -443,7 +517,7 @@ existing test file's first 10 lines, cover names and paths first.
 | 6-19 | the AI does not answer after retries | mid-build | `b_interrupted`, round count unchanged; Try again resumes at the same step |
 | 6-20 | round 2 passes (fake) | the build ends | status READY_FOR_REVIEW, label Ready with warnings with the Layer C warning (if D-F is 1) |
 | 6-21 | always-failing code (fake switch) | 3 rounds end | status NOT_PASSING, label Not passing, files still written |
-| 6-22 | `b_done` and the page open with permission | the step is reached | the Phase 5 write job writes code and test files, reads back, saves `written` rows, step `b_written` |
+| 6-22 | `b_done` and the page open with permission | the step is reached | the Phase 5 write job writes the planned code files only (no test file, no folder), reads back, saves `written` rows, step `b_written` |
 | 6-23 | `b_done` with the page closed | the request is opened later with permission | the write runs then |
 | 6-24 | a planned file edited during the build | the write job runs | edit guard stops at that file, both lists shown, `b_write_stopped`, Re-scan and build again offered |
 | 6-25 | Re-scan and build again | clicked | new build number, fresh budget, starts from his text, same frozen tests |
@@ -455,7 +529,15 @@ existing test file's first 10 lines, cover names and paths first.
 | 6-31 | a rulebook version saved before Phase 6 | it is loaded | the new fields hold the starter values |
 | 6-32 | a different folder with the same name as the linked one (P26) | it is picked | the "different folder" wording shows; the same folder still passes |
 | 6-33 | the onprem provider pointed at the pretend work server | a full build runs | it reaches READY_FOR_REVIEW through the onprem connector |
-| 6-34 | Playwright with the private test folder | a full request runs from READY_TO_BUILD | `b_written`; the code and test files exist with the reported fingerprints |
+| 6-34 | Playwright with the private test folder | a full request runs from READY_TO_BUILD | `b_written`; the code files exist with the reported fingerprints; no `tests/` folder exists |
+| 6-35 | a good folder (C1) | the workspace check passes | baselines saved, step `ws_ready`, no file written, no `tests/` folder created, no "Tests folder created" line |
+| 6-36 | a write job whose path has a missing parent folder (C2) | the writer runs | refused on both the browser and server side; no folder is created |
+| 6-37 | a write job that includes a path under `tests/` | the job is built | the job builder refuses it |
+| 6-38 | a folder holding an old `tests/cvda_2026_0001/` with files (C3) | the check runs | it passes; no B7; the tests folder is not read |
+| 6-39 | `ws_ready` and a `tests/` folder in the workspace (C4) | Re-scan is pressed | only planned files are read; no "New in tests folder" result exists |
+| 6-40 | fallback (C5) | Download ZIP is pressed, then a folder is uploaded | the ZIP holds only code files and `READ_ME_FIRST.txt`; the upload sends only planned files |
+| 6-41 | the sandbox is built for a reference copy with no `tests/` folder | Layer B runs | `tests/__init__.py`, `tests/<id>/__init__.py` and the test file exist in the temporary folder only, and discovery finds the tests |
+| 6-42 | the Build tab at `b_written` | it is drawn | "Try it yourself: start CodeVision on your laptop and test the change by hand." shows; no "run the tests" line |
 
 Plus: `pytest` 0 failures, `ruff check` 0 problems, smoke check passes, code reviewer 0 Must fix, and a
 home check by Gian on `127.0.0.1:8050` with a COPY of the repo as the workspace.
@@ -467,9 +549,11 @@ home check by Gian on `127.0.0.1:8050` with a COPY of the repo as the workspace.
 `da_build_checks.py` (Layer A, contract and test-file checks, edit blocks, failure report),
 `da_sandbox.py` (Layer B), `da_sandbox_runner.py` (copied into the sandbox), the Generator and Tester
 prompts under `data/`, `agents/da_llm_client.py` (fake script and pretend-server answers for the build
-prompts), `db_table_functions/db_tbl_da_build.py` (new), `agents/da_workspace_flow.py` and
-`web/da_workspace.js` (reuse the write job; P26), `layouts/da_developer_assistant_page.py`, the page
+prompts), `db_table_functions/db_tbl_da_build.py` (new), `agents/da_workspace_flow.py`,
+`da_workspace_checks.py` and `web/da_workspace.js` (reuse the write job; P26; section 15.1
+removals), `layouts/da_developer_assistant_page.py`, the page
 callbacks, `web/da_web_components.py` (Build and Tests tabs), `da_smoke_check.py`, the made-up
 reference folder under `tests/fixtures/`, `.env.example` (`DA_SANDBOX_SOURCE_DIR`), `README.md`,
-`CLAUDE.md` ("Current phase"), `docs/build-work-test.md` (new: Q14 and Q15 steps), and the matching
+`CLAUDE.md` ("Current phase"), `docs/build-work-test.md` (new: Q14 and Q15 steps, Command Prompt
+only), `docs/workspace-work-test.md` (drop DevTools steps, mark Q8 done), and the matching
 tests.
