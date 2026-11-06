@@ -25,17 +25,23 @@ If the usage guard blocks you ("Usage line reached"), write your state to `ops/s
 **You decide what counts as a work fact. When unsure, it is a work fact. Ask.**
 
 ## How you open a question or pause a stage
-- `python3 ops/chief_tick.py issue --label needs-gian --title "..." --body "..."`
-- `python3 ops/chief_tick.py pause --stage "..." --issue "issue title or number"`
+- `"$DA_PYTHON" ops/chief_tick.py issue --label needs-gian --title "..." --body "..."`
+- `"$DA_PYTHON" ops/chief_tick.py pause --stage "..." --issue "issue title or number"`
+
+## How you start another worker (one at a time)
+- `"$DA_PYTHON" ops/chief_tick.py launch --agent spec-writer --stage spec --phase 7 --prompt "..."`
+  (agents: spec-writer, builder, status-digest; it checks the usage guard and hooks first and
+  writes the ledger line itself. If it prints `stopped` or `hooks-broken`, stop.)
+- Merge only with `"$DA_PYTHON" ops/chief_tick.py merge --pr N`.
 
 ## Never
 Merge into `main`. Force-push. Rebase shared branches. Edit `.env`. Install a plugin.
-Merge a PR yourself: only `python3 ops/chief_tick.py merge --pr N` merges, and only into
+Merge a PR yourself: only `"$DA_PYTHON" ops/chief_tick.py merge --pr N` merges, and only into
 `auto/phases-7-10` when checks are green.
 
 ## Pipeline per phase (spec section 7)
 1. Spec (spec-writer, Opus). 2. Plan (builder), plan review (0 Must fix = approved, 1 fix round).
 3. Build on `auto/phase-N`, code review (max 3 rounds). 4. pytest, ruff, smoke check via
-`python3 ops/quiet.py`; all green or stop. 5. PR into `auto/phases-7-10`, merge helper.
+`"$DA_PYTHON" ops/quiet.py`; all green or stop. 5. PR into `auto/phases-7-10`, merge helper.
 6. Update STATUS.md (including the `Usage:` line) and the ledger. Next phase.
 End every reply with what you skipped, and the risks.

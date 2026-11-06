@@ -11,6 +11,7 @@ shape then. Until then `parse_usage_response` only accepts the status-line style
 """
 
 import json
+import math
 import os
 import sys
 import time
@@ -39,6 +40,20 @@ class Usage:
     five_hour_resets_at: float | None  # Unix seconds
     weekly_resets_at: float | None
     read_at: float
+
+    def __post_init__(self):
+        # Fail closed: NaN, infinity, negative or over-100 numbers must never reach decide(),
+        # where every comparison with NaN is False and would read as GO.
+        for name in ("five_hour", "weekly"):
+            value = getattr(self, name)
+            if not (math.isfinite(value) and 0 <= value <= 100):
+                raise ValueError(f"{name} must be a number from 0 to 100")
+        for name in ("five_hour_resets_at", "weekly_resets_at"):
+            value = getattr(self, name)
+            if value is not None and not math.isfinite(value):
+                raise ValueError(f"{name} must be a finite number")
+        if not math.isfinite(self.read_at):
+            raise ValueError("read_at must be a finite number")
 
 
 @dataclass(frozen=True)
@@ -123,7 +138,7 @@ def parse_usage_response(body: dict, now: float) -> Usage:
             weekly_resets_at=_epoch(week.get("resets_at")),
             read_at=now,
         )
-    except (KeyError, TypeError, ValueError):
+    except (KeyError, TypeError, ValueError, AttributeError):
         raise GuardBlind("the usage reply has an unexpected shape") from None
 
 

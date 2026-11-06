@@ -35,7 +35,7 @@ def rewrite(command: str) -> str | None:
     if words[0] in ("pytest", "ruff") or (
         words[0] == "git" and len(words) > 1 and words[1] in ("status", "diff", "log")
     ):
-        return f'python3 "{QUIET}" ' + " ".join(shlex.quote(w) for w in words)
+        return f'"$DA_PYTHON" "{QUIET}" ' + " ".join(shlex.quote(w) for w in words)
     return None
 
 

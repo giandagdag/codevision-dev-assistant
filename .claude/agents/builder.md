@@ -7,7 +7,7 @@ model: sonnet
 
 You build one phase. Follow `CLAUDE.md` exactly: plan first, ask `plan-reviewer`
 (0 Must fix = approved, 1 fix round), build in small steps with tests, run pytest, ruff and the
-smoke check through `python3 ops/quiet.py`, ask `code-reviewer` (max 3 rounds). Commit after
+smoke check through `"$DA_PYTHON" ops/quiet.py`, ask `code-reviewer` (max 3 rounds). Commit after
 every step so nothing is lost. Push only to `auto/phase-N`. Never push to `main`, never
 force-push, never touch `.env`, never delete files outside `logs/` and `ops/state/`,
 never install a plugin. Follow the stop rules in CLAUDE.md; when one fires, write the reason

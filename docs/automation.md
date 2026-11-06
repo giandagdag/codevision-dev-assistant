@@ -28,9 +28,12 @@ work laptop). You get a phone notification and answer in a comment. The chief re
    the reply shape differs: send the reply shape (no token!) and the reader gets a small fix.
 2. **Fake STOP:** edit the stop lines at the top of `ops/usage_guard.py` to 1, run it again,
    expect `STOP`, then put them back to 85 and 80.
-3. **Hooks need `python3` on the PATH.** The three hooks in `.claude/settings.json` call
-   `python3`. On Windows, check `python3 --version` works in the terminal that Claude Code uses.
-   If not, tell me and I change the command.
+3. **Hook interpreter.** The three hooks in `.claude/settings.json` run with `$DA_PYTHON`, which
+   `chief_tick.py` sets to the Python that runs it (use your `.venv\Scripts\python.exe` in the
+   scheduled task). Outside a worker it is unset, so the hooks do nothing. Before every worker the
+   chief proves the three hooks start and fail closed; if not, no worker starts and a
+   `needs-gian` issue "hooks cannot start" is opened. Check the hooks' shell: Claude Code runs hook
+   commands through Git Bash on Windows, so Git for Windows must be installed.
 4. **Rewrite check:** in a worker (`$env:DA_WORKER = "1"`) run `claude -p "run pytest"` and check
    that a `logs/quiet/*.log` file appears. The Claude docs do not say whether the rewrite works in
    `-p` mode, so this is the real test. The CLAUDE.md rule is the fallback.

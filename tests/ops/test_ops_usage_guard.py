@@ -210,3 +210,34 @@ def test_hook_script_runs_as_a_real_process_and_is_silent_outside_a_worker(tmp_p
         input=json.dumps(bash()), capture_output=True, text=True, env=env,
     )
     assert run.returncode == 0 and run.stderr == ""
+
+
+# ---- review round 1, Must fix 1: bad numbers must never mean GO ----
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), -1.0, 100.5])
+def test_garbled_numbers_in_the_reply_are_blind(bad):
+    body = {"five_hour": {"used_percentage": bad}, "seven_day": {"used_percentage": 10}}
+    with pytest.raises(g.GuardBlind):
+        g.parse_usage_response(body, NOW)
+    body = {"five_hour": {"used_percentage": 10}, "seven_day": {"used_percentage": bad}}
+    with pytest.raises(g.GuardBlind):
+        g.parse_usage_response(body, NOW)
+
+
+@pytest.mark.parametrize("field", ["five_hour", "weekly", "read_at"])
+def test_a_tampered_state_file_is_blind_not_go(isolated_state, field):
+    data = dict(five_hour=10, weekly=10, five_hour_resets_at=None, weekly_resets_at=None,
+                read_at=NOW)
+    for bad in ("NaN", "-5", "250", "Infinity"):
+        data[field] = float(bad)
+        isolated_state.mkdir(parents=True, exist_ok=True)
+        (isolated_state / "usage.json").write_text(json.dumps(data), encoding="utf-8")
+        if field != "read_at" or bad in ("NaN", "Infinity"):
+            assert g.read_state() is None
+        # in every case a reader that fails means blind, never GO
+        assert g.get_usage(blind_reader, now=NOW) is None
+
+
+def test_decide_cannot_return_go_for_nan_even_if_built_by_hand():
+    with pytest.raises(ValueError):
+        g.Usage(float("nan"), float("nan"), None, None, NOW)

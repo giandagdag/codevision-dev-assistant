@@ -27,6 +27,10 @@ MERGE_BASE = "auto/phases-7-10"
 LABELS = ("needs-gian", "needs-work-test")
 GUARD_BLIND_TITLE = "guard blind: usage cannot be read"
 GREEN = {"SUCCESS", "NEUTRAL", "SKIPPED"}
+HOOKS_BROKEN_TITLE = "hooks cannot start: no worker was launched"
+AGENT_MODELS = {"chief": "sonnet", "spec-writer": "opus", "builder": "sonnet",
+                "status-digest": "haiku", "plan-reviewer": "sonnet", "code-reviewer": "sonnet"}
+HOOK_FILES = ("guard_hook.py", "quiet_hook.py", "safety_hook.py")
 
 Gh = Callable[[list[str]], str]
 
@@ -39,9 +43,10 @@ class MergeRefused(Exception):
 class WorkerResult:
     exit_code: int
     stdout: str = ""
+    crash: str = ""  # the error type when the launcher itself failed
 
 
-Launcher = Callable[[str], WorkerResult]
+Launcher = Callable[[str, str], WorkerResult]  # (prompt, agent)
 
 
 def run_gh(args: list[str]) -> str:
@@ -97,60 +102,108 @@ def worker_note_path() -> Path:
     return usage_guard.state_path().parent / "worker_note.md"
 
 
+def hooks_ready(python: str | None = None) -> str | None:
+    """Prove the three hooks can start with this interpreter, or return why not.
+
+    A hook that cannot start is a NON-blocking error in Claude Code, so a worker would run with
+    no guard. Each hook is run as a worker on garbage input, and must fail closed (exit 2).
+    """
+    python = python or sys.executable
+    env = {**os.environ, "DA_WORKER": "1"}
+    for name in HOOK_FILES:
+        try:
+            done = subprocess.run([python, str(ROOT / "ops" / name)], input="garbage",
+                                  capture_output=True, text=True, env=env, timeout=30,
+                                  check=False)
+        except (OSError, subprocess.SubprocessError):
+            return f"{name} could not be started with {python}"
+        if done.returncode != 2:
+            return f"{name} did not fail closed (exit code {done.returncode})"
+    return None
+
+
+def _refuse_stopped(decision, usage, status_file, gh, as_of) -> None:
+    status.set_usage_line(status_file, usage.five_hour if usage else None,
+                          usage.weekly if usage else None, as_of, stopped=True)
+    status.set_line(status_file, "Stopped:", decision.reason)
+    if usage is None:
+        open_gian_issue(
+            GUARD_BLIND_TITLE,
+            "The chief could not read the plan usage, so nothing was started. "
+            "Check DA_USAGE_URL and DA_USAGE_TOKEN_FILE on the laptop (A-P1).",
+            "needs-gian", gh)
+
+
+def _refuse_hooks(problem, status_file, gh, as_of) -> None:
+    status.add_log(status_file, f"{as_of}: hooks cannot start ({problem}); no worker launched")
+    open_gian_issue(HOOKS_BROKEN_TITLE,
+                    f"Before starting a worker the chief checks that the safety hooks run. "
+                    f"Problem: {problem}. Fix the interpreter (see docs/automation.md).",
+                    "needs-gian", gh)
+
+
 def tick(
     reader: usage_guard.Reader,
     gh: Gh = run_gh,
     launcher: Launcher | None = None,
     status_file: Path = STATUS_FILE,
     now: float | None = None,
+    preflight: Callable[[], str | None] = hooks_ready,
 ) -> str:
-    """One wake-up. Returns 'stopped', 'idle', 'would-start' or 'ran'."""
+    """One wake-up. Returns 'stopped', 'idle', 'would-start', 'hooks-broken' or 'ran'."""
     now = time.time() if now is None else now
     usage = usage_guard.get_usage(reader, now=now)
     decision = usage_guard.decide(usage)
     as_of = usage_guard.format_sgt(now)
-    status.set_usage_line(
-        status_file,
-        usage.five_hour if usage else None,
-        usage.weekly if usage else None,
-        as_of,
-        stopped=not decision.go,
-    )
     if not decision.go:
-        status.set_line(status_file, "Stopped:", usage_guard.stopped_line(decision)[9:])
-        if usage is None:
-            open_gian_issue(
-                GUARD_BLIND_TITLE,
-                "The chief could not read the plan usage, so nothing was started. "
-                "Check DA_USAGE_URL and DA_USAGE_TOKEN_FILE on the laptop (A-P1).",
-                "needs-gian", gh)
+        _refuse_stopped(decision, usage, status_file, gh, as_of)
         return "stopped"
+    status.set_usage_line(status_file, usage.five_hour, usage.weekly, as_of, stopped=False)
     status.set_line(status_file, "Stopped:", "no")
     if not has_work(status_file.read_text(encoding="utf-8")):
         return "idle"
     if launcher is None:
         status.add_log(status_file, f"{as_of}: work found, not launched (no --launch)")
         return "would-start"
-    return _run_worker(launcher, usage, reader, status_file, now)
+    return launch_worker("chief", "Read STATUS.md and do the next step as the chief.", "chief",
+                         "", reader, gh, launcher, status_file, now, preflight)
 
 
-def _run_worker(launcher, before, reader, status_file, now) -> str:
+def launch_worker(agent, prompt, stage, phase, reader, gh, launcher, status_file, now,
+                  preflight=hooks_ready) -> str:
+    """Start ONE worker if the guard says GO and the hooks can start. Writes a ledger line."""
+    if agent not in AGENT_MODELS:
+        raise ValueError(f"unknown agent {agent!r}; choose one of {sorted(AGENT_MODELS)}")
+    usage = usage_guard.get_usage(reader, now=now)
+    decision = usage_guard.decide(usage)
+    as_of = usage_guard.format_sgt(now)
+    if not decision.go:
+        _refuse_stopped(decision, usage, status_file, gh, as_of)
+        return "stopped"
+    problem = preflight()
+    if problem:
+        _refuse_hooks(problem, status_file, gh, as_of)
+        return "hooks-broken"
     note = worker_note_path()
     note.unlink(missing_ok=True)
-    result = launcher("Read STATUS.md and do the next step as the chief.")
+    try:
+        result = launcher(prompt, agent)
+    except Exception as crash:  # noqa: BLE001 - the ledger line must still be written
+        result = WorkerResult(-1, "", type(crash).__name__)
     try:
         after = reader()
-    except usage_guard.GuardBlind:
+    except Exception:  # noqa: BLE001 - any failure reading usage after the run means "unknown"
         after = None
     saved = note.read_text(encoding="utf-8").strip() if note.exists() else ""
-    outcome = "ok" if result.exit_code == 0 else f"exit code {result.exit_code}"
+    outcome = ("ok" if result.exit_code == 0 else
+               f"launcher error: {result.crash}" if result.crash
+               else f"exit code {result.exit_code}")
     if saved:
         outcome += " (worker saved a note)"
-        status.add_log(status_file, f"{usage_guard.format_sgt(now)}: worker note: "
-                       + saved.replace("\n", " ")[:200])
+        status.add_log(status_file, f"{as_of}: worker note: " + saved.replace("\n", " ")[:200])
     ledger.add_line({
-        "phase": "", "stage": "chief", "model": "sonnet",
-        "five_hour_before": before.five_hour, "weekly_before": before.weekly,
+        "phase": phase, "stage": stage, "model": AGENT_MODELS[agent],
+        "five_hour_before": usage.five_hour, "weekly_before": usage.weekly,
         "five_hour_after": after.five_hour if after else None,
         "weekly_after": after.weekly if after else None,
         **ledger.tokens_from_result(result.stdout), "outcome": outcome,
@@ -170,10 +223,12 @@ def worker_command(prompt: str, agent: str = "chief", model: str = "sonnet") -> 
     ]
 
 
-def real_launcher(prompt: str) -> WorkerResult:
-    env = {**os.environ, "DA_WORKER": "1"}
-    done = subprocess.run(worker_command(prompt), capture_output=True, text=True, env=env,
-                          cwd=ROOT, check=False)
+def real_launcher(prompt: str, agent: str = "chief") -> WorkerResult:
+    # DA_PYTHON is the interpreter the hooks run with (settings.json uses it). DA_AGENT lets the
+    # safety hook know who is writing (only the chief edits STATUS.md).
+    env = {**os.environ, "DA_WORKER": "1", "DA_AGENT": agent, "DA_PYTHON": sys.executable}
+    done = subprocess.run(worker_command(prompt, agent, AGENT_MODELS[agent]), capture_output=True,
+                          text=True, env=env, cwd=ROOT, check=False)
     return WorkerResult(done.returncode, done.stdout)
 
 
@@ -192,6 +247,11 @@ def main(argv: list[str] | None = None, gh: Gh | None = None) -> int:
     p.add_argument("--issue", required=True)
     m = sub.add_parser("merge", help="merge a PR into the integration branch")
     m.add_argument("--pr", type=int, required=True)
+    ln = sub.add_parser("launch", help="start ONE named worker (the chief uses this)")
+    ln.add_argument("--agent", required=True, choices=sorted(AGENT_MODELS))
+    ln.add_argument("--prompt", required=True)
+    ln.add_argument("--stage", required=True)
+    ln.add_argument("--phase", default="")
     args = parser.parse_args(argv)
     try:
         if args.cmd == "tick":
@@ -199,6 +259,10 @@ def main(argv: list[str] | None = None, gh: Gh | None = None) -> int:
             print(tick(usage_guard.endpoint_reader, gh, launcher))
         elif args.cmd == "issue":
             print(open_gian_issue(args.title, args.body, args.label, gh) or "already open")
+        elif args.cmd == "launch":
+            print(launch_worker(args.agent, args.prompt, args.stage, args.phase,
+                                usage_guard.endpoint_reader, gh, real_launcher, STATUS_FILE,
+                                time.time()))
         elif args.cmd == "pause":
             status.mark_paused(STATUS_FILE, args.stage, args.issue)
         else:
