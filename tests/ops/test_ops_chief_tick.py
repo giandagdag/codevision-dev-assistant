@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -253,18 +254,64 @@ def test_hooks_ready_runs_each_hook_and_wants_a_fail_closed_exit_2(monkeypatch):
     assert "could not be started" in c.hooks_ready("/missing-python")
 
 
+GIT_BASH_DEFAULTS = (
+    r"C:\Program Files\Git\bin\bash.exe",
+    r"C:\Program Files (x86)\Git\bin\bash.exe",
+    r"%LOCALAPPDATA%\Programs\Git\bin\bash.exe",
+)
+
+
+def find_bash(platform=None, which=None, exists=None):
+    """A bash to run the hook strings with: PATH first, then Git for Windows' default places.
+
+    On Windows `bash` on PATH can be the WSL launcher in System32, which runs a different Linux,
+    so that one is skipped (Claude Code itself uses Git Bash). Returns None when none is found.
+    """
+    platform = platform or sys.platform
+    which = which or shutil.which
+    exists = exists or os.path.exists
+    found = which("bash")
+    if found and not (platform == "win32" and "system32" in found.lower()):
+        return found
+    if platform == "win32":
+        for candidate in GIT_BASH_DEFAULTS:
+            candidate = os.path.expandvars(candidate)
+            if exists(candidate):
+                return candidate
+    return None
+
+
+def test_find_bash_prefers_path_skips_wsl_then_tries_git_for_windows_defaults():
+    git = r"C:\Program Files\Git\bin\bash.exe"
+    assert find_bash("linux", lambda _: "/usr/bin/bash") == "/usr/bin/bash"
+    assert find_bash("win32", lambda _: r"C:\tools\Git\bin\bash.exe") == (
+        r"C:\tools\Git\bin\bash.exe")
+    # WSL launcher on PATH is skipped, Git Bash default path is used
+    wsl = r"C:\Windows\System32\bash.exe"
+    assert find_bash("win32", lambda _: wsl, exists=lambda p: p == git) == git
+    # not on PATH at all (the PowerShell case): default path
+    assert find_bash("win32", lambda _: None, exists=lambda p: p == git) == git
+    assert find_bash("win32", lambda _: None, exists=lambda p: False) is None
+    assert find_bash("linux", lambda _: None, exists=lambda p: True) is None
+
+
 def test_settings_hooks_use_da_python_and_are_silent_without_it(tmp_path):
+    bash = find_bash()
+    if bash is None:
+        pytest.skip("no bash found (install Git for Windows); the hook strings need bash to run")
     cfg = json.loads((ROOT / ".claude" / "settings.json").read_text(encoding="utf-8"))
     commands = [h["command"] for g_ in cfg["hooks"]["PreToolUse"] for h in g_["hooks"]]
     assert len(commands) == 3 and all("${DA_PYTHON:-true}" in x for x in commands)
-    base = {"PATH": os.environ["PATH"], "CLAUDE_PROJECT_DIR": str(ROOT)}
+    # Keep the normal environment (Windows Python needs SYSTEMROOT), minus any DA_ variables.
+    base = {k: v for k, v in os.environ.items() if not k.startswith("DA_")}
+    base["CLAUDE_PROJECT_DIR"] = str(ROOT)
     for command in commands:  # no DA_PYTHON: `true` ignores the args, so nothing is in the way
-        run = subprocess.run(["bash", "-c", command], input="{}", capture_output=True,
+        run = subprocess.run([bash, "-c", command], input="{}", capture_output=True,
                              text=True, env=base)
         assert run.returncode == 0 and run.stdout == "" and run.stderr == ""
     worker = {**base, "DA_WORKER": "1", "DA_PYTHON": sys.executable}
     for command in commands:  # with it: the real hook runs and fails closed on garbage
-        run = subprocess.run(["bash", "-c", command], input="garbage", capture_output=True,
+        run = subprocess.run([bash, "-c", command], input="garbage", capture_output=True,
                              text=True, env=worker)
         assert run.returncode == 2
 
