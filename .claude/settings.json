@@ -31,6 +31,16 @@
             "timeout": 30
           }
         ]
+      },
+      {
+        "matcher": "Bash|Read|Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/ops/safety_hook.py\"",
+            "timeout": 30
+          }
+        ]
       }
     ]
   }
