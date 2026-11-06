@@ -41,9 +41,8 @@ Stop, push the work so far to the phase branch, and tell Gian what you need when
   you did not see.
 
 ## Current phase
-Phase 6: Build + test loop. Spec: `specs/phase-6-build-test-loop.md` v1.1 (Phase 5 is merged into `main`). Plan: `specs/phase-6-plan.md`
-Phase 6 fixes batch (work test 6 Nov 2026), built on the same `phase-6` branch before it is merged.
-Spec: `specs/phase-6-fixes-2026-11-06.md` v1.0 (wins over older specs for the items it names). Plan: `specs/phase-6-fixes-plan.md`
+Phase A: Automation foundation. Spec: `specs/phase-a-automation.md` v1.0. Plan: `specs/phase-a-plan.md`. Branch `phase-a` (Phase 6 is merged into `main`).
+(Phase 6 and its fixes batch are done; their specs stay in `specs/`.)
 
 Phases 4 onwards were redesigned on 31 Oct 2026 (LLM writes 100% of the code, built-in testing,
 laptop workspace). Source of truth: `specs/redesign-2026-10-31.md`.
