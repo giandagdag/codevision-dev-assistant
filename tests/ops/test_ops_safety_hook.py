@@ -82,7 +82,8 @@ def test_settings_json_registers_the_safety_hook():
 # ---- review round 1: bypass forms (written before the fix) ----
 
 @pytest.mark.parametrize("command", [
-    "git push origin HEAD:refs/heads/main", "bash -c 'git push origin main'",
+    "git push origin HEAD:refs/heads/main", "git push origin HEAD:heads/main",
+    "git push origin HEAD:refs/heads/auto/phases-7-10", "bash -c 'git push origin main'",
     "sh -c \"rm -rf src\"", "git -C . push origin main", "git -c x=y push origin main",
     "echo $(git push origin main)", "echo `git push origin main`",
     "git push --delete origin auto/phase-7", "git push origin :auto/phase-7",

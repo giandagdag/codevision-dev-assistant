@@ -101,7 +101,7 @@ def _push_problem(args: list[str], cwd: Path) -> str | None:
         dst = ref.split(":", 1)[1] if ":" in ref else ref
         if not dst:
             return "deleting a branch with push is not allowed"
-        dst = dst.removeprefix("refs/heads/")
+        dst = dst.removeprefix("refs/").removeprefix("heads/")  # refs/heads/x and heads/x
         if dst == "HEAD":
             dst = current_branch(cwd)
         if dst in NO_PUSH_TO:

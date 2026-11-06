@@ -46,7 +46,7 @@ class Usage:
         # where every comparison with NaN is False and would read as GO.
         for name in ("five_hour", "weekly"):
             value = getattr(self, name)
-            if not (math.isfinite(value) and 0 <= value <= 100):
+            if isinstance(value, bool) or not (math.isfinite(value) and 0 <= value <= 100):
                 raise ValueError(f"{name} must be a number from 0 to 100")
         for name in ("five_hour_resets_at", "weekly_resets_at"):
             value = getattr(self, name)
@@ -131,6 +131,8 @@ def parse_usage_response(body: dict, now: float) -> Usage:
     try:
         five = body["five_hour"]
         week = body["seven_day"]
+        if isinstance(five["used_percentage"], bool) or isinstance(week["used_percentage"], bool):
+            raise ValueError("a true/false value is not a percentage")
         return Usage(
             five_hour=float(five["used_percentage"]),
             weekly=float(week["used_percentage"]),

@@ -55,6 +55,12 @@ work laptop). You get a phone notification and answer in a comment. The chief re
 3. **Create the labels** `needs-gian` and `needs-work-test` in the repo (Issues, Labels).
 4. **Create the branch `auto/phases-7-10`** from `main` (the chief merges phase PRs into it).
 
+## Honest limits of the safety hook
+`ops/safety_hook.py` is best-effort. A worker can run Python (`.venv` python is allowed because it
+must run pytest), and a program can build a forbidden path from pieces. So the branch protection
+above is not optional: **turn it on before any unattended run (A-P4)**. Also check at A-P1 that the
+permission layer accepts the quiet runner's rewritten command (it uses an absolute path).
+
 ## Laptop power (O3)
 Settings, System, Power: set "sleep" to Never while plugged in, during the hours the team works.
 

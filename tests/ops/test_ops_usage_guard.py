@@ -241,3 +241,9 @@ def test_a_tampered_state_file_is_blind_not_go(isolated_state, field):
 def test_decide_cannot_return_go_for_nan_even_if_built_by_hand():
     with pytest.raises(ValueError):
         g.Usage(float("nan"), float("nan"), None, None, NOW)
+
+
+def test_a_json_true_is_not_read_as_one_percent():
+    body = {"five_hour": {"used_percentage": True}, "seven_day": {"used_percentage": 10}}
+    with pytest.raises(g.GuardBlind):
+        g.parse_usage_response(body, NOW)
