@@ -17,7 +17,14 @@ from agents.da_discover_flow import (
     outcome_status,
 )
 from agents.da_understand_checks import MAX_MESSAGE_LENGTH
-from agents.da_understand_flow import ALWAYS_VISIBLE, HELP_OPTION, PROCEED_OPTION
+from agents.da_understand_flow import (
+    ALWAYS_VISIBLE,
+    FORM_BOXES,
+    FORM_OPTIONAL_BOX,
+    HELP_OPTION,
+    OPTIONAL_QUESTION,
+    PROCEED_OPTION,
+)
 from layouts.da_approach_panel import approach_panel
 from layouts.da_build_panel import build_tab, poll_interval, tests_tab
 from layouts.da_workspace_panel import (
@@ -62,6 +69,15 @@ MESSAGE_ID = "da-message"
 CHOICE_TYPE = "da-choice"
 KEYS_ID = "da-keys-ready"  # target of the Enter-to-send script; holds nothing
 BUSY_ID = "da-busy"  # the "searching" line, shown only while a Discover action runs
+# The 4-box form (Phase 6 fixes). Pattern ids, so the page can have none of them (all other
+# screens) and one callback still reads all five boxes in order.
+FORM_BOX_TYPE = "da-form-box"
+FORM_ERROR_TYPE = "da-form-error"
+FORM_SUBMIT_TYPE = "da-form-submit"
+FORM_SUBMIT_LABEL = "Submit"
+FORM_OPTIONAL_HINT = "This box may stay empty."
+FORM_BUSY_TEXT = "⏳ Reading your answers…"
+FORM_COMPOSER_TEXT = "Fill in the form above, then press Submit"
 
 CODE_BANNER = "No code is written yet"
 DEMO_BANNER = "Demo mode: replies are scripted"
@@ -242,12 +258,14 @@ def render_workspace(view: UnderstandView) -> list:
         request_id=view.request.request_id,
         status=view.request.status,
         demo_mode=view.demo_mode,
-        messages=[parts.chat_bubble(message) for message in view.messages],
+        messages=[parts.chat_bubble(message) for message in view.messages]
+        + ([_form()] if view.input_mode == "form" else []),
         composer=_composer(
             view.input_mode, view.choices, view.can_skip, view.prompt, view.custom_choice_allowed
         ),
         panel=_summary_panel(view),
         state={"request_id": view.request.request_id, "revision": view.revision},
+        busy_text=FORM_BUSY_TEXT if view.input_mode == "form" else "",
     )
 
 
@@ -830,6 +848,7 @@ def _composer(
     box opens too, for "Other, type here" (W3)."""
     text_open = mode == "text" or custom_allowed
     paused = {
+        "form": FORM_COMPOSER_TEXT,
         "choices": "Text input is paused until you choose",
         "waiting": prompt,
         "done": "This request is confirmed. It cannot be changed in this phase.",
@@ -875,6 +894,54 @@ def _composer(
     if mode == "choices":
         return dmc.Box([_choices_bar(choices), controls])
     return controls
+
+
+def _form() -> dmc.Box:
+    """The 4-box form: the 4 mandatory questions in their wording, then the optional area (it may
+    stay empty), one Submit. A failing box shows its message on the line under it."""
+    boxes = [_form_box(number, f"{number}. {title}") for number, title in FORM_BOXES]
+    boxes.append(_form_box(FORM_OPTIONAL_BOX, OPTIONAL_QUESTION, FORM_OPTIONAL_HINT))
+    return dmc.Paper(
+        [
+            *boxes,
+            dmc.Group(
+                dmc.Button(
+                    FORM_SUBMIT_LABEL,
+                    id={"type": FORM_SUBMIT_TYPE, "index": 0},
+                    leftSection=DashIconify(icon="tabler:send", width=16),
+                ),
+                justify="flex-end",
+            ),
+        ],
+        withBorder=True,
+        radius="md",
+        p="sm",
+        id="da-form",
+    )
+
+
+def _form_box(number: int, label: str, description: str | None = None) -> dmc.Box:
+    return dmc.Box(
+        [
+            dmc.Textarea(
+                id={"type": FORM_BOX_TYPE, "index": number},
+                label=label,
+                description=description,
+                autosize=True,
+                minRows=2,
+                maxRows=6,
+                inputProps={"maxLength": MAX_MESSAGE_LENGTH},
+            ),
+            dmc.Text(
+                "",
+                id={"type": FORM_ERROR_TYPE, "index": number},
+                c="red",
+                size="xs",
+                **{"aria-live": "assertive"},
+            ),
+        ],
+        mb="sm",
+    )
 
 
 def _choices_bar(choices: list[str]) -> dmc.Box:

@@ -64,8 +64,12 @@ CRITERION_PARTS: tuple[str, ...] = ("given", "when", "then")
 Speaker = Literal["developer", "assistant", "system"]
 
 # Where the conversation is. Each step allows one kind of input (see the flow module).
-Step = Literal["question", "decision", "optional", "correction", "checkpoint", "senior", "done"]
-InputMode = Literal["text", "choices", "waiting", "done"]
+# "form" is the 4-box form of the Phase 6 fixes batch; "question" and "optional" are only used by
+# requests saved before that change, which finish the old one-at-a-time way.
+Step = Literal[
+    "form", "question", "decision", "optional", "correction", "checkpoint", "senior", "done"
+]
+InputMode = Literal["form", "text", "choices", "waiting", "done"]
 
 
 class _Shape(BaseModel):
@@ -211,5 +215,9 @@ class UnderstandView(BaseModel):
     visible_fields: list[str]
     # At a decision the text box opens for "Other, type here" (W3).
     custom_choice_allowed: bool
+    # The text box is open next to the choice buttons (a decision, or the checkpoint), and the
+    # label of the Send button says what typing does there.
+    typing_allowed: bool = False
+    send_label: str = "Send"
     revision: int
     demo_mode: bool

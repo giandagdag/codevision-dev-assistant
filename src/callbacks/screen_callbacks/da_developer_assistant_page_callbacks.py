@@ -25,12 +25,15 @@ from agents.da_discover_flow import (
     start_discovery,
 )
 from agents.da_understand_flow import (
+    FORM_OPTIONAL_BOX,
+    FormError,
     choose_option,
     create_understand_request,
     get_understand_view,
     list_my_requests,
     skip_optional,
     submit_answer,
+    submit_form,
 )
 from callbacks.screen_callbacks.da_workspace_callbacks import register_da_workspace_callbacks
 from configs.da_config import ConfigError, Settings, load_settings
@@ -47,6 +50,9 @@ from layouts.da_developer_assistant_page import (
     CHOICE_TYPE,
     CONFIRM_KEY,
     ESCALATE_KEY,
+    FORM_BOX_TYPE,
+    FORM_ERROR_TYPE,
+    FORM_SUBMIT_TYPE,
     KEYS_ID,
     LOCATION_ID,
     MESSAGE_ID,
@@ -83,6 +89,9 @@ from pydantic_classes.da_models import (
 # Problems the developer can understand and act on. Their messages are already plain words.
 # Anything else is a real bug and is allowed to stop loudly.
 SHOWN_ERRORS = (UnderstandError, RulebookError, DatabaseBusyError, ConfigError)
+
+# The five boxes of the form, numbered 1 to 5 (4 mandatory questions and the optional area).
+FORM_BOXES_COUNT = range(1, FORM_OPTIONAL_BOX + 1)
 
 # Until the request is confirmed the Understand workspace is shown; from CONFIRMED_FOR_DISCOVERY
 # on, the Discover workspace (Phase 3); from APPROACH_PROPOSED on, the Approach workspace
@@ -227,6 +236,36 @@ def perform_action(settings: Settings, trigger, text, state, refresh):
         # Nothing was written. The text stays in the box so the developer can fix it.
         return no_update, no_update, str(error)
     return (refresh or 0) + 1, no_update, ""
+
+
+def handle_form(submit_clicks, answers, state, refresh):
+    """Submit was pressed on the 4-box form."""
+    if not submit_clicks or not any(submit_clicks):
+        raise PreventUpdate
+    return perform_form(get_settings(), answers, state, refresh)
+
+
+def perform_form(settings: Settings, answers, state, refresh):
+    """Call submit_form and return (refresh counter, message under the chat, one message per box).
+
+    A box that fails shows its message on the line under it; nothing is redrawn, so every box
+    keeps what was typed (U2). Any other shown problem (stale window, AI not reachable) goes to
+    the line under the chat.
+    """
+    state = state or {}
+    empty = [""] * len(FORM_BOXES_COUNT)
+    try:
+        submit_form(
+            settings,
+            state.get("request_id"),
+            [(answer or "") for answer in answers or []],
+            state.get("revision"),
+        )
+    except FormError as error:
+        return no_update, "", [error.problems.get(number, "") for number in FORM_BOXES_COUNT]
+    except SHOWN_ERRORS as error:
+        return no_update, str(error), empty
+    return (refresh or 0) + 1, "", empty
 
 
 def _build_action(settings: Settings, trigger, request_id: str, revision: int) -> None:
@@ -394,5 +433,18 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
         State(REFRESH_ID, "data"),
         prevent_initial_call=True,
     )(poll_build)
+
+    # The 4-box form (Phase 6 fixes). Pattern ids: the page has none of these on other screens.
+    app.callback(
+        Output(REFRESH_ID, "data", allow_duplicate=True),
+        Output(MESSAGE_ID, "children", allow_duplicate=True),
+        Output({"type": FORM_ERROR_TYPE, "index": ALL}, "children"),
+        Input({"type": FORM_SUBMIT_TYPE, "index": ALL}, "n_clicks"),
+        State({"type": FORM_BOX_TYPE, "index": ALL}, "value"),
+        State(STATE_ID, "data"),
+        State(REFRESH_ID, "data"),
+        running=[(Output(BUSY_ID, "style"), {"display": "block"}, {"display": "none"})],
+        prevent_initial_call=True,
+    )(handle_form)
 
     register_da_workspace_callbacks(app, lambda: get_settings())

@@ -21,7 +21,7 @@ from agents.da_understand_flow import (
     PROCEED_OPTION,
     choose_option,
     create_understand_request,
-    submit_answer,
+    submit_form,
 )
 from configs.da_config import DEFAULT_ENV_FILE, ConfigError, Settings, load_settings
 from da_llm_ping import ping
@@ -167,9 +167,8 @@ def _run_understand_steps(db_path: Path, settings: Settings) -> None:
     view = create_understand_request(demo, SAMPLE_FIRST_MESSAGE, developer_id=SAMPLE_DEVELOPER)
     request_id = view.request.request_id
     print(f"10. Request {request_id} created (status {view.request.status})")
-    for number, answer in enumerate(SAMPLE_ANSWERS, start=1):
-        view = submit_answer(demo, request_id, answer, view.revision)
-        print(f"    - Question {number} answered: status {view.request.status}")
+    view = submit_form(demo, request_id, [*SAMPLE_ANSWERS, SAMPLE_REFERENCE], view.revision)
+    print(f"    - 4-box form submitted: status {view.request.status}")
 
     decision = view.prompt
     asked_status = view.request.status
@@ -180,7 +179,6 @@ def _run_understand_steps(db_path: Path, settings: Settings) -> None:
         f'chose "{choice}" (status {view.request.status})'
     )
 
-    view = submit_answer(demo, request_id, SAMPLE_REFERENCE, view.revision)
     view = choose_option(demo, request_id, PROCEED_OPTION, view.revision)
     criteria = get_confirmed_record(db_path, request_id).acceptance_criteria
     if view.request.status != STATUS_CONFIRMED or len(criteria) != EXPECTED_CRITERIA:
@@ -222,10 +220,10 @@ def _run_onprem_steps(db_path: Path, settings: Settings) -> None:
             onprem, SAMPLE_FIRST_MESSAGE, developer_id=SAMPLE_DEVELOPER
         )
         request_id = view.request.request_id
-        for answer in SAMPLE_ANSWERS:
-            view = submit_answer(onprem, request_id, answer, view.revision)
+        view = submit_form(
+            onprem, request_id, [*SAMPLE_ANSWERS, SAMPLE_REFERENCE], view.revision
+        )
         view = choose_option(onprem, request_id, view.choices[0], view.revision)
-        view = submit_answer(onprem, request_id, SAMPLE_REFERENCE, view.revision)
         view = choose_option(onprem, request_id, PROCEED_OPTION, view.revision)
     if view.request.status != STATUS_CONFIRMED:
         raise UnderstandError(f"The onprem conversation ended at {view.request.status}.")
@@ -282,15 +280,21 @@ def _run_discover_steps(db_path: Path, settings: Settings) -> None:
 
 
 def _run_reveal_step(db_path: Path, settings: Settings) -> None:
-    """Item 18 (W5): the Summary fills step by step. The record already holds every field the
-    fake script fills, but after question 1 the screen shows only objective and reason."""
+    """Item 18 (W5, U8): the Summary shows nothing of the form until Submit, then all the fields
+    the form answered at once."""
     demo = replace(settings, llm_provider="fake", db_path=db_path)
     view = create_understand_request(demo, SAMPLE_FIRST_MESSAGE, developer_id=SAMPLE_DEVELOPER)
-    view = submit_answer(demo, view.request.request_id, SAMPLE_ANSWERS[0], view.revision)
+    before = [name for name in view.visible_fields if name not in ALWAYS_VISIBLE]
+    view = submit_form(
+        demo, view.request.request_id, [*SAMPLE_ANSWERS, ""], view.revision
+    )
     revealed = [name for name in view.visible_fields if name not in ALWAYS_VISIBLE]
-    if revealed != ["objective", "reason"]:
-        raise UnderstandError(f"After question 1 the screen showed {revealed}.")
-    print(f"18. After question 1 the Summary shows only: {', '.join(revealed)}")
+    if before or "objective" not in revealed or "inputs" not in revealed:
+        raise UnderstandError(f"Before Submit {before}; after Submit {revealed}.")
+    print(
+        f"18. Before Submit the Summary shows no form field; after it, all {len(revealed)} "
+        "at once"
+    )
 
 
 def _run_approach_steps(db_path: Path, settings: Settings) -> None:
@@ -446,10 +450,10 @@ def _ticks(view) -> str:
 def _confirmed_request(settings: Settings) -> str:
     view = create_understand_request(settings, SAMPLE_FIRST_MESSAGE, developer_id=SAMPLE_DEVELOPER)
     request_id = view.request.request_id
-    for answer in SAMPLE_ANSWERS:
-        view = submit_answer(settings, request_id, answer, view.revision)
+    view = submit_form(
+        settings, request_id, [*SAMPLE_ANSWERS, SAMPLE_REFERENCE], view.revision
+    )
     view = choose_option(settings, request_id, view.choices[0], view.revision)
-    view = submit_answer(settings, request_id, SAMPLE_REFERENCE, view.revision)
     view = choose_option(settings, request_id, PROCEED_OPTION, view.revision)
     if view.request.status != STATUS_CONFIRMED:
         raise UnderstandError(f"The conversation ended at {view.request.status}.")

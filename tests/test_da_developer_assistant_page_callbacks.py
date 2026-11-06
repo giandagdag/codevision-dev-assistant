@@ -45,8 +45,8 @@ def to_tricky_decision(settings):
     ambiguity = {"text": "Which way should we go?", "material": True, "options": TRICKY_OPTIONS}
     reply = stub_reply({"title": "Add Excel uploads"}, [ambiguity])
     view = flow.create_understand_request(settings, "Can we support Excel uploads?")
-    return flow.submit_answer(
-        settings, view.request.request_id, "Because users ask", view.revision,
+    return flow.submit_form(
+        settings, view.request.request_id, [*da_play.ANSWERS, ""], view.revision,
         client=StubClient(reply),
     )
 
@@ -60,19 +60,18 @@ def test_the_whole_scripted_conversation_runs_through_the_buttons(settings):
     request_id = search.removeprefix("?request=")
     view = flow.get_understand_view(settings, request_id)
 
-    for text in da_play.ANSWERS:
-        refresh, search, message = send(settings, view, text)
-        assert (refresh, search, message) == (1, no_update, "")
-        view = flow.get_understand_view(settings, request_id)
+    assert view.input_mode == "form"  # the 4-box form, not one question at a time
+    refresh, message, errors = cb.perform_form(
+        settings, [*da_play.ANSWERS, ""], state_of(view), 0
+    )
+    assert (refresh, message, errors) == (1, "", [""] * 5)
+    view = flow.get_understand_view(settings, request_id)
     assert view.input_mode == "choices"  # the decision locks the text box
 
     cb.perform_action(settings, choice(0), None, state_of(view), 1)
     view = flow.get_understand_view(settings, request_id)
-    assert view.can_skip
-    cb.perform_action(settings, page.SKIP_ID, None, state_of(view), 2)
-    view = flow.get_understand_view(settings, request_id)
     proceed = view.choices.index(flow.PROCEED_OPTION)
-    cb.perform_action(settings, choice(proceed), None, state_of(view), 3)
+    cb.perform_action(settings, choice(proceed), None, state_of(view), 2)
 
     view = flow.get_understand_view(settings, request_id)
     assert view.request.status == "CONFIRMED_FOR_DISCOVERY"
@@ -92,11 +91,19 @@ def test_show_page_draws_home_new_and_one_request(settings):
 
 
 def test_reloading_mid_conversation_shows_the_same_thing(settings):
-    view = da_play.answer(settings, da_play.start(settings), da_play.ANSWERS[0])
+    view = da_play.answer(settings, da_play.start_old_way(settings), da_play.ANSWERS[0])
     url = f"?request={view.request.request_id}"
     first, second = cb.show_page(url, 0), cb.show_page(url, 7)
     assert all_text(first) == all_text(second)
     assert "1 of 4 mandatory questions answered" in all_text(first)
+
+
+def test_reloading_with_the_form_open_draws_the_form_again(settings):
+    view = da_play.start(settings)
+    url = f"?request={view.request.request_id}"
+    first, second = cb.show_page(url, 0), cb.show_page(url, 7)
+    assert all_text(first) == all_text(second)
+    assert by_id(first, "da-form") is not None
 
 
 def test_busy_database_on_home_gives_a_plain_message(settings, monkeypatch):
@@ -114,7 +121,7 @@ def test_unknown_request_gives_a_plain_message(settings):
 
 
 def test_stale_window_is_refused_and_nothing_is_written(settings):
-    view = da_play.start(settings)
+    view = da_play.start_old_way(settings)
     old_state = state_of(view)
     da_play.answer(settings, view, da_play.ANSWERS[0])  # "another window" saved first
     before = flow.get_understand_view(settings, view.request.request_id)
@@ -127,7 +134,7 @@ def test_stale_window_is_refused_and_nothing_is_written(settings):
 
 
 def test_a_message_with_a_key_is_refused_and_not_saved(settings):
-    view = da_play.start(settings)
+    view = da_play.start_old_way(settings)
     result = send(settings, view, "my key is sk-ant-api03-" + "a" * 40)
     assert result[0] is no_update and result[2] != ""
     after = flow.get_understand_view(settings, view.request.request_id)
@@ -157,7 +164,8 @@ def test_help_choice_shows_decision_required_then_choosing_resumes(settings):
     assert "DECISION REQUIRED" in all_text(cb.show_page(f"?request={view.request.request_id}", 0))
     cb.perform_action(settings, choice(0), None, state_of(view), 1)
     view = flow.get_understand_view(settings, view.request.request_id)
-    assert view.request.status == "CLARIFICATION_IN_PROGRESS"
+    # The form already covered the optional area, so the checkpoint comes straight after.
+    assert view.request.status == "READY_FOR_CONFIRMATION"
 
 
 @pytest.mark.parametrize("index", range(len(TRICKY_OPTIONS)))
@@ -204,9 +212,14 @@ def test_onprem_shows_its_plain_message_in_the_chat(make_settings, published_rul
     settings = make_settings(llm_provider="onprem")
     monkeypatch.setattr(cb, "get_settings", lambda: settings)
     view = flow.create_understand_request(settings, "Can we support Excel uploads?")
-    cb.perform_action(settings, page.SEND_ID, "Because users ask", state_of(view), 0)
+    refresh, message, errors = cb.perform_form(
+        settings, [*da_play.ANSWERS, ""], state_of(view), 0
+    )
+    # Nothing is saved, the boxes keep their text, and the plain message shows under the chat.
+    assert refresh is no_update and "DA_ONPREM_URL is missing" in message
+    assert errors == [""] * 5
     tree = cb.show_page(f"?request={view.request.request_id}", 0)
-    assert "DA_ONPREM_URL is missing" in all_text(tree)
+    assert by_id(tree, "da-form") is not None
     assert page.DEMO_BANNER not in all_text(tree)
 
 
@@ -225,7 +238,7 @@ def test_nothing_clicked_does_nothing(settings, monkeypatch):
 
 
 def test_handle_action_passes_a_real_click_on(settings, monkeypatch):
-    view = da_play.start(settings)
+    view = da_play.start_old_way(settings)
     monkeypatch.setattr(
         cb, "ctx", SimpleNamespace(triggered_id=page.SEND_ID, triggered=[{"value": 1}])
     )
@@ -443,3 +456,74 @@ def test_a_request_saved_before_2d_shows_a_plain_page_and_stays_in_the_list(sett
     assert "Please start a new request." in text
     assert "Back to Home" in text
     assert rid in all_text(cb.show_page("", 0))  # still in "My recent requests"
+
+
+# --- the 4-box form (Phase 6 fixes, U1 and U2) ---
+
+
+def test_a_failing_box_shows_its_message_under_that_box_only(settings):
+    view = da_play.start(settings)
+    answers = [*da_play.ANSWERS, ""]
+    answers[1] = ""  # box 2 is empty
+    answers[2] = "key sk-" + "test0000fake1111notreal2"  # box 3 holds a secret
+
+    refresh, message, errors = cb.perform_form(settings, answers, state_of(view), 0)
+
+    assert refresh is no_update and message == ""  # no redraw: every box keeps its text
+    assert errors[0] == "" and errors[3] == "" and errors[4] == ""
+    assert errors[1] == flow.BOX_EMPTY_MESSAGE
+    assert "API key" in errors[2]
+    after = flow.get_understand_view(settings, view.request.request_id)
+    assert after.revision == view.revision and after.input_mode == "form"
+
+
+def test_a_valid_submit_redraws_and_clears_every_box_message(settings):
+    view = da_play.start(settings)
+
+    result = cb.perform_form(settings, [*da_play.ANSWERS, "A note"], state_of(view), 3)
+
+    assert result == (4, "", [""] * 5)
+    assert flow.get_understand_view(settings, view.request.request_id).input_mode == "choices"
+
+
+def test_untouched_boxes_arrive_as_none_and_count_as_empty(settings):
+    view = da_play.start(settings)
+
+    _, _, errors = cb.perform_form(settings, [None, None, None, None, None], state_of(view), 0)
+
+    assert errors == [flow.BOX_EMPTY_MESSAGE] * 4 + [""]
+
+
+def test_a_form_from_an_old_window_gets_the_stale_message(settings):
+    view = da_play.start(settings)
+    old_state = state_of(view)
+    da_play.submit_form(settings, view)  # "another window" submitted first
+
+    result = cb.perform_form(settings, [*da_play.ANSWERS, ""], old_state, 0)
+
+    assert result == (no_update, STALE_MESSAGE, [""] * 5)
+
+
+def test_a_submit_click_that_did_not_happen_does_nothing(settings):
+    with pytest.raises(PreventUpdate):
+        cb.handle_form([None], [""] * 5, {"request_id": "x", "revision": 1}, 0)
+    with pytest.raises(PreventUpdate):
+        cb.handle_form([], [], {"request_id": "x", "revision": 1}, 0)
+
+
+def test_handle_form_passes_a_real_click_on(settings):
+    view = da_play.start(settings)
+
+    result = cb.handle_form([1], [*da_play.ANSWERS, ""], state_of(view), 4)
+
+    assert result == (5, "", [""] * 5)
+
+
+def test_register_attaches_the_form_callback_with_pattern_ids():
+    app = Dash(__name__, suppress_callback_exceptions=True)
+    cb.register_da_developer_assistant_page_callbacks(app)
+    form = [c for c in app._callback_list if page.FORM_SUBMIT_TYPE in str(c["inputs"])]
+    assert len(form) == 1
+    assert page.FORM_BOX_TYPE in str(form[0]["state"])
+    assert page.FORM_ERROR_TYPE in str(form[0]["output"])
+    assert form[0]["prevent_initial_call"] is True

@@ -28,6 +28,7 @@ from db_table_functions.db_tbl_da_understand import (
     UnderstandError,
     get_confirmed_record,
 )
+from tests.da_play import start_old_way
 from tests.da_stub_client import StubClient, stub_reply
 
 pytestmark = pytest.mark.usefixtures("published_rulebook")
@@ -52,9 +53,10 @@ def settings(make_settings):
 
 
 def start(settings, client=None, developer_id=None):
-    return create_understand_request(
-        settings, OPENING, developer_id=developer_id, client=client, now=T0
-    )
+    """A request saved BEFORE the Phase 6 fixes batch (question 1 asked, one at a time). Such a
+    request must still open and finish the old way (plan X1), so this whole file covers that
+    legacy path. The new 4-box form is tested in test_da_understand_form.py."""
+    return start_old_way(settings, client=client, developer_id=developer_id, now=T0)
 
 
 def answer(settings, view, text="My answer", client=None):
@@ -121,7 +123,8 @@ def test_full_fake_script_reaches_confirmed_record_v1(settings):
     assert [(d.question, d.choice) for d in record.decisions] == [(HIDDEN_SHEETS, VISIBLE_ONLY)]
     assert record.references == ["Existing PDF processing"]
     assert "saved as version 1" in last_message(view)
-    assert "Press Proceed to Discovery" in last_message(view)
+    # Discovery starts by itself now (Phase 6 fixes, section 3), so no button hint is given.
+    assert "Press Proceed" not in last_message(view)
 
 
 def test_full_run_writes_every_audit_event(settings):
@@ -157,7 +160,8 @@ def test_first_message_creates_the_request_and_asks_question_1_with_a_hint(setti
     assert view.request.status == "CLARIFICATION_IN_PROGRESS"
     assert view.request.rulebook_version == 1
     assert view.request.developer_id == "dev-home-01"
-    assert [m.speaker for m in view.messages] == ["developer", "assistant"]
+    # developer, the form invitation (from creation), then question 1 (legacy path)
+    assert [m.speaker for m in view.messages] == ["developer", "assistant", "assistant"]
     assert last_message(view) == (
         "Question 1 of 4: What needs to change, and why?\n"
         "Is the goal to let Excel content go through the same document-ingestion flow as PDFs?"
@@ -276,6 +280,13 @@ def test_a_typed_decision_goes_through_the_secret_and_empty_checks(settings):
         answer(settings, view, "   ")
 
     assert get_understand_view(settings, rid(view)).revision == view.revision
+
+
+def test_a_decision_is_not_confirmed_with_a_chat_line(settings):
+    """Phase 6 fixes, U7: the right panel already shows the change."""
+    view = choose(settings, to_decision(settings), VISIBLE_ONLY)
+
+    assert all("Noted as a confirmed decision." not in m.text for m in view.messages)
 
 
 def test_help_does_not_ask_the_ai(settings):

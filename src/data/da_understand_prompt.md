@@ -18,6 +18,16 @@ Glossary:
 
 {{record}}
 
+## Decisions already made, and questions already waiting
+
+Already decided by the developer:
+{{decided}}
+
+Already waiting to be asked:
+{{queued}}
+
+Never ask about any of these again, not even in other words.
+
 ## The developer's latest message
 
 The question being answered: {{question}}
@@ -56,6 +66,8 @@ Rules:
     3 options and no assumption.
   - minor means it can be resolved safely. Give the assumption you made and its basis, for
     example "Rulebook v{{rulebook_version}} glossary". Give no options.
+  - Return only NEW ambiguities: nothing already decided, already waiting, or already answered by
+    the developer's message.
   - Leave the list empty if nothing is unclear.
 - acceptance_criteria: optional. Leave the key out when the criteria do not change.
   - Every success or failure case the developer names becomes one criterion. kind is "success" or

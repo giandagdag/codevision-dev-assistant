@@ -98,32 +98,67 @@ def test_panel_has_every_section_in_order():
     assert positions == sorted(positions)
 
 
-def test_first_answer_fills_the_panel_and_highlights_what_changed(settings):
-    view = da_play.answer(settings, da_play.start(settings), da_play.ANSWERS[0])
+def test_submitting_the_form_fills_the_panel_at_once_and_highlights_what_changed(settings):
+    view = da_play.submit_form(settings, da_play.start(settings))
     tree = page.render_workspace(view)
     text = all_text(tree)
     assert "Add Excel document processing" in text  # title
-    assert "1 of 4 mandatory questions answered" in text
-    assert "Let users upload Excel workbooks" in text  # objective
+    assert "Let users upload Excel workbooks" in text  # objective (question 1)
+    assert "The upload screen accepts only PDF and DOCX files" in text  # current (question 2)
+    assert "Excel workbooks uploaded by the user" in text  # inputs (question 4)
     styles = [c.style for c in components(tree, "Box") if getattr(c, "style", None)]
     highlighted = [s for s in styles if s.get("background") == page.da_styles.HIGHLIGHT]
-    # Objective and reason are highlighted. The title (header) and answered_questions
-    # (the progress bar) have no panel field of their own.
-    assert len(highlighted) == 2
-    assert text.count(page.EMPTY_TEXT) < 10
+    assert len(highlighted) >= 8  # every field the form answered is highlighted
+    assert "Waiting for your answer" not in text.split("Requirement summary")[1].split("Scope")[0]
 
 
-def test_text_mode_composer_is_open(settings):
+def test_the_form_has_five_boxes_a_submit_and_a_paused_chat_box(settings):
     view = da_play.start(settings)
     tree = page.render_workspace(view)
-    assert view.input_mode == "text"
-    assert by_id(tree, page.TEXT_ID).disabled is False
-    assert by_id(tree, page.SEND_ID).disabled is False
+    assert view.input_mode == "form"
+    boxes = [c for c in components(tree, "Textarea")
+             if isinstance(getattr(c, "id", None), dict) and c.id["type"] == page.FORM_BOX_TYPE]
+    assert [b.id["index"] for b in boxes] == [1, 2, 3, 4, 5]
+    assert [b.label for b in boxes] == [
+        "1. What needs to change, and why?",
+        "2. What happens today? (you don't need to know the source files)",
+        "3. What should happen after the change?",
+        "4. What are the inputs, outputs, and important success or failure cases?",
+        "Optional: constraints, exclusions, or references?",
+    ]
+    assert boxes[-1].description == "This box may stay empty."
+    submit = [c for c in components(tree, "Button")
+              if isinstance(getattr(c, "id", None), dict) and c.id["type"] == page.FORM_SUBMIT_TYPE]
+    assert [b.children for b in submit] == ["Submit"]
+    errors = [c for c in components(tree, "Text")
+              if isinstance(getattr(c, "id", None), dict) and c.id["type"] == page.FORM_ERROR_TYPE]
+    assert [e.id["index"] for e in errors] == [1, 2, 3, 4, 5]
+    # The chat box is paused, Skip is gone (the optional box replaced it), no choice buttons.
+    assert by_id(tree, page.TEXT_ID).disabled is True
+    assert by_id(tree, page.TEXT_ID).placeholder == page.FORM_COMPOSER_TEXT
+    assert by_id(tree, page.SEND_ID).disabled is True
+    assert by_id(tree, page.SKIP_ID).style == {"display": "none"}
     assert choice_buttons(tree) == []
     assert by_id(tree, page.STATE_ID).data == {
         "request_id": view.request.request_id,
         "revision": view.revision,
     }
+
+
+def test_the_form_disappears_after_submit(settings):
+    view = da_play.submit_form(settings, da_play.start(settings))
+    tree = page.render_workspace(view)
+    assert by_id(tree, "da-form") is None
+
+
+def test_an_old_request_in_the_middle_of_the_questions_still_shows_the_text_box(settings):
+    view = da_play.start_old_way(settings)
+    tree = page.render_workspace(view)
+    assert view.input_mode == "text"
+    assert by_id(tree, page.TEXT_ID).disabled is False
+    assert by_id(tree, page.SEND_ID).disabled is False
+    assert by_id(tree, "da-form") is None
+    assert choice_buttons(tree) == []
 
 
 def test_decision_locks_the_text_box_and_shows_the_choices(settings):
@@ -148,13 +183,16 @@ def test_checkpoint_stays_buttons_only(settings):
     assert "Text input is paused until you choose" in by_id(tree, page.TEXT_ID).placeholder
 
 
-def test_optional_area_shows_skip(settings):
-    view = da_play.choose(settings, da_play.to_decision(settings), "Visible worksheets only")
+def test_optional_area_shows_skip_for_an_old_request(settings):
+    view = da_play.start_old_way(settings)
+    for text in da_play.ANSWERS:
+        view = da_play.answer(settings, view, text)
+    view = da_play.choose(settings, view, "Visible worksheets only")
     assert view.can_skip
     tree = page.render_workspace(view)
     assert by_id(tree, page.SKIP_ID).style == {}
     assert by_id(tree, page.TEXT_ID).disabled is False
-    other = page.render_workspace(da_play.start(settings))
+    other = page.render_workspace(da_play.start_old_way(settings))
     assert by_id(other, page.SKIP_ID).style == {"display": "none"}
 
 
@@ -413,7 +451,7 @@ def test_discover_button_ids_hold_only_the_position(settings):
 
 
 def test_hidden_fields_say_waiting_even_though_the_record_holds_them(settings):
-    view = da_play.answer(settings, da_play.start(settings), da_play.ANSWERS[0])
+    view = da_play.answer(settings, da_play.start_old_way(settings), da_play.ANSWERS[0])
     assert view.record.title and view.record.objective
     # The fake script only fills question 1 fields here; make the record hold a later one too.
     sneaky = view.model_copy(
@@ -491,7 +529,7 @@ def test_criteria_section_sits_under_the_requirement_summary():
 
 
 def test_empty_visible_criteria_show_the_hint_text(settings):
-    view = da_play.answer(settings, da_play.start(settings), da_play.ANSWERS[0])
+    view = da_play.answer(settings, da_play.start_old_way(settings), da_play.ANSWERS[0])
     visible = [*view.visible_fields, "acceptance_criteria"]
     shown = view.model_copy(update={"visible_fields": visible})
     text = all_text(page.render_workspace(shown))

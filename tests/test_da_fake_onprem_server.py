@@ -8,8 +8,9 @@ import requests
 from agents import da_rejected_reply_log
 from agents import da_understand_agent as agent
 from agents.da_llm_client import LLMClientError, get_llm_client
-from agents.da_understand_flow import QUESTIONS, get_understand_view
-from tests.da_play import answer, start, to_confirmed
+from agents.da_understand_flow import get_understand_view
+from db_table_functions.db_tbl_da_understand import UnderstandError
+from tests.da_play import start, submit_form, to_confirmed
 from web.da_fake_onprem_server import (
     HOST,
     NOT_JSON_REPLY,
@@ -160,20 +161,22 @@ def test_bad_json_mode_still_confirms_and_fills_the_rejected_reply_log(
     assert NOT_JSON_REPLY in text
     assert "provider onprem" in text and "model fake-qwen" in text
     assert "attempt 1" in text and "attempt 2" not in text  # the engine's retry worked every time
-    # one per turn: the opening message, questions 1 to 4, and the decision after question 4
-    assert text.count("=== 20") == 6
+    # one per turn: the form (one call for all 4 answers) and the decision after it
+    assert text.count("=== 20") == 2
 
 
-def test_error_mode_shows_the_plain_message_in_the_chat(make_settings, published_rulebook, sleeps):
+def test_error_mode_shows_the_plain_message_and_keeps_the_form(
+    make_settings, published_rulebook, sleeps
+):
     with running_fake_onprem_server("error") as server:
         settings = settings_for(make_settings, server)
-        view = start(settings)  # the request is still created; question 1 has no hint
-        after = answer(settings, view, "Users keep asking to upload Excel files")
+        view = start(settings)  # the request is still created, and the form is shown
+        with pytest.raises(UnderstandError, match="HTTP 500.*tried 3 times"):
+            submit_form(settings, view)
 
-    last = get_understand_view(settings, after.request.request_id).messages[-1].text
-    assert "HTTP 500" in last and "tried 3 times" in last
+    after = get_understand_view(settings, view.request.request_id)
+    assert after.input_mode == "form"  # nothing was lost, the developer presses Submit again
     assert after.request.status == "CLARIFICATION_IN_PROGRESS"
-    assert QUESTIONS[1] in after.messages[1].text  # question 1 was asked, without a hint
 
 
 # --- Discover (Phase 3, spec 3.9) ---

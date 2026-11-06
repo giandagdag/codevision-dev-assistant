@@ -174,7 +174,7 @@ def test_fake_provider_prints_the_four_understand_items(make_settings, capsys):
         "Second run: Rulebook already published (active v1). Nothing changed."
     ) in output
     assert "10. Request CVDA-2026-0001 created (status CLARIFICATION_IN_PROGRESS)" in output
-    assert "- Question 4 answered: status DECISION_REQUIRED" in output
+    assert "- 4-box form submitted: status DECISION_REQUIRED" in output
     assert "(status DECISION_REQUIRED); chose \"Visible worksheets only\"" in output
     assert "(status CLARIFICATION_IN_PROGRESS)" in output
     assert (
@@ -182,7 +182,7 @@ def test_fake_provider_prints_the_four_understand_items(make_settings, capsys):
         "criteria; editing v1 was refused: "
         "Confirmed request records are append-only and cannot be edited."
     ) in output
-    assert "18. After question 1 the Summary shows only: objective, reason" in output
+    assert "18. Before Submit the Summary shows no form field; after it, all 12 at once" in output
 
 
 def test_understand_items_use_the_fake_script_whatever_the_provider(

@@ -45,6 +45,7 @@ from agents.da_tester_agent import (  # noqa: E402
 from agents.da_understand_agent import FAKE_SCRIPT_FILE, ScriptedUnderstandClient  # noqa: E402
 from agents.da_understand_flow import (  # noqa: E402
     CORRECTION_QUESTION,
+    FORM_QUESTION,
     OPENING_QUESTION,
     OPTIONAL_QUESTION,
     QUESTIONS,
@@ -69,6 +70,7 @@ def _decision_questions() -> dict[str, str]:
 
 SCRIPT_STEPS: dict[str, str] = {
     OPENING_QUESTION: "opening",
+    FORM_QUESTION: "form",
     **{text: f"question_{number}" for number, text in QUESTIONS.items()},
     OPTIONAL_QUESTION: "optional",
     CORRECTION_QUESTION: "correction",
