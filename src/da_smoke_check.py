@@ -10,6 +10,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from agents import da_approach_flow as approach
+from agents import da_build_flow as build
+from agents import da_build_loop as build_loop
 from agents import da_workspace_flow as workspace
 from agents.da_discover_flow import confirm_discovery, start_discovery
 from agents.da_llm_client import LLMClient, LLMClientError, get_llm_client
@@ -19,7 +21,7 @@ from agents.da_understand_flow import (
     PROCEED_OPTION,
     choose_option,
     create_understand_request,
-    submit_answer,
+    submit_form,
 )
 from configs.da_config import DEFAULT_ENV_FILE, ConfigError, Settings, load_settings
 from da_llm_ping import ping
@@ -165,9 +167,8 @@ def _run_understand_steps(db_path: Path, settings: Settings) -> None:
     view = create_understand_request(demo, SAMPLE_FIRST_MESSAGE, developer_id=SAMPLE_DEVELOPER)
     request_id = view.request.request_id
     print(f"10. Request {request_id} created (status {view.request.status})")
-    for number, answer in enumerate(SAMPLE_ANSWERS, start=1):
-        view = submit_answer(demo, request_id, answer, view.revision)
-        print(f"    - Question {number} answered: status {view.request.status}")
+    view = submit_form(demo, request_id, [*SAMPLE_ANSWERS, SAMPLE_REFERENCE], view.revision)
+    print(f"    - 4-box form submitted: status {view.request.status}")
 
     decision = view.prompt
     asked_status = view.request.status
@@ -178,7 +179,6 @@ def _run_understand_steps(db_path: Path, settings: Settings) -> None:
         f'chose "{choice}" (status {view.request.status})'
     )
 
-    view = submit_answer(demo, request_id, SAMPLE_REFERENCE, view.revision)
     view = choose_option(demo, request_id, PROCEED_OPTION, view.revision)
     criteria = get_confirmed_record(db_path, request_id).acceptance_criteria
     if view.request.status != STATUS_CONFIRMED or len(criteria) != EXPECTED_CRITERIA:
@@ -220,10 +220,10 @@ def _run_onprem_steps(db_path: Path, settings: Settings) -> None:
             onprem, SAMPLE_FIRST_MESSAGE, developer_id=SAMPLE_DEVELOPER
         )
         request_id = view.request.request_id
-        for answer in SAMPLE_ANSWERS:
-            view = submit_answer(onprem, request_id, answer, view.revision)
+        view = submit_form(
+            onprem, request_id, [*SAMPLE_ANSWERS, SAMPLE_REFERENCE], view.revision
+        )
         view = choose_option(onprem, request_id, view.choices[0], view.revision)
-        view = submit_answer(onprem, request_id, SAMPLE_REFERENCE, view.revision)
         view = choose_option(onprem, request_id, PROCEED_OPTION, view.revision)
     if view.request.status != STATUS_CONFIRMED:
         raise UnderstandError(f"The onprem conversation ended at {view.request.status}.")
@@ -280,15 +280,21 @@ def _run_discover_steps(db_path: Path, settings: Settings) -> None:
 
 
 def _run_reveal_step(db_path: Path, settings: Settings) -> None:
-    """Item 18 (W5): the Summary fills step by step. The record already holds every field the
-    fake script fills, but after question 1 the screen shows only objective and reason."""
+    """Item 18 (W5, U8): the Summary shows nothing of the form until Submit, then all the fields
+    the form answered at once."""
     demo = replace(settings, llm_provider="fake", db_path=db_path)
     view = create_understand_request(demo, SAMPLE_FIRST_MESSAGE, developer_id=SAMPLE_DEVELOPER)
-    view = submit_answer(demo, view.request.request_id, SAMPLE_ANSWERS[0], view.revision)
+    before = [name for name in view.visible_fields if name not in ALWAYS_VISIBLE]
+    view = submit_form(
+        demo, view.request.request_id, [*SAMPLE_ANSWERS, ""], view.revision
+    )
     revealed = [name for name in view.visible_fields if name not in ALWAYS_VISIBLE]
-    if revealed != ["objective", "reason"]:
-        raise UnderstandError(f"After question 1 the screen showed {revealed}.")
-    print(f"18. After question 1 the Summary shows only: {', '.join(revealed)}")
+    if before or "objective" not in revealed or "inputs" not in revealed:
+        raise UnderstandError(f"Before Submit {before}; after Submit {revealed}.")
+    print(
+        f"18. Before Submit the Summary shows no form field; after it, all {len(revealed)} "
+        "at once"
+    )
 
 
 def _run_approach_steps(db_path: Path, settings: Settings) -> None:
@@ -331,10 +337,11 @@ def _run_approach_steps(db_path: Path, settings: Settings) -> None:
         f"21. The Tester's prompt held all {len(criteria)} criteria and none of the "
         f"{len(planned)} planned file paths"
     )
-    _run_workspace_steps(demo, fake_request_id)
+    folder = _run_workspace_steps(demo, fake_request_id)
+    _run_build_steps(demo, fake_request_id, folder)
 
 
-def _run_workspace_steps(settings: Settings, request_id: str) -> None:
+def _run_workspace_steps(settings: Settings, request_id: str) -> FakeBrowserFolder:
     """Items 22 and 23: the Workspace (Phase 5) with a pretend browser folder. It goes from
     READY_TO_BUILD to ws_ready, then a re-scan finds one file the developer changed."""
     view = workspace.get_workspace_view(settings, request_id)
@@ -348,11 +355,12 @@ def _run_workspace_steps(settings: Settings, request_id: str) -> None:
     view = workspace.save_check(settings, request_id, facts, report, view.revision)
     if view.step != "ws_ready" or view.request.status != STATUS_READY_TO_BUILD:
         raise UnderstandError(f"The workspace ended at {view.step}.")
-    tests_file = [path for path in folder.files if path.startswith("tests/")]
+    if any(path.startswith("tests/") for path in folder.files):
+        raise UnderstandError("The check wrote a tests folder. It must write nothing.")
     print(
         f"22. {request_id}: workspace ready in folder {view.folder_name}: "
-        f"{len([r for r in view.rows if r.baseline_at])} baselines taken, "
-        f"{len(tests_file)} tests file written ({tests_file[0]})"
+        f"{len([r for r in view.rows if r.baseline_at])} baselines taken, nothing written "
+        "(tests stay in the app)"
     )
 
     edited = next(row.path for row in view.rows if row.action == "modify")
@@ -364,6 +372,38 @@ def _run_workspace_steps(settings: Settings, request_id: str) -> None:
     if changed != [edited] or not still_ready:
         raise UnderstandError(f"The re-scan listed {changed}, not {[edited]}.")
     print(f"23. Re-scan found 1 file changed by the developer ({edited}); the step stays ws_ready")
+    return folder
+
+
+def _run_build_steps(settings: Settings, request_id: str, folder: FakeBrowserFolder) -> None:
+    """Items 24 and 25: the Build + test loop (Phase 6) with the fake provider, the REAL sandbox
+    (a separate Python process on the made-up reference folder) and the pretend browser folder.
+    It goes from ws_ready through BUILDING to READY_FOR_REVIEW, then writes the code files."""
+    view = workspace.get_workspace_view(settings, request_id)
+    facts = folder.facts(view.planned_paths, view.markers, request_id, view.max_file_kb)
+    build.start_build(settings, request_id, build.get_revision(settings, request_id), facts=facts)
+    outcome = build_loop.run_build(settings, request_id)
+    shown = build.get_build_view(settings, request_id)
+    if outcome != "done" or shown.request_status != "READY_FOR_REVIEW" or shown.run is None:
+        raise UnderstandError(
+            f"The build ended as {outcome} at {shown.state.step}: {shown.banner_text}"
+        )
+    print(
+        f"24. {request_id}: build {shown.run.build_number} reached READY_FOR_REVIEW "
+        f"({shown.label}) in {shown.run.rounds_used} rounds, "
+        f"{shown.tests_passing} frozen tests passing"
+    )
+
+    revision = build.get_revision(settings, request_id)
+    job = build.prepare_write(settings, request_id, revision)
+    report = folder.run_job(job)
+    state = build.save_write(settings, request_id, report, revision)
+    if state.step != "b_written" or any(path.startswith("tests/") for path in folder.files):
+        raise UnderstandError(f"The write ended at {state.step}, or a tests folder was written.")
+    print(
+        f"25. {len(report.written)} code files written to the pretend folder (no tests folder); "
+        f"the step is {state.step}"
+    )
 
 
 def _pretend_codevision_folder(view) -> FakeBrowserFolder:
@@ -374,7 +414,7 @@ def _pretend_codevision_folder(view) -> FakeBrowserFolder:
         folder.files[f"{marker}/da_pretend.py"] = "# made up\n"
     for row in view.rows:
         if row.action == "modify":
-            folder.files[row.path] = "def made_up():\n    return 1\n"
+            folder.files[row.path] = "def validate(path):\n    return True\n"
         elif row.action == "create":
             folder.extra_folders.add(row.path.rsplit("/", 1)[0])
     return folder
@@ -385,7 +425,6 @@ def _run_approach(settings: Settings, request_id: str):
     view = approach.start_approach(settings, request_id, 0)
     view = approach.choose_design_option(settings, request_id, view.buttons[0][1], view.revision)
     view = approach.accept_approach(settings, request_id, view.revision)
-    view = approach.request_case(settings, request_id, view.revision)
     view = approach.submit_text(settings, request_id, SAMPLE_CASE, view.revision)
     view = approach.keep_case(settings, request_id, view.revision)
     view = approach.accept_test_plan(settings, request_id, view.revision)
@@ -408,14 +447,12 @@ def _ticks(view) -> str:
 
 
 def _confirmed_request(settings: Settings) -> str:
-    view = create_understand_request(
-        settings, SAMPLE_FIRST_MESSAGE, developer_id=SAMPLE_DEVELOPER
-    )
+    view = create_understand_request(settings, SAMPLE_FIRST_MESSAGE, developer_id=SAMPLE_DEVELOPER)
     request_id = view.request.request_id
-    for answer in SAMPLE_ANSWERS:
-        view = submit_answer(settings, request_id, answer, view.revision)
+    view = submit_form(
+        settings, request_id, [*SAMPLE_ANSWERS, SAMPLE_REFERENCE], view.revision
+    )
     view = choose_option(settings, request_id, view.choices[0], view.revision)
-    view = submit_answer(settings, request_id, SAMPLE_REFERENCE, view.revision)
     view = choose_option(settings, request_id, PROCEED_OPTION, view.revision)
     if view.request.status != STATUS_CONFIRMED:
         raise UnderstandError(f"The conversation ended at {view.request.status}.")

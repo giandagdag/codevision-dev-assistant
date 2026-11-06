@@ -28,6 +28,7 @@ from db_table_functions.db_tbl_da_understand import (
     UnderstandError,
     get_confirmed_record,
 )
+from tests.da_play import start_old_way
 from tests.da_stub_client import StubClient, stub_reply
 
 pytestmark = pytest.mark.usefixtures("published_rulebook")
@@ -52,9 +53,10 @@ def settings(make_settings):
 
 
 def start(settings, client=None, developer_id=None):
-    return create_understand_request(
-        settings, OPENING, developer_id=developer_id, client=client, now=T0
-    )
+    """A request saved BEFORE the Phase 6 fixes batch (question 1 asked, one at a time). Such a
+    request must still open and finish the old way (plan X1), so this whole file covers that
+    legacy path. The new 4-box form is tested in test_da_understand_form.py."""
+    return start_old_way(settings, client=client, developer_id=developer_id, now=T0)
 
 
 def answer(settings, view, text="My answer", client=None):
@@ -106,7 +108,7 @@ def last_message(view):
 def test_full_fake_script_reaches_confirmed_record_v1(settings):
     view = to_checkpoint(settings)
     assert view.request.status == "READY_FOR_CONFIRMATION"
-    assert view.choices == [PROCEED_OPTION, CORRECT_OPTION, HELP_OPTION]
+    assert view.choices == [PROCEED_OPTION, HELP_OPTION]
 
     view = choose(settings, view, PROCEED_OPTION)
 
@@ -121,7 +123,8 @@ def test_full_fake_script_reaches_confirmed_record_v1(settings):
     assert [(d.question, d.choice) for d in record.decisions] == [(HIDDEN_SHEETS, VISIBLE_ONLY)]
     assert record.references == ["Existing PDF processing"]
     assert "saved as version 1" in last_message(view)
-    assert "Press Proceed to Discovery" in last_message(view)
+    # Discovery starts by itself now (Phase 6 fixes, section 3), so no button hint is given.
+    assert "Press Proceed" not in last_message(view)
 
 
 def test_full_run_writes_every_audit_event(settings):
@@ -157,7 +160,8 @@ def test_first_message_creates_the_request_and_asks_question_1_with_a_hint(setti
     assert view.request.status == "CLARIFICATION_IN_PROGRESS"
     assert view.request.rulebook_version == 1
     assert view.request.developer_id == "dev-home-01"
-    assert [m.speaker for m in view.messages] == ["developer", "assistant"]
+    # developer, the form invitation (from creation), then question 1 (legacy path)
+    assert [m.speaker for m in view.messages] == ["developer", "assistant", "assistant"]
     assert last_message(view) == (
         "Question 1 of 4: What needs to change, and why?\n"
         "Is the goal to let Excel content go through the same document-ingestion flow as PDFs?"
@@ -276,6 +280,13 @@ def test_a_typed_decision_goes_through_the_secret_and_empty_checks(settings):
         answer(settings, view, "   ")
 
     assert get_understand_view(settings, rid(view)).revision == view.revision
+
+
+def test_a_decision_is_not_confirmed_with_a_chat_line(settings):
+    """Phase 6 fixes, U7: the right panel already shows the change."""
+    view = choose(settings, to_decision(settings), VISIBLE_ONLY)
+
+    assert all("Noted as a confirmed decision." not in m.text for m in view.messages)
 
 
 def test_help_does_not_ask_the_ai(settings):
@@ -541,24 +552,61 @@ def test_skip_optional_goes_to_the_checkpoint(settings):
     assert view.record.references == []
 
 
-def test_correct_something_reopens_text_then_returns_to_the_checkpoint(settings):
-    view = choose(settings, to_checkpoint(settings), CORRECT_OPTION)
-
-    assert view.request.status == "CLARIFICATION_IN_PROGRESS"
-    assert view.prompt == "What should change?"
-    assert "correction_requested" in event_types(settings, view)
+def test_typing_at_the_checkpoint_is_the_correction(settings):
+    """Phase 6 fixes, section 2: the box is open and Send means "Correct something"."""
+    view = to_checkpoint(settings)
+    assert view.choices == [PROCEED_OPTION, HELP_OPTION]
+    assert view.send_label == "Correct something"
+    assert view.text_prompt == "Type what should change, then press Correct something."
 
     view = answer(settings, view, "Also mention the sheet names in the output.")
 
     assert view.request.status == "READY_FOR_CONFIRMATION"
-    assert view.choices == [PROCEED_OPTION, CORRECT_OPTION, HELP_OPTION]
+    assert view.choices == [PROCEED_OPTION, HELP_OPTION]
+    assert "correction_requested" in event_types(settings, view)
+    assert status_moves(settings, view)[-2:] == [
+        ("READY_FOR_CONFIRMATION", "CLARIFICATION_IN_PROGRESS"),
+        ("CLARIFICATION_IN_PROGRESS", "READY_FOR_CONFIRMATION"),
+    ]
+    texts = [m.text for m in view.messages]
+    assert "Also mention the sheet names in the output." in texts
+    assert CORRECT_OPTION not in texts  # the old button press is not in the chat any more
+
+
+def test_there_is_no_correct_something_button_any_more(settings):
+    view = to_checkpoint(settings)
+
+    with pytest.raises(UnderstandError, match="is not one of the choices"):
+        choose(settings, view, CORRECT_OPTION)
+
+
+def test_empty_text_at_the_checkpoint_does_nothing(settings):
+    view = to_checkpoint(settings)
+
+    for blank in ("", "   "):
+        with pytest.raises(UnderstandError, match="Please type a message first"):
+            answer(settings, view, blank)
+
+    after = get_understand_view(settings, rid(view))
+    assert after.revision == view.revision and after.request.status == view.request.status
+
+
+def test_a_failed_correction_leaves_the_request_at_the_checkpoint(settings):
+    view = to_checkpoint(settings)
+
+    after = answer(settings, view, "Also mention sheet names", client=StubClient("no", "no"))
+
+    assert after.request.status == "READY_FOR_CONFIRMATION"
+    assert after.choices == [PROCEED_OPTION, HELP_OPTION]
+    assert last_message(after) == FAILED_MESSAGE
+    assert after.record == view.record
 
 
 def test_help_at_checkpoint_then_proceed_confirms_in_one_action(settings):
     view = choose(settings, to_checkpoint(settings), HELP_OPTION)
     assert view.request.status == "DECISION_REQUIRED"
     assert view.record.open_items == [CHECKPOINT_HELP_ITEM]
-    assert view.choices == [PROCEED_OPTION, CORRECT_OPTION, HELP_OPTION]
+    assert view.choices == [PROCEED_OPTION, HELP_OPTION]
 
     view = choose(settings, view, PROCEED_OPTION)
 
@@ -572,14 +620,13 @@ def test_help_at_checkpoint_then_proceed_confirms_in_one_action(settings):
     ]
 
 
-def test_help_at_checkpoint_then_correct_clears_the_help_item(settings):
+def test_help_at_checkpoint_then_typing_a_correction_clears_the_help_item(settings):
     view = choose(settings, to_checkpoint(settings), HELP_OPTION)
 
-    view = choose(settings, view, CORRECT_OPTION)
+    view = answer(settings, view, "Also mention the sheet names in the output.")
 
-    assert view.request.status == "CLARIFICATION_IN_PROGRESS"
+    assert view.request.status == "READY_FOR_CONFIRMATION"
     assert view.record.open_items == []
-    assert view.prompt == "What should change?"
 
 
 def test_gate_failure_lists_every_missing_item(settings):

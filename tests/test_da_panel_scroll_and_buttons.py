@@ -139,7 +139,7 @@ def test_approach_help_buttons_are_outlined_at_the_choice_and_test_plan_steps(se
 
     deciding = button(at_choice, "I need help deciding")
     assert deciding.variant == "default" and deciding.style == da_styles.SECONDARY_BUTTON_BORDER
-    assert button(at_choice, "Existing upload screen").variant == "filled"
+    assert button(at_choice, "Existing upload screen").variant == "light"  # not first = main
 
     settings_two = settings
     request_two = discovery_confirmed_id(settings_two)
@@ -149,7 +149,8 @@ def test_approach_help_buttons_are_outlined_at_the_choice_and_test_plan_steps(se
     get_help = button(at_test_plan, "Get help")
     assert get_help.variant == "default" and get_help.style == da_styles.SECONDARY_BUTTON_BORDER
     assert button(at_test_plan, "Accept test plan").variant == "filled"
-    assert button(at_test_plan, "Add a test case").variant == "light"
+    go_back = button(at_test_plan, "Go back and change the approach")
+    assert go_back.variant == "default" and go_back.style == da_styles.SECONDARY_BUTTON_BORDER
 
 
 def test_a_really_disabled_button_still_differs_from_the_outlined_ones(settings):
@@ -161,8 +162,8 @@ def test_a_really_disabled_button_still_differs_from_the_outlined_ones(settings)
 
     tree = draw_approach(settings, request_id)
 
-    # The Build button shows in the chat and again in the Build tab; check the one in the chat.
-    build = [b for b in components(tree, "Button") if getattr(b, "id", "") == "da-ws-build-chat"][0]
+    # Send is disabled while the text box is paused (Approach is button-driven at this step).
+    send = [b for b in components(tree, "Button") if getattr(b, "id", "") == "da-send"][0]
     # No border colour of our own and no outlined variant: Mantine draws it greyed out.
-    assert build.disabled is True
-    assert getattr(build, "style", None) is None and getattr(build, "variant", None) is None
+    assert send.disabled is True
+    assert getattr(send, "style", None) is None and getattr(send, "variant", None) is None

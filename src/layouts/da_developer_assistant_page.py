@@ -12,13 +12,22 @@ from dash_iconify import DashIconify
 from agents.da_discover_flow import (
     CONFIRM_OPTION,
     ESCALATE_OPTION,
+    FAKE_INDEX_NOTICE,
     HINT_OPTION,
     HINT_QUESTION,
     outcome_status,
 )
 from agents.da_understand_checks import MAX_MESSAGE_LENGTH
-from agents.da_understand_flow import ALWAYS_VISIBLE, HELP_OPTION, PROCEED_OPTION
+from agents.da_understand_flow import (
+    ALWAYS_VISIBLE,
+    FORM_BOXES,
+    FORM_OPTIONAL_BOX,
+    HELP_OPTION,
+    OPTIONAL_QUESTION,
+    PROCEED_OPTION,
+)
 from layouts.da_approach_panel import approach_panel
+from layouts.da_build_panel import build_tab, poll_interval, tests_tab
 from layouts.da_workspace_panel import (
     RECONNECT_KEY,
     USE_KEY,
@@ -31,6 +40,7 @@ from layouts.da_workspace_panel import (
     ws_button_id,
 )
 from pydantic_classes.da_approach_models import ApproachView
+from pydantic_classes.da_build_models import BuildView
 from pydantic_classes.da_discovery_models import DiscoveryView
 from pydantic_classes.da_models import (
     STATUS_CONFIRMED,
@@ -41,6 +51,7 @@ from pydantic_classes.da_models import (
     STATUS_SEARCHING,
     STATUS_SIMILAR_FOUND,
     Request,
+    display_status,
 )
 from pydantic_classes.da_request_record_models import AcceptanceCriterion, UnderstandView
 from pydantic_classes.da_workspace_models import WorkspaceView
@@ -59,8 +70,18 @@ MESSAGE_ID = "da-message"
 CHOICE_TYPE = "da-choice"
 KEYS_ID = "da-keys-ready"  # target of the Enter-to-send script; holds nothing
 BUSY_ID = "da-busy"  # the "searching" line, shown only while a Discover action runs
+# The 4-box form (Phase 6 fixes). Pattern ids, so the page can have none of them (all other
+# screens) and one callback still reads all five boxes in order.
+FORM_BOX_TYPE = "da-form-box"
+FORM_ERROR_TYPE = "da-form-error"
+FORM_SUBMIT_TYPE = "da-form-submit"
+FORM_SUBMIT_LABEL = "Submit"
+FORM_OPTIONAL_HINT = "This box may stay empty."
+FORM_BUSY_TEXT = "⏳ Reading your answers…"
+FORM_COMPOSER_TEXT = "Fill in the form above, then press Submit"
 
 CODE_BANNER = "No code is written yet"
+CODE_WRITTEN_BANNER = "Code is written to your folder"
 DEMO_BANNER = "Demo mode: replies are scripted"
 EMPTY_TEXT = "Waiting for your answer"
 OTHER_PLACEHOLDER = "Other, type here"
@@ -77,27 +98,40 @@ ID_BADGE_STYLES = {"label": {"overflow": "visible", "textOverflow": "clip"}}
 UNDERSTAND_STEP = 1
 DISCOVER_STEP = 2
 APPROACH_STEP = 3
+BUILD_STEP = 4
 # The Discover buttons use the same pattern id as the Understand choices (the callbacks tell them
 # apart by the workspace state). Their ids are plain ASCII keys, never the label: Dash cannot read
 # the click count of a button whose id holds an emoji (it matches ids as escaped text).
 START_KEY = "start"
 CONFIRM_KEY = "confirm"
 ESCALATE_KEY = "escalate"
-PROCEED_DISCOVERY_OPTION = "Proceed to Discovery"
+TRY_DISCOVERY_OPTION = "Try again"  # the only start button: Discover starts by itself
 SEARCH_AGAIN_OPTION = "Search again"
 BUSY_TEXT = "⏳ Searching approved sources…"
 APPROACH_BUSY_TEXT = "⏳ Working on it…"
-BUILD_LABEL = "Build (coming in Phase 6)"
+# Approach buttons that are real main actions (filled). A design choice is NOT one of them.
+MAIN_ACTION_KEYS = ("start", "accept", "accept_plan", "write_plan", "keep")
+BUILD_LABEL = "Build"
+BUILD_KEY = "build"
 # What the note above the workspace buttons says at each step.
+BUILD_NOTES: dict[str, str] = {
+    "b_running": "The build is running on the server. You can leave this page",
+    "b_round_failed": "The build is running on the server. You can leave this page",
+    "b_interrupted": "The build paused. Resume it, cancel it, or get help",
+    "b_unable": "I could not write tests. Resume the build, change the approach, or get help",
+    "b_done": "The build is finished. Your code files are being written to your folder",
+    "b_written": "The build is finished and written to your folder",
+    "b_write_stopped": "The write stopped because you changed a file",
+    "escalated": "This request was handed to a senior developer",
+}
 WORKSPACE_NOTES: dict[str, str] = {
     "start": "Choose your local CodeVision folder. Your browser asks you to allow it",
-    "ws_blocked": "This folder cannot be used yet. Choose another folder or get help",
+    "ws_blocked": "This folder doesn't match the plan yet. Choose another folder or get help",
     "ws_ready": "Your workspace is ready",
     "ws_fallback": "Your browser cannot reach the folder. Use the ZIP and upload instead",
 }
 # What the note above the Approach buttons says at each step.
 APPROACH_NOTES: dict[str, str] = {
-    "start": "Press Proceed to Approach to plan how it will be built",
     "choices": "Choose an option to continue, or type your own answer",
     "review": "Review the Approach tab, then choose how to continue",
     "limit_reason": "Type a reason to accept this many files, or choose another option",
@@ -227,13 +261,29 @@ def render_workspace(view: UnderstandView) -> list:
         request_id=view.request.request_id,
         status=view.request.status,
         demo_mode=view.demo_mode,
-        messages=[parts.chat_bubble(message) for message in view.messages],
+        messages=[parts.chat_bubble(message) for message in view.messages]
+        + ([_form()] if view.input_mode == "form" else []),
         composer=_composer(
-            view.input_mode, view.choices, view.can_skip, view.prompt, view.custom_choice_allowed
+            view.input_mode,
+            view.choices,
+            view.can_skip,
+            view.prompt,
+            view.custom_choice_allowed,
+            view.send_label,
+            view.text_prompt,
         ),
         panel=_summary_panel(view),
         state={"request_id": view.request.request_id, "revision": view.revision},
+        busy_text=_understand_busy_text(view),
     )
+
+
+def _understand_busy_text(view: UnderstandView) -> str:
+    """The line shown while an action runs: reading the form, or (at the checkpoint, where
+    Proceed also starts Discover) a general "working" line."""
+    if view.input_mode == "form":
+        return FORM_BUSY_TEXT
+    return APPROACH_BUSY_TEXT if view.send_label != "Send" else ""
 
 
 def render_new_workspace(demo_mode: bool) -> list:
@@ -274,6 +324,10 @@ def _workspace(
     chip=None,
     build: list | None = None,
     stores: list | None = None,
+    tests: list | None = None,
+    poll=None,
+    open_tab: str | None = None,
+    code_written: bool = False,
 ) -> list:
     top = dmc.Group(
         [
@@ -299,7 +353,14 @@ def _workspace(
     chat_head = dmc.Group(
         [
             dmc.Text("Developer Assistant chat", fw=600, c=da_styles.NAVY),
-            dmc.Badge(CODE_BANNER, color="orange", variant="light", leftSection=_lock()),
+            # Follows the real write state of the build (Phase 6 fixes, F9c).
+            dmc.Badge(
+                CODE_WRITTEN_BANNER if code_written else CODE_BANNER,
+                color="green" if code_written else "orange",
+                variant="light",
+                leftSection=_lock(),
+                id="da-code-badge",
+            ),
         ],
         justify="space-between",
         p="sm",
@@ -335,6 +396,7 @@ def _workspace(
                     or (name == "Discovery" and discovery)
                     or (name == "Approach" and approach)
                     or (name == "Build" and build)
+                    or (name == "Tests" and tests)
                 ),
                 px="xs",
             )
@@ -350,9 +412,11 @@ def _workspace(
             panels.append(_tab_panel(approach, "approach"))
         if build:
             panels.append(_tab_panel(build, "build"))
+        if tests:
+            panels.append(_tab_panel(tests, "tests"))
         tabs = dmc.Tabs(
             [tab_list, *panels],
-            value="approach" if approach else "discovery",
+            value=open_tab or ("approach" if approach else "discovery"),
             style={**da_styles.COLUMN, "flex": 1},
         )
         side_children = [tabs]
@@ -365,6 +429,7 @@ def _workspace(
     return [
         dcc.Store(id=STATE_ID, data=state),
         *(stores or []),
+        *([poll] if poll is not None else []),
         parts.stepper(step),
         dmc.Box(top, mt="sm"),
         dmc.Box([chat, side], style=da_styles.WORKSPACE_GRID),
@@ -411,7 +476,8 @@ def render_discover_workspace(
         state=state,
         step=DISCOVER_STEP,
         discovery=_discovery_panel(view) if show_tab else None,
-        busy_text=APPROACH_BUSY_TEXT if confirmed else BUSY_TEXT,
+        # After a round, "Findings look right" also starts Approach, so the line is a general one.
+        busy_text=BUSY_TEXT if view.request.status == STATUS_CONFIRMED else APPROACH_BUSY_TEXT,
     )
 
 
@@ -420,6 +486,7 @@ def render_approach_workspace(
     discovery: DiscoveryView,
     view: ApproachView,
     workspace: WorkspaceView | None = None,
+    build: BuildView | None = None,
 ) -> list:
     """The workspace from APPROACH_PROPOSED on: Approach is step 3 and its tab opens first.
 
@@ -427,27 +494,41 @@ def render_approach_workspace(
     the Build tab once the check has passed. The page state then carries the WORKSPACE revision,
     because every button on this screen belongs to the workspace."""
     if workspace is not None:
+        # Once a build has started, every button on this screen belongs to the BUILD (its own
+        # revision); before that, to the workspace.
+        building = build is not None and build.state.step != "start"
+        state = {
+            "request_id": view.request.request_id,
+            "revision": build.revision if building else workspace.revision,
+            "approach": True,
+            "workspace": True,
+        }
+        if building:
+            state["build"] = True
+        if building:
+            build_content = build_tab(build)
+        else:
+            build_content = build_panel(workspace) if workspace.step == "ws_ready" else None
         return _workspace(
             title=view.request.title,
             request_id=view.request.request_id,
             status=view.request.status,
             demo_mode=view.demo_mode,
             messages=[parts.chat_bubble(message) for message in view.messages],
-            composer=_approach_composer(view, workspace),
+            composer=_approach_composer(view, workspace, build if building else None),
             panel=_summary_panel(understand),
-            state={
-                "request_id": view.request.request_id,
-                "revision": workspace.revision,
-                "approach": True,
-                "workspace": True,
-            },
-            step=APPROACH_STEP,
+            state=state,
+            step=BUILD_STEP if building else APPROACH_STEP,
             discovery=_discovery_panel(discovery),
             busy_text=WS_BUSY_TEXT,
             approach=approach_panel(view, workspace.check),
             chip=workspace_chip(workspace),
-            build=build_panel(workspace) if workspace.step == "ws_ready" else None,
-            stores=workspace_stores(workspace),
+            build=build_content,
+            stores=workspace_stores(workspace, build),
+            tests=tests_tab(build) if building else None,
+            poll=poll_interval(build) if building else None,
+            open_tab="build" if building else None,
+            code_written=building and any(row.status == "Written" for row in build.rows),
         )
     return _workspace(
         title=view.request.title,
@@ -472,7 +553,9 @@ def approach_buttons(view: ApproachView) -> list[tuple[str, str]]:
 
 
 def _approach_composer(
-    view: ApproachView | None, workspace: WorkspaceView | None = None
+    view: ApproachView | None,
+    workspace: WorkspaceView | None = None,
+    build: BuildView | None = None,
 ) -> dmc.Box:
     """The bottom of the chat in Approach: the buttons of the step, and a text box that opens
     only at the steps that take typed text (rule G1)."""
@@ -483,7 +566,9 @@ def _approach_composer(
         [
             dmc.Textarea(
                 id=TEXT_ID,
-                placeholder=prompt or "Text input is paused until you choose",
+                # A box that is closed because a limit was reached says so (the cap message).
+                placeholder=prompt
+                or (view.note if view and view.note else "Text input is paused until you choose"),
                 disabled=not text_open,
                 autosize=True,
                 minRows=2,
@@ -494,7 +579,7 @@ def _approach_composer(
                 [
                     dmc.Button("Skip", id=SKIP_ID, style={"display": "none"}),
                     dmc.Button(
-                        "Send",
+                        view.send_label if view else "Send",
                         id=SEND_ID,
                         disabled=not text_open,
                         leftSection=DashIconify(icon="tabler:send", width=16),
@@ -506,6 +591,8 @@ def _approach_composer(
         ],
         style=da_styles.COMPOSER if text_open else {**da_styles.COMPOSER, "opacity": 0.6},
     )
+    if build is not None and not (view is not None and view.step == "escalated"):
+        return dmc.Box([_build_bar(build, workspace), controls])
     if view is not None and view.request.status == STATUS_READY_TO_BUILD:
         done = dmc.Box(
             [
@@ -520,13 +607,66 @@ def _approach_composer(
         return dmc.Box([done, controls])
     if view is not None and view.step == "escalated":
         done = dmc.Box(
-            dmc.Text(view.open_item, size="sm"), style=da_styles.CHOICES_BAR, pb="xs"
+            [dmc.Text(view.open_item, size="sm"), _hidden_reconnect(workspace)],
+            style=da_styles.CHOICES_BAR,
+            pb="xs",
         )
         return dmc.Box([done, controls])
     if not buttons:
         return controls
     note = (view.note if view else "") or APPROACH_NOTES.get(view.step if view else "", "")
     return dmc.Box([_approach_bar(buttons, note), controls])
+
+
+def _hidden_reconnect(workspace: WorkspaceView | None):
+    """The Reconnect button, drawn hidden; the browser shows it only when it needs your OK again
+    (D-E, W4). It must exist whenever the workspace step is ws_ready: the browser script sets its
+    style on every redraw, and Dash refuses an Output on a button that is not on the page."""
+    if workspace is None or workspace.step != "ws_ready" or workspace.mode != "picker":
+        return None
+    button = parts.choice_button("Reconnect", ws_button_id(RECONNECT_KEY, "bar"), parts.NORMAL)
+    button.style = {"display": "none"}
+    return button
+
+
+def _build_bar(build: BuildView, workspace: WorkspaceView | None = None) -> dmc.Box:
+    """The buttons under the chat once a build has started (spec section 1). Browser-run ones
+    (Re-scan and build again) start JavaScript; server-run ones use the normal choice path."""
+    shown = [
+        parts.choice_button(label, ws_button_id(key, "bar"), parts.PRIMARY)
+        for key, label in build.browser_buttons
+    ]
+    shown += [
+        parts.choice_button(
+            label,
+            {"type": CHOICE_TYPE, "index": number},
+            parts.SECONDARY if key == "help" else parts.NORMAL,
+        )
+        for number, (key, label) in enumerate(build.buttons)
+    ]
+    reconnect = _hidden_reconnect(workspace)
+    if reconnect is not None:
+        shown.append(reconnect)
+    if build.auto_write and build.mode == "download":
+        download = ws_button_id("build_download", "bar")
+        shown.append(parts.choice_button("Download ZIP", download, parts.PRIMARY))
+    status = dmc.Alert(
+        display_status(build.request_status),
+        color="red" if build.request_status == "NOT_PASSING" else "blue",
+        variant="light",
+        mb="xs",
+        id="da-build-chat-status",
+    )
+    note = BUILD_NOTES.get(build.state.step, "")
+    return dmc.Box(
+        [
+            status,
+            dmc.Group([_lock(), dmc.Text(note, size="xs", fw=600)]),
+            dmc.Group(shown, mt="xs", mb="xs"),
+        ],
+        style=da_styles.CHOICES_BAR,
+        pb="xs",
+    )
 
 
 def _workspace_buttons(workspace: WorkspaceView) -> dmc.Box:
@@ -557,7 +697,10 @@ def _workspace_buttons(workspace: WorkspaceView) -> dmc.Box:
         reconnect.style = {"display": "none"}
         shown.append(reconnect)
     if workspace.step == "ws_ready":
-        shown.append(dmc.Button(BUILD_LABEL, disabled=True, id="da-ws-build-chat"))
+        # Browser-run: the page re-scans your folder first (B1), then the server starts the build.
+        shown.append(
+            parts.choice_button(BUILD_LABEL, ws_button_id(BUILD_KEY, "bar"), parts.PRIMARY)
+        )
     note = workspace.note or WORKSPACE_NOTES.get(workspace.step, "")
     return dmc.Box(
         [
@@ -567,14 +710,21 @@ def _workspace_buttons(workspace: WorkspaceView) -> dmc.Box:
     )
 
 
+def approach_button_kind(key: str) -> str:
+    """The style of an Approach button: filled for the real main actions, outlined for help and
+    for going back, light for the rest. Position does not matter, so the options of a design
+    choice all look equal (Phase 6 fixes, section 4)."""
+    if key in ("help", "decide_help", "change_approach"):
+        return parts.SECONDARY
+    if key in MAIN_ACTION_KEYS:
+        return parts.PRIMARY
+    return parts.NORMAL
+
+
 def _approach_bar(buttons: list[tuple[str, str]], note: str) -> dmc.Box:
     shown = [
         parts.choice_button(
-            label,
-            {"type": CHOICE_TYPE, "index": number},
-            parts.SECONDARY
-            if key in ("help", "decide_help")
-            else (parts.PRIMARY if number == 0 else parts.NORMAL),
+            label, {"type": CHOICE_TYPE, "index": number}, approach_button_kind(key)
         )
         for number, (key, label) in enumerate(buttons)
     ]
@@ -610,6 +760,10 @@ def _discovery_panel(view: DiscoveryView) -> list:
             )
         )
         return parts_list
+    if result.search_provider == "fake":
+        parts_list.append(
+            dmc.Alert(FAKE_INDEX_NOTICE, color="violet", variant="light", id="da-fake-index-banner")
+        )
     outcome = outcome_status(result.findings)
     parts_list.append(parts.outcome_banner(outcome))
     if view.request.status == STATUS_DISCOVERY_CONFIRMED:
@@ -640,7 +794,7 @@ def discover_buttons(view: DiscoveryView) -> list[tuple[str, str]]:
     """
     status = view.request.status
     if status in (STATUS_CONFIRMED, STATUS_SEARCHING):
-        label = PROCEED_DISCOVERY_OPTION if status == STATUS_CONFIRMED else SEARCH_AGAIN_OPTION
+        label = TRY_DISCOVERY_OPTION if status == STATUS_CONFIRMED else SEARCH_AGAIN_OPTION
         return [(START_KEY, label)]
     if status in (STATUS_SIMILAR_FOUND, STATUS_NO_MATCH):
         keys = {CONFIRM_OPTION: CONFIRM_KEY, ESCALATE_OPTION: ESCALATE_KEY}
@@ -684,7 +838,11 @@ def _discover_composer(view: DiscoveryView) -> dmc.Box:
     )
     buttons = discover_buttons(view)
     if status in (STATUS_CONFIRMED, STATUS_SEARCHING):
-        note = f"Press {buttons[0][1]} to search approved sources"
+        note = (
+            f"Discovery did not start. Press {buttons[0][1]} to search approved sources"
+            if status == STATUS_CONFIRMED
+            else f"Press {buttons[0][1]} to search approved sources"
+        )
         return dmc.Box([_discover_bar(buttons, note), controls])
     if status in (STATUS_SIMILAR_FOUND, STATUS_NO_MATCH):
         note = view.cap_message or "Choose an option to continue"
@@ -727,13 +885,21 @@ def _discover_bar(buttons: list[tuple[str, str]], note: str) -> dmc.Box:
 
 
 def _composer(
-    mode: str, choices: list[str], can_skip: bool, prompt: str, custom_allowed: bool = False
+    mode: str,
+    choices: list[str],
+    can_skip: bool,
+    prompt: str,
+    custom_allowed: bool = False,
+    send_label: str = "Send",
+    typing_prompt: str = "",
 ) -> dmc.Box:
     """The bottom of the chat. The text box, Send and Skip always exist (the callbacks name
     them); the mode decides which ones can be used. At a decision the buttons stay and the text
-    box opens too, for "Other, type here" (W3)."""
-    text_open = mode == "text" or custom_allowed
+    box opens too, for "Other, type here" (W3). At the checkpoint the box is open too and Send is
+    "Correct something" (send_label, typing_prompt: Phase 6 fixes, section 2)."""
+    text_open = mode == "text" or custom_allowed or bool(typing_prompt)
     paused = {
+        "form": FORM_COMPOSER_TEXT,
         "choices": "Text input is paused until you choose",
         "waiting": prompt,
         "done": "This request is confirmed. It cannot be changed in this phase.",
@@ -743,7 +909,9 @@ def _composer(
             dmc.Textarea(
                 id=TEXT_ID,
                 placeholder=(
-                    OTHER_PLACEHOLDER
+                    typing_prompt
+                    if typing_prompt
+                    else OTHER_PLACEHOLDER
                     if custom_allowed
                     else "Type your message..."
                     if text_open
@@ -764,7 +932,7 @@ def _composer(
                         style={} if can_skip else {"display": "none"},
                     ),
                     dmc.Button(
-                        "Send",
+                        send_label,
                         id=SEND_ID,
                         disabled=not text_open,
                         leftSection=DashIconify(icon="tabler:send", width=16),
@@ -779,6 +947,54 @@ def _composer(
     if mode == "choices":
         return dmc.Box([_choices_bar(choices), controls])
     return controls
+
+
+def _form() -> dmc.Box:
+    """The 4-box form: the 4 mandatory questions in their wording, then the optional area (it may
+    stay empty), one Submit. A failing box shows its message on the line under it."""
+    boxes = [_form_box(number, f"{number}. {title}") for number, title in FORM_BOXES]
+    boxes.append(_form_box(FORM_OPTIONAL_BOX, OPTIONAL_QUESTION, FORM_OPTIONAL_HINT))
+    return dmc.Paper(
+        [
+            *boxes,
+            dmc.Group(
+                dmc.Button(
+                    FORM_SUBMIT_LABEL,
+                    id={"type": FORM_SUBMIT_TYPE, "index": 0},
+                    leftSection=DashIconify(icon="tabler:send", width=16),
+                ),
+                justify="flex-end",
+            ),
+        ],
+        withBorder=True,
+        radius="md",
+        p="sm",
+        id="da-form",
+    )
+
+
+def _form_box(number: int, label: str, description: str | None = None) -> dmc.Box:
+    return dmc.Box(
+        [
+            dmc.Textarea(
+                id={"type": FORM_BOX_TYPE, "index": number},
+                label=label,
+                description=description,
+                autosize=True,
+                minRows=2,
+                maxRows=6,
+                inputProps={"maxLength": MAX_MESSAGE_LENGTH},
+            ),
+            dmc.Text(
+                "",
+                id={"type": FORM_ERROR_TYPE, "index": number},
+                c="red",
+                size="xs",
+                **{"aria-live": "assertive"},
+            ),
+        ],
+        mb="sm",
+    )
 
 
 def _choices_bar(choices: list[str]) -> dmc.Box:

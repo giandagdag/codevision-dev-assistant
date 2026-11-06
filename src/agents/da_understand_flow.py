@@ -35,7 +35,7 @@ from db_table_functions.db_tbl_da_requests import (
     read_request,
     update_request,
 )
-from db_table_functions.db_tbl_da_rulebook import ensure_rulebook_tables
+from db_table_functions.db_tbl_da_rulebook import RulebookError, ensure_rulebook_tables
 from db_table_functions.db_tbl_da_understand import (
     STALE_MESSAGE,
     StaleRevisionError,
@@ -71,6 +71,7 @@ from pydantic_classes.da_request_record_models import (
     UnderstandSession,
     UnderstandView,
 )
+from pydantic_classes.da_rulebook_models import DEFAULT_MAX_MATERIAL_DECISIONS
 
 logger = get_logger(__name__)
 
@@ -84,16 +85,33 @@ QUESTIONS: dict[int, str] = {
     4: "What are the inputs, outputs, and important success or failure cases?",
 }
 OPENING_QUESTION = "The developer's first description of the change"
+OPENING_LABEL = "The developer's opening statement:"
 OPTIONAL_QUESTION = "Optional: constraints, exclusions, or references?"
 CORRECTION_QUESTION = "What should change?"
 
 HELP_OPTION = "I need help deciding"
 PROCEED_OPTION = "Proceed with this understanding"
 CORRECT_OPTION = "Correct something"
-CHECKPOINT_OPTIONS: tuple[str, ...] = (PROCEED_OPTION, CORRECT_OPTION, HELP_OPTION)
+# Two buttons. Typing in the open text box and pressing "Correct something" is the correction
+# (Phase 6 fixes, section 2), so there is no Correct button.
+CHECKPOINT_OPTIONS: tuple[str, ...] = (PROCEED_OPTION, HELP_OPTION)
+CHECKPOINT_SEND_LABEL = CORRECT_OPTION
+CHECKPOINT_PROMPT = "Type what should change, then press Correct something."
 SKIP_TEXT = "Skip"
 
-MAX_MATERIAL_DECISIONS = 5
+# The form (Phase 6 fixes, U1): the 4 mandatory questions in their wording, plus the optional box.
+FORM_BOXES: tuple[tuple[int, str], ...] = tuple(QUESTIONS.items())
+FORM_OPTIONAL_BOX = QUESTION_COUNT + 1
+FORM_QUESTION = (
+    "The developer's opening statement and the answers to the 4 mandatory questions "
+    "(and the optional notes)"
+)
+FORM_MESSAGE = (
+    "Thanks. Please answer the 4 questions in the form below, then press Submit. "
+    "The last box is optional."
+)
+FORM_STEP = "form"
+BOX_EMPTY_MESSAGE = "Please answer this question."
 CUSTOM_ANSWER_LIMIT = 300
 CUSTOM_TOO_LONG = "Please keep your own answer under 300 characters, or choose a button."
 DECISION_STEP = "decision"  # the interpreter script step used after a decision
@@ -132,6 +150,7 @@ SHOW_ALL_STEPS = ("correction", "checkpoint", "done")
 
 # Which input the screen offers at each step.
 _INPUT_MODES: dict[str, InputMode] = {
+    "form": "form",
     "question": "text",
     "optional": "text",
     "correction": "text",
@@ -155,6 +174,8 @@ class _Turn:
     # False for a save that only parks the session (the decision's save 1): the real step, and
     # so the real reveal, comes with save 2.
     reveal: bool = True
+    # How many AI clarifying questions this request may ask: the rulebook policy it is pinned to.
+    max_decisions: int = DEFAULT_MAX_MATERIAL_DECISIONS
 
     def say(self, speaker: Speaker, text: str) -> None:
         add_message(self.conn, self.request.request_id, speaker, text, self.now)
@@ -190,15 +211,14 @@ def create_understand_request(
     settings: Settings,
     first_message: str,
     developer_id: str | None = None,
-    client: LLMClient | None = None,
     now: datetime | None = None,
 ) -> UnderstandView:
-    """Start a request from the developer's first message, then ask question 1.
+    """Start a request from the developer's first message and show the 4-box form.
 
-    Two saves (review S2). Save 1 creates the request, pinned to the active rulebook, at DRAFT
-    with the first message. The interpreter then reads the message with no lock held. Save 2
-    moves to CLARIFICATION_IN_PROGRESS and asks question 1, with the interpreter's hint. If the
-    interpreter fails, the request still exists and question 1 is asked without a hint.
+    One save: the request (pinned to the active rulebook), the first message, the move to
+    CLARIFICATION_IN_PROGRESS and the form. There is NO interpreter call here (Phase 6 fixes, U3):
+    the one call before the first AI question happens when the form is submitted, so it sees the
+    opening statement and all the answers together.
     """
     text = _accept_developer_text(first_message)
     now = now or datetime.now(UTC)
@@ -208,7 +228,7 @@ def create_understand_request(
         record = RequestRecord(
             request_id=request.request_id, rulebook_version=request.rulebook_version
         )
-        session = UnderstandSession(request_id=request.request_id, record=record)
+        session = UnderstandSession(request_id=request.request_id, record=record, step=FORM_STEP)
         insert_session(conn, session, now)
         add_message(conn, request.request_id, "developer", text, now)
         insert_audit_event(
@@ -219,16 +239,109 @@ def create_understand_request(
             {"rulebook_version": request.rulebook_version},
             now,
         )
+        update_request(conn, request.request_id, now=now, status=STATUS_CLARIFICATION)
+        insert_audit_event(
+            conn,
+            request.request_id,
+            "system",
+            "status_changed",
+            {"from": request.status, "to": STATUS_CLARIFICATION},
+            now,
+        )
+        add_message(conn, request.request_id, "assistant", FORM_MESSAGE, now)
     logger.info("Created Understand request %s", request.request_id)
-
-    result = _interpret(settings, session, "opening", OPENING_QUESTION, text, client)
-    with _turn(settings.db_path, request.request_id, session.revision, now) as turn:
-        if result.ok:
-            _apply_result(turn, result, answered=None)
-        else:
-            _audit_failure(turn, "opening", result)
-        _advance(turn)
     return get_understand_view(settings, request.request_id)
+
+
+class FormError(UnderstandError):
+    """One or more boxes of the form failed their check. problems maps the box number (1 to 5) to
+    the plain message shown under that box. Nothing was saved."""
+
+    def __init__(self, problems: dict[int, str]):
+        self.problems = problems
+        super().__init__("\n".join(problems[number] for number in sorted(problems)))
+
+
+def submit_form(
+    settings: Settings,
+    request_id: str,
+    answers: list[str],
+    base_revision: int,
+    client: LLMClient | None = None,
+    now: datetime | None = None,
+) -> UnderstandView:
+    """The 4-box form (Phase 6 fixes, U1 to U5, U8): boxes 1 to 4 are the mandatory questions,
+    box 5 is the optional area and may stay empty.
+
+    Every box is checked first; a failing box raises FormError and nothing is saved. Then ONE
+    interpreter call (no lock held) sees the opening statement and all the answers together, and
+    ONE write transaction saves the answers, the reply and the next step. If the interpreter
+    fails, nothing is saved in the chat so the developer's text is not lost; the failure is
+    still written to the audit trail.
+    """
+    now = now or datetime.now(UTC)
+    session = _load_session(settings.db_path, request_id, base_revision)
+    if session.step != FORM_STEP:
+        raise UnderstandError(_wrong_step_message(session))
+    answers = _check_form_boxes(answers)
+    text = _form_text(answers)
+    # The interpreter sees the opening statement AND the answers together (U3).
+    prompt_text = f"{OPENING_LABEL}\n{_opening_statement(settings, request_id)}\n\n{text}"
+    result = _interpret(settings, session, FORM_STEP, FORM_QUESTION, prompt_text, client)
+    if not result.ok:
+        with _write_transaction(settings.db_path) as conn:
+            insert_audit_event(
+                conn,
+                request_id,
+                "system",
+                "interpreter_failed",
+                {"step": FORM_STEP, "provider": result.provider, "problems": result.problems},
+                now,
+            )
+        raise UnderstandError(result.message)
+
+    with _turn(settings.db_path, request_id, base_revision, now) as turn:
+        turn.say("developer", text)
+        turn.audit("developer", "form_submitted", {"optional_used": bool(answers[-1])})
+        _apply_result(turn, result, answered=tuple(number for number, _ in FORM_BOXES))
+        turn.session.optional_done = True
+        _advance(turn)
+    return get_understand_view(settings, request_id)
+
+
+def _opening_statement(settings: Settings, request_id: str) -> str:
+    """The developer's first message on this request."""
+    for message in list_messages(settings.db_path, request_id):
+        if message.speaker == "developer":
+            return message.text
+    return ""
+
+
+def _check_form_boxes(answers: list[str]) -> list[str]:
+    """Trim the 5 boxes and check each one with the same checks as any message (R8, R9)."""
+    if len(answers) != FORM_OPTIONAL_BOX:
+        raise UnderstandError("The form has 5 boxes. Please reload the page.")
+    cleaned = [(answer or "").strip() for answer in answers]
+    problems: dict[int, str] = {}
+    for number, text in enumerate(cleaned, start=1):
+        if not text:
+            if number != FORM_OPTIONAL_BOX:
+                problems[number] = BOX_EMPTY_MESSAGE
+            continue
+        problem = developer_message_problem(text)
+        if problem:
+            problems[number] = problem
+    if problems:
+        raise FormError(problems)
+    return cleaned
+
+
+def _form_text(answers: list[str]) -> str:
+    """The answers as one readable message: each question's wording, then the developer's text."""
+    sections = [f"{number}. {title}\n{answers[number - 1]}" for number, title in FORM_BOXES]
+    if answers[-1]:
+        sections.append(f"{OPTIONAL_QUESTION}\n{answers[-1]}")
+    return "\n\n".join(sections)
 
 
 def submit_answer(
@@ -249,13 +362,19 @@ def submit_answer(
         return _submit_custom_decision(settings, session, text, base_revision, client, now)
     _require_text_step(session)
     step_name, question = _interpreter_step(session)
-    result = _interpret(settings, session, step_name, question, text, client)
+    result = _interpret(
+        settings, _without_checkpoint_help(session), step_name, question, text, client
+    )
 
     with _turn(settings.db_path, request_id, base_revision, now) as turn:
         turn.say("developer", text)
         turn.audit("developer", "question_answered", {"step": step_name})
         if result.ok:
-            answered = session.current_question if session.step == "question" else None
+            if session.step == "checkpoint":
+                # Typing at the checkpoint is "Correct something": the same as the old two
+                # clicks. A failed AI call leaves the request at the checkpoint untouched.
+                _start_correction(turn)
+            answered = (session.current_question,) if session.step == "question" else ()
             _apply_result(turn, result, answered)
             if session.step == "optional":
                 turn.session.optional_done = True
@@ -343,6 +462,8 @@ def get_understand_view(settings: Settings, request_id: str) -> UnderstandView:
         changed_fields=session.last_changed_fields,
         visible_fields=visible_fields(session),
         custom_choice_allowed=session.step == "decision",
+        send_label=CHECKPOINT_SEND_LABEL if session.step == "checkpoint" else "Send",
+        text_prompt=CHECKPOINT_PROMPT if session.step == "checkpoint" else "",
         revision=session.revision,
         demo_mode=settings.llm_provider == "fake",
     )
@@ -383,6 +504,9 @@ def _interpret(
             pinned.rulebook.charter,
             pinned.version_number,
             f"{developer_text}\n{answer}",
+            # Told what is already decided or waiting, so only NEW questions come back (U5).
+            decided=[decision.question for decision in session.record.decisions],
+            queued=[pending.question for pending in session.pending_decisions],
         )
     except (ConfigError, LLMClientError) as error:
         # Shown in the chat as a plain message: e.g. onprem "not configured yet".
@@ -410,13 +534,13 @@ def _interpreter_step(session: UnderstandSession) -> tuple[str, str]:
 # --- applying a reply ---
 
 
-def _apply_result(turn: _Turn, result: InterpretResult, answered: int | None) -> None:
+def _apply_result(turn: _Turn, result: InterpretResult, answered: tuple[int, ...] = ()) -> None:
     """Use a checked reply: new record, assumptions, decisions to ask, and changed fields."""
     session = turn.session
     old = session.record
     record = refresh_scope_conflicts(result.record)
-    if answered is not None:
-        answered_questions = sorted(set(old.answered_questions) | {answered})
+    if answered:
+        answered_questions = sorted(set(old.answered_questions) | set(answered))
         record = record.model_copy(update={"answered_questions": answered_questions})
 
     turn.audit(
@@ -428,7 +552,7 @@ def _apply_result(turn: _Turn, result: InterpretResult, answered: int | None) ->
         if assumption not in old.assumptions:
             turn.audit("system", "assumption_added", assumption.model_dump())
 
-    record = _queue_material_decisions(session, record, result)
+    record = _queue_material_decisions(session, record, result, turn.max_decisions)
     session.record = record
     session.next_hint = result.reply.hint
     session.last_changed_fields = _changed_fields(old, record)
@@ -439,10 +563,10 @@ def _apply_result(turn: _Turn, result: InterpretResult, answered: int | None) ->
 
 
 def _queue_material_decisions(
-    session: UnderstandSession, record: RequestRecord, result: InterpretResult
+    session: UnderstandSession, record: RequestRecord, result: InterpretResult, limit: int
 ) -> RequestRecord:
-    """Queue material ambiguities to ask one at a time (rule R3). After 5 on one request, the
-    rest become open items and a senior is needed (spec 3.5)."""
+    """Queue material ambiguities to ask one at a time (rule R3). After `limit` on one request
+    (the rulebook policy, default 5), the rest become open items and a senior is needed (3.5)."""
     already = {decision.question for decision in record.decisions}
     already |= {pending.question for pending in session.pending_decisions}
     open_items = list(record.open_items)
@@ -450,7 +574,7 @@ def _queue_material_decisions(
         if not ambiguity.material or ambiguity.text in already:
             continue
         already.add(ambiguity.text)
-        if session.material_decisions_asked < MAX_MATERIAL_DECISIONS:
+        if session.material_decisions_asked < limit:
             session.pending_decisions.append(
                 PendingDecision(question=ambiguity.text, options=ambiguity.options)
             )
@@ -612,7 +736,7 @@ def _decide(
         turn.visible_before = shown_before
         carried = list(turn.session.last_changed_fields)
         if result.ok:
-            _apply_result(turn, result, answered=None)
+            _apply_result(turn, result)
             merged = carried + [f for f in turn.session.last_changed_fields if f not in carried]
             turn.session.last_changed_fields = merged
         else:
@@ -658,7 +782,6 @@ def _record_decision(turn: _Turn, choice: str, custom: bool) -> bool:
         {"question": pending.question, "choice": choice, "custom": custom},
     )
     turn.move_to(STATUS_CLARIFICATION)
-    turn.say("assistant", "Noted as a confirmed decision.")
     if not session.pending_decisions:
         # A valid resting step in case the app stops before save 2; save 2 sets the real one.
         session.step = "correction"
@@ -675,8 +798,8 @@ def _choose_checkpoint(turn: _Turn, option: str) -> None:
     if option == HELP_OPTION:
         if session.checkpoint_help:
             raise UnderstandError(
-                "Help has already been requested. Choose Proceed or Correct something "
-                "when you are ready."
+                f"Help has already been requested. Choose Proceed or type what should change "
+                f"and press {CORRECT_OPTION} when you are ready."
             )
         session.checkpoint_help = True
         _set_open_items(session, [*session.record.open_items, CHECKPOINT_HELP_ITEM])
@@ -685,13 +808,22 @@ def _choose_checkpoint(turn: _Turn, option: str) -> None:
         turn.audit("developer", "help_requested", {"question": "confirmation"})
         turn.say(
             "assistant",
-            "Help requested. This request will wait here. When you are ready, choose Proceed "
-            "or Correct something.",
+            f"Help requested. This request will wait here. When you are ready, choose Proceed "
+            f"or type what should change and press {CORRECT_OPTION}.",
         )
         return
 
+    _clear_checkpoint_help(turn)
+    # Proceed: the gate runs again, then record v1 is saved. From DECISION_REQUIRED this is
+    # one action with every move audited, no second click (review S1).
+    if _run_gate(turn, announce=False):
+        _confirm(turn)
+
+
+def _clear_checkpoint_help(turn: _Turn) -> None:
+    """Choosing later clears the help item, the same way a decision does (review M2)."""
+    session = turn.session
     if session.checkpoint_help:
-        # Choosing later clears the help item, the same way a decision does (review M2).
         session.checkpoint_help = False
         _set_open_items(
             session, [i for i in session.record.open_items if i != CHECKPOINT_HELP_ITEM]
@@ -699,17 +831,22 @@ def _choose_checkpoint(turn: _Turn, option: str) -> None:
         session.last_changed_fields = ["open_items"]
         turn.move_to(STATUS_CLARIFICATION)
 
-    if option == CORRECT_OPTION:
-        session.step = "correction"
-        turn.move_to(STATUS_CLARIFICATION)
-        turn.audit("developer", "correction_requested")
-        turn.say("assistant", CORRECTION_QUESTION)
-        return
 
-    # Proceed: the gate runs again, then record v1 is saved. From DECISION_REQUIRED this is
-    # one action with every move audited, no second click (review S1).
-    if _run_gate(turn, announce=False):
-        _confirm(turn)
+def _without_checkpoint_help(session: UnderstandSession) -> UnderstandSession:
+    """Typing a correction clears a waiting "help requested" item (as choosing Proceed does), so
+    the interpreter's record must not hold it, or applying the reply would bring it back."""
+    if session.step != "checkpoint" or not session.checkpoint_help:
+        return session
+    items = [i for i in session.record.open_items if i != CHECKPOINT_HELP_ITEM]
+    record = session.record.model_copy(update={"open_items": items})
+    return session.model_copy(update={"record": record})
+
+
+def _start_correction(turn: _Turn) -> None:
+    """The developer typed a correction at the checkpoint (Send = Correct something)."""
+    _clear_checkpoint_help(turn)
+    turn.move_to(STATUS_CLARIFICATION)
+    turn.audit("developer", "correction_requested")
 
 
 def _confirm(turn: _Turn) -> None:
@@ -740,7 +877,6 @@ def _confirmed_message(request: Request, record: RequestRecord) -> str:
     if record.references:
         lines.append("References:")
         lines += [f"- {reference}" for reference in record.references]
-    lines.append("Press Proceed to Discovery to search approved sources.")
     return "\n".join(lines)
 
 
@@ -770,6 +906,8 @@ def _write_transaction(db_path: Path) -> Iterator[sqlite3.Connection]:
 @contextmanager
 def _turn(db_path: Path, request_id: str, base_revision: int, now: datetime) -> Iterator[_Turn]:
     """Open one action's transaction, check the revision, and save the session at the end."""
+    # Read before the write lock opens (P18): the limit of AI questions in the pinned rulebook.
+    max_decisions = _decision_limit(db_path, request_id)
     with _write_transaction(db_path) as conn:
         request = read_request(conn, request_id)
         session = read_session(conn, request_id)
@@ -783,10 +921,20 @@ def _turn(db_path: Path, request_id: str, base_revision: int, now: datetime) -> 
             session=session,
             now=now,
             visible_before=visible_fields(session),
+            max_decisions=max_decisions,
         )
         yield turn
         _highlight_revealed(turn)
         save_session(conn, turn.session, base_revision, now)
+
+
+def _decision_limit(db_path: Path, request_id: str) -> int:
+    """How many AI clarifying questions the request's pinned rulebook allows (default 5)."""
+    try:
+        policy = get_rulebook_for_request(db_path, request_id).rulebook.policy
+    except RulebookError:
+        return DEFAULT_MAX_MATERIAL_DECISIONS
+    return policy.max_material_decisions
 
 
 def visible_fields(session: UnderstandSession) -> list[str]:
@@ -839,19 +987,20 @@ def _accept_developer_text(text: str) -> str:
 
 
 def _require_text_step(session: UnderstandSession) -> None:
-    if _INPUT_MODES[session.step] != "text":
+    if _INPUT_MODES[session.step] != "text" and session.step != "checkpoint":
         raise UnderstandError(_wrong_step_message(session))
 
 
 def _wrong_step_message(session: UnderstandSession) -> str:
     messages = {
+        "form": "Please fill in the form and press Submit first.",
         "question": "Please answer the question first.",
         "optional": "Please type your constraints, exclusions, or references, or press Skip.",
         "correction": "Please type what should change first.",
         "decision": "A decision is waiting. Please choose an option or type your own answer.",
         "checkpoint": (
-            f"Please choose one of the options: {PROCEED_OPTION}, {CORRECT_OPTION}, "
-            f"or {HELP_OPTION}."
+            f"Please choose {PROCEED_OPTION} or {HELP_OPTION}, or type what should change "
+            f"and press {CORRECT_OPTION}."
         ),
         "senior": SENIOR_MESSAGE,
         "done": "This request is already confirmed. It cannot be changed in this phase.",

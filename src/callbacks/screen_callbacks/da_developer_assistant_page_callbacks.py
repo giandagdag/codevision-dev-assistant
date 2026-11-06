@@ -14,6 +14,8 @@ from dash import ALL, Input, Output, State, ctx, no_update
 from dash.exceptions import PreventUpdate
 
 from agents import da_approach_flow as approach_flow
+from agents import da_build_flow as build_flow
+from agents import da_build_runner as build_runner
 from agents import da_workspace_flow as workspace_flow
 from agents.da_discover_flow import (
     add_hint_and_search,
@@ -23,12 +25,15 @@ from agents.da_discover_flow import (
     start_discovery,
 )
 from agents.da_understand_flow import (
+    FORM_OPTIONAL_BOX,
+    FormError,
     choose_option,
     create_understand_request,
     get_understand_view,
     list_my_requests,
     skip_optional,
     submit_answer,
+    submit_form,
 )
 from callbacks.screen_callbacks.da_workspace_callbacks import register_da_workspace_callbacks
 from configs.da_config import ConfigError, Settings, load_settings
@@ -39,11 +44,15 @@ from db_table_functions.db_tbl_da_understand import (
     StaleRevisionError,
     UnderstandError,
 )
+from layouts.da_build_panel import POLL_ID
 from layouts.da_developer_assistant_page import (
     BUSY_ID,
     CHOICE_TYPE,
     CONFIRM_KEY,
     ESCALATE_KEY,
+    FORM_BOX_TYPE,
+    FORM_ERROR_TYPE,
+    FORM_SUBMIT_TYPE,
     KEYS_ID,
     LOCATION_ID,
     MESSAGE_ID,
@@ -65,26 +74,58 @@ from layouts.da_developer_assistant_page import (
 )
 from pydantic_classes.da_models import (
     STATUS_APPROACH_PROPOSED,
+    STATUS_BUILDING,
     STATUS_CLARIFICATION,
+    STATUS_CONFIRMED,
     STATUS_DECISION_REQUIRED,
     STATUS_DISCOVERY_CONFIRMED,
     STATUS_DRAFT,
     STATUS_ESCALATION,
+    STATUS_NOT_PASSING,
     STATUS_READY,
+    STATUS_READY_FOR_REVIEW,
     STATUS_READY_TO_BUILD,
 )
+from styles import da_styles
 
 # Problems the developer can understand and act on. Their messages are already plain words.
 # Anything else is a real bug and is allowed to stop loudly.
 SHOWN_ERRORS = (UnderstandError, RulebookError, DatabaseBusyError, ConfigError)
+
+# The five boxes of the form, numbered 1 to 5 (4 mandatory questions and the optional area).
+FORM_BOXES_COUNT = range(1, FORM_OPTIONAL_BOX + 1)
 
 # Until the request is confirmed the Understand workspace is shown; from CONFIRMED_FOR_DISCOVERY
 # on, the Discover workspace (Phase 3); from APPROACH_PROPOSED on, the Approach workspace
 # (Phase 4). DISCOVERY_CONFIRMED stays in the Discover workspace, with the Proceed to Approach
 # button. ESCALATION_REQUIRED is Approach's if an approach exists, otherwise Discover's.
 UNDERSTAND_STATUSES = (STATUS_DRAFT, STATUS_CLARIFICATION, STATUS_DECISION_REQUIRED, STATUS_READY)
-APPROACH_STATUSES = (STATUS_APPROACH_PROPOSED, STATUS_READY_TO_BUILD)
+APPROACH_STATUSES = (
+    STATUS_APPROACH_PROPOSED,
+    STATUS_READY_TO_BUILD,
+    STATUS_BUILDING,
+    STATUS_READY_FOR_REVIEW,
+    STATUS_NOT_PASSING,
+)
+# The statuses where the request has a workspace and a build to draw.
+WORKSPACE_STATUSES = (
+    STATUS_READY_TO_BUILD,
+    STATUS_BUILDING,
+    STATUS_READY_FOR_REVIEW,
+    STATUS_NOT_PASSING,
+)
 
+
+# While an action runs, the page takes no clicks. A choice button stays on the screen for the 10 to
+# 20 seconds the AI needs (longer since one click can start the next step too); a second click
+# would carry the revision from before the first one finished, and the server rightly refuses it
+# with "updated in another window" even though there is only one window. The style goes back to
+# the normal page style when the action ends.
+PAGE_BUSY = (
+    Output(PAGE_CONTENT_ID, "style"),
+    {**da_styles.PAGE, "pointerEvents": "none", "opacity": 0.75},
+    da_styles.PAGE,
+)
 
 # Enter sends, Shift+Enter makes a new line. Dash cannot tell them apart in Python, so this small
 # browser script (a Dash clientside callback) does the one thing a function key does on a 5250
@@ -139,12 +180,15 @@ def show_page(search: str | None, refresh: int | None):
                 status == STATUS_ESCALATION and approach_flow.has_approach(settings, request_id)
             ):
                 approach = approach_flow.get_approach_view(settings, request_id)
-                workspace = (
-                    workspace_flow.get_workspace_view(settings, request_id)
-                    if status == STATUS_READY_TO_BUILD
-                    else None
+                has_build = status in WORKSPACE_STATUSES or (
+                    status == STATUS_ESCALATION
+                    and build_flow.get_state(settings, request_id).build_number > 0
                 )
-                return render_approach_workspace(view, discovery, approach, workspace)
+                workspace = (
+                    workspace_flow.get_workspace_view(settings, request_id) if has_build else None
+                )
+                build = build_flow.get_build_view(settings, request_id) if has_build else None
+                return render_approach_workspace(view, discovery, approach, workspace, build)
             if status == STATUS_DISCOVERY_CONFIRMED:
                 approach = approach_flow.get_approach_view(settings, request_id)
                 return render_discover_workspace(view, discovery, approach)
@@ -176,11 +220,14 @@ def perform_action(settings: Settings, trigger, text, state, refresh):
     """
     state = state or {}
     request_id, revision = state.get("request_id"), state.get("revision")
+    message = ""  # a problem of the step that started by itself, shown under the chat
     try:
         if trigger == SEND_ID and request_id is None:
             view = create_understand_request(settings, text or "")
             return no_update, f"?request={view.request.request_id}", ""
-        if state.get("workspace") and trigger != SKIP_ID:
+        if state.get("build") and trigger != SKIP_ID:
+            _build_action(settings, trigger, request_id, revision)
+        elif state.get("workspace") and trigger != SKIP_ID:
             _workspace_action(settings, trigger, request_id, revision)
         elif state.get("approach") and trigger != SKIP_ID:
             _approach_action(settings, trigger, request_id, revision, text)
@@ -193,16 +240,99 @@ def perform_action(settings: Settings, trigger, text, state, refresh):
             skip_optional(settings, request_id, revision)
         elif _is_choice(trigger) and state.get("discover"):
             key = _discover_key_at(settings, request_id, revision, trigger["index"])
-            _discover_choice(settings, request_id, key, revision)
+            message = _discover_choice(settings, request_id, key, revision)
         elif _is_choice(trigger):
             option = _option_at(settings, request_id, revision, trigger["index"])
-            choose_option(settings, request_id, option, revision)
+            view = choose_option(settings, request_id, option, revision)
+            if view.request.status == STATUS_CONFIRMED:
+                # Proceed worked: Discover starts by itself (Phase 6 fixes, section 3).
+                message = _start_by_itself(lambda: _start_discovery_now(settings, request_id))
         else:
             raise PreventUpdate
     except SHOWN_ERRORS as error:
         # Nothing was written. The text stays in the box so the developer can fix it.
         return no_update, no_update, str(error)
-    return (refresh or 0) + 1, no_update, ""
+    return (refresh or 0) + 1, no_update, message
+
+
+def _start_by_itself(step) -> str:
+    """Run the next step right after the one the developer clicked, which is already saved.
+
+    If it fails, its own screen offers "Try again", so the page is redrawn and the plain message
+    shows under the chat. Returns that message, or "" when all went well."""
+    try:
+        step()
+    except SHOWN_ERRORS as error:
+        return str(error)
+    return ""
+
+
+def _start_discovery_now(settings: Settings, request_id: str) -> None:
+    start_discovery(settings, request_id, get_discovery_view(settings, request_id).revision)
+
+
+def _start_approach_now(settings: Settings, request_id: str) -> None:
+    approach_flow.start_approach(
+        settings, request_id, approach_flow.get_approach_view(settings, request_id).revision
+    )
+
+
+def handle_form(submit_clicks, answers, state, refresh):
+    """Submit was pressed on the 4-box form."""
+    if not submit_clicks or not any(submit_clicks):
+        raise PreventUpdate
+    return perform_form(get_settings(), answers, state, refresh)
+
+
+def perform_form(settings: Settings, answers, state, refresh):
+    """Call submit_form and return (refresh counter, message under the chat, one message per box).
+
+    A box that fails shows its message on the line under it; nothing is redrawn, so every box
+    keeps what was typed (U2). Any other shown problem (stale window, AI not reachable) goes to
+    the line under the chat.
+    """
+    state = state or {}
+    empty = [""] * len(FORM_BOXES_COUNT)
+    try:
+        submit_form(
+            settings,
+            state.get("request_id"),
+            [(answer or "") for answer in answers or []],
+            state.get("revision"),
+        )
+    except FormError as error:
+        return no_update, "", [error.problems.get(number, "") for number in FORM_BOXES_COUNT]
+    except SHOWN_ERRORS as error:
+        return no_update, str(error), empty
+    return (refresh or 0) + 1, "", empty
+
+
+def _build_action(settings: Settings, trigger, request_id: str, revision: int) -> None:
+    """The one Build engine function a server-run button stands for. An old window, or an index
+    with no button behind it, is refused. A build that (re)starts is handed to the runner."""
+    if not _is_choice(trigger):
+        raise PreventUpdate
+    view = build_flow.get_build_view(settings, request_id)
+    index = trigger["index"]
+    if view.revision != revision or not 0 <= index < len(view.buttons):
+        raise StaleRevisionError(STALE_MESSAGE)
+    actions = {
+        build_flow.STOP_KEY: build_flow.stop_build,
+        build_flow.TRY_AGAIN_KEY: build_flow.try_again,
+        build_flow.CHANGE_APPROACH_KEY: build_flow.change_approach,
+        build_flow.HELP_KEY: build_flow.request_help,
+    }
+    state = actions[view.buttons[index][0]](settings, request_id, revision)
+    if state.step == "b_running":
+        build_runner.submit_build(settings, request_id)
+
+
+def poll_build(n_intervals, state, refresh):
+    """Every 3 seconds while a build runs: redraw, so the progress list is current. The page
+    asks again only while the Interval is on; the redraw switches it off when the build ends."""
+    if not n_intervals or not state or not state.get("build"):
+        raise PreventUpdate
+    return (refresh or 0) + 1
 
 
 def _workspace_action(settings: Settings, trigger, request_id: str, revision: int) -> None:
@@ -249,7 +379,6 @@ def _approach_action(settings: Settings, trigger, request_id: str, revision: int
         approach_flow.HELP_KEY: approach_flow.request_help,
         approach_flow.WRITE_PLAN_KEY: approach_flow.write_test_plan_again,
         approach_flow.ACCEPT_PLAN_KEY: approach_flow.accept_test_plan,
-        approach_flow.ADD_CASE_KEY: approach_flow.request_case,
         approach_flow.CHANGE_APPROACH_KEY: approach_flow.request_plan_change,
         approach_flow.KEEP_KEY: approach_flow.keep_case,
         approach_flow.DISCARD_KEY: approach_flow.discard_case,
@@ -261,16 +390,20 @@ def _is_choice(trigger) -> bool:
     return isinstance(trigger, dict) and trigger.get("type") == CHOICE_TYPE
 
 
-def _discover_choice(settings: Settings, request_id: str, key: str, revision: int) -> None:
-    """The one Discover engine function a button stands for."""
+def _discover_choice(settings: Settings, request_id: str, key: str, revision: int) -> str:
+    """The one Discover engine function a button stands for. "Findings look right" is followed
+    by Approach starting by itself (Phase 6 fixes, section 3); the returned text is a problem of
+    that second step, or "" when all went well."""
     if key == START_KEY:
         start_discovery(settings, request_id, revision)
     elif key == CONFIRM_KEY:
         confirm_discovery(settings, request_id, revision)
+        return _start_by_itself(lambda: _start_approach_now(settings, request_id))
     elif key == ESCALATE_KEY:
         escalate_discovery(settings, request_id, revision)
     else:
         raise PreventUpdate
+    return ""
 
 
 def _discover_key_at(settings: Settings, request_id: str, revision: int, index: int) -> str:
@@ -323,6 +456,7 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
             (Output(SKIP_ID, "disabled"), True, False),
             # The "searching" line, hidden in every other workspace (it has no text there).
             (Output(BUSY_ID, "style"), {"display": "block"}, {"display": "none"}),
+            PAGE_BUSY,
         ],
         prevent_initial_call=True,
     )(handle_action)
@@ -333,5 +467,30 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
         Output(KEYS_ID, "data"),
         Input(PAGE_CONTENT_ID, "children"),
     )
+
+    # Phase 6: while a build runs the page redraws itself every 3 seconds (spec section 10).
+    app.callback(
+        Output(REFRESH_ID, "data", allow_duplicate=True),
+        Input(POLL_ID, "n_intervals"),
+        State(STATE_ID, "data"),
+        State(REFRESH_ID, "data"),
+        prevent_initial_call=True,
+    )(poll_build)
+
+    # The 4-box form (Phase 6 fixes). Pattern ids: the page has none of these on other screens.
+    app.callback(
+        Output(REFRESH_ID, "data", allow_duplicate=True),
+        Output(MESSAGE_ID, "children", allow_duplicate=True),
+        Output({"type": FORM_ERROR_TYPE, "index": ALL}, "children"),
+        Input({"type": FORM_SUBMIT_TYPE, "index": ALL}, "n_clicks"),
+        State({"type": FORM_BOX_TYPE, "index": ALL}, "value"),
+        State(STATE_ID, "data"),
+        State(REFRESH_ID, "data"),
+        running=[
+            (Output(BUSY_ID, "style"), {"display": "block"}, {"display": "none"}),
+            PAGE_BUSY,
+        ],
+        prevent_initial_call=True,
+    )(handle_form)
 
     register_da_workspace_callbacks(app, lambda: get_settings())

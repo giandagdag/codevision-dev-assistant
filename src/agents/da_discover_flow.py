@@ -84,6 +84,8 @@ HINT_OPTION = "✏️ Something's missing"
 ESCALATE_OPTION = "🙋 Escalate to a senior developer"
 HINT_QUESTION = "What's missing? Name a feature, file or term."
 DEVELOPER_REQUEST = "developer request"
+# Said whenever a round used the made-up index (DA_SEARCH_PROVIDER=fake), also with a real AI.
+FAKE_INDEX_NOTICE = "Practice index (made-up code), not CodeVision."
 
 _OUTCOME_STATUSES = (STATUS_SIMILAR_FOUND, STATUS_NO_MATCH)
 _STARTABLE = (STATUS_CONFIRMED, STATUS_SEARCHING)
@@ -155,8 +157,7 @@ def confirm_discovery(
             conn,
             request_id,
             "assistant",
-            f"Discovery confirmed after round {rounds}. Press Proceed to Approach to plan how "
-            "it will be built.",
+            f"Discovery confirmed after round {rounds}. Now planning how it will be built.",
             now,
         )
     logger.info("Discovery confirmed for %s", request_id)
@@ -424,6 +425,13 @@ def _cap_message(status: str, rounds: int, max_rounds: int) -> str:
 
 
 def _result_line(result: DiscoveryResult, outcome: str) -> str:
+    line = _outcome_line(result, outcome)
+    if result.search_provider == "fake":
+        line += f"\n{FAKE_INDEX_NOTICE}"
+    return line
+
+
+def _outcome_line(result: DiscoveryResult, outcome: str) -> str:
     matches = sum(1 for finding in result.findings if finding.kind in MATCH_KINDS)
     if outcome == STATUS_SIMILAR_FOUND:
         return (

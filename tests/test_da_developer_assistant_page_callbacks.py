@@ -4,6 +4,7 @@ import pytest
 from dash import Dash, no_update
 from dash.exceptions import PreventUpdate
 
+from agents import da_approach_flow as approach_flow
 from agents import da_understand_flow as flow
 from callbacks.screen_callbacks import da_developer_assistant_page_callbacks as cb
 from db_table_functions.db_tbl_da_understand import STALE_MESSAGE
@@ -45,8 +46,8 @@ def to_tricky_decision(settings):
     ambiguity = {"text": "Which way should we go?", "material": True, "options": TRICKY_OPTIONS}
     reply = stub_reply({"title": "Add Excel uploads"}, [ambiguity])
     view = flow.create_understand_request(settings, "Can we support Excel uploads?")
-    return flow.submit_answer(
-        settings, view.request.request_id, "Because users ask", view.revision,
+    return flow.submit_form(
+        settings, view.request.request_id, [*da_play.ANSWERS, ""], view.revision,
         client=StubClient(reply),
     )
 
@@ -60,26 +61,26 @@ def test_the_whole_scripted_conversation_runs_through_the_buttons(settings):
     request_id = search.removeprefix("?request=")
     view = flow.get_understand_view(settings, request_id)
 
-    for text in da_play.ANSWERS:
-        refresh, search, message = send(settings, view, text)
-        assert (refresh, search, message) == (1, no_update, "")
-        view = flow.get_understand_view(settings, request_id)
+    assert view.input_mode == "form"  # the 4-box form, not one question at a time
+    refresh, message, errors = cb.perform_form(
+        settings, [*da_play.ANSWERS, ""], state_of(view), 0
+    )
+    assert (refresh, message, errors) == (1, "", [""] * 5)
+    view = flow.get_understand_view(settings, request_id)
     assert view.input_mode == "choices"  # the decision locks the text box
 
     cb.perform_action(settings, choice(0), None, state_of(view), 1)
     view = flow.get_understand_view(settings, request_id)
-    assert view.can_skip
-    cb.perform_action(settings, page.SKIP_ID, None, state_of(view), 2)
-    view = flow.get_understand_view(settings, request_id)
     proceed = view.choices.index(flow.PROCEED_OPTION)
-    cb.perform_action(settings, choice(proceed), None, state_of(view), 3)
+    cb.perform_action(settings, choice(proceed), None, state_of(view), 2)
 
     view = flow.get_understand_view(settings, request_id)
-    assert view.request.status == "CONFIRMED_FOR_DISCOVERY"
+    # One click on Proceed also started Discover: the request is already at its results.
+    assert view.request.status == "SIMILAR_IMPLEMENTATION_FOUND"
     assert view.progress_text == "Confirmed and saved as version 1"
 
     home = all_text(cb.show_page("", 4))
-    assert request_id in home and "CONFIRMED FOR DISCOVERY" in home
+    assert request_id in home and "SIMILAR IMPLEMENTATION FOUND" in home
 
 
 def test_show_page_draws_home_new_and_one_request(settings):
@@ -92,11 +93,19 @@ def test_show_page_draws_home_new_and_one_request(settings):
 
 
 def test_reloading_mid_conversation_shows_the_same_thing(settings):
-    view = da_play.answer(settings, da_play.start(settings), da_play.ANSWERS[0])
+    view = da_play.answer(settings, da_play.start_old_way(settings), da_play.ANSWERS[0])
     url = f"?request={view.request.request_id}"
     first, second = cb.show_page(url, 0), cb.show_page(url, 7)
     assert all_text(first) == all_text(second)
     assert "1 of 4 mandatory questions answered" in all_text(first)
+
+
+def test_reloading_with_the_form_open_draws_the_form_again(settings):
+    view = da_play.start(settings)
+    url = f"?request={view.request.request_id}"
+    first, second = cb.show_page(url, 0), cb.show_page(url, 7)
+    assert all_text(first) == all_text(second)
+    assert by_id(first, "da-form") is not None
 
 
 def test_busy_database_on_home_gives_a_plain_message(settings, monkeypatch):
@@ -114,7 +123,7 @@ def test_unknown_request_gives_a_plain_message(settings):
 
 
 def test_stale_window_is_refused_and_nothing_is_written(settings):
-    view = da_play.start(settings)
+    view = da_play.start_old_way(settings)
     old_state = state_of(view)
     da_play.answer(settings, view, da_play.ANSWERS[0])  # "another window" saved first
     before = flow.get_understand_view(settings, view.request.request_id)
@@ -127,7 +136,7 @@ def test_stale_window_is_refused_and_nothing_is_written(settings):
 
 
 def test_a_message_with_a_key_is_refused_and_not_saved(settings):
-    view = da_play.start(settings)
+    view = da_play.start_old_way(settings)
     result = send(settings, view, "my key is sk-ant-api03-" + "a" * 40)
     assert result[0] is no_update and result[2] != ""
     after = flow.get_understand_view(settings, view.request.request_id)
@@ -157,7 +166,8 @@ def test_help_choice_shows_decision_required_then_choosing_resumes(settings):
     assert "DECISION REQUIRED" in all_text(cb.show_page(f"?request={view.request.request_id}", 0))
     cb.perform_action(settings, choice(0), None, state_of(view), 1)
     view = flow.get_understand_view(settings, view.request.request_id)
-    assert view.request.status == "CLARIFICATION_IN_PROGRESS"
+    # The form already covered the optional area, so the checkpoint comes straight after.
+    assert view.request.status == "READY_FOR_CONFIRMATION"
 
 
 @pytest.mark.parametrize("index", range(len(TRICKY_OPTIONS)))
@@ -204,9 +214,14 @@ def test_onprem_shows_its_plain_message_in_the_chat(make_settings, published_rul
     settings = make_settings(llm_provider="onprem")
     monkeypatch.setattr(cb, "get_settings", lambda: settings)
     view = flow.create_understand_request(settings, "Can we support Excel uploads?")
-    cb.perform_action(settings, page.SEND_ID, "Because users ask", state_of(view), 0)
+    refresh, message, errors = cb.perform_form(
+        settings, [*da_play.ANSWERS, ""], state_of(view), 0
+    )
+    # Nothing is saved, the boxes keep their text, and the plain message shows under the chat.
+    assert refresh is no_update and "DA_ONPREM_URL is missing" in message
+    assert errors == [""] * 5
     tree = cb.show_page(f"?request={view.request.request_id}", 0)
-    assert "DA_ONPREM_URL is missing" in all_text(tree)
+    assert by_id(tree, "da-form") is not None
     assert page.DEMO_BANNER not in all_text(tree)
 
 
@@ -225,7 +240,7 @@ def test_nothing_clicked_does_nothing(settings, monkeypatch):
 
 
 def test_handle_action_passes_a_real_click_on(settings, monkeypatch):
-    view = da_play.start(settings)
+    view = da_play.start_old_way(settings)
     monkeypatch.setattr(
         cb, "ctx", SimpleNamespace(triggered_id=page.SEND_ID, triggered=[{"value": 1}])
     )
@@ -241,7 +256,8 @@ def test_unknown_trigger_does_nothing(settings):
 def test_register_attaches_the_callbacks_and_the_busy_state():
     app = Dash(__name__, suppress_callback_exceptions=True)
     cb.register_da_developer_assistant_page_callbacks(app)
-    draw, action, enter = app._callback_list[:3]  # the Workspace hops come after these
+    # The build poll and the Workspace hops come after these three.
+    draw, action, enter = app._callback_list[:3]
     assert draw["prevent_initial_call"] is False  # it must draw on first load
     assert action["prevent_initial_call"] is True
     # Busy mode: Send spins, the text box and Skip cannot be used a second time.
@@ -250,11 +266,15 @@ def test_register_attaches_the_callbacks_and_the_busy_state():
         "da-text.readOnly": True,
         "da-skip.disabled": True,
         "da-busy.style": {"display": "block"},
+        # The whole page takes no clicks while the action runs, so a second click cannot carry
+        # an old revision (found at work: "updated in another window" with one window).
+        "da-page-content.style": cb.PAGE_BUSY[1],
     }
+    assert cb.PAGE_BUSY[1]["pointerEvents"] == "none"
     assert action["running"]["runningOff"]["da-busy.style"] == {"display": "none"}
-    assert {v for k, v in action["running"]["runningOff"].items() if k != "da-busy.style"} == {
-        False
-    }
+    assert action["running"]["runningOff"]["da-page-content.style"] == page.da_styles.PAGE
+    skip = ("da-busy.style", "da-page-content.style")
+    assert {v for k, v in action["running"]["runningOff"].items() if k not in skip} == {False}
     # Enter-to-send: a browser-side callback that runs after every redraw.
     assert enter["output"] == "da-keys-ready.data"
     assert enter["inputs"][0]["id"] == page.PAGE_CONTENT_ID
@@ -301,7 +321,7 @@ def test_a_confirmed_request_is_drawn_as_the_discover_workspace(settings, confir
 
     text = all_text(tree)
     assert by_id(tree, page.STATE_ID).data["discover"] is True
-    assert page.PROCEED_DISCOVERY_OPTION in text
+    assert page.TRY_DISCOVERY_OPTION in text  # Discover did not start by itself: Try again
     assert "CONFIRMED FOR DISCOVERY" in text
 
 
@@ -355,16 +375,19 @@ def test_a_hint_with_a_secret_shows_a_plain_message_and_writes_nothing(settings,
     assert discovery_view(settings, confirmed_id).rounds_used == 1
 
 
-def test_confirm_button_calls_the_flow(settings, confirmed_id):
+def test_confirm_button_confirms_and_approach_starts_by_itself(settings, confirmed_id):
     cb.perform_action(
         settings, choice(0), None, discover_state(confirmed_id), 0
     )
 
-    cb.perform_action(
+    result = cb.perform_action(
         settings, choice(0), None, discover_state(confirmed_id, 1), 1
     )
 
-    assert discovery_view(settings, confirmed_id).request.status == "DISCOVERY_CONFIRMED"
+    assert result == (2, no_update, "")
+    view = approach_flow.get_approach_view(settings, confirmed_id)
+    assert view.request.status == "APPROACH_PROPOSED" and view.approach.approach_version == 1
+    assert "discovery_confirmed" in event_names(settings, confirmed_id)
 
 
 def test_escalate_button_calls_the_flow(settings, confirmed_id):
@@ -442,3 +465,184 @@ def test_a_request_saved_before_2d_shows_a_plain_page_and_stays_in_the_list(sett
     assert "Please start a new request." in text
     assert "Back to Home" in text
     assert rid in all_text(cb.show_page("", 0))  # still in "My recent requests"
+
+
+# --- the 4-box form (Phase 6 fixes, U1 and U2) ---
+
+
+def test_a_failing_box_shows_its_message_under_that_box_only(settings):
+    view = da_play.start(settings)
+    answers = [*da_play.ANSWERS, ""]
+    answers[1] = ""  # box 2 is empty
+    answers[2] = "key sk-" + "test0000fake1111notreal2"  # box 3 holds a secret
+
+    refresh, message, errors = cb.perform_form(settings, answers, state_of(view), 0)
+
+    assert refresh is no_update and message == ""  # no redraw: every box keeps its text
+    assert errors[0] == "" and errors[3] == "" and errors[4] == ""
+    assert errors[1] == flow.BOX_EMPTY_MESSAGE
+    assert "API key" in errors[2]
+    after = flow.get_understand_view(settings, view.request.request_id)
+    assert after.revision == view.revision and after.input_mode == "form"
+
+
+def test_a_valid_submit_redraws_and_clears_every_box_message(settings):
+    view = da_play.start(settings)
+
+    result = cb.perform_form(settings, [*da_play.ANSWERS, "A note"], state_of(view), 3)
+
+    assert result == (4, "", [""] * 5)
+    assert flow.get_understand_view(settings, view.request.request_id).input_mode == "choices"
+
+
+def test_untouched_boxes_arrive_as_none_and_count_as_empty(settings):
+    view = da_play.start(settings)
+
+    _, _, errors = cb.perform_form(settings, [None, None, None, None, None], state_of(view), 0)
+
+    assert errors == [flow.BOX_EMPTY_MESSAGE] * 4 + [""]
+
+
+def test_a_form_from_an_old_window_gets_the_stale_message(settings):
+    view = da_play.start(settings)
+    old_state = state_of(view)
+    da_play.submit_form(settings, view)  # "another window" submitted first
+
+    result = cb.perform_form(settings, [*da_play.ANSWERS, ""], old_state, 0)
+
+    assert result == (no_update, STALE_MESSAGE, [""] * 5)
+
+
+def test_a_submit_click_that_did_not_happen_does_nothing(settings):
+    with pytest.raises(PreventUpdate):
+        cb.handle_form([None], [""] * 5, {"request_id": "x", "revision": 1}, 0)
+    with pytest.raises(PreventUpdate):
+        cb.handle_form([], [], {"request_id": "x", "revision": 1}, 0)
+
+
+def test_handle_form_passes_a_real_click_on(settings):
+    view = da_play.start(settings)
+
+    result = cb.handle_form([1], [*da_play.ANSWERS, ""], state_of(view), 4)
+
+    assert result == (5, "", [""] * 5)
+
+
+def test_register_attaches_the_form_callback_with_pattern_ids():
+    app = Dash(__name__, suppress_callback_exceptions=True)
+    cb.register_da_developer_assistant_page_callbacks(app)
+    form = [c for c in app._callback_list if page.FORM_SUBMIT_TYPE in str(c["inputs"])]
+    assert len(form) == 1
+    assert page.FORM_BOX_TYPE in str(form[0]["state"])
+    assert form[0]["running"]["running"]["da-page-content.style"]["pointerEvents"] == "none"
+    assert page.FORM_ERROR_TYPE in str(form[0]["output"])
+    assert form[0]["prevent_initial_call"] is True
+
+
+# --- the next step starts by itself (Phase 6 fixes, section 3) ---
+
+
+def event_names(settings, request_id):
+    from db_table_functions.db_tbl_da_audit import list_audit_events
+
+    return [e.event_type for e in list_audit_events(settings.db_path, request_id)]
+
+
+def at_checkpoint_state(settings):
+    view = da_play.to_checkpoint(settings)
+    return view, state_of(view)
+
+
+def test_one_click_on_proceed_goes_from_the_checkpoint_to_the_discover_results(settings):
+    view, state = at_checkpoint_state(settings)
+    proceed = view.choices.index(flow.PROCEED_OPTION)
+
+    result = cb.perform_action(settings, choice(proceed), None, state, 0)
+
+    assert result == (1, no_update, "")
+    found = discovery_view(settings, view.request.request_id)
+    assert found.request.status == "SIMILAR_IMPLEMENTATION_FOUND" and found.result.round == 1
+    texts = [m.text for m in found.messages]
+    assert not any("Press Proceed to Discovery" in t for t in texts)
+    drawn = all_text(cb.show_page(f"?request={view.request.request_id}", 1))
+    assert "Round 1 of 3" in drawn and "Proceed to Discovery" not in drawn
+
+
+def test_one_click_on_findings_look_right_goes_to_the_approach(settings, confirmed_id):
+    cb.perform_action(settings, choice(0), None, discover_state(confirmed_id), 0)
+
+    cb.perform_action(settings, choice(0), None, discover_state(confirmed_id, 1), 1)
+
+    view = approach_flow.get_approach_view(settings, confirmed_id)
+    assert view.request.status == "APPROACH_PROPOSED"
+    assert view.step in ("choices", "review")
+    texts = [m.text for m in view.messages]
+    assert not any("Press Proceed to Approach" in t for t in texts)
+    assert not any("Proceed to Approach" in b[1] for b in view.buttons)
+
+
+def test_if_discover_cannot_start_the_confirmation_is_kept_and_try_again_shows(
+    make_settings, published_rulebook, monkeypatch
+):
+    work = make_settings(search_provider="codevision")  # the real index is not set up here
+    monkeypatch.setattr(cb, "get_settings", lambda: work)
+    view = da_play.to_checkpoint(work)
+    proceed = view.choices.index(flow.PROCEED_OPTION)
+
+    refresh, search, message = cb.perform_action(
+        work, choice(proceed), None, state_of(view), 0
+    )
+
+    # The redraw still happens and the plain message shows; the confirmation is saved.
+    assert (refresh, search) == (1, no_update) and message != ""
+    request_id = view.request.request_id
+    assert flow.get_understand_view(work, request_id).request.status == "CONFIRMED_FOR_DISCOVERY"
+    drawn = all_text(cb.show_page(f"?request={request_id}", 1))
+    assert page.TRY_DISCOVERY_OPTION in drawn and "Discovery did not start" in drawn
+
+
+def test_if_the_approach_ai_fails_the_confirmation_is_kept_and_try_again_shows(
+    settings, confirmed_id, monkeypatch
+):
+    from dataclasses import replace
+
+    cb.perform_action(settings, choice(0), None, discover_state(confirmed_id), 0)
+    no_ai = replace(settings, llm_provider="onprem", onprem_url="")  # the AI is not set up
+
+    result = cb.perform_action(no_ai, choice(0), None, discover_state(confirmed_id, 1), 1)
+
+    assert result[0] == 2  # redrawn
+    view = approach_flow.get_approach_view(settings, confirmed_id)
+    assert view.request.status == "DISCOVERY_CONFIRMED" and view.failed_first_call
+    assert view.buttons == [("start", "Try again")]
+    assert "Press Try again" in view.note
+
+
+def test_a_chained_step_that_raises_keeps_the_first_result_and_redraws(
+    settings, confirmed_id, monkeypatch
+):
+    from db_table_functions.db_tbl_da_approach import ApproachError
+
+    cb.perform_action(settings, choice(0), None, discover_state(confirmed_id), 0)
+
+    def broken(*args, **kwargs):
+        raise ApproachError("The planning service is busy.")
+
+    monkeypatch.setattr(cb.approach_flow, "start_approach", broken)
+
+    result = cb.perform_action(settings, choice(0), None, discover_state(confirmed_id, 1), 1)
+
+    assert result == (2, no_update, "The planning service is busy.")
+    assert discovery_view(settings, confirmed_id).request.status == "DISCOVERY_CONFIRMED"
+
+
+def test_the_start_button_for_a_request_never_started_is_still_there(settings, confirmed_id):
+    """A request saved before this change, parked after the confirmation, is not stuck."""
+    cb.perform_action(settings, choice(0), None, discover_state(confirmed_id), 0)
+    from agents import da_discover_flow as discover
+
+    view = discover.get_discovery_view(settings, confirmed_id)
+    discover.confirm_discovery(settings, confirmed_id, view.revision)  # no auto-start here
+
+    drawn = all_text(cb.show_page(f"?request={confirmed_id}", 0))
+    assert "Proceed to Approach" in drawn

@@ -15,6 +15,7 @@ from db_table_functions.db_tbl_da_requests import SINGAPORE_TIME
 from pydantic_classes.da_discovery_models import Finding, SearchHit
 from pydantic_classes.da_models import (
     STATUS_APPROACH_PROPOSED,
+    STATUS_BUILDING,
     STATUS_CLARIFICATION,
     STATUS_CONFIRMED,
     STATUS_DECISION_REQUIRED,
@@ -22,7 +23,9 @@ from pydantic_classes.da_models import (
     STATUS_DRAFT,
     STATUS_ESCALATION,
     STATUS_NO_MATCH,
+    STATUS_NOT_PASSING,
     STATUS_READY,
+    STATUS_READY_FOR_REVIEW,
     STATUS_READY_TO_BUILD,
     STATUS_SEARCHING,
     STATUS_SIMILAR_FOUND,
@@ -55,6 +58,9 @@ _PILL_COLOURS: dict[str, str] = {
     STATUS_ESCALATION: "red",
     STATUS_APPROACH_PROPOSED: "violet",
     STATUS_READY_TO_BUILD: "green",
+    STATUS_BUILDING: "blue",
+    STATUS_READY_FOR_REVIEW: "yellow",
+    STATUS_NOT_PASSING: "red",
 }
 
 FALLBACK_BANNER = "AI summary unavailable. Showing plain search results."

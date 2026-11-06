@@ -120,6 +120,8 @@ WRITE_PLAN_OPTION = "Write the test plan"
 ACCEPT_PLAN_OPTION = "Accept test plan"
 ADD_CASE_OPTION = "Add a test case"
 CHANGE_APPROACH_OPTION = "Change the approach"
+# At the test plan step it is a secondary button that goes back (Phase 6 fixes, F5).
+GO_BACK_OPTION = "Go back and change the approach"
 KEEP_CASE_OPTION = "Keep this case"
 DISCARD_CASE_OPTION = "Discard it"
 HELP_DECIDING_OPTION = "I need help deciding"
@@ -133,7 +135,6 @@ CHANGE_KEY = "change"
 HELP_KEY = "help"
 WRITE_PLAN_KEY = "write_plan"
 ACCEPT_PLAN_KEY = "accept_plan"
-ADD_CASE_KEY = "add_case"
 CHANGE_APPROACH_KEY = "change_approach"
 KEEP_KEY = "keep"
 DISCARD_KEY = "discard"
@@ -146,6 +147,18 @@ TEXT_PROMPTS: dict[str, str] = {
     "limit_reason": "Why are this many files needed? (10 to 300 characters)",
     "case_text": "Type your test case in plain words (up to 500 characters)",
 }
+# The text box is open at these steps and the Send button carries the action's name (Phase 6
+# fixes, section 2): typing and pressing Send means "Change something" or "Add a test case".
+TYPING_PROMPTS: dict[str, str] = {
+    "review": "Type what should change, then press Change something.",
+    "tests": "Type a test case in plain words, then press Add a test case.",
+}
+SEND_LABELS: dict[str, str] = {"review": "Change something", "tests": "Add a test case"}
+START_FAILED_NOTE = "The plan could not be made. Press Try again"
+START_LEGACY_NOTE = "Press Proceed to Approach to plan how it will be built"
+CASE_CAP_MESSAGE = (
+    f"You already added {MAX_DEVELOPER_CASES} test cases of your own. That is the limit."
+)
 CAP_MESSAGE = (
     f"You have used all {MAX_CHANGES} changes, so you can only accept the approach or get help."
 )
@@ -282,7 +295,8 @@ def submit_text(
     now: datetime | None = None,
 ) -> ApproachView:
     """Typed text. What it means depends on the step (rule G1): a custom design answer, a
-    change, the reason for more files than the limit, or a test case."""
+    change, the reason for more files than the limit, or a test case. At the review and tests
+    steps the text box is always open and Send is the action (Phase 6 fixes, section 2)."""
     now = now or datetime.now(UTC)
     snap = _snapshot(settings, request_id, base_revision)
     step = snap.state.step if snap.state else "start"
@@ -297,6 +311,14 @@ def submit_text(
         else:
             custom = typed not in pending.options
             _answer_choice(settings, snap, typed, custom, base_revision, generator, now)
+    elif step == "review":
+        # Typing + Send is "Change something" (Phase 6 fixes). At most 3 changes (rule G9).
+        if snap.state.change_count >= MAX_CHANGES:
+            raise ApproachError(CAP_MESSAGE)
+        _change(settings, snap, text, base_revision, generator, now)
+    elif step == "tests":
+        # Typing + Send is "Add a test case". At most 5 developer cases.
+        _draft_case(settings, snap, text, base_revision, tester, now)
     elif step == "change":
         _change(settings, snap, text, base_revision, generator, now)
     elif step == "limit_reason":
@@ -342,10 +364,12 @@ def accept_approach(
 def request_change(
     settings: Settings, request_id: str, base_revision: int, now: datetime | None = None
 ) -> ApproachView:
-    """Change something: opens the text box. At most 3 changes per request (rule G9)."""
+    """Change something at the too-many-files step, where typed text means "the reason", so the
+    button opens the change box. Everywhere else typing + Send is the change. At most 3 changes
+    per request (rule G9)."""
     now = now or datetime.now(UTC)
     snap = _snapshot(settings, request_id, base_revision)
-    _require_step(snap, "review", "limit_reason")
+    _require_step(snap, "limit_reason")
     if snap.state.change_count >= MAX_CHANGES:
         raise ApproachError(CAP_MESSAGE)
     _open_change_box(settings, request_id, base_revision, now, CHANGE_OPTION, False)
@@ -355,11 +379,12 @@ def request_change(
 def request_plan_change(
     settings: Settings, request_id: str, base_revision: int, now: datetime | None = None
 ) -> ApproachView:
-    """Change the approach (from the tests step, rule G4). It does not count toward the 3."""
+    """Go back and change the approach (from the tests step, rule G4). It does not count toward
+    the 3."""
     now = now or datetime.now(UTC)
     snap = _snapshot(settings, request_id, base_revision)
     _require_step(snap, "tests")
-    _open_change_box(settings, request_id, base_revision, now, CHANGE_APPROACH_OPTION, True)
+    _open_change_box(settings, request_id, base_revision, now, GO_BACK_OPTION, True)
     return get_approach_view(settings, request_id)
 
 
@@ -398,21 +423,6 @@ def write_test_plan_again(
     snap = _snapshot(settings, request_id, base_revision)
     _require_step(snap, "tests_pending")
     _run_tester(settings, request_id, base_revision, tester, now, say_button=WRITE_PLAN_OPTION)
-    return get_approach_view(settings, request_id)
-
-
-def request_case(
-    settings: Settings, request_id: str, base_revision: int, now: datetime | None = None
-) -> ApproachView:
-    """Add a test case: opens the text box. At most 5 developer cases per request."""
-    now = now or datetime.now(UTC)
-    snap = _snapshot(settings, request_id, base_revision)
-    _require_step(snap, "tests")
-    _require_case_room(snap)
-    with _turn(settings.db_path, request_id, base_revision, now) as turn:
-        turn.say("developer", ADD_CASE_OPTION)
-        turn.state.step = "case_text"
-        turn.say("assistant", TEXT_PROMPTS["case_text"] + ".")
     return get_approach_view(settings, request_id)
 
 
@@ -536,7 +546,7 @@ def get_approach_view(settings: Settings, request_id: str) -> ApproachView:
         revision = read_approach_revision(conn, request_id)
     file_limit = _policy(settings, request_id).max_files
     step: ApproachStep = state.step if state else "start"
-    buttons, prompt, note = _screen_for(step, state, failed, approach)
+    buttons, prompt, note = _screen_for(step, state, failed, approach, _developer_cases(plan))
     return ApproachView(
         request=request,
         record=record,
@@ -549,6 +559,7 @@ def get_approach_view(settings: Settings, request_id: str) -> ApproachView:
         gate=checks,
         buttons=buttons,
         text_prompt=prompt,
+        send_label=SEND_LABELS.get(step, "Send"),
         note=note,
         open_item=state.open_item if state else "",
         draft_case=state.draft_case if state else None,
@@ -605,7 +616,6 @@ def _answer_choice(
             {"question": pending.question, "choice": choice, "custom": custom},
         )
         if settled is None:
-            turn.say("assistant", "Noted as a confirmed decision.")
             turn.say("assistant", _ask_text(remaining[0]))
             return
         result, pinned = settled
@@ -911,15 +921,15 @@ def _wrong_step_message(snap: _Snap) -> str:
         "start": f"Please press {PROCEED_OPTION} first.",
         "choices": "A design choice is waiting. Please choose an option or type your own answer.",
         "review": (
-            f"Please choose one of the options: {ACCEPT_APPROACH_OPTION}, {CHANGE_OPTION}, or "
-            f"{HELP_BUTTON}."
+            f"Please choose {ACCEPT_APPROACH_OPTION} or {HELP_BUTTON}, or type what should "
+            f"change and press {CHANGE_OPTION}."
         ),
         "change": "Please type what should change first.",
         "limit_reason": "Please type the reason for the number of files first.",
         "tests_pending": f"Please press {WRITE_PLAN_OPTION}.",
         "tests": (
-            f"Please choose one of the options: {ACCEPT_PLAN_OPTION}, {ADD_CASE_OPTION}, "
-            f"{CHANGE_APPROACH_OPTION}, or {HELP_BUTTON}."
+            f"Please choose {ACCEPT_PLAN_OPTION}, {GO_BACK_OPTION} or {HELP_BUTTON}, or type a "
+            f"test case and press {ADD_CASE_OPTION}."
         ),
         "case_text": "Please type your test case first.",
         "case_check": f"Please choose {KEEP_CASE_OPTION} or {DISCARD_CASE_OPTION}.",
@@ -933,9 +943,7 @@ def _wrong_step_message(snap: _Snap) -> str:
 
 def _require_case_room(snap: _Snap) -> None:
     if _developer_cases(snap.plan) >= MAX_DEVELOPER_CASES:
-        raise ApproachError(
-            f"You already added {MAX_DEVELOPER_CASES} test cases of your own. That is the limit."
-        )
+        raise ApproachError(CASE_CAP_MESSAGE)
 
 
 def _developer_cases(plan: TestPlanVersion | None) -> int:
@@ -1068,15 +1076,24 @@ def _ask_text(choice) -> str:
 
 
 def _screen_for(
-    step: str, state: ApproachState | None, failed: bool, approach: ApproachVersion | None
+    step: str,
+    state: ApproachState | None,
+    failed: bool,
+    approach: ApproachVersion | None,
+    developer_cases: int = 0,
 ) -> tuple[list[tuple[str, str]], str, str]:
-    """The buttons, the text box prompt and a note for one step (spec section 1 table)."""
+    """The buttons, the text box prompt and a note for one step (spec section 1 table, and the
+    Phase 6 fixes section 2 table). A capped box has no prompt: it is shown disabled with the
+    cap message (the note)."""
     capped = state is not None and state.change_count >= MAX_CHANGES
     change = [] if capped else [(CHANGE_KEY, CHANGE_OPTION)]
     note = CAP_MESSAGE if capped and step in ("review", "limit_reason") else ""
     prompt = TEXT_PROMPTS.get(step, "")
     if step == "start":
-        return [(START_KEY, TRY_AGAIN_OPTION if failed else PROCEED_OPTION)], "", ""
+        if failed:
+            return [(START_KEY, TRY_AGAIN_OPTION)], "", START_FAILED_NOTE
+        # Only a request saved before Approach started by itself is ever here without a failure.
+        return [(START_KEY, PROCEED_OPTION)], "", START_LEGACY_NOTE
     if step == "choices":
         pending = state.pending_choices[0] if state and state.pending_choices else None
         if pending is None:
@@ -1084,19 +1101,26 @@ def _screen_for(
         buttons = [(CHOOSE_KEY, option) for option in pending.options]
         return [*buttons, (DECIDE_HELP_KEY, HELP_DECIDING_OPTION)], prompt, ""
     if step == "review":
-        return [(ACCEPT_KEY, ACCEPT_APPROACH_OPTION), *change, (HELP_KEY, HELP_BUTTON)], "", note
+        return (
+            [(ACCEPT_KEY, ACCEPT_APPROACH_OPTION), (HELP_KEY, HELP_BUTTON)],
+            "" if capped else TYPING_PROMPTS["review"],
+            note,
+        )
     if step == "limit_reason":
         return [*change, (HELP_KEY, HELP_BUTTON)], prompt, note
     if step == "tests_pending":
         return [(WRITE_PLAN_KEY, WRITE_PLAN_OPTION), (HELP_KEY, HELP_BUTTON)], "", ""
     if step == "tests":
-        return [
-            (ACCEPT_PLAN_KEY, ACCEPT_PLAN_OPTION),
-            (ADD_CASE_KEY, ADD_CASE_OPTION),
-            (CHANGE_APPROACH_KEY, CHANGE_APPROACH_OPTION),
-            (HELP_KEY, HELP_BUTTON),
-        ], "", ""
+        case_capped = developer_cases >= MAX_DEVELOPER_CASES
+        return (
+            [
+                (ACCEPT_PLAN_KEY, ACCEPT_PLAN_OPTION),
+                (CHANGE_APPROACH_KEY, GO_BACK_OPTION),
+                (HELP_KEY, HELP_BUTTON),
+            ],
+            "" if case_capped else TYPING_PROMPTS["tests"],
+            CASE_CAP_MESSAGE if case_capped else "",
+        )
     if step == "case_check":
         return [(KEEP_KEY, KEEP_CASE_OPTION), (DISCARD_KEY, DISCARD_CASE_OPTION)], "", ""
     return [], prompt, ""
-

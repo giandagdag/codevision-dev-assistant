@@ -38,7 +38,8 @@ def plans(settings, request_id):
 
 def add_case(settings, request_id, view, text="A workbook where every visible sheet is empty",
              tester=None):
-    view = flow.request_case(settings, request_id, view.revision)
+    """Typing in the open box and pressing Send ("Add a test case")."""
+    assert view.step == "tests" and view.send_label == "Add a test case"
     return flow.submit_text(
         settings, request_id, text, view.revision,
         tester=tester or ScriptedTesterClient("test_case"),
@@ -181,27 +182,29 @@ def test_4_23_a_sixth_developer_case_is_refused(settings, request_id):
         view = flow.keep_case(settings, request_id, view.revision)
     assert view.developer_case_count == 5
 
+    # The box is closed and says why; Send is refused with the same sentence.
+    cap = "You already added 5 test cases of your own. That is the limit."
+    assert view.text_prompt == "" and view.note == cap
     with pytest.raises(ApproachError) as refused:
-        flow.request_case(settings, request_id, view.revision)
+        flow.submit_text(settings, request_id, "A sixth case", view.revision)
 
-    assert str(refused.value) == "You already added 5 test cases of your own. That is the limit."
+    assert str(refused.value) == cap
     assert [c.test_id for c in view.plan.cases][-1] == "T-14"
 
 
 def test_a_failing_tester_call_for_a_case_saves_nothing(settings, request_id):
     view = at_tests(settings, request_id)
-    view = flow.request_case(settings, request_id, view.revision)
 
     with pytest.raises(ApproachError, match="Nothing was saved"):
         flow.submit_text(settings, request_id, "an empty sheet", view.revision,
                          tester=FailingClient("down"))
 
-    assert flow.get_approach_view(settings, request_id).step == "case_text"
+    after = flow.get_approach_view(settings, request_id)
+    assert after.step == "tests" and after.revision == view.revision
 
 
 def test_a_case_text_over_500_characters_is_refused(settings, request_id):
     view = at_tests(settings, request_id)
-    view = flow.request_case(settings, request_id, view.revision)
 
     with pytest.raises(ApproachError, match="under 500 characters"):
         flow.submit_text(settings, request_id, "x" * 501, view.revision)
@@ -242,8 +245,6 @@ def test_4_24_changing_the_approach_gives_a_new_plan_and_keeps_the_developers_ca
 def test_text_and_buttons_at_the_wrong_tests_step_are_refused(settings, request_id):
     view = at_tests(settings, request_id)
 
-    with pytest.raises(ApproachError, match="Please choose one of the options"):
-        flow.submit_text(settings, request_id, "hello", view.revision)
     with pytest.raises(ApproachError):
         flow.keep_case(settings, request_id, view.revision)
     with pytest.raises(ApproachError):
@@ -261,3 +262,35 @@ def test_5_28_get_help_is_offered_and_works_when_the_tester_stays_down(settings,
 
     assert view.request.status == "ESCALATION_REQUIRED" and view.step == "escalated"
     assert view.open_item == "Escalated in Approach: tests_pending"
+
+
+def test_the_tests_step_has_an_open_box_and_the_old_add_button_is_gone(settings, request_id):
+    """Phase 6 fixes, section 2 and F5."""
+    view = at_tests(settings, request_id)
+
+    assert [label for _, label in view.buttons] == [
+        "Accept test plan", "Go back and change the approach", "Get help"
+    ]
+    assert view.send_label == "Add a test case"
+    assert view.text_prompt == "Type a test case in plain words, then press Add a test case."
+    assert not hasattr(flow, "request_case")
+
+
+def test_empty_text_at_the_tests_step_does_nothing(settings, request_id):
+    view = at_tests(settings, request_id)
+
+    for blank in ("", "   "):
+        with pytest.raises(ApproachError):
+            flow.submit_text(settings, request_id, blank, view.revision)
+
+    after = flow.get_approach_view(settings, request_id)
+    assert after.revision == view.revision and after.draft_case is None
+    assert after.messages == view.messages
+
+
+def test_go_back_and_change_the_approach_says_its_own_name_in_the_chat(settings, request_id):
+    view = at_tests(settings, request_id)
+
+    view = flow.request_plan_change(settings, request_id, view.revision)
+
+    assert texts(view, "developer")[-1] == "Go back and change the approach"

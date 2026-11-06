@@ -28,6 +28,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from dotenv import dotenv_values  # noqa: E402
 
 from agents.da_approach_agent import TASK_MARKERS, ScriptedApproachClient  # noqa: E402
+from agents.da_build_agent import (  # noqa: E402
+    CODE_MARKER,
+    CONTRACT_MARKER,
+    TESTS_MARKER,
+    scripted_build_reply,
+)
 from agents.da_discover_agent import TASK_MARKER, ScriptedDiscoverClient  # noqa: E402
 from agents.da_tester_agent import (  # noqa: E402
     CASE_MARKER,
@@ -39,6 +45,7 @@ from agents.da_tester_agent import (  # noqa: E402
 from agents.da_understand_agent import FAKE_SCRIPT_FILE, ScriptedUnderstandClient  # noqa: E402
 from agents.da_understand_flow import (  # noqa: E402
     CORRECTION_QUESTION,
+    FORM_QUESTION,
     OPENING_QUESTION,
     OPTIONAL_QUESTION,
     QUESTIONS,
@@ -51,6 +58,7 @@ CHAT_PATH = "/v1/chat/completions"
 MODES = ("normal", "bad-json", "error")
 KEY_SETTING = "DA_FAKE_ONPREM_KEY"
 
+
 # The scripted entry for each question the engine can ask. Picking by the question in the
 # prompt (not by counting calls) keeps the server in step through retries and restarts.
 def _decision_questions() -> dict[str, str]:
@@ -62,6 +70,7 @@ def _decision_questions() -> dict[str, str]:
 
 SCRIPT_STEPS: dict[str, str] = {
     OPENING_QUESTION: "opening",
+    FORM_QUESTION: "form",
     **{text: f"question_{number}" for number, text in QUESTIONS.items()},
     OPTIONAL_QUESTION: "optional",
     CORRECTION_QUESTION: "correction",
@@ -79,23 +88,46 @@ NOT_JSON_REPLY = "Sorry, here is my answer in words and not in JSON."
 _APPROACH_CALLS = {marker: call for call, marker in TASK_MARKERS.items()}
 
 
+# Phase 6: the three Build calls (contract, tests, one code file), told apart by the task line each
+# prompt carries on a line of its own. The same scripted replies as the fake provider answer them,
+# so a build through the onprem connector follows the same path as the fake one.
+_BUILD_LINES = tuple(
+    re.compile(rf"^{re.escape(marker)}$", re.MULTILINE)
+    for marker in (CONTRACT_MARKER, TESTS_MARKER, CODE_MARKER)
+)
+
+
+def _build_reply(prompt: str, mode: str) -> str | None:
+    """The reply for a Build prompt, or None if the prompt is not one."""
+    if not any(line.search(prompt) for line in _BUILD_LINES):
+        return None
+    return NOT_JSON_REPLY if mode == "bad-json" else scripted_build_reply(prompt)
+
+
 def _approach_reply(prompt: str, mode: str) -> str | None:
     """The reply for an Approach or Tester prompt, or None if the prompt is neither."""
     for marker, call in _APPROACH_CALLS.items():
         if marker in prompt:
-            return NOT_JSON_REPLY if mode == "bad-json" else (
-                ScriptedApproachClient(call).complete(prompt).text
+            return (
+                NOT_JSON_REPLY
+                if mode == "bad-json"
+                else (ScriptedApproachClient(call).complete(prompt).text)
             )
     for marker, step in ((CASE_MARKER, CASE_STEP), (PLAN_MARKER, PLAN_STEP)):
         if marker in prompt:
-            return NOT_JSON_REPLY if mode == "bad-json" else (
-                ScriptedTesterClient(step).complete(prompt).text
+            return (
+                NOT_JSON_REPLY
+                if mode == "bad-json"
+                else (ScriptedTesterClient(step).complete(prompt).text)
             )
     return None
 
 
 def reply_text(prompt: str, mode: str) -> str:
     """The text the pretend model sends back for this prompt."""
+    build = _build_reply(prompt, mode)
+    if build is not None:
+        return build
     approach = _approach_reply(prompt, mode)
     if approach is not None:
         # bad-json is bad on every try here, as in Discover, so the failure paths can be seen.

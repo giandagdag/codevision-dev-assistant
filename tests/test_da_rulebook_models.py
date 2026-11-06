@@ -283,6 +283,65 @@ def test_a_rulebook_saved_before_phase_5_loads_with_the_starter_values(seed_rule
     assert loaded.policy.workspace_max_file_kb == 512
 
 
+# --- Phase 6 policy fields (spec section 11, row 6-31) ---
+
+PHASE_6_FIELDS = (
+    "build_max_rounds",
+    "build_test_timeout_seconds",
+    "build_max_prompt_chars",
+    "build_max_parallel",
+    "build_blocked_imports",
+    "build_sandbox_exclude",
+)
+
+
+def test_seed_has_the_phase_6_policy_values(seed_rulebook):
+    policy = seed_rulebook.policy
+
+    assert (policy.build_max_rounds, policy.build_test_timeout_seconds) == (3, 60)
+    assert (policy.build_max_prompt_chars, policy.build_max_parallel) == (60000, 2)
+    assert "requests" in policy.build_blocked_imports
+    assert ".env" in policy.build_sandbox_exclude
+
+
+def test_a_rulebook_saved_before_phase_6_loads_with_the_starter_values(seed_rulebook):
+    """Test 6-31."""
+    old = seed_rulebook.model_dump(mode="json")
+    for name in PHASE_6_FIELDS:
+        del old["policy"][name]
+
+    loaded = Rulebook.model_validate(old)
+
+    assert loaded.policy == seed_rulebook.policy
+
+
+def test_build_reuses_the_phase_4_lists_instead_of_new_copies(seed_rulebook):
+    """Decision D-M: no second protected-file or approved-library list exists."""
+    fields = set(type(seed_rulebook.policy).model_fields)
+
+    assert "build_protected_files" not in fields
+    assert "build_approved_libraries" not in fields
+
+
+@pytest.mark.parametrize(
+    ("name", "bad"),
+    [
+        ("build_max_rounds", 0),
+        ("build_max_rounds", 6),
+        ("build_test_timeout_seconds", 0),
+        ("build_test_timeout_seconds", 601),
+        ("build_max_prompt_chars", 999),
+        ("build_max_parallel", 0),
+    ],
+)
+def test_phase_6_numbers_outside_their_limits_are_refused(seed_rulebook, name, bad):
+    data = seed_rulebook.model_dump(mode="json")
+    data["policy"][name] = bad
+
+    with pytest.raises(ValidationError):
+        Rulebook.model_validate(data)
+
+
 def test_a_rulebook_saved_before_phase_4_loads_with_the_starter_values(seed_rulebook):
     old = seed_rulebook.model_dump(mode="json")
     for name in (
@@ -306,4 +365,38 @@ def test_a_broken_file_name_pattern_is_refused(seed_rulebook):
     data["policy"]["new_file_name_pattern"] = "([unclosed"
 
     with pytest.raises(ValidationError, match="regular expression"):
+        Rulebook.model_validate(data)
+
+
+# --- Phase 6 fixes batch, item U6: the AI question limit lives in the policy ---
+
+
+def test_seed_has_the_ai_question_limit(seed_rulebook):
+    assert seed_rulebook.policy.max_material_decisions == 5
+
+
+def test_a_rulebook_saved_before_the_limit_existed_loads_with_5(seed_rulebook):
+    old = seed_rulebook.model_dump(mode="json")
+    del old["policy"]["max_material_decisions"]
+
+    loaded = Rulebook.model_validate(old)
+
+    assert loaded.policy.max_material_decisions == 5
+    assert loaded.policy == seed_rulebook.policy
+
+
+@pytest.mark.parametrize("value", [1, 10])
+def test_ai_question_limit_accepts_1_to_10(seed_rulebook, value):
+    data = seed_rulebook.model_dump(mode="json")
+    data["policy"]["max_material_decisions"] = value
+
+    assert Rulebook.model_validate(data).policy.max_material_decisions == value
+
+
+@pytest.mark.parametrize("value", [0, 11, -1])
+def test_ai_question_limit_outside_1_to_10_is_refused(seed_rulebook, value):
+    data = seed_rulebook.model_dump(mode="json")
+    data["policy"]["max_material_decisions"] = value
+
+    with pytest.raises(ValidationError):
         Rulebook.model_validate(data)

@@ -1,4 +1,4 @@
-# Workspace: live test at work (Phase 5, questions Q8, Q11, Q12)
+# Workspace: live test at work (Phase 5, questions Q8, Q11, Q12; Phase 6 edits 3 and 6 Nov)
 
 Why: the cloud tests use a pretend folder picker. Only your real Chrome or Edge can prove the
 real one works on a work laptop. This takes about 10 minutes. PowerShell and the browser DevTools
@@ -18,8 +18,21 @@ mkdir C:\Dev\practice\src\web
 mkdir C:\Dev\practice\src\callbacks
 mkdir C:\Dev\practice\src\agents
 echo def validate(path): return True> C:\Dev\practice\src\agents\upload_validator.py
+type C:\Dev\practice\src\agents\upload_validator.py
 dir /s /b C:\Dev\practice
 ```
+
+The fourth line is the ONE line that creates `upload_validator.py`. Copy it exactly, with no space
+before the `>`.
+
+The `type` line shows what is inside the file. It must print exactly this one line:
+
+```
+def validate(path): return True
+```
+
+If `type` prints anything else, or says "The system cannot find the file", run the `echo` line
+again. The made-up plan edits this file, and it can only do that when the file looks like this.
 
 The last line lists what you made. You should see these five paths, in any order (the first four
 are folders, the last one is the file):
@@ -34,6 +47,20 @@ C:\Dev\practice\src\agents\upload_validator.py
 
 (`C:\Dev` is only an example. Any ordinary folder is fine. Chrome refuses some folders, for
 example your whole user folder or system folders; see Q12.)
+
+**Warning: a build writes into this practice folder.** After a build, `upload_validator.py` no
+longer holds the one line above and `src\agents\excel_processor.py` is new. Before you run another
+build, put the folder back. In Command Prompt:
+
+```
+del C:\Dev\practice\src\agents\excel_processor.py
+echo def validate(path): return True> C:\Dev\practice\src\agents\upload_validator.py
+type C:\Dev\practice\src\agents\upload_validator.py
+```
+
+(If `excel_processor.py` is not there, `del` says so. That is fine.) If you skip this, the made-up
+plan cannot edit the changed file, the code checks (Layer A) fail in every round, and the build
+ends "Not passing" without ever running the tests.
 
 ## Step 2: run the screen and reach READY TO BUILD
 
@@ -53,31 +80,26 @@ example your whole user folder or system folders; see Q12.)
    - How many prompts did you see?
    - Was **Allow on every visit** offered?
    - Did the browser refuse the folder?
-4. Expected: the chat says your folder passed the check and the tests folder was created. The
-   header chip shows the folder name and a tick (it has no buttons; the buttons are under the
-   chat). In Command Prompt, check that the app wrote only the tests folder:
+4. Expected: the chat says your folder passed the check. The header chip shows the folder name
+   and a tick (it has no buttons; the buttons are under the chat). Since Phase 6 the check
+   **writes nothing** to your folder. In Command Prompt, check there is no `tests` folder:
 
 ```
-dir /s /b C:\Dev\practice\tests
+dir /s /b C:\Dev\practice
 ```
 
-   You should see `C:\Dev\practice\tests\cvda_2026_0001\__init__.py` (the number is your request
-   number). Nothing else in the practice folder changes.
+   You should see only the five paths from step 1. If you did the Phase 5 test earlier and a
+   `tests` folder is there, delete it: `rmdir /s /q C:\Dev\practice\tests`.
 
 Optional, in Edge: open `edge://policy` and search for `FileSystem`. Write down anything that is
 set to blocked. (Skip this if the page does not open.)
 
-## Step 4: change a file and Re-scan
+## Step 4: there is no Re-scan button before Build
 
-1. In Command Prompt, add a line to the planned file:
-
-```
-echo # edited by me>> C:\Dev\practice\src\agents\upload_validator.py
-```
-
-2. In the app press **Re-scan** (a button under the chat). Expected: "1 file changed by you. It
-   will be checked when the build runs (Phase 6 onwards)." The Build tab shows the file as
-   "Changed by you".
+The buttons under the chat at **Ready to build** are **Change folder** and **Build** (and
+**Reconnect** when the browser needs your OK). There is no separate **Re-scan** button: **Build**
+re-scans your planned files by itself first. A Re-scan button after a build comes back in Phase 8
+(Refine). Do not edit the practice file now, or you must put it back (see the warning in step 1).
 
 ## Step 5: come back later
 
@@ -87,14 +109,14 @@ echo # edited by me>> C:\Dev\practice\src\agents\upload_validator.py
 
 ## Questions to answer
 
-- **Q8:** Did the folder window open in Chrome and in Edge? How many prompts? Was "Allow on every
-  visit" offered?
-- **Q11:** Where do CodeVision's own tests live? Does the top `tests\` folder have an
-  `__init__.py`? (`python -m unittest` only goes into folders that have one. If `tests\__init__.py`
-  is missing, our `tests\<id>\` tests will not be found from the top folder. That is a Phase 6
-  problem, found now.) To look, in Command Prompt: `dir C:\path\to\your\codevision\tests`.
-- **Q12:** Where do developers keep their clone? A folder like `C:\Dev\codevision` is fine.
-  Chrome refuses some folders.
+- **Q8: Answered (3 Nov).** The folder picker works in Chrome on the work laptop and "Allow on
+  every visit" is offered.
+- **Q11: Decided (3 Nov).** CodeVision has no automated tests and no `tests\` folder. Tests run
+  only in the server sandbox and stay in the app (Phase 6). Nothing is written to your `tests\`.
+  If the Phase 5 test left a `tests\cvda_...\__init__.py` in your folder, delete it by hand.
+- **Q12: Answered (3 Nov).** Developers keep CodeVision on the C drive, usually
+  `Desktop\codevision`. Chrome allows folders inside the Desktop, but not the Desktop itself.
+  Pick your codevision folder, for example `Desktop\codevision`.
 
 ## If something goes wrong
 

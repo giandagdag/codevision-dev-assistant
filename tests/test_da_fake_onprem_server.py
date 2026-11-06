@@ -8,8 +8,9 @@ import requests
 from agents import da_rejected_reply_log
 from agents import da_understand_agent as agent
 from agents.da_llm_client import LLMClientError, get_llm_client
-from agents.da_understand_flow import QUESTIONS, get_understand_view
-from tests.da_play import answer, start, to_confirmed
+from agents.da_understand_flow import get_understand_view
+from db_table_functions.db_tbl_da_understand import UnderstandError
+from tests.da_play import start, submit_form, to_confirmed
 from web.da_fake_onprem_server import (
     HOST,
     NOT_JSON_REPLY,
@@ -160,22 +161,22 @@ def test_bad_json_mode_still_confirms_and_fills_the_rejected_reply_log(
     assert NOT_JSON_REPLY in text
     assert "provider onprem" in text and "model fake-qwen" in text
     assert "attempt 1" in text and "attempt 2" not in text  # the engine's retry worked every time
-    # one per turn: the opening message, questions 1 to 4, and the decision after question 4
-    assert text.count("=== 20") == 6
+    # one per turn: the form (one call for all 4 answers) and the decision after it
+    assert text.count("=== 20") == 2
 
 
-def test_error_mode_shows_the_plain_message_in_the_chat(
+def test_error_mode_shows_the_plain_message_and_keeps_the_form(
     make_settings, published_rulebook, sleeps
 ):
     with running_fake_onprem_server("error") as server:
         settings = settings_for(make_settings, server)
-        view = start(settings)  # the request is still created; question 1 has no hint
-        after = answer(settings, view, "Users keep asking to upload Excel files")
+        view = start(settings)  # the request is still created, and the form is shown
+        with pytest.raises(UnderstandError, match="HTTP 500.*tried 3 times"):
+            submit_form(settings, view)
 
-    last = get_understand_view(settings, after.request.request_id).messages[-1].text
-    assert "HTTP 500" in last and "tried 3 times" in last
+    after = get_understand_view(settings, view.request.request_id)
+    assert after.input_mode == "form"  # nothing was lost, the developer presses Submit again
     assert after.request.status == "CLARIFICATION_IN_PROGRESS"
-    assert QUESTIONS[1] in after.messages[1].text  # question 1 was asked, without a hint
 
 
 # --- Discover (Phase 3, spec 3.9) ---
@@ -271,7 +272,6 @@ def test_4_29_a_full_approach_against_the_pretend_server_reaches_ready_to_build(
         view = flow.choose_design_option(settings, request_id, view.buttons[0][1], view.revision)
         view = flow.accept_approach(settings, request_id, view.revision)
         assert view.step == "tests" and len(view.plan.cases) == 9
-        view = flow.request_case(settings, request_id, view.revision)
         view = flow.submit_text(settings, request_id, "Every visible sheet empty", view.revision)
         view = flow.keep_case(settings, request_id, view.revision)
         view = flow.accept_test_plan(settings, request_id, view.revision)
@@ -316,3 +316,56 @@ def test_bad_json_from_the_tester_leaves_the_plan_to_be_written_again(
 
     assert view.step == "tests_pending" and view.plan is None
     assert view.buttons == [("write_plan", "Write the test plan"), ("help", "Get help")]
+
+
+def test_every_build_marker_gets_its_scripted_reply():
+    from agents.da_build_agent import CODE_MARKER, CONTRACT_MARKER, TESTS_MARKER
+    from web.da_fake_onprem_server import reply_text
+
+    cases = "- T-1 (AC-1): given a workbook; expect it is read\n"
+    contract = json.loads(reply_text(f"{CONTRACT_MARKER}\n", "normal"))
+    tests = reply_text(f"{TESTS_MARKER}\n{cases}", "normal")
+    code = reply_text(
+        f"{CODE_MARKER}\nFile: src/agents/excel_processor.py\nAction: create\n", "normal"
+    )
+
+    assert [f["path"] for f in contract["files"]][0] == "src/agents/excel_processor.py"
+    assert "def test_t1_ac1_" in tests
+    assert "def read_sheets(workbook):" in code
+    assert reply_text(f"{CONTRACT_MARKER}\n", "bad-json") == NOT_JSON_REPLY
+
+
+def test_6_33_a_full_build_against_the_pretend_server_reaches_ready_for_review(
+    make_settings, published_rulebook
+):
+    """Row 6-33: the same build as the fake provider, but through the onprem connector."""
+    from agents import da_approach_flow as approach
+    from agents import da_build_flow as build
+    from agents import da_build_loop as loop
+    from agents.da_build_loop import FIXTURE_REFERENCE
+    from tests.da_workspace_play import good_folder, pick
+
+    with running_fake_onprem_server() as server:
+        # Only the fake provider falls back to the made-up reference folder; onprem needs the
+        # setting (DA_SANDBOX_SOURCE_DIR), exactly as at work.
+        settings = settings_for(make_settings, server, sandbox_source_dir=FIXTURE_REFERENCE)
+        request_id = _confirmed_discovery(settings)
+        view = approach.start_approach(settings, request_id, 0)
+        view = approach.choose_design_option(
+            settings, request_id, view.buttons[0][1], view.revision
+        )
+        view = approach.accept_approach(settings, request_id, view.revision)
+        view = approach.accept_test_plan(settings, request_id, view.revision)
+        assert view.request.status == "READY_TO_BUILD"
+        pick(settings, request_id, good_folder())
+        build.start_build(settings, request_id, 0)
+        outcome = loop.run_build(settings, request_id)
+        prompts = [item["body"]["messages"][-1]["content"] for item in server.seen]
+
+    assert outcome == "done"
+    state = build.get_state(settings, request_id)
+    assert state.step == "b_done" and state.current_round == 2
+    assert build.get_build_view(settings, request_id).request_status == "READY_FOR_REVIEW"
+    assert sum("Task: write one file" in p for p in prompts) == 3  # one AI call per file
+    assert sum("Task: write the tests" in p for p in prompts) == 1
+    assert not da_rejected_reply_log.LOG_FILE.exists()

@@ -10,13 +10,11 @@ from agents.da_workspace_checks import (
     edit_guard_allows,
     fingerprint,
     path_problem,
-    tests_folder,
 )
 from pydantic_classes.da_workspace_models import (
     ABSENT,
     FileFact,
     FolderFacts,
-    TestsFileFact,
     WriteJob,
     WriteReport,
     WriteStop,
@@ -64,8 +62,6 @@ class FakeBrowserFolder:
             looks_like_src=looks_like_src and not any(marker_state.values()),
             has_git=self.git,
             files=[self._file_fact(path, max_kb) for path in planned_paths],
-            tests_exists=self.folder_exists(tests_folder(request_id)),
-            tests_files=self._tests_facts(request_id),
         )
 
     def _file_fact(self, path: str, max_kb: int) -> FileFact:
@@ -81,48 +77,28 @@ class FakeBrowserFolder:
             path=path, exists=True, parent_exists=True, text=text, fingerprint=fingerprint(text)
         )
 
-    def _tests_facts(self, request_id: str) -> list[TestsFileFact]:
-        folder = tests_folder(request_id) + "/"
-        found = []
-        for path, text in sorted(self.files.items()):
-            if path.startswith(folder) and "/" not in path[len(folder) :]:
-                self.reads.append(path)
-                found.append(
-                    TestsFileFact(
-                        name=path[len(folder) :], text=text, fingerprint=fingerprint(text)
-                    )
-                )
-        return found
-
     # --- the write job (spec section 5) ---
 
     def run_job(self, job: WriteJob) -> WriteReport:
         allowed = {item.path for item in job.files}
         written: list[WrittenFile] = []
         for item in job.files:
-            reason = self._refusal(item.path, item.expected, allowed, job)
+            reason = self._refusal(item.path, item.expected, allowed)
             if reason:
                 stop = WriteStop(path=item.path, reason=reason)
                 return WriteReport(written=written, stopped=stop)
-            self._make_folders(item.path, job)
             self.files[item.path] = item.text
             back = self.files[item.path]
             written.append(WrittenFile(path=item.path, text=back, fingerprint=fingerprint(back)))
         return WriteReport(written=written)
 
-    def _refusal(self, path: str, expected: str, allowed: set[str], job: WriteJob) -> str:
+    def _refusal(self, path: str, expected: str, allowed: set[str]) -> str:
         if path not in allowed or path_problem(path):
             return f"{path} is not allowed."
         if not edit_guard_allows(self.files.get(path), expected):
             what = "already exists" if expected == ABSENT else "changed since last time"
             return f"{path} {what}. Re-scan first."
         parent = path.rsplit("/", 1)[0] if "/" in path else ""
-        if parent and not self.folder_exists(parent) and parent not in job.creatable_folders:
+        if parent and not self.folder_exists(parent):
             return f"The folder {parent} does not exist, and the app does not create it."
         return ""
-
-    def _make_folders(self, path: str, job: WriteJob) -> None:
-        parent = path.rsplit("/", 1)[0] if "/" in path else ""
-        for folder in job.creatable_folders:
-            if parent == folder or parent.startswith(folder + "/"):
-                self.extra_folders.add(folder)

@@ -71,7 +71,15 @@ def test_5_1_before_a_folder_the_chip_says_none_and_choose_is_active(settings, r
     assert state["workspace"] is True and state["revision"] == 0
 
 
-def test_a_blocked_folder_shows_the_blockers_the_chip_and_the_three_ways_out(settings, request_id):
+def planned_file_blocked_folder():
+    """B3: the plan changes a file this folder does not have (the plan, not the folder, is off)."""
+    folder = good_folder()
+    del folder.files[MODIFY]
+    folder.files["src/agents/other.py"] = "x\n"
+    return folder
+
+
+def test_a_wrong_folder_shows_the_blocker_the_chip_and_two_ways_out(settings, request_id):
     folder = good_folder()
     del folder.files["src/callbacks/da_calls.py"]
     pick(settings, request_id, folder)
@@ -80,6 +88,17 @@ def test_a_blocked_folder_shows_the_blockers_the_chip_and_the_three_ways_out(set
 
     assert "Not a CodeVision folder" in chip_text(tree)
     assert "B1:" in all_text(tree)
+    assert "This folder doesn't match the plan yet:" in all_text(tree)
+    assert button_labels(tree, panel.WS_BTN_TYPE) == ["Choose another folder"]
+    assert button_labels(tree, page.CHOICE_TYPE) == ["Get help"]  # F6: not the plan's fault
+
+
+def test_a_blocker_about_a_planned_file_shows_the_three_ways_out(settings, request_id):
+    pick(settings, request_id, planned_file_blocked_folder())
+
+    tree = draw(request_id)
+
+    assert "B3:" in all_text(tree)
     assert button_labels(tree, panel.WS_BTN_TYPE) == ["Choose another folder"]
     assert button_labels(tree, page.CHOICE_TYPE) == ["Change the approach", "Get help"]
 
@@ -93,9 +112,14 @@ def test_5_31_a_ready_workspace_has_a_status_only_chip_the_build_tab_and_the_app
 
     chip = chip_text(tree)
     assert "codevision" in chip and "✅" in chip
-    # P30: the chip is status only. Re-scan, Change and Reconnect are chat buttons, once each.
+    # P30: the chip is status only. Change folder and Reconnect are chat buttons, once each.
+    # F7: no manual Re-scan button; the Build button already re-scans by itself.
     assert [b for b in components(by_id(tree, "da-ws-chip"), "Button")] == []
-    assert sorted(button_labels(tree, panel.WS_BTN_TYPE)) == ["Change", "Re-scan", "Reconnect"]
+    assert sorted(button_labels(tree, panel.WS_BTN_TYPE)) == [
+        "Build",
+        "Change folder",
+        "Reconnect",
+    ]
     reconnect = by_id(tree, panel.ws_button_id("reconnect", "bar"))
     assert reconnect.style == {"display": "none"}  # the browser shows it only when it must
     assert by_id(tree, panel.WS_PERM_NEEDS_ID).style == {"display": "none"}
@@ -103,8 +127,11 @@ def test_5_31_a_ready_workspace_has_a_status_only_chip_the_build_tab_and_the_app
     text = all_text(by_id(tree, "da-ws-summary"))
     assert text.startswith("Workspace: codevision. Checked ") and text.endswith(".")
     table = all_text(by_id(tree, "da-ws-files"))
-    assert MODIFY in table and "Change" in table and "New" in table and "Created" in table
-    assert by_id(tree, "da-ws-build").disabled and by_id(tree, "da-ws-build-chat").disabled
+    assert MODIFY in table and "Change" in table and "New" in table
+    assert "Created" not in table and "tests/" not in table  # C1: no tests-folder row
+    # 6-1: Build is a real, enabled, browser-run button now (not the old disabled one).
+    build = by_id(tree, panel.ws_button_id("build", "bar"))
+    assert not getattr(build, "disabled", False) and build.children == "Build"
     assert "Checked: found in your workspace" in all_text(by_id(tree, "da-file-plan"))
 
 
@@ -153,7 +180,11 @@ def test_5_31_download_mode_at_ready_offers_zip_and_upload_in_the_bar_only(setti
     tree = draw(request_id)
 
     assert flow.get_workspace_view(settings, request_id).step == "ws_ready"
-    assert button_labels(tree, panel.WS_BTN_TYPE) == ["Download ZIP", "Upload folder to re-scan"]
+    assert button_labels(tree, panel.WS_BTN_TYPE) == [
+        "Download ZIP",
+        "Upload folder to re-scan",
+        "Build",  # in download mode the pre-build re-scan is the upload (JavaScript)
+    ]
     assert components(by_id(tree, "da-ws-chip"), "Button") == []
     assert "Download mode" in chip_text(tree)
 
@@ -164,9 +195,8 @@ def test_5_31_the_build_tab_has_no_re_scan_button(settings, request_id):
 
     buttons_in_tab = components(panel.build_panel(view), "Button")
 
-    assert [getattr(b, "id", None) for b in buttons_in_tab] == ["da-ws-build"]  # disabled Build
-    assert buttons_in_tab[0].disabled is True
-    assert button_labels(draw(request_id), panel.WS_BTN_TYPE).count("Re-scan") == 1
+    assert buttons_in_tab == []  # the Build button is under the chat, once (P30)
+    assert "Re-scan" not in button_labels(draw(request_id), panel.WS_BTN_TYPE)  # F7
 
 
 def test_5_31_reconnect_is_drawn_only_at_ws_ready(settings, request_id):
@@ -194,9 +224,7 @@ def click(settings, tree, index):
 
 
 def test_get_help_and_change_the_approach_buttons_reach_the_workspace_flow(settings, request_id):
-    folder = good_folder()
-    del folder.files["src/callbacks/da_calls.py"]
-    pick(settings, request_id, folder)
+    pick(settings, request_id, planned_file_blocked_folder())
     tree = draw(request_id)
 
     click(settings, tree, 1)  # Get help
@@ -207,9 +235,7 @@ def test_get_help_and_change_the_approach_buttons_reach_the_workspace_flow(setti
 
 
 def test_change_the_approach_button_moves_the_request_back(settings, request_id):
-    folder = good_folder()
-    del folder.files["src/callbacks/da_calls.py"]
-    pick(settings, request_id, folder)
+    pick(settings, request_id, planned_file_blocked_folder())
 
     click(settings, draw(request_id), 0)
 
@@ -247,8 +273,7 @@ def test_the_whole_chain_with_the_pretend_folder_reaches_ws_ready(settings, requ
     refresh, job, pack, message = wcb.handle_workspace_event(settings, event, ctx, 5)
 
     assert refresh is no_update and pack is no_update and message == ""
-    assert [f["path"] for f in job["files"]] == ["tests/cvda_2026_0001/__init__.py"]
-    assert job["files"][0]["expected"] == "absent"
+    assert job["files"] == []  # the check writes nothing (C1)
     report = folder.run_job(flow.WriteJob.model_validate(
         {k: v for k, v in job.items() if k != "nonce"}
     )).model_dump(mode="json") | {"nonce": 2}
@@ -258,7 +283,8 @@ def test_the_whole_chain_with_the_pretend_folder_reaches_ws_ready(settings, requ
     assert (refresh, message) == (6, "")
     view = flow.get_workspace_view(settings, request_id)
     assert view.step == "ws_ready"
-    assert "Tests folder created" in " ".join(texts(view, "assistant"))
+    assert "passed the check" in " ".join(texts(view, "assistant"))
+    assert "Tests folder" not in " ".join(texts(view, "assistant"))
 
 
 def test_a_blocked_folder_ends_at_hop_two_with_a_refresh(settings, request_id):
@@ -305,7 +331,7 @@ def test_5_23_the_download_event_hands_the_browser_the_zip_pieces(settings, requ
     )
 
     assert refresh == 1 and job is None
-    assert [f["path"] for f in pack["files"]] == ["tests/cvda_2026_0001/__init__.py"]
+    assert pack["files"] == []  # C5: code files only, and a build has not made any yet
     assert pack["readme_name"] == "READ_ME_FIRST.txt" and "Unzip" in pack["readme"]
 
 
@@ -370,9 +396,9 @@ def test_register_attaches_the_workspace_hops():
     app = Dash(__name__, suppress_callback_exceptions=True)
     cb.register_da_developer_assistant_page_callbacks(app)
 
-    hops = app._callback_list[3:]
+    hops = app._callback_list[5:]  # after draw, action, enter-to-send, the build poll, the form
 
-    assert len(hops) == 7
+    assert len(hops) == 8
     click_hop = hops[0]
     assert click_hop["prevent_initial_call"] is True
     assert click_hop["clientside_function"]["function_name"]
@@ -416,3 +442,17 @@ def test_a_reconnected_event_only_redraws_and_adds_no_chat_line(settings, reques
 
     assert (refresh, job, message) == (5, None, "")
     assert len(flow.get_workspace_view(settings, request_id).messages) == before
+
+
+def test_6_32_a_different_folder_event_adds_the_wording_and_links_nothing(settings, request_id):
+    folder = good_folder()
+    view, _ = pick(settings, request_id, folder)
+    ctx = ctx_of(settings, request_id)
+
+    refresh, *_ = wcb.handle_workspace_event(
+        settings, {"kind": "different_folder", "nonce": 9, "name": "codevision"}, ctx, 0
+    )
+
+    after = flow.get_workspace_view(settings, request_id)
+    assert refresh == 1 and after.step == "ws_ready" and after.revision == view.revision
+    assert texts(after, "assistant")[-1].startswith("This is a different folder that is also")

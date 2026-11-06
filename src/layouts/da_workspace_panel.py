@@ -28,7 +28,6 @@ NOT_CODEVISION = "Not a CodeVision folder"
 RECONNECT_KEY = "reconnect"
 USE_KEY = "use_remembered"
 USE_LABEL = "Use remembered folder"
-BUILD_BUTTON = "Build (coming in Phase 6)"
 
 STATUS_OUTCOME_TEXT = {
     "Not written yet": "Not written yet",
@@ -37,28 +36,36 @@ STATUS_OUTCOME_TEXT = {
     "Missing": "Missing",
     "Created": "Created",
 }
-ACTION_TEXT = {"create": "New", "modify": "Change", "tests": "Tests"}
+ACTION_TEXT = {"create": "New", "modify": "Change"}
 
 
-def workspace_context(view: WorkspaceView) -> dict:
-    """What the browser script needs for a click: the plan's paths, the policy and the revision."""
-    return {
+def workspace_context(view: WorkspaceView, build=None) -> dict:
+    """What the browser script needs for a click: the plan's paths, the policy and the revision.
+    With a BuildView it also carries what the Build clicks and the automatic write need."""
+    context = {
         "request_id": view.request.request_id,
         "ws_revision": view.revision,
         "planned_paths": view.planned_paths,
         "markers": view.markers,
         "max_file_kb": view.max_file_kb,
-        "tests_folder": view.tests_folder,
         "step": view.step,
         "mode": view.mode,
         "folder_name": view.folder_name,
+        "build_revision": 0,
+        "build_step": "start",
+        "auto_write": False,
     }
+    if build is not None:
+        context["build_revision"] = build.revision
+        context["build_step"] = build.state.step
+        context["auto_write"] = build.auto_write
+    return context
 
 
-def workspace_stores(view: WorkspaceView) -> list:
+def workspace_stores(view: WorkspaceView, build=None) -> list:
     """The store that tells the browser script where the request stands (revision, plan paths).
     It is redrawn with the page, so it always holds the current values."""
-    return [dcc.Store(id=WS_CTX_ID, data=workspace_context(view))]
+    return [dcc.Store(id=WS_CTX_ID, data=workspace_context(view, build))]
 
 
 def workspace_hop_stores() -> list:
@@ -89,7 +96,7 @@ def _blocked_by_folder(check: CheckResult | None) -> bool:
 
 def workspace_chip(view: WorkspaceView) -> dmc.Group:
     """The header chip (spec section 3). It shows STATUS ONLY: the folder name and its state. It
-    has no buttons; Re-scan, Change and Reconnect are buttons under the chat (work test, P30)."""
+    has no buttons; Change folder and Reconnect are buttons under the chat (work test, P30)."""
     if view.mode == "download" and view.step in ("ws_fallback", "ws_ready", "ws_blocked"):
         return dmc.Group([dmc.Text("📁 Download mode", size="sm", fw=600)], gap=6, id="da-ws-chip")
     if not view.folder_name or view.step == "start":
@@ -113,7 +120,8 @@ def workspace_chip(view: WorkspaceView) -> dmc.Group:
 
 
 def build_panel(view: WorkspaceView) -> list:
-    """The Build tab (spec section 9): the workspace panel only, until Phase 6."""
+    """The Build tab before a build starts (spec section 9): the workspace panel. The Build button
+    is under the chat; once a build has started, da_build_panel draws the tab."""
     checked = _short_time(view.checked_at) if view.checked_at else "not yet"
     mode_note = " (download mode)" if view.mode == "download" else ""
     lines: list = [
@@ -128,7 +136,6 @@ def build_panel(view: WorkspaceView) -> list:
         lines += [dmc.Text(text, size="xs", c=da_styles.MUTED) for text in view.check.info]
     if view.last_scan is not None:
         lines.append(_scan_block(view))
-    lines.append(dmc.Button(BUILD_BUTTON, disabled=True, id="da-ws-build"))
     return [dmc.Stack(lines, gap="sm")]
 
 
@@ -165,7 +172,6 @@ def _scan_block(view: WorkspaceView) -> dmc.Box:
         "unchanged": "Unchanged",
         "changed": "Changed by you",
         "missing": "Missing",
-        "new_in_tests": "New in tests folder",
     }
     items = [
         dmc.Text(f"{labels[item.outcome]}: {item.path}", size="xs", ff="monospace")

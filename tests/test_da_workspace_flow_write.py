@@ -1,29 +1,26 @@
-"""Writing through the flow: the write job, the edit guard and the stale window
-(rows 5-11, 5-12, 5-13, 5-25)."""
+"""The write job, the edit guard and the stale window (rows 5-11, 5-12, 5-13, 5-25), plus the
+Phase 6 rules: the check writes nothing and the writer creates no folder (rows 6-35, 6-36)."""
 
 import pytest
 
+from agents import da_workspace_checks as checks
 from agents import da_workspace_flow as flow
 from agents.da_workspace_checks import ABSENT, fingerprint
 from db_table_functions.da_db import open_db
 from db_table_functions.db_tbl_da_understand import StaleRevisionError
-from db_table_functions.db_tbl_da_workspace import (
-    WorkspaceError,
-    read_file_versions,
-    read_workspace_revision,
-)
+from db_table_functions.db_tbl_da_workspace import WorkspaceError, read_workspace_revision
 from pydantic_classes.da_workspace_models import (
     JobFile,
     WriteJob,
     WriteReport,
     WrittenFile,
 )
-from tests.da_approach_play import event_types, events_of
+from tests.da_approach_play import event_types
 from tests.da_workspace_play import facts_of, good_folder, pick, ready_to_build_id, texts
 
 pytestmark = pytest.mark.usefixtures("published_rulebook")
 
-INIT = "tests/cvda_2026_0001/__init__.py"
+CODE = "src/web/da_page.py"  # a code file the good folder holds
 
 
 @pytest.fixture
@@ -41,7 +38,6 @@ def job_with(*items):
         request_id="CVDA-2026-0001",
         folder_name="codevision",
         files=[JobFile(path=p, text=t, expected=e) for p, t, e in items],
-        creatable_folders=["tests", "tests/cvda_2026_0001"],
     )
 
 
@@ -68,82 +64,85 @@ def test_5_11_the_server_refuses_a_report_that_names_a_path_outside_the_job(sett
     assert "workspace_written" not in event_types(settings, request_id)
 
 
-def test_5_12_an_edit_between_the_job_and_the_write_stops_the_job(settings, request_id):
+def test_6_35_a_good_folder_passes_with_no_file_written_and_no_tests_folder(settings, request_id):
     folder = good_folder()
-    view, _ = pick(settings, request_id, folder)  # the tests folder now exists
-    facts = facts_of(settings, request_id, folder)
-    job = flow.judge_facts(settings, request_id, facts, view.revision).job
-    folder.edit(INIT, "# the developer changed this\n")  # after the facts, before the write
+    before = dict(folder.files)
+
+    view, _ = pick(settings, request_id, folder)
+
+    assert view.step == "ws_ready"
+    assert folder.files == before  # nothing was written
+    assert not folder.folder_exists("tests")  # and no tests folder was made
+    said = " ".join(texts(view, "assistant"))
+    assert "passed the check" in said and "Tests folder" not in said
+    assert "workspace_written" not in event_types(settings, request_id)
+    assert "workspace_baseline_taken" in event_types(settings, request_id)
+
+
+def test_5_12_an_edit_between_the_facts_and_the_write_stops_the_job():
+    folder = good_folder(files={CODE: "original\n"})
+    job = job_with((CODE, "new text\n", fingerprint("original\n")))
+    folder.edit(CODE, "# the developer changed this\n")  # after the facts, before the write
+
     report = folder.run_job(job)
 
-    after = flow.save_check(settings, request_id, facts, report, view.revision)
-
     assert report.stopped is not None and report.written == []
-    stopped = events_of(settings, request_id, "workspace_write_stopped")
-    assert stopped[0].details["path"] == INIT
-    message = texts(after, "assistant")[-1]
-    assert "Written: none" in message and f"Not written: {INIT}" in message
-    assert folder.files[INIT] == "# the developer changed this\n"  # not overwritten
-    assert after.revision == view.revision + 1  # the stop still bumps it, so a replay is stale
-    with pytest.raises(StaleRevisionError):
-        flow.save_check(settings, request_id, facts, report, view.revision)
+    assert report.stopped.path == CODE and "Re-scan first" in report.stopped.reason
+    assert folder.files[CODE] == "# the developer changed this\n"  # not overwritten
+    message = checks.stop_message(job, report)
+    assert "Written: none" in message and f"Not written: {CODE}" in message
 
 
 def test_5_12_files_before_the_stop_stay_written_in_a_longer_job():
-    folder = good_folder()
-    folder.edit("src/web/b.py", "developer text\n")
+    folder = good_folder(files={"src/web/b.py": "developer text\n"})
     job = job_with(
-        ("tests/cvda_2026_0001/__init__.py", "# a\n", ABSENT),
+        ("src/web/a.py", "# a\n", ABSENT),
         ("src/web/b.py", "new text\n", fingerprint("original\n")),
-        ("tests/cvda_2026_0001/test_c.py", "# c\n", ABSENT),
+        ("src/web/c.py", "# c\n", ABSENT),
     )
 
     report = folder.run_job(job)
 
-    assert [item.path for item in report.written] == ["tests/cvda_2026_0001/__init__.py"]
+    assert [item.path for item in report.written] == ["src/web/a.py"]
     assert report.stopped.path == "src/web/b.py"
     assert "Re-scan first" in report.stopped.reason
     assert folder.files["src/web/b.py"] == "developer text\n"
-    assert "tests/cvda_2026_0001/test_c.py" not in folder.files
+    assert "src/web/c.py" not in folder.files
 
 
-def test_5_13_a_new_file_that_appeared_after_the_facts_stops_the_job(settings, request_id):
+def test_5_13_a_new_file_that_appeared_after_the_facts_stops_the_job():
     folder = good_folder()
-    facts = facts_of(settings, request_id, folder)
-    job = flow.judge_facts(settings, request_id, facts, 0).job
-    folder.edit(INIT, "")  # somebody created it in the meantime
+    job = job_with(("src/web/new_file.py", "x\n", ABSENT))
+    folder.edit("src/web/new_file.py", "")  # somebody created it in the meantime
 
     report = folder.run_job(job)
 
     assert report.stopped is not None and "already exists" in report.stopped.reason
-    assert folder.files[INIT] == ""
+    assert folder.files["src/web/new_file.py"] == ""
 
 
-def test_the_written_file_keeps_its_text_and_fingerprint_on_the_server(settings, request_id):
+def test_6_36_the_writer_creates_no_folder_a_missing_parent_is_refused():
     folder = good_folder()
-    pick(settings, request_id, folder)
+    job = job_with(("src/newfolder/x.py", "x\n", ABSENT))
 
-    with open_db(settings.db_path) as conn:
-        versions = read_file_versions(conn, request_id, INIT)
+    report = folder.run_job(job)
 
-    assert [(v.kind, v.mode) for v in versions] == [("written", "picker")]
-    assert versions[0].fingerprint == fingerprint(folder.files[INIT])
-    assert versions[0].text == folder.files[INIT]
+    assert report.written == [] and "does not exist, and the app does not create it" in (
+        report.stopped.reason
+    )
+    assert not folder.folder_exists("src/newfolder")
+    assert "src/newfolder/x.py" not in folder.files
 
 
-def test_the_job_keeps_the_line_ending_of_an_existing_file():
-    # Row 5-16 on the Python side: the browser is told to write the file's own style.
-    from agents.da_workspace_checks import build_write_job
-
-    job = build_write_job(
-        "CVDA-2026-0001", "codevision", [("src/a.py", "x = 2\n")],
-        {"src/a.py": (fingerprint("x = 1\r\n"), "\r\n")},
+def test_a_report_with_a_read_back_that_differs_from_what_was_sent_is_refused():
+    job = job_with((CODE, "sent\n", ABSENT))
+    other = "# something else entirely\n"
+    report = WriteReport(
+        written=[WrittenFile(path=CODE, text=other, fingerprint=fingerprint(other))]
     )
 
-    assert job.files[0].text == "x = 2\r\n"
-    folder = good_folder(files={"src/a.py": "x = 1\r\n"})
-    report = folder.run_job(job)
-    assert folder.files["src/a.py"] == "x = 2\r\n" and report.stopped is None
+    with pytest.raises(checks.FactsProblem, match="read back differently"):
+        checks.verify_report(job, report)
 
 
 def test_5_25_every_workspace_action_with_an_old_revision_is_refused(settings, request_id):
@@ -180,27 +179,11 @@ def test_a_workspace_action_before_ready_to_build_is_refused(make_settings):
         flow.picker_cancelled(settings, request_id, 0)
 
 
-def test_a_read_back_that_differs_from_what_was_sent_is_refused(settings, request_id):
-    folder = good_folder()
-    facts = facts_of(settings, request_id, folder)
-    job = flow.judge_facts(settings, request_id, facts, 0).job
-    other = "# something else entirely\n"
-    report = WriteReport(
-        written=[WrittenFile(path=job.files[0].path, text=other, fingerprint=fingerprint(other))]
-    )
-
-    with pytest.raises(WorkspaceError, match="read back differently"):
-        flow.save_check(settings, request_id, facts, report, 0)
-
-    assert flow.get_workspace_view(settings, request_id).revision == 0
-
-
-def test_a_developer_edit_to_the_tests_file_is_not_overwritten_by_a_recheck(settings, request_id):
+def test_a_second_check_on_the_same_folder_keeps_the_developers_edits(settings, request_id):
     folder = good_folder()
     view, _ = pick(settings, request_id, folder)
-    folder.edit(INIT, "# my own notes\n")  # same folder, edited after the app wrote it
+    folder.edit(CODE, "# my own notes\n")  # edited after the first check
 
     view, _ = pick(settings, request_id, folder, view.revision)
 
-    assert folder.files[INIT] == "# my own notes\n"
-    assert "Re-scan first" in texts(view, "assistant")[-1]
+    assert folder.files[CODE] == "# my own notes\n"  # a check never writes

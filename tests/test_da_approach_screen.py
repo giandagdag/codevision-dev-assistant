@@ -87,7 +87,10 @@ def test_the_approach_tab_shows_each_section_in_order(settings, request_id):
     )
     plan = all_text(by_id(tree, "da-file-plan"))
     assert "src/agents/excel_processor.py" in plan and "New" in plan and "Change" in plan
-    assert "tests/cvda_2026_0001/" in plan and "written by the Tester, frozen, in Phase 6" in plan
+    # 9a.3: since Q11 test files are never written to the workspace, so the Approach tab must not
+    # show a tests/<id>/ line.
+    assert "tests/cvda_2026_0001/" not in plan and "written by the Tester" not in plan
+    assert "Tests" not in [b.children for b in components(by_id(tree, "da-file-plan"), "Badge")]
     assert "2 code files, limit 5" in plan
     assert "Not found in Discover" in plan  # the modify path no hit has
     reuse = all_text(by_id(tree, "da-reuse"))
@@ -134,7 +137,6 @@ def test_4_31_a_negative_scenario_shows_the_asterisk_and_a_success_does_not(
 
 def test_a_kept_case_is_tagged_yours_and_a_draft_is_highlighted(settings, request_id):
     view = at_tests(settings, request_id)
-    view = flow.request_case(settings, request_id, view.revision)
     flow.submit_text(settings, request_id, "an empty sheet", view.revision)
 
     drafting = draw(settings, request_id)
@@ -159,8 +161,13 @@ def test_the_composer_opens_the_text_box_only_where_the_step_takes_text(settings
     view = flow.get_approach_view(settings, request_id)
     flow.choose_design_option(settings, request_id, "Existing upload screen", view.revision)
     tree = draw(settings, request_id)
-    assert by_id(tree, page.TEXT_ID).disabled is True
-    assert labels(tree) == ["Accept approach", "Change something", "Get help"]
+    # At review the box is open and Send says "Change something" (Phase 6 fixes, section 2).
+    assert by_id(tree, page.TEXT_ID).disabled is False
+    assert by_id(tree, page.TEXT_ID).placeholder == (
+        "Type what should change, then press Change something."
+    )
+    assert all_text(by_id(tree, page.SEND_ID)) == "Change something"
+    assert labels(tree) == ["Accept approach", "Get help"]
 
 
 def test_every_input_the_callbacks_name_exists_in_the_approach_workspace(settings, request_id):
@@ -186,9 +193,10 @@ def test_4_29_a_whole_request_runs_through_the_buttons_to_ready_to_build(setting
     tree = draw(settings, request_id)
     click(settings, tree, 0)                                         # Accept approach
     tree = draw(settings, request_id)
-    assert "Accept test plan" in labels(tree)
-    click(settings, tree, 1)                                         # Add a test case
-    tree = draw(settings, request_id)
+    assert labels(tree) == [
+        "Accept test plan", "Go back and change the approach", "Get help"
+    ]
+    assert all_text(by_id(tree, page.SEND_ID)) == "Add a test case"
     state = by_id(tree, page.STATE_ID).data
     cb.perform_action(settings, page.SEND_ID, "An empty sheet", state, 0)  # the typed case
     tree = draw(settings, request_id)
@@ -231,12 +239,83 @@ def test_a_button_index_with_nothing_behind_it_is_stale(settings, request_id):
 
 
 def test_typed_text_at_the_wrong_step_shows_a_plain_message(settings, request_id):
-    at_review(settings, request_id)
-    state = by_id(draw(settings, request_id), page.STATE_ID).data
+    state = by_id(draw(settings, request_id), page.STATE_ID).data  # before Proceed to Approach
 
     result = cb.perform_action(settings, page.SEND_ID, "hello", state, 0)
 
-    assert "Please choose one of the options" in result[2]
+    assert "Please press Proceed to Approach first" in result[2]
+
+
+def test_send_at_the_review_step_is_the_change(settings, request_id):
+    at_review(settings, request_id)
+    state = by_id(draw(settings, request_id), page.STATE_ID).data
+
+    result = cb.perform_action(settings, page.SEND_ID, "Also log skipped sheets", state, 0)
+
+    assert result == (1, no_update, "")
+    view = flow.get_approach_view(settings, request_id)
+    assert view.approach.approach_version == 3 and view.change_count == 1
+
+
+def test_empty_send_at_the_review_and_tests_steps_does_nothing(settings, request_id):
+    view = at_review(settings, request_id)
+    state = by_id(draw(settings, request_id), page.STATE_ID).data
+    assert cb.perform_action(settings, page.SEND_ID, "", state, 0)[2] == (
+        "Please type a message first."
+    )
+    flow.accept_approach(settings, request_id, view.revision)
+    state = by_id(draw(settings, request_id), page.STATE_ID).data
+    assert cb.perform_action(settings, page.SEND_ID, "  ", state, 0)[2] == (
+        "Please type a message first."
+    )
+    after = flow.get_approach_view(settings, request_id)
+    assert after.step == "tests" and after.draft_case is None
+
+
+def test_a_capped_review_box_is_disabled_and_shows_the_cap_message(settings, request_id):
+    from tests.da_approach_play import Tweaked
+
+    view = at_review(settings, request_id)
+    for number in range(3):
+        view = flow.submit_text(
+            settings, request_id, f"Change {number}", view.revision, generator=Tweaked("change")
+        )
+
+    tree = draw(settings, request_id)
+
+    assert by_id(tree, page.TEXT_ID).disabled is True
+    assert by_id(tree, page.TEXT_ID).placeholder == flow.CAP_MESSAGE
+    assert by_id(tree, page.SEND_ID).disabled is True
+
+
+def test_the_go_back_button_is_outlined_and_the_accept_buttons_are_the_main_ones(
+    settings, request_id
+):
+    at_tests(settings, request_id)
+    tree = draw(settings, request_id)
+    by_label = {all_text(b): b for b in buttons(tree)}
+
+    assert by_label["Accept test plan"].variant == "filled"
+    assert by_label["Go back and change the approach"].variant == "default"
+    assert by_label["Get help"].variant == "default"
+
+
+def test_design_choice_buttons_all_look_equal(settings, request_id):
+    proposed(settings, request_id)
+    tree = draw(settings, request_id)
+    choices = [b for b in buttons(tree) if all_text(b) != "I need help deciding"]
+
+    assert len(choices) >= 2
+    assert {b.variant for b in choices} == {"light"}  # none is filled just for being first
+
+
+def test_no_approach_chat_says_noted_as_a_confirmed_decision(settings, request_id):
+    view = proposed(settings, request_id)
+    flow.choose_design_option(settings, request_id, "Existing upload screen", view.revision)
+
+    messages = flow.get_approach_view(settings, request_id).messages
+
+    assert all("Noted as a confirmed decision." not in m.text for m in messages)
 
 
 def test_a_too_long_custom_answer_shows_the_300_character_message(settings, request_id):

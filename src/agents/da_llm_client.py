@@ -35,6 +35,11 @@ class LLMClientError(Exception):
     """The AI call itself failed. The message says what to check."""
 
 
+class ContextTooLargeError(LLMClientError):
+    """The AI server said the prompt is too large (HTTP 400). Trying again would not help, and
+    the Build treats it as "too big" and not as the code's fault (Phase 6, spec section 4)."""
+
+
 @dataclass(frozen=True)
 class LLMReply:
     text: str
@@ -178,7 +183,7 @@ class OnPremLLMClient:
             )
         if status == 400:
             # CodeVision treats 400 as "too much context"; trying again would not help.
-            raise LLMClientError(
+            raise ContextTooLargeError(
                 "The AI server refused the request as too large (HTTP 400). "
                 "The prompt or context is probably too long."
             )

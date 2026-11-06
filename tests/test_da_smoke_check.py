@@ -25,9 +25,20 @@ def test_fake_provider_prints_the_workspace_items_22_and_23(make_settings, capsy
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "22. CVDA-" in output and "workspace ready in folder codevision-copy" in output
-    assert "1 baselines taken, 1 tests file written (tests/cvda_" in output
+    assert "1 baselines taken, nothing written (tests stay in the app)" in output
     assert "23. Re-scan found 1 file changed by the developer" in output
     assert "(src/agents/upload_validator.py); the step stays ws_ready" in output
+
+
+def test_fake_provider_prints_the_build_items_24_and_25(make_settings, capsys):
+    exit_code = run_smoke_check(make_settings())
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "24. CVDA-" in output and "reached READY_FOR_REVIEW (Ready with warnings)" in output
+    assert "in 2 rounds" in output and "frozen tests passing" in output
+    assert "25. 2 code files written to the pretend folder (no tests folder)" in output
+    assert "the step is b_written" in output
 
 
 def test_fake_provider_prints_the_first_four_items(make_settings, capsys):
@@ -163,7 +174,7 @@ def test_fake_provider_prints_the_four_understand_items(make_settings, capsys):
         "Second run: Rulebook already published (active v1). Nothing changed."
     ) in output
     assert "10. Request CVDA-2026-0001 created (status CLARIFICATION_IN_PROGRESS)" in output
-    assert "- Question 4 answered: status DECISION_REQUIRED" in output
+    assert "- 4-box form submitted: status DECISION_REQUIRED" in output
     assert "(status DECISION_REQUIRED); chose \"Visible worksheets only\"" in output
     assert "(status CLARIFICATION_IN_PROGRESS)" in output
     assert (
@@ -171,7 +182,7 @@ def test_fake_provider_prints_the_four_understand_items(make_settings, capsys):
         "criteria; editing v1 was refused: "
         "Confirmed request records are append-only and cannot be edited."
     ) in output
-    assert "18. After question 1 the Summary shows only: objective, reason" in output
+    assert "18. Before Submit the Summary shows no form field; after it, all 12 at once" in output
 
 
 def test_understand_items_use_the_fake_script_whatever_the_provider(

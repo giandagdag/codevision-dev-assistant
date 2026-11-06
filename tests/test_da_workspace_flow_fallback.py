@@ -45,26 +45,25 @@ def test_the_fallback_use_is_audited_with_the_reason(settings, request_id, fallb
     }
 
 
-def test_5_23_download_zip_records_download_rows_and_builds_the_readme(
+def test_5_23_and_6_40_before_a_build_the_zip_holds_no_tests_folder_only_the_readme(
     settings, request_id, fallback, tmp_path
 ):
+    """Phase 6 (C5): the ZIP holds code files only. Before a build there are none yet."""
     package = flow.prepare_download(settings, request_id, fallback.revision)
 
-    assert [item.path for item in package.job.files] == [INIT]
+    assert package.job.files == []  # no tests/<id>/__init__.py any more
     assert "READ_ME" not in package.readme  # the name is the browser's; the text explains steps
-    assert "Unzip this file" in package.readme and INIT in package.readme
+    assert "Unzip this file" in package.readme and "tests" not in package.readme
     with open_db(settings.db_path) as conn:
-        versions = read_file_versions(conn, request_id, INIT)
-    assert [(v.kind, v.mode) for v in versions] == [("written", "download")]
-    # The browser builds the ZIP from these pieces; the same layout is checked in a real browser.
+        assert read_file_versions(conn, request_id, INIT) == []  # nothing recorded as written
     archive = tmp_path / "pack.zip"
     with zipfile.ZipFile(archive, "w") as zf:
         for item in package.job.files:
             zf.writestr(item.path, item.text)
         zf.writestr(flow.README_NAME, package.readme)
     with zipfile.ZipFile(archive) as zf:
-        assert sorted(zf.namelist()) == sorted([INIT, "READ_ME_FIRST.txt"])
-    assert "workspace_written" in event_types(settings, request_id)
+        assert zf.namelist() == ["READ_ME_FIRST.txt"]
+    assert "workspace_written" not in event_types(settings, request_id)
 
 
 def test_the_download_advice_is_said_only_once(settings, request_id, fallback):

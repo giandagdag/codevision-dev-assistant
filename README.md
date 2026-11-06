@@ -127,7 +127,8 @@ the conversation is kept in a work file between screens. A page reload loses not
     in the flow or expected behaviour, unless the developer typed them;
   - field lengths (title 80, text 1,000, lists 12 items of 300);
   - an item both in scope and out of scope becomes an open item;
-  - more than 5 decisions on one request means "get help from a senior". The request then
+  - more AI questions than the limit on one request (rulebook policy `max_material_decisions`,
+    starter 5, allowed 1 to 10) means "get help from a senior". The request then
     waits with no input allowed: the senior escalation inbox comes in Phase 8.
 - **Decisions and assumptions.** Something unclear that changes what gets built is always
   asked: the choices stay and the text box opens ("Other, type here", up to 300 characters),
@@ -187,8 +188,8 @@ thinks, Send shows a spinner and the text box cannot be used twice.
 - **Addresses.** `?new=1` is the blank workspace, `?request=CVDA-2026-0001` opens that request,
   nothing opens Home. Reload any of them and you get the same screen.
 - **Four composer modes.** Text box; busy (spinner while the interpreter works); locked choices
-  (text box off, buttons only, "I need help deciding" always last); done (confirmed, with the
-  disabled "Proceed to Discovery (coming in Phase 3)" button). When a senior is needed the box is
+  (text box off, buttons only, "I need help deciding" always last); done (confirmed; Discover
+  then starts by itself). A new request first shows the **4-box form** (see "Phase 6 fixes"). When a senior is needed the box is
   also locked and says why.
 - **Enter sends, Shift+Enter makes a new line.** A small browser script (a Dash clientside
   callback in the callbacks file) presses the Send button when you press plain Enter, so Enter
@@ -265,7 +266,7 @@ journaled file keyed to the request. Request record v1 is never touched.
 
 **The flow in 5 lines**
 
-1. Press **Proceed to Discovery** on a confirmed request. The app builds up to 6 searches from the
+1. Discovery starts by itself when you press **Proceed with this understanding**. The app builds up to 6 searches from the
    record (exact: title and references; meaning: objective and expected behaviour).
 2. The searches run on the index, our own safety filter drops anything deprecated, restricted or
    secret-looking, and the best 12 hits are numbered.
@@ -296,10 +297,10 @@ read are one group). It proves the pipeline; it is not real semantic search. `co
 placeholder that says "CodeVision search is not configured yet" until the work adapter (P15).
 
 **Try it at home.** Run the screen as usual with `DA_LLM_PROVIDER=fake`. Get a request to
-CONFIRMED FOR DISCOVERY (the scripted Excel example), press **Proceed to Discovery**, then try
+CONFIRMED FOR DISCOVERY (the scripted Excel example; Discovery starts by itself), then try
 **Something's missing** with a hint such as `batching helper`, then **Findings look right**.
 To see the fallback banner, start the pretend server with `--mode bad-json`, set
-`DA_LLM_PROVIDER=onprem` as in Phase 2C, and press Proceed to Discovery: both AI tries are bad,
+`DA_LLM_PROVIDER=onprem` as in Phase 2C, and press Proceed with this understanding: both AI tries are bad,
 so plain results show. (Unlike Understand, bad-json is bad on every Discover try.)
 
 **Stale windows.** Discover keeps its own revision number (`da_discovery_state`), so the Understand
@@ -322,14 +323,15 @@ create or change, what to reuse from Discover, design choices, libraries). The *
 the test plan from the acceptance criteria and never sees the file plan or any code. The app checks
 every reply with plain code; the AI suggests, the app decides, the developer approves.
 
-1. **Proceed to Approach** (one Generator call). The Approach tab shows the file plan, reuse
+1. **Findings look right** starts the approach by itself (one Generator call). The Approach tab shows the file plan, reuse
    decisions, libraries and warnings. If the plan has design choices, they are asked one at a time
    (buttons, **I need help deciding**, or type your own answer, 300 characters). After the last one,
    ONE more call settles the plan as a new version; the old version is kept.
-2. **Accept approach**, **Change something** (up to 3 per request) or **Get help**. More code files
+2. **Accept approach** or **Get help**; to change the plan, type what should change and press
+   **Change something** (up to 3 per request). More code files
    than the limit (5 in the starter rulebook) asks for a typed reason, which is audited.
-3. The Tester writes the **test plan**. **Add a test case** lets you type your own (up to 5); you
-   see a draft and press **Keep this case** or **Discard it**. **Change the approach** from here
+3. The Tester writes the **test plan**. Type a case and press **Add a test case** (up to 5); you
+   see a draft and press **Keep this case** or **Discard it**. **Go back and change the approach** from here
    makes a new approach and a new Tester plan; your own cases are kept.
 4. **Accept test plan** runs the **gate**: request confirmed, Discover done, approach confirmed,
    test plan accepted. All four true gives READY TO BUILD. The Build button stays disabled until
@@ -346,7 +348,7 @@ required reviewer at the pull request.
 Tester's model. Empty means the generator's model, until the bake-off decides.
 
 **Try it at home.** Run the screen with `DA_LLM_PROVIDER=fake`, take the scripted Excel example to
-DISCOVERY CONFIRMED and press **Proceed to Approach**. The fake plan always shows one warning, "Not
+DISCOVERY CONFIRMED (the approach starts by itself after **Findings look right**). The fake plan always shows one warning, "Not
 found in Discover", on purpose: it modifies a path that no Discover hit has. To see the failure
 paths, start the pretend server with `--mode bad-json` and set `DA_LLM_PROVIDER=onprem`: the
 first call fails twice and the button reads **Try again**. (Like Discover, bad-json is bad on every
@@ -365,8 +367,9 @@ on your laptop, checks that the file plan fits that folder, takes a fingerprint 
 file, and proves that writing and reading back works. Phase 6 then writes the real code through
 the same door. (AS400 comparison: the workspace is your own source library. The app may `ADDPFM`
 and `CHGPFM` only the members on the approved change form, nothing else in the library. A
-fingerprint is the member's last-changed stamp, but exact. **Re-scan** is `DSPFD` over those
-members to see which ones somebody touched.)
+fingerprint is the member's last-changed stamp, but exact. A re-scan is `DSPFD` over those
+members to see which ones somebody touched; **Build** does it by itself, and a Re-scan button
+after a build comes back in Phase 8.)
 
 **The key fact: the Python server cannot touch your laptop.** Only the browser can, and only after
 you pick the folder in the browser's own window and click Allow. So JavaScript in the page
@@ -381,14 +384,16 @@ the record. They talk in four hops, each a Dash callback:
 4. **Save** (server): ONE database save holds the state, the file rows, the audit events and the
    chat lines together.
 
-In Phase 5 the only real file written is `tests/<request id>/__init__.py`. The code files come in
-Phase 6. If the folder has a problem you get **Choose another folder**, **Change the approach**
-(back to APPROACH PROPOSED, counts as one of the 3 changes) or **Get help** (the workspace step
+(Phase 5 first wrote `tests/<request id>/__init__.py` to prove the write door works. **Phase 6
+removed that:** the check now writes nothing, and tests never go to your folder. See "How Phase 6
+works".) If the folder has a problem you get **Choose another folder**, **Change the approach**
+(only when the problem is a planned file, B3 to B6; back to APPROACH PROPOSED, counts as one of
+the 3 changes) or **Get help** (the workspace step
 stays `ws_blocked`; the open item reads `Escalated in Workspace: ws_blocked`).
 
 **Fallback.** If the browser has no folder picker, or you refuse it, **Download ZIP** gives you the
 files with a `READ_ME_FIRST.txt`, and **Upload folder to check** lets the app check your folder
-(only the planned files and the tests folder are read; the rest is never opened).
+(only the planned files are read; the rest is never opened).
 
 **Fingerprints** ignore the line-ending style and a leading byte-order mark (Windows editors flip
 those). The app keeps a file's own line-ending style when it changes it. The server recomputes
@@ -418,6 +423,92 @@ from the latest request version (N2).
 
 **Stale windows.** The workspace keeps its own revision number (`da_workspace_state`). A second
 window acting on an old view is refused with the usual "updated in another window" message.
+
+## How Phase 6 works
+
+Phase 6 is the **Build + test loop**: this is where code is finally written. (AS400 comparison: the
+whole build is a batch job you submit with `SBMJOB` and check later with `WRKSBMJOB`. The tests are
+a signed-off UAT script that the programmer may not edit. Layer A is the compile listing. Layer B
+is a job in its own subsystem with its own `QTEMP` and a maximum run time.)
+
+What happens when you press **Build** (after your workspace is ready):
+
+1. **Pre-build re-scan.** The page reads your planned files once more. If you changed one, your
+   text is the starting text (nothing is lost).
+2. **Contract.** The Generator (Qwen at work) writes only the public names and arguments of each
+   planned file. The Tester sees this, never any code.
+3. **Tests, then frozen.** The Tester turns the accepted test plan into `unittest` code, one test
+   per case, named like `test_t6_ac4_empty_sheets_rejected`. They are saved and never edited.
+4. **Code, one file per AI call.** A new file is written whole. An existing file gets edit blocks
+   (`<<<<<<< FIND` ... `=======` ... `>>>>>>> REPLACE`) that must each match exactly once.
+5. **Layer A** (plain Python, no AI): syntax, planned files only, protected files, allowed imports
+   (a blocked module always beats an approved library), risky calls, the agreed names.
+6. **Layer B** (the sandbox): the frozen tests run on the **server**, in a separate Python process,
+   in a temporary folder, with an empty environment (no keys) and a time limit (60 s, then the
+   whole process tree is ended). The folder is deleted afterwards.
+7. **Rounds.** One shared budget of 3. A failed round sends a plain failure report back and only
+   the failing files are fixed. The AI not answering, a prompt that is too big, or a restart
+   **never** uses a round: the build pauses and **Resume build** resumes it.
+8. **Result.** A pass is **Ready with warnings** (the warning says the independent Tester review,
+   Layer C, comes in Phase 7). The budget used up is **Not passing** (red). Never "Approved".
+9. **Write.** The page writes the code files by itself when the build is done and your folder is
+   allowed (otherwise press **Reconnect**). It is the Phase 5 write job: it creates **no** folders
+   and never overwrites a file you changed (the edit guard). **The tests are never written to your
+   folder.** CodeVision has no automated tests today, so you test the change by hand on your
+   laptop, as before; the tests and their results stay on the **Tests** tab.
+
+The build runs on a background thread in the server. The page asks for progress every 3 seconds;
+you can leave and come back (**My recent requests**). If the server restarts mid-build, the build
+is paused with "The server restarted during your build." and **Resume build** carries on without
+rewriting finished files. At most 2 builds run at once on one server; the others wait their turn.
+
+**Honest limits.** The sandbox is a separate process with a time limit and no secrets. It does
+**not** block the network at operating-system level and does **not** cap memory. Layer A's import
+and call rules are the guard. Question Q14 (d) asks the CodeVision team about more.
+
+**Six new rulebook policy fields** (older versions load with these starter values):
+`build_max_rounds` 3, `build_test_timeout_seconds` 60, `build_max_prompt_chars` 60000,
+`build_max_parallel` 2, `build_blocked_imports`, `build_sandbox_exclude`. The protected-file and
+approved-library lists are the **Phase 4 ones** (one list each, so Approach and Build agree).
+
+**Phase 6 fixes batch (work test, 6 Nov 2026).** Built on the same branch before the merge.
+Spec `specs/phase-6-fixes-2026-11-06.md`, plan `specs/phase-6-fixes-plan.md`.
+- **Understand asks the 4 questions as one form** (4 labelled boxes plus an optional 5th, one
+  **Submit**). One AI call reads the opening statement and all answers together; only then are
+  the AI's clarifying questions asked, one at a time. A box that fails shows its message under it
+  and keeps its text. The AI is told which decisions are made or queued, so it returns only new
+  questions. The limit of AI questions is `max_material_decisions` in the rulebook policy.
+  Requests saved in the middle of the old one-at-a-time questions finish the old way.
+- **Typing is the correct / change / add path.** At the Understand checkpoint (**Correct
+  something**), the Approach review (**Change something**) and the test plan (**Add a test
+  case**) the text box is open and the Send button carries the action's name.
+- **The next step starts by itself:** Discover after **Proceed with this understanding**,
+  Approach after **Findings look right**. **Try again** shows only if the started step fails.
+  **Build** is still pressed by the developer.
+- Design-choice buttons look equal; the Discovery tab says when the index is the made-up
+  practice index; the folder button is **Change folder**; there is no manual **Re-scan** before
+  Build; the final build line says when the tests never ran; the Tests tab says why no test has a
+  result; the chat badge follows the real write state; **Resume build** and **Cancel build**.
+
+**Setting.** `DA_SANDBOX_SOURCE_DIR` in `.env`: the CodeVision folder (the one holding `src`) the
+sandbox copies from. At home with `DA_LLM_PROVIDER=fake` leave it empty: the made-up folder under
+`tests/fixtures/da_reference_codevision/` is used.
+
+**Check it at home.**
+- Tests: `.venv\Scripts\python -m pytest`. The sandbox tests start real Python processes (no AI,
+  no internet). The real-browser tests are skipped on your laptop if Playwright is missing.
+- Smoke check items 24 and 25 run a whole build (fake provider, real sandbox, pretend folder).
+- By hand: run the screen on `http://127.0.0.1:8050` with `DA_LLM_PROVIDER=fake`, take a request
+  to **READY TO BUILD**, pick the practice folder from `docs/workspace-work-test.md`, press
+  **Build**, leave the page and come back, then look at the **Build** and **Tests** tabs. Check
+  that your folder got the code files and **no** `tests` folder.
+- At work: `docs/build-work-test.md` (questions Q14 and Q15, Command Prompt only).
+
+**Phase 5 changes made here (section 15.1 of the spec).** The workspace check no longer writes
+anything. The writer creates no folders. There is no tests-folder blocker (B7) and no "New in tests
+folder" re-scan result. The ZIP and the upload hold and send code files only. A different folder
+with the **same name** as the linked one is no longer silently accepted: pick it with **Change**
+to link it on purpose (P26).
 
 ## Notes for the move to CodeVision
 

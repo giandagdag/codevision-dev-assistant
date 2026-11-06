@@ -6,6 +6,7 @@ it; a bad reply is retried once with a note on what was wrong, then given up.
 
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -99,8 +100,13 @@ def build_prompt(
     record: RequestRecord,
     charter: Charter,
     rulebook_version: int,
+    decided: Sequence[str] = (),
+    queued: Sequence[str] = (),
 ) -> str:
-    """The prompt text. Only the charter's purpose, scope lists and glossary go in (rule R10)."""
+    """The prompt text. Only the charter's purpose, scope lists and glossary go in (rule R10).
+
+    decided and queued are the questions already decided and already waiting to be asked, so the
+    interpreter returns only NEW ones (Phase 6 fixes, U5)."""
     values = {
         "rulebook_version": str(rulebook_version),
         "purpose": charter.purpose,
@@ -108,6 +114,8 @@ def build_prompt(
         "out_of_scope": _bullets(charter.out_of_scope),
         "glossary": _bullets(f"{entry.term}: {entry.meaning}" for entry in charter.glossary),
         "record": record.model_dump_json(indent=2),
+        "decided": _bullets(decided),
+        "queued": _bullets(queued),
         "question": question,
         "answer": answer,
         "allowed_fields": ", ".join(INTERPRETER_FIELDS),
@@ -128,13 +136,15 @@ def interpret(
     charter: Charter,
     rulebook_version: int,
     developer_text: str,
+    decided: Sequence[str] = (),
+    queued: Sequence[str] = (),
 ) -> InterpretResult:
     """Ask the interpreter, check the reply, retry once with a note. The record is never changed.
 
     developer_text is everything the developer has typed on this request, used to tell names
     the developer gave from names the interpreter invented.
     """
-    prompt = build_prompt(question, answer, record, charter, rulebook_version)
+    prompt = build_prompt(question, answer, record, charter, rulebook_version, decided, queued)
     sent = prompt
     for attempt in range(1, MAX_ATTEMPTS + 1):
         llm_reply = client.complete(sent)

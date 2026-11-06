@@ -33,8 +33,8 @@ def request_id(settings):
 
 
 def change(settings, request_id, view, text="Please also log each skipped sheet"):
-    view = flow.request_change(settings, request_id, view.revision)
-    assert view.step == "change"
+    """Typing in the open box and pressing Send ("Change something")."""
+    assert view.step == "review" and view.send_label == "Change something"
     return flow.submit_text(
         settings, request_id, text, view.revision, generator=Tweaked("change")
     )
@@ -59,7 +59,6 @@ def test_4_16_change_something_saves_a_new_version_and_keeps_the_old_one(setting
 
 def test_the_typed_change_reaches_the_generator_between_lines(settings, request_id):
     view = at_review(settings, request_id)
-    view = flow.request_change(settings, request_id, view.revision)
     generator = Tweaked("change")
 
     flow.submit_text(settings, request_id, "Log skipped sheets", view.revision,
@@ -72,20 +71,20 @@ def test_the_typed_change_reaches_the_generator_between_lines(settings, request_
 def test_4_16_after_three_changes_the_button_is_gone_and_the_chat_says_why(settings, request_id):
     view = at_review(settings, request_id)
     for number in range(3):
-        assert ("change", "Change something") in view.buttons
+        assert view.text_prompt  # the box is open
         view = change(settings, request_id, view, f"Change number {number + 1}")
 
     assert view.change_count == 3
-    assert ("change", "Change something") not in view.buttons
     assert [label for _, label in view.buttons] == ["Accept approach", "Get help"]
+    # The box is closed and the cap message is what it shows.
+    assert view.text_prompt == ""
     assert view.note == CAP and texts(view, "assistant")[-1] == CAP
     with pytest.raises(ApproachError, match="used all 3 changes"):
-        flow.request_change(settings, request_id, view.revision)
+        flow.submit_text(settings, request_id, "A fourth change", view.revision)
 
 
 def test_a_change_text_over_1000_characters_is_refused(settings, request_id):
     view = at_review(settings, request_id)
-    view = flow.request_change(settings, request_id, view.revision)
 
     with pytest.raises(ApproachError, match="under 1,000 characters"):
         flow.submit_text(settings, request_id, "x" * 1001, view.revision)
@@ -95,19 +94,18 @@ def test_a_change_text_over_1000_characters_is_refused(settings, request_id):
 
 def test_a_failed_change_call_saves_nothing(settings, request_id):
     view = at_review(settings, request_id)
-    view = flow.request_change(settings, request_id, view.revision)
 
     with pytest.raises(ApproachError, match="Nothing was saved"):
         flow.submit_text(settings, request_id, "Do it", view.revision,
                          generator=StubClient("x", "x"))
 
     after = flow.get_approach_view(settings, request_id)
-    assert after.step == "change" and after.approach.approach_version == 2
+    assert after.step == "review" and after.approach.approach_version == 2
+    assert after.change_count == 0
 
 
 def test_a_change_reply_can_ask_a_new_design_choice(settings, request_id):
     view = at_review(settings, request_id)
-    view = flow.request_change(settings, request_id, view.revision)
     asks = Tweaked("change", lambda data: data["design_choices"].append({
         "question": "Which sheets are read?", "impact": "Hidden sheets",
         "options": ["Visible only", "All"],
@@ -119,11 +117,32 @@ def test_a_change_reply_can_ask_a_new_design_choice(settings, request_id):
     assert view.step == "choices" and view.approach.plan.design_choices
 
 
-def test_text_at_the_review_step_is_refused(settings, request_id):
+def test_the_review_step_has_an_open_box_and_no_change_button(settings, request_id):
+    """Phase 6 fixes, section 2: typing + Send is the change; the old button is gone."""
     view = at_review(settings, request_id)
 
-    with pytest.raises(ApproachError, match="Please choose one of the options"):
-        flow.submit_text(settings, request_id, "hello", view.revision)
+    assert [label for _, label in view.buttons] == ["Accept approach", "Get help"]
+    assert view.send_label == "Change something"
+    assert view.text_prompt == "Type what should change, then press Change something."
+
+
+def test_empty_text_at_the_review_step_does_nothing(settings, request_id):
+    view = at_review(settings, request_id)
+
+    for blank in ("", "   "):
+        with pytest.raises(ApproachError, match="Please type a message first"):
+            flow.submit_text(settings, request_id, blank, view.revision)
+
+    after = flow.get_approach_view(settings, request_id)
+    assert after.revision == view.revision and after.change_count == 0
+    assert after.messages == view.messages
+
+
+def test_the_old_change_button_is_refused_at_the_review_step(settings, request_id):
+    view = at_review(settings, request_id)
+
+    with pytest.raises(ApproachError, match="Change something"):
+        flow.request_change(settings, request_id, view.revision)
 
 
 def six_files(data):
