@@ -4,6 +4,7 @@ import pytest
 from dash import Dash, no_update
 from dash.exceptions import PreventUpdate
 
+from agents import da_approach_flow as approach_flow
 from agents import da_understand_flow as flow
 from callbacks.screen_callbacks import da_developer_assistant_page_callbacks as cb
 from db_table_functions.db_tbl_da_understand import STALE_MESSAGE
@@ -74,11 +75,12 @@ def test_the_whole_scripted_conversation_runs_through_the_buttons(settings):
     cb.perform_action(settings, choice(proceed), None, state_of(view), 2)
 
     view = flow.get_understand_view(settings, request_id)
-    assert view.request.status == "CONFIRMED_FOR_DISCOVERY"
+    # One click on Proceed also started Discover: the request is already at its results.
+    assert view.request.status == "SIMILAR_IMPLEMENTATION_FOUND"
     assert view.progress_text == "Confirmed and saved as version 1"
 
     home = all_text(cb.show_page("", 4))
-    assert request_id in home and "CONFIRMED FOR DISCOVERY" in home
+    assert request_id in home and "SIMILAR IMPLEMENTATION FOUND" in home
 
 
 def test_show_page_draws_home_new_and_one_request(settings):
@@ -315,7 +317,7 @@ def test_a_confirmed_request_is_drawn_as_the_discover_workspace(settings, confir
 
     text = all_text(tree)
     assert by_id(tree, page.STATE_ID).data["discover"] is True
-    assert page.PROCEED_DISCOVERY_OPTION in text
+    assert page.TRY_DISCOVERY_OPTION in text  # Discover did not start by itself: Try again
     assert "CONFIRMED FOR DISCOVERY" in text
 
 
@@ -369,16 +371,19 @@ def test_a_hint_with_a_secret_shows_a_plain_message_and_writes_nothing(settings,
     assert discovery_view(settings, confirmed_id).rounds_used == 1
 
 
-def test_confirm_button_calls_the_flow(settings, confirmed_id):
+def test_confirm_button_confirms_and_approach_starts_by_itself(settings, confirmed_id):
     cb.perform_action(
         settings, choice(0), None, discover_state(confirmed_id), 0
     )
 
-    cb.perform_action(
+    result = cb.perform_action(
         settings, choice(0), None, discover_state(confirmed_id, 1), 1
     )
 
-    assert discovery_view(settings, confirmed_id).request.status == "DISCOVERY_CONFIRMED"
+    assert result == (2, no_update, "")
+    view = approach_flow.get_approach_view(settings, confirmed_id)
+    assert view.request.status == "APPROACH_PROPOSED" and view.approach.approach_version == 1
+    assert "discovery_confirmed" in event_names(settings, confirmed_id)
 
 
 def test_escalate_button_calls_the_flow(settings, confirmed_id):
@@ -527,3 +532,112 @@ def test_register_attaches_the_form_callback_with_pattern_ids():
     assert page.FORM_BOX_TYPE in str(form[0]["state"])
     assert page.FORM_ERROR_TYPE in str(form[0]["output"])
     assert form[0]["prevent_initial_call"] is True
+
+
+# --- the next step starts by itself (Phase 6 fixes, section 3) ---
+
+
+def event_names(settings, request_id):
+    from db_table_functions.db_tbl_da_audit import list_audit_events
+
+    return [e.event_type for e in list_audit_events(settings.db_path, request_id)]
+
+
+def at_checkpoint_state(settings):
+    view = da_play.to_checkpoint(settings)
+    return view, state_of(view)
+
+
+def test_one_click_on_proceed_goes_from_the_checkpoint_to_the_discover_results(settings):
+    view, state = at_checkpoint_state(settings)
+    proceed = view.choices.index(flow.PROCEED_OPTION)
+
+    result = cb.perform_action(settings, choice(proceed), None, state, 0)
+
+    assert result == (1, no_update, "")
+    found = discovery_view(settings, view.request.request_id)
+    assert found.request.status == "SIMILAR_IMPLEMENTATION_FOUND" and found.result.round == 1
+    texts = [m.text for m in found.messages]
+    assert not any("Press Proceed to Discovery" in t for t in texts)
+    drawn = all_text(cb.show_page(f"?request={view.request.request_id}", 1))
+    assert "Round 1 of 3" in drawn and "Proceed to Discovery" not in drawn
+
+
+def test_one_click_on_findings_look_right_goes_to_the_approach(settings, confirmed_id):
+    cb.perform_action(settings, choice(0), None, discover_state(confirmed_id), 0)
+
+    cb.perform_action(settings, choice(0), None, discover_state(confirmed_id, 1), 1)
+
+    view = approach_flow.get_approach_view(settings, confirmed_id)
+    assert view.request.status == "APPROACH_PROPOSED"
+    assert view.step in ("choices", "review")
+    texts = [m.text for m in view.messages]
+    assert not any("Press Proceed to Approach" in t for t in texts)
+    assert not any("Proceed to Approach" in b[1] for b in view.buttons)
+
+
+def test_if_discover_cannot_start_the_confirmation_is_kept_and_try_again_shows(
+    make_settings, published_rulebook, monkeypatch
+):
+    work = make_settings(search_provider="codevision")  # the real index is not set up here
+    monkeypatch.setattr(cb, "get_settings", lambda: work)
+    view = da_play.to_checkpoint(work)
+    proceed = view.choices.index(flow.PROCEED_OPTION)
+
+    refresh, search, message = cb.perform_action(
+        work, choice(proceed), None, state_of(view), 0
+    )
+
+    # The redraw still happens and the plain message shows; the confirmation is saved.
+    assert (refresh, search) == (1, no_update) and message != ""
+    request_id = view.request.request_id
+    assert flow.get_understand_view(work, request_id).request.status == "CONFIRMED_FOR_DISCOVERY"
+    drawn = all_text(cb.show_page(f"?request={request_id}", 1))
+    assert page.TRY_DISCOVERY_OPTION in drawn and "Discovery did not start" in drawn
+
+
+def test_if_the_approach_ai_fails_the_confirmation_is_kept_and_try_again_shows(
+    settings, confirmed_id, monkeypatch
+):
+    from dataclasses import replace
+
+    cb.perform_action(settings, choice(0), None, discover_state(confirmed_id), 0)
+    no_ai = replace(settings, llm_provider="onprem", onprem_url="")  # the AI is not set up
+
+    result = cb.perform_action(no_ai, choice(0), None, discover_state(confirmed_id, 1), 1)
+
+    assert result[0] == 2  # redrawn
+    view = approach_flow.get_approach_view(settings, confirmed_id)
+    assert view.request.status == "DISCOVERY_CONFIRMED" and view.failed_first_call
+    assert view.buttons == [("start", "Try again")]
+    assert "Press Try again" in view.note
+
+
+def test_a_chained_step_that_raises_keeps_the_first_result_and_redraws(
+    settings, confirmed_id, monkeypatch
+):
+    from db_table_functions.db_tbl_da_approach import ApproachError
+
+    cb.perform_action(settings, choice(0), None, discover_state(confirmed_id), 0)
+
+    def broken(*args, **kwargs):
+        raise ApproachError("The planning service is busy.")
+
+    monkeypatch.setattr(cb.approach_flow, "start_approach", broken)
+
+    result = cb.perform_action(settings, choice(0), None, discover_state(confirmed_id, 1), 1)
+
+    assert result == (2, no_update, "The planning service is busy.")
+    assert discovery_view(settings, confirmed_id).request.status == "DISCOVERY_CONFIRMED"
+
+
+def test_the_start_button_for_a_request_never_started_is_still_there(settings, confirmed_id):
+    """A request saved before this change, parked after the confirmation, is not stuck."""
+    cb.perform_action(settings, choice(0), None, discover_state(confirmed_id), 0)
+    from agents import da_discover_flow as discover
+
+    view = discover.get_discovery_view(settings, confirmed_id)
+    discover.confirm_discovery(settings, confirmed_id, view.revision)  # no auto-start here
+
+    drawn = all_text(cb.show_page(f"?request={confirmed_id}", 0))
+    assert "Proceed to Approach" in drawn

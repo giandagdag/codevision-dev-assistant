@@ -154,6 +154,8 @@ TYPING_PROMPTS: dict[str, str] = {
     "tests": "Type a test case in plain words, then press Add a test case.",
 }
 SEND_LABELS: dict[str, str] = {"review": "Change something", "tests": "Add a test case"}
+START_FAILED_NOTE = "The plan could not be made. Press Try again"
+START_LEGACY_NOTE = "Press Proceed to Approach to plan how it will be built"
 CASE_CAP_MESSAGE = (
     f"You already added {MAX_DEVELOPER_CASES} test cases of your own. That is the limit."
 )
@@ -1088,7 +1090,10 @@ def _screen_for(
     note = CAP_MESSAGE if capped and step in ("review", "limit_reason") else ""
     prompt = TEXT_PROMPTS.get(step, "")
     if step == "start":
-        return [(START_KEY, TRY_AGAIN_OPTION if failed else PROCEED_OPTION)], "", ""
+        if failed:
+            return [(START_KEY, TRY_AGAIN_OPTION)], "", START_FAILED_NOTE
+        # Only a request saved before Approach started by itself is ever here without a failure.
+        return [(START_KEY, PROCEED_OPTION)], "", START_LEGACY_NOTE
     if step == "choices":
         pending = state.pending_choices[0] if state and state.pending_choices else None
         if pending is None:

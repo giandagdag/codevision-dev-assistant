@@ -290,7 +290,7 @@ def test_stepper_is_on_discover_and_the_discovery_tab_opens_after_a_round(settin
     assert tab(tree, "discovery").disabled is False and tab(tree, "summary").disabled is False
     tabs = components(tree, "Tabs")[0]
     assert tabs.value == "discovery"
-    assert page.BUSY_TEXT in all_text(tree)
+    assert page.APPROACH_BUSY_TEXT in all_text(tree)  # Findings look right also starts Approach
 
 
 def test_discovery_tab_shows_input_search_rows_outcome_findings_limitations_and_round(settings):

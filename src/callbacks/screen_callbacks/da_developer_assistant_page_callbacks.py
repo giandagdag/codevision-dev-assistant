@@ -76,6 +76,7 @@ from pydantic_classes.da_models import (
     STATUS_APPROACH_PROPOSED,
     STATUS_BUILDING,
     STATUS_CLARIFICATION,
+    STATUS_CONFIRMED,
     STATUS_DECISION_REQUIRED,
     STATUS_DISCOVERY_CONFIRMED,
     STATUS_DRAFT,
@@ -207,6 +208,7 @@ def perform_action(settings: Settings, trigger, text, state, refresh):
     """
     state = state or {}
     request_id, revision = state.get("request_id"), state.get("revision")
+    message = ""  # a problem of the step that started by itself, shown under the chat
     try:
         if trigger == SEND_ID and request_id is None:
             view = create_understand_request(settings, text or "")
@@ -226,16 +228,41 @@ def perform_action(settings: Settings, trigger, text, state, refresh):
             skip_optional(settings, request_id, revision)
         elif _is_choice(trigger) and state.get("discover"):
             key = _discover_key_at(settings, request_id, revision, trigger["index"])
-            _discover_choice(settings, request_id, key, revision)
+            message = _discover_choice(settings, request_id, key, revision)
         elif _is_choice(trigger):
             option = _option_at(settings, request_id, revision, trigger["index"])
-            choose_option(settings, request_id, option, revision)
+            view = choose_option(settings, request_id, option, revision)
+            if view.request.status == STATUS_CONFIRMED:
+                # Proceed worked: Discover starts by itself (Phase 6 fixes, section 3).
+                message = _start_by_itself(lambda: _start_discovery_now(settings, request_id))
         else:
             raise PreventUpdate
     except SHOWN_ERRORS as error:
         # Nothing was written. The text stays in the box so the developer can fix it.
         return no_update, no_update, str(error)
-    return (refresh or 0) + 1, no_update, ""
+    return (refresh or 0) + 1, no_update, message
+
+
+def _start_by_itself(step) -> str:
+    """Run the next step right after the one the developer clicked, which is already saved.
+
+    If it fails, its own screen offers "Try again", so the page is redrawn and the plain message
+    shows under the chat. Returns that message, or "" when all went well."""
+    try:
+        step()
+    except SHOWN_ERRORS as error:
+        return str(error)
+    return ""
+
+
+def _start_discovery_now(settings: Settings, request_id: str) -> None:
+    start_discovery(settings, request_id, get_discovery_view(settings, request_id).revision)
+
+
+def _start_approach_now(settings: Settings, request_id: str) -> None:
+    approach_flow.start_approach(
+        settings, request_id, approach_flow.get_approach_view(settings, request_id).revision
+    )
 
 
 def handle_form(submit_clicks, answers, state, refresh):
@@ -351,16 +378,20 @@ def _is_choice(trigger) -> bool:
     return isinstance(trigger, dict) and trigger.get("type") == CHOICE_TYPE
 
 
-def _discover_choice(settings: Settings, request_id: str, key: str, revision: int) -> None:
-    """The one Discover engine function a button stands for."""
+def _discover_choice(settings: Settings, request_id: str, key: str, revision: int) -> str:
+    """The one Discover engine function a button stands for. "Findings look right" is followed
+    by Approach starting by itself (Phase 6 fixes, section 3); the returned text is a problem of
+    that second step, or "" when all went well."""
     if key == START_KEY:
         start_discovery(settings, request_id, revision)
     elif key == CONFIRM_KEY:
         confirm_discovery(settings, request_id, revision)
+        return _start_by_itself(lambda: _start_approach_now(settings, request_id))
     elif key == ESCALATE_KEY:
         escalate_discovery(settings, request_id, revision)
     else:
         raise PreventUpdate
+    return ""
 
 
 def _discover_key_at(settings: Settings, request_id: str, revision: int, index: int) -> str:

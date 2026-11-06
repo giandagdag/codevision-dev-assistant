@@ -103,7 +103,7 @@ BUILD_STEP = 4
 START_KEY = "start"
 CONFIRM_KEY = "confirm"
 ESCALATE_KEY = "escalate"
-PROCEED_DISCOVERY_OPTION = "Proceed to Discovery"
+TRY_DISCOVERY_OPTION = "Try again"  # the only start button: Discover starts by itself
 SEARCH_AGAIN_OPTION = "Search again"
 BUSY_TEXT = "⏳ Searching approved sources…"
 APPROACH_BUSY_TEXT = "⏳ Working on it…"
@@ -130,7 +130,6 @@ WORKSPACE_NOTES: dict[str, str] = {
 }
 # What the note above the Approach buttons says at each step.
 APPROACH_NOTES: dict[str, str] = {
-    "start": "Press Proceed to Approach to plan how it will be built",
     "choices": "Choose an option to continue, or type your own answer",
     "review": "Review the Approach tab, then choose how to continue",
     "limit_reason": "Type a reason to accept this many files, or choose another option",
@@ -273,8 +272,16 @@ def render_workspace(view: UnderstandView) -> list:
         ),
         panel=_summary_panel(view),
         state={"request_id": view.request.request_id, "revision": view.revision},
-        busy_text=FORM_BUSY_TEXT if view.input_mode == "form" else "",
+        busy_text=_understand_busy_text(view),
     )
+
+
+def _understand_busy_text(view: UnderstandView) -> str:
+    """The line shown while an action runs: reading the form, or (at the checkpoint, where
+    Proceed also starts Discover) a general "working" line."""
+    if view.input_mode == "form":
+        return FORM_BUSY_TEXT
+    return APPROACH_BUSY_TEXT if view.send_label != "Send" else ""
 
 
 def render_new_workspace(demo_mode: bool) -> list:
@@ -459,7 +466,8 @@ def render_discover_workspace(
         state=state,
         step=DISCOVER_STEP,
         discovery=_discovery_panel(view) if show_tab else None,
-        busy_text=APPROACH_BUSY_TEXT if confirmed else BUSY_TEXT,
+        # After a round, "Findings look right" also starts Approach, so the line is a general one.
+        busy_text=BUSY_TEXT if view.request.status == STATUS_CONFIRMED else APPROACH_BUSY_TEXT,
     )
 
 
@@ -771,7 +779,7 @@ def discover_buttons(view: DiscoveryView) -> list[tuple[str, str]]:
     """
     status = view.request.status
     if status in (STATUS_CONFIRMED, STATUS_SEARCHING):
-        label = PROCEED_DISCOVERY_OPTION if status == STATUS_CONFIRMED else SEARCH_AGAIN_OPTION
+        label = TRY_DISCOVERY_OPTION if status == STATUS_CONFIRMED else SEARCH_AGAIN_OPTION
         return [(START_KEY, label)]
     if status in (STATUS_SIMILAR_FOUND, STATUS_NO_MATCH):
         keys = {CONFIRM_OPTION: CONFIRM_KEY, ESCALATE_OPTION: ESCALATE_KEY}
@@ -815,7 +823,11 @@ def _discover_composer(view: DiscoveryView) -> dmc.Box:
     )
     buttons = discover_buttons(view)
     if status in (STATUS_CONFIRMED, STATUS_SEARCHING):
-        note = f"Press {buttons[0][1]} to search approved sources"
+        note = (
+            f"Discovery did not start. Press {buttons[0][1]} to search approved sources"
+            if status == STATUS_CONFIRMED
+            else f"Press {buttons[0][1]} to search approved sources"
+        )
         return dmc.Box([_discover_bar(buttons, note), controls])
     if status in (STATUS_SIMILAR_FOUND, STATUS_NO_MATCH):
         note = view.cap_message or "Choose an option to continue"
