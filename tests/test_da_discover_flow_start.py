@@ -218,3 +218,23 @@ def test_ai_setup_problem_gives_plain_results_not_a_crash(settings, request_id, 
     view = start_discovery(settings, request_id, 0)
 
     assert view.result.summary_source == "fallback" and view.result.findings
+
+
+# --- Phase 6 fixes, section 7: say when the index is made up ---
+
+
+def test_the_chat_message_of_a_round_on_the_fake_index_says_so(settings, request_id):
+    view = start_discovery(settings, request_id, 0)
+
+    lines = [m.text for m in view.messages if m.speaker == "assistant"][-1].split("\n")
+
+    assert lines[-1] == "Practice index (made-up code), not CodeVision."
+    assert lines[0].startswith("Round 1: found ")
+
+
+def test_the_notice_is_only_for_the_fake_index(settings, request_id):
+    view = start_discovery(settings, request_id, 0)
+    real = view.result.model_copy(update={"search_provider": "codevision"})
+
+    assert "Practice index" in flow._result_line(view.result, SIMILAR)
+    assert "Practice index" not in flow._result_line(real, SIMILAR)

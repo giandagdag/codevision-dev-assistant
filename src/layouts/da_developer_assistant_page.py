@@ -12,6 +12,7 @@ from dash_iconify import DashIconify
 from agents.da_discover_flow import (
     CONFIRM_OPTION,
     ESCALATE_OPTION,
+    FAKE_INDEX_NOTICE,
     HINT_OPTION,
     HINT_QUESTION,
     outcome_status,
@@ -759,6 +760,10 @@ def _discovery_panel(view: DiscoveryView) -> list:
             )
         )
         return parts_list
+    if result.search_provider == "fake":
+        parts_list.append(
+            dmc.Alert(FAKE_INDEX_NOTICE, color="violet", variant="light", id="da-fake-index-banner")
+        )
     outcome = outcome_status(result.findings)
     parts_list.append(parts.outcome_banner(outcome))
     if view.request.status == STATUS_DISCOVERY_CONFIRMED:

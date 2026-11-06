@@ -20,7 +20,6 @@ from pydantic_classes.da_workspace_models import CheckResult
 from styles import da_styles
 
 DRAFT_BANNER = "Draft: may change after your choices"
-TESTS_LINE = "written by the Tester, frozen, in Phase 6"
 READY_LINE = "READY TO BUILD"
 NEGATIVE_LABEL = "Negative scenario"
 # The same look as the criteria in the Summary tab: a badge's text is never cut with '...'.
@@ -115,25 +114,6 @@ def _file_plan(view: ApproachView, approach: ApproachVersion, check: CheckResult
                 ]
             )
         )
-    rows.append(
-        dmc.TableTr(
-            [
-                dmc.TableTd(dmc.Text(view.tests_folder, size="xs", ff="monospace")),
-                dmc.TableTd(
-                    dmc.Badge(
-                        "Tests",
-                        size="sm",
-                        variant="light",
-                        color="violet",
-                        style=ID_BADGE_STYLE,
-                        styles=ID_BADGE_STYLES,
-                    )
-                ),
-                dmc.TableTd(dmc.Text(TESTS_LINE, size="xs")),
-                dmc.TableTd(""),
-            ]
-        )
-    )
     head = dmc.TableThead(
         dmc.TableTr(
             [dmc.TableTh("File"), dmc.TableTh("Action"), dmc.TableTh("Why"), dmc.TableTh("Note")]

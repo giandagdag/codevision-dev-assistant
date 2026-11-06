@@ -4,6 +4,8 @@ No AI and no internet. Each test sets its own short time limit so the suite stay
 
 import os
 import shutil
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -41,9 +43,33 @@ def run(test_text=PASSING, code=None, reference=REFERENCE, timeout=20, parent=No
     )
 
 
+IS_WINDOWS = os.name == "nt"  # a name of its own, so a test can pretend (see below)
+
+
+def run_tasklist(pid: int) -> str:
+    """The text Windows' own tasklist prints for one process id (standard library only)."""
+    return subprocess.run(
+        ["tasklist", "/FI", f"PID eq {pid}", "/NH", "/FO", "CSV"],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout
+
+
+def tasklist_says_alive(output: str, pid: int) -> bool:
+    """tasklist /NH /FO CSV prints one row like "python.exe","1234","Console",... for a live
+    process and an INFO line ("No tasks are running ...") for a missing one."""
+    return any(f'"{pid}"' in line for line in output.splitlines())
+
+
 def is_alive(pid: int) -> bool:
-    """A killed child can stay in the process table as a 'zombie' until the container's first
-    process clears it. A zombie is dead, so it does not count as alive."""
+    """Is this process still running? A killed child can stay in the process table as a 'zombie'
+    until the container's first process clears it. A zombie is dead, so it does not count.
+
+    On Windows os.kill(pid, 0) must NOT be used: signal 0 is CTRL_C_EVENT there, so it sent Ctrl+C
+    to pytest itself (KeyboardInterrupt). tasklist only reads."""
+    if IS_WINDOWS:
+        return tasklist_says_alive(run_tasklist(pid), pid)
     status = Path(f"/proc/{pid}/status")
     if status.exists():  # Linux
         for line in status.read_text().splitlines():
@@ -51,7 +77,7 @@ def is_alive(pid: int) -> bool:
                 return not line.split()[1].startswith("Z")
         return False
     try:
-        os.kill(pid, 0)
+        os.kill(pid, 0)  # macOS and other Unix: signal 0 only checks that the process exists
     except OSError:
         return False
     return True
@@ -314,3 +340,35 @@ def test_a_child_left_running_by_a_test_that_ended_normally_is_still_ended(tmp_p
     child = int(pid_file.read_text())
     time.sleep(0.3)
     assert not is_alive(child)
+
+
+def test_the_windows_alive_check_reads_tasklist_and_never_signals(monkeypatch):
+    """T1: on Windows is_alive must not call os.kill (signal 0 is Ctrl+C there)."""
+    live = '"python.exe","4321","Console","1","20,000 K"\n'
+    gone = "INFO: No tasks are running which match the specified criteria.\n"
+    calls = []
+
+    def forbidden(*args):
+        raise AssertionError("os.kill must not be used on Windows")
+
+    monkeypatch.setattr(os, "kill", forbidden)
+    monkeypatch.setattr(sys.modules[__name__], "IS_WINDOWS", True)
+
+    def fake_tasklist(pid):
+        calls.append(pid)
+        return live if pid == 4321 else gone
+
+    monkeypatch.setattr(sys.modules[__name__], "run_tasklist", fake_tasklist)
+
+    assert is_alive(4321) is True
+    assert is_alive(99999) is False
+    assert calls == [4321, 99999]
+
+
+def test_tasklist_output_is_read_by_the_exact_process_id():
+    row = '"cmd.exe","1234","Console","1","3,000 K"'
+    assert tasklist_says_alive(row, 1234) is True
+    assert tasklist_says_alive(row, 123) is False  # not a prefix match
+    info = "INFO: No tasks are running which match the criteria."
+    assert tasklist_says_alive(info, 1234) is False
+    assert tasklist_says_alive("", 1234) is False

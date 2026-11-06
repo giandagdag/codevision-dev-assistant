@@ -1,4 +1,4 @@
-# Workspace: live test at work (Phase 5, questions Q8, Q11, Q12; Phase 6 edit 3 Nov)
+# Workspace: live test at work (Phase 5, questions Q8, Q11, Q12; Phase 6 edits 3 and 6 Nov)
 
 Why: the cloud tests use a pretend folder picker. Only your real Chrome or Edge can prove the
 real one works on a work laptop. This takes about 10 minutes. PowerShell and the browser DevTools
@@ -18,8 +18,21 @@ mkdir C:\Dev\practice\src\web
 mkdir C:\Dev\practice\src\callbacks
 mkdir C:\Dev\practice\src\agents
 echo def validate(path): return True> C:\Dev\practice\src\agents\upload_validator.py
+type C:\Dev\practice\src\agents\upload_validator.py
 dir /s /b C:\Dev\practice
 ```
+
+The fourth line is the ONE line that creates `upload_validator.py`. Copy it exactly, with no space
+before the `>`.
+
+The `type` line shows what is inside the file. It must print exactly this one line:
+
+```
+def validate(path): return True
+```
+
+If `type` prints anything else, or says "The system cannot find the file", run the `echo` line
+again. The made-up plan edits this file, and it can only do that when the file looks like this.
 
 The last line lists what you made. You should see these five paths, in any order (the first four
 are folders, the last one is the file):
@@ -34,6 +47,20 @@ C:\Dev\practice\src\agents\upload_validator.py
 
 (`C:\Dev` is only an example. Any ordinary folder is fine. Chrome refuses some folders, for
 example your whole user folder or system folders; see Q12.)
+
+**Warning: a build writes into this practice folder.** After a build, `upload_validator.py` no
+longer holds the one line above and `src\agents\excel_processor.py` is new. Before you run another
+build, put the folder back. In Command Prompt:
+
+```
+del C:\Dev\practice\src\agents\excel_processor.py
+echo def validate(path): return True> C:\Dev\practice\src\agents\upload_validator.py
+type C:\Dev\practice\src\agents\upload_validator.py
+```
+
+(If `excel_processor.py` is not there, `del` says so. That is fine.) If you skip this, the made-up
+plan cannot edit the changed file, the code checks (Layer A) fail in every round, and the build
+ends "Not passing" without ever running the tests.
 
 ## Step 2: run the screen and reach READY TO BUILD
 
@@ -67,17 +94,12 @@ dir /s /b C:\Dev\practice
 Optional, in Edge: open `edge://policy` and search for `FileSystem`. Write down anything that is
 set to blocked. (Skip this if the page does not open.)
 
-## Step 4: change a file and Re-scan
+## Step 4: there is no Re-scan button before Build
 
-1. In Command Prompt, add a line to the planned file:
-
-```
-echo # edited by me>> C:\Dev\practice\src\agents\upload_validator.py
-```
-
-2. In the app press **Re-scan** (a button under the chat). Expected: "1 file changed by you. It
-   will be checked when the build runs (Phase 6 onwards)." The Build tab shows the file as
-   "Changed by you".
+The buttons under the chat at **Ready to build** are **Change folder** and **Build** (and
+**Reconnect** when the browser needs your OK). There is no separate **Re-scan** button: **Build**
+re-scans your planned files by itself first. A Re-scan button after a build comes back in Phase 8
+(Refine). Do not edit the practice file now, or you must put it back (see the warning in step 1).
 
 ## Step 5: come back later
 

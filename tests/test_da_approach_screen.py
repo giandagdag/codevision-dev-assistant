@@ -87,7 +87,10 @@ def test_the_approach_tab_shows_each_section_in_order(settings, request_id):
     )
     plan = all_text(by_id(tree, "da-file-plan"))
     assert "src/agents/excel_processor.py" in plan and "New" in plan and "Change" in plan
-    assert "tests/cvda_2026_0001/" in plan and "written by the Tester, frozen, in Phase 6" in plan
+    # 9a.3: since Q11 test files are never written to the workspace, so the Approach tab must not
+    # show a tests/<id>/ line.
+    assert "tests/cvda_2026_0001/" not in plan and "written by the Tester" not in plan
+    assert "Tests" not in [b.children for b in components(by_id(tree, "da-file-plan"), "Badge")]
     assert "2 code files, limit 5" in plan
     assert "Not found in Discover" in plan  # the modify path no hit has
     reuse = all_text(by_id(tree, "da-reuse"))

@@ -281,6 +281,18 @@ def test_confirmed_request_shows_the_active_proceed_button_and_a_locked_discover
     assert "Discovery" in all_text(tree) and by_id(tree, "da-outcome-banner") is None
 
 
+def test_the_discovery_tab_says_when_the_index_is_made_up(settings):
+    tree, view = discover_tree(settings, start_step)
+
+    banner = by_id(tree, "da-fake-index-banner")
+    assert all_text(banner) == "Practice index (made-up code), not CodeVision."
+    real = view.model_copy(
+        update={"result": view.result.model_copy(update={"search_provider": "codevision"})}
+    )
+    understand = flow.get_understand_view(settings, view.request.request_id)
+    assert by_id(page.render_discover_workspace(understand, real), "da-fake-index-banner") is None
+
+
 def test_stepper_is_on_discover_and_the_discovery_tab_opens_after_a_round(settings):
     tree, _ = discover_tree(settings, start_step)
 

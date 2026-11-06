@@ -54,8 +54,28 @@ HTTP 400 reply the same way. Neither uses one of the 3 rounds.
 
 ## Part 4: try a build with the real AI (only after Parts 1 and 2 are answered)
 
-1. Set `DA_SANDBOX_SOURCE_DIR` in `.env` to the folder from Q14 (b). Never commit `.env`.
+Which AI decides whether you need a source folder:
+
+- **FAKE build (`DA_LLM_PROVIDER=fake`): you do NOT set `DA_SANDBOX_SOURCE_DIR`.** The app uses its
+  own made-up CodeVision folder for the sandbox. Leave the setting out.
+- **ONPREM build (`DA_LLM_PROVIDER=onprem`): you MUST set `DA_SANDBOX_SOURCE_DIR`** to the folder
+  that CONTAINS `src` (not `src` itself), for example `C:\Users\<you>\Desktop\codevision`.
+
+1. For an ONPREM build, set it in `.env`. In Command Prompt, open the file in Notepad:
+
+```
+notepad .env
+```
+
+   Add the line `DA_SANDBOX_SOURCE_DIR=C:\Users\<you>\Desktop\codevision` (use your own folder
+   from Q14 (b)), save, and close Notepad. Never commit `.env`. Then **restart the app** (stop it
+   with Ctrl+C in its Command Prompt window and start it again). If a build already paused with
+   "The sandbox could not start", reopen the request and press **Resume build**.
 2. Use the **practice folder** from `docs/workspace-work-test.md` and a small made-up request.
+   **A build writes into the practice folder**, so before a second run put the folder back as
+   that document says: delete `src\agents\excel_processor.py` and run the one `echo` line again
+   so `upload_validator.py` holds `def validate(path): return True`. Check it with
+   `type C:\Dev\practice\src\agents\upload_validator.py`.
 3. Press **Build**. Leave the page for a minute and come back from **My recent requests**.
 4. Write down: how long each AI call took, whether round 1 passed, how many rounds were used, and
    whether the edit blocks matched the file (a miss shows "Edit block N did not match").
@@ -65,8 +85,13 @@ HTTP 400 reply the same way. Neither uses one of the 3 rounds.
 ## If something goes wrong
 
 - "The sandbox could not start" in the chat: the `DA_SANDBOX_SOURCE_DIR` folder is wrong or
-  missing its `src` folder. Fix `.env`, restart the app, press **Try again**.
-- The build pauses with "the AI did not answer": press **Try again**. No round was used.
+  missing its `src` folder (it must be the folder that CONTAINS `src`). Fix `.env`, restart the
+  app, press **Resume build**. (With the fake AI you do not set this at all.)
+- The build pauses with "the AI did not answer": press **Resume build**. No round was used.
+- The build ends "Not passing" and says "the tests never ran": the code checks (Layer A) failed in
+  every round. Check that the practice file is back to its one line (see step 2 above).
+- To drop a build, press **Cancel build**. Nothing is written to your folder, and the record of
+  that build stays in the Audit tab.
 - Anything else: copy the message text. No real code or names in what you share.
 
 ## Clean up
