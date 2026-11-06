@@ -30,6 +30,7 @@ SUMMARY_ID = "da-build-summary"
 TESTS_LIST_ID = "da-tests-list"
 TESTS_CODE_ID = "da-tests-code"
 
+TESTS_NOT_RUN = "Not run: the code checks (Layer A) failed first. See the Build tab."
 TESTS_NOTE = "These tests run on the CodeVision server. They are not copied to your folder."
 TURN_TITLE = "Your turn"
 TURN_LINES = (
@@ -80,6 +81,11 @@ def tests_tab(view: BuildView | None) -> list:
             )
         ]
     rows = [_test_row(item) for item in view.tests]
+    not_run = (
+        dmc.Text(TESTS_NOT_RUN, size="sm", c="orange", id="da-tests-not-run")
+        if view.tests_not_run
+        else None
+    )
     table = dmc.Table(
         [
             dmc.TableThead(
@@ -108,6 +114,7 @@ def tests_tab(view: BuildView | None) -> list:
         dmc.Stack(
             [
                 dmc.Text(f"{len(view.tests)} frozen tests", fw=600, size="sm"),
+                not_run,
                 table,
                 dmc.Text(TESTS_NOTE, size="xs", c=da_styles.MUTED, id="da-tests-note"),
                 code,

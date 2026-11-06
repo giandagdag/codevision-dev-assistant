@@ -82,7 +82,7 @@ def test_a_running_build_draws_the_blue_banner_progress_stop_and_a_live_poll(set
     assert "Round 1 of 3. Running on the server. You can leave this page" in all_text(
         by_id(tree, bp.BANNER_ID)
     )
-    assert labels(tree, page.CHOICE_TYPE) == ["Stop build"]
+    assert labels(tree, page.CHOICE_TYPE) == ["Cancel build"]
     poll = by_id(tree, bp.POLL_ID)
     assert (poll.interval, poll.disabled) == (3000, False)
     assert "BUILDING" in all_text(by_id(tree, "da-build-chat-status"))
@@ -226,7 +226,7 @@ def test_a_paused_build_draws_try_again_stop_and_get_help_with_the_poll_off(
 
     tree = draw(request_id)
 
-    assert labels(tree, page.CHOICE_TYPE) == ["Try again", "Stop build", "Get help"]
+    assert labels(tree, page.CHOICE_TYPE) == ["Resume build", "Cancel build", "Get help"]
     assert by_id(tree, bp.POLL_ID).disabled is True
     assert "The build paused:" in all_text(by_id(tree, bp.BANNER_ID))
 
@@ -274,7 +274,7 @@ def test_try_again_resumes_and_hands_the_build_to_the_runner(settings, ready, mo
     monkeypatch.setattr(runner, "submit_build", lambda s, rid, *a: submitted.append(rid))
     state = by_id(draw(request_id), page.STATE_ID).data
 
-    cb.perform_action(settings, choice(0), None, state, 0)  # Try again
+    cb.perform_action(settings, choice(0), None, state, 0)  # Resume build
 
     assert flow.get_state(settings, request_id).step == "b_running"
     assert submitted == [request_id]
@@ -298,3 +298,67 @@ def test_the_poll_redraws_only_for_a_build_page(settings, ready):
         with pytest.raises(PreventUpdate):
             cb.poll_build(*args)
     assert isinstance(StaleRevisionError, type) and pick and good_folder  # imports in use
+
+
+# --- Phase 6 fixes, section 6 ---
+
+
+def code_badge(tree):
+    return all_text(by_id(tree, "da-code-badge"))
+
+
+def test_f9c_the_chat_badge_follows_the_real_write_state(settings, ready):
+    request_id, folder = ready
+    assert code_badge(draw(request_id)) == "No code is written yet"
+    start(settings, request_id)
+    loop.run_build(settings, request_id)
+    # Built, but nothing is in the folder yet: still "no code".
+    assert code_badge(draw(request_id)) == "No code is written yet"
+
+    job = flow.prepare_write(settings, request_id, flow.get_revision(settings, request_id))
+    revision = flow.get_revision(settings, request_id)
+    flow.save_write(settings, request_id, folder.run_job(job), revision)
+
+    assert code_badge(draw(request_id)) == "Code is written to your folder"
+
+
+def test_f9c_a_not_passing_build_that_was_written_also_changes_the_badge(
+    settings, ready, monkeypatch
+):
+    monkeypatch.setattr(agent, "FAKE_SWITCHES", frozenset({"always_fail"}))
+    request_id, folder = ready
+    start(settings, request_id)
+    loop.run_build(settings, request_id)
+    job = flow.prepare_write(settings, request_id, flow.get_revision(settings, request_id))
+    revision = flow.get_revision(settings, request_id)
+    flow.save_write(settings, request_id, folder.run_job(job), revision)
+
+    tree = draw(request_id)
+
+    assert "NOT PASSING" in all_text(by_id(tree, "da-build-chat-status"))
+    assert code_badge(tree) == "Code is written to your folder"
+
+
+def test_f9b_the_tests_tab_says_why_no_test_has_a_result(settings, ready, monkeypatch):
+    monkeypatch.setattr(agent, "FAKE_SWITCHES", frozenset({"bad_edit", "always_fail"}))
+    request_id, _ = ready
+    start(settings, request_id)
+    loop.run_build(settings, request_id)
+
+    view = flow.get_build_view(settings, request_id)
+    tab_text = all_text(bp.tests_tab(view))
+
+    assert view.tests_not_run is True
+    assert "Not run: the code checks (Layer A) failed first. See the Build tab." in tab_text
+
+
+def test_f9b_the_line_is_absent_when_the_tests_ran_or_no_round_finished(settings, ready):
+    request_id, _ = ready
+    start(settings, request_id)
+    before_round = flow.get_build_view(settings, request_id)
+    loop.run_build(settings, request_id)
+    after = flow.get_build_view(settings, request_id)
+
+    assert before_round.tests_not_run is False and after.tests_not_run is False
+    assert "Not run:" not in all_text(bp.tests_tab(after))
+    assert "Not run:" not in all_text(bp.tests_tab(before_round))

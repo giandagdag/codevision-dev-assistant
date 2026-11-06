@@ -80,6 +80,7 @@ FORM_BUSY_TEXT = "⏳ Reading your answers…"
 FORM_COMPOSER_TEXT = "Fill in the form above, then press Submit"
 
 CODE_BANNER = "No code is written yet"
+CODE_WRITTEN_BANNER = "Code is written to your folder"
 DEMO_BANNER = "Demo mode: replies are scripted"
 EMPTY_TEXT = "Waiting for your answer"
 OTHER_PLACEHOLDER = "Other, type here"
@@ -115,8 +116,8 @@ BUILD_KEY = "build"
 BUILD_NOTES: dict[str, str] = {
     "b_running": "The build is running on the server. You can leave this page",
     "b_round_failed": "The build is running on the server. You can leave this page",
-    "b_interrupted": "The build paused. Try again, stop it, or get help",
-    "b_unable": "I could not write tests. Try again, change the approach, or get help",
+    "b_interrupted": "The build paused. Resume it, cancel it, or get help",
+    "b_unable": "I could not write tests. Resume the build, change the approach, or get help",
     "b_done": "The build is finished. Your code files are being written to your folder",
     "b_written": "The build is finished and written to your folder",
     "b_write_stopped": "The write stopped because you changed a file",
@@ -325,6 +326,7 @@ def _workspace(
     tests: list | None = None,
     poll=None,
     open_tab: str | None = None,
+    code_written: bool = False,
 ) -> list:
     top = dmc.Group(
         [
@@ -350,7 +352,14 @@ def _workspace(
     chat_head = dmc.Group(
         [
             dmc.Text("Developer Assistant chat", fw=600, c=da_styles.NAVY),
-            dmc.Badge(CODE_BANNER, color="orange", variant="light", leftSection=_lock()),
+            # Follows the real write state of the build (Phase 6 fixes, F9c).
+            dmc.Badge(
+                CODE_WRITTEN_BANNER if code_written else CODE_BANNER,
+                color="green" if code_written else "orange",
+                variant="light",
+                leftSection=_lock(),
+                id="da-code-badge",
+            ),
         ],
         justify="space-between",
         p="sm",
@@ -518,6 +527,7 @@ def render_approach_workspace(
             tests=tests_tab(build) if building else None,
             poll=poll_interval(build) if building else None,
             open_tab="build" if building else None,
+            code_written=building and any(row.status == "Written" for row in build.rows),
         )
     return _workspace(
         title=view.request.title,

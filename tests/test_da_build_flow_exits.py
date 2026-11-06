@@ -98,7 +98,11 @@ def test_6_26_stop_ends_the_build_with_no_label_and_writes_nothing(
     run = run_row(settings, request_id)
     assert run.ended_at is not None and run.label == "" and run.stop_reason.startswith("Stopped")
     assert "build_stopped" in event_types(settings, request_id)
-    assert "Nothing was written" in chat(settings, request_id, "assistant")[-1]
+    assert chat(settings, request_id, "assistant")[-1] == (
+        "The build was cancelled. Nothing was written to your folder. "
+        "The record of this build stays in the Audit tab."
+    )
+    assert "Cancel build" in chat(settings, request_id, "developer")
     assert written_paths(settings, request_id) == written_before  # the build wrote no new file
 
 

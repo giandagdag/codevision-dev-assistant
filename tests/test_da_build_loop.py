@@ -207,6 +207,55 @@ def test_6_21_code_that_always_fails_uses_three_rounds_then_is_not_passing(
     assert "build_not_passing" in event_types(settings, request_id)
 
 
+def test_f9a_when_the_code_checks_fail_in_every_round_the_last_line_says_the_tests_never_ran(
+    settings, request_id, monkeypatch
+):
+    """The work-test case: Layer A failed in all 3 rounds, Layer B never ran. "0 test(s) still
+    fail" would be untrue."""
+    switches(monkeypatch, "bad_edit", "always_fail")
+
+    build(settings, request_id)
+
+    records = rounds_of(settings, request_id)
+    assert len(records) == 3 and all(record.layer_b is None for record in records)
+    said = chat(settings, request_id, "assistant")[-1]
+    assert said == (
+        "The code checks failed in every round, so the tests never ran. Result: Not passing. "
+        "I will still write the code files so you can see them."
+    )
+    assert "0 test(s)" not in said and "still fail" not in said
+
+
+def test_f9a_the_wording_when_the_tests_ran_is_the_one_from_before(
+    settings, request_id, monkeypatch
+):
+    switches(monkeypatch, "always_fail")
+    build(settings, request_id)
+    records = rounds_of(settings, request_id)
+    assert all(record.layer_b is not None for record in records)
+
+    said = loop._finish_text(False, 3, "Not passing", records, 9)
+
+    assert said.startswith("I used all 3 rounds and ")
+    assert " test(s) still fail. Result: Not passing. " in said
+
+
+def test_f9a_when_only_the_last_round_was_stopped_by_the_code_checks_it_says_so(
+    settings, request_id, monkeypatch
+):
+    switches(monkeypatch, "always_fail")
+    build(settings, request_id)
+    records = rounds_of(settings, request_id)
+    records[-1] = records[-1].model_copy(update={"layer_b": None})
+
+    said = loop._finish_text(False, 3, "Not passing", records, 9)
+
+    assert said == (
+        "The code checks failed in the last round, so the tests did not run in it. "
+        "Result: Not passing. I will still write the code files so you can see them."
+    )
+
+
 # --- layer A and layer B problems reach the report ---
 
 

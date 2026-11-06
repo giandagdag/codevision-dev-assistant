@@ -691,8 +691,18 @@ def _finish_text(
             "The independent Tester review (Layer C) is not built yet. Writing your code files now."
         )
     last = records[-1].layer_b if records else None
-    left = last.failed if last else 0
+    still_writing = "I will still write the code files so you can see them."
+    if last is None:
+        # Layer A stopped the last round, so no test ran in it. "0 tests still fail" would be
+        # untrue (Phase 6 fixes, F9a).
+        ran_before = any(record.layer_b is not None for record in records)
+        what = (
+            "The code checks failed in the last round, so the tests did not run in it."
+            if ran_before
+            else "The code checks failed in every round, so the tests never ran."
+        )
+        return f"{what} Result: {label}. {still_writing}"
     return (
-        f"I used all {rounds} rounds and {left} test(s) still fail. Result: {label}. "
-        "I will still write the code files so you can see them."
+        f"I used all {rounds} rounds and {last.failed} test(s) still fail. "
+        f"Result: {label}. {still_writing}"
     )

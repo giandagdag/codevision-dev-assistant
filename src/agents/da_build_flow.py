@@ -108,8 +108,12 @@ logger = get_logger(__name__)
 
 # Button labels and keys. The Build button is run by JavaScript first (the pre-build re-scan).
 BUILD_KEY, BUILD_LABEL = "build", "Build"
-STOP_KEY, STOP_LABEL = "stop_build", "Stop build"
-TRY_AGAIN_KEY, TRY_AGAIN_LABEL = "try_again", "Try again"
+STOP_KEY, STOP_LABEL = "stop_build", "Cancel build"
+TRY_AGAIN_KEY, TRY_AGAIN_LABEL = "try_again", "Resume build"
+CANCEL_MESSAGE = (
+    "The build was cancelled. Nothing was written to your folder. "
+    "The record of this build stays in the Audit tab."
+)
 REBUILD_KEY, REBUILD_LABEL = "rebuild", "Re-scan and build again"
 CHANGE_APPROACH_KEY = "change_approach"
 HELP_KEY = "help"
@@ -233,7 +237,7 @@ def stop_build(
         tx.audit("developer", "build_stopped", {"build": tx.state.build_number})
         tx.move_to(STATUS_READY_TO_BUILD)
         tx.set(step="start", message="")
-        tx.say("assistant", "The build was stopped. Nothing was written to your folder.")
+        tx.say("assistant", CANCEL_MESSAGE)
     return get_state(settings, request_id)
 
 
@@ -250,7 +254,7 @@ def try_again(
         _require_step(tx.state, "b_interrupted")
         tx.say("developer", TRY_AGAIN_LABEL)
         tx.audit("developer", "build_resumed", {"build": tx.state.build_number})
-        tx.say("assistant", "Trying again from where I stopped.")
+        tx.say("assistant", "Resuming the build from where I stopped.")
         tx.set(step="b_running", message="")
     return get_state(settings, request_id)
 
@@ -676,6 +680,10 @@ def _view(
         max_rounds=policy.build_max_rounds,
         time_limit=policy.build_test_timeout_seconds,
         tests=tests,
+        # Layer A stopped every round, so no frozen test has a result (Phase 6 fixes, F9b).
+        tests_not_run=bool(rounds)
+        and not any(record.layer_b is not None for record in rounds)
+        and any(row.result == "" for row in tests),
         test_code=test_code,
         rows=rows,
         label=run.label if run else "",
@@ -890,10 +898,10 @@ def _wrong_status_message(status: str) -> str:
 def _wrong_step_message(step: str) -> str:
     messages = {
         "start": "Press Build first.",
-        "b_running": "The build is running. You can stop it or wait.",
-        "b_round_failed": "The build is running. You can stop it or wait.",
-        "b_interrupted": "The build paused. Try again, stop it, or get help.",
-        "b_unable": "I could not write tests. Try again, change the approach, or get help.",
+        "b_running": "The build is running. You can cancel it or wait.",
+        "b_round_failed": "The build is running. You can cancel it or wait.",
+        "b_interrupted": "The build paused. Resume it, cancel it, or get help.",
+        "b_unable": "I could not write tests. Resume the build, change the approach, or get help.",
         "b_done": "The build is finished and is being written to your folder.",
         "b_written": "The build is finished and written to your folder.",
         "b_write_stopped": "The write stopped because you changed a file. Re-scan and build again.",

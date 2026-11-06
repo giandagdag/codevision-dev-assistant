@@ -283,10 +283,12 @@ class BuildView(BaseModel):
     max_rounds: int = 3
     time_limit: int = 60
     tests: list[TestRow] = Field(default_factory=list)
+    # True when a round ran but the tests never did, because the code checks (Layer A) failed.
+    tests_not_run: bool = False
     test_code: str = ""
     rows: list[BuildFileRow] = Field(default_factory=list)
     label: str = ""
-    # Server buttons (Stop, Try again, Get help...) and browser buttons (Build, Re-scan...).
+    # Server buttons (Cancel build, Resume build, Get help...) and browser buttons (Build...).
     buttons: list[tuple[str, str]] = Field(default_factory=list)
     browser_buttons: list[tuple[str, str]] = Field(default_factory=list)
     note: str = ""

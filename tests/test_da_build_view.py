@@ -61,7 +61,7 @@ def test_6_1_a_running_build_shows_the_blue_banner_the_stop_button_and_polls(set
     assert shown.banner_text == (
         "Round 1 of 3. Running on the server. You can leave this page and come back."
     )
-    assert labels(shown.buttons) == ["Stop build"] and shown.polling is True
+    assert labels(shown.buttons) == ["Cancel build"] and shown.polling is True
     assert shown.time_limit == 60 and shown.max_rounds == 3
 
 
@@ -173,7 +173,7 @@ def test_buttons_for_a_paused_build(settings, ready, monkeypatch):
     shown = view(settings, request_id)
 
     assert shown.banner_kind == "orange" and shown.banner_text.startswith("The build paused:")
-    assert labels(shown.buttons) == ["Try again", "Stop build", "Get help"]
+    assert labels(shown.buttons) == ["Resume build", "Cancel build", "Get help"]
     assert shown.polling is False
 
 
@@ -183,7 +183,7 @@ def test_buttons_for_unable_and_the_change_cap(settings, ready, monkeypatch):
     start(settings, request_id)
     loop.run_build(settings, request_id)
     assert labels(view(settings, request_id).buttons) == [
-        "Try again",
+        "Resume build",
         "Change the approach",
         "Get help",
     ]
@@ -193,7 +193,7 @@ def test_buttons_for_unable_and_the_change_cap(settings, ready, monkeypatch):
         approach.change_count = 3
         save_approach_state(conn, approach, approach.revision, datetime.now(UTC))
 
-    assert labels(view(settings, request_id).buttons) == ["Try again", "Get help"]
+    assert labels(view(settings, request_id).buttons) == ["Resume build", "Get help"]
 
 
 def test_a_stopped_write_offers_re_scan_and_build_again_and_names_the_file(settings, ready):
