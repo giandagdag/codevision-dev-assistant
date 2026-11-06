@@ -37,6 +37,12 @@ No new library: only the Python standard library (`json`, `csv`, `subprocess`, `
 | X7 | CLAUDE.md size budget: a test fails if CLAUDE.md is over 6,000 bytes (it is 4,695 today; the rule additions for O4 and the quiet runner must fit). The budget number is my choice | Spec A3 says "a size budget" without a number. Question 2 |
 | X8 | Ledger columns: `time_sgt, phase, stage, model, five_hour_before, five_hour_after, weekly_before, weekly_after, input_tokens, output_tokens, cost_usd, outcome`. Written by `ops/ledger.py`, one line per worker run, also when the worker failed or the guard stopped it (AC-7) | Spec A5 |
 | X9 | `logs/` is already ignored by Git, so the ledger and quiet logs stay on the laptop. I keep that (they are machine-specific, may hold code snippets) | Question 3 |
+| X11 | **The guard hook only acts inside workers** (review Must fix 1). The launcher sets `DA_WORKER=1`; the hook does nothing (exit 0) when it is not set. So Gian's own sessions, this cloud build and the reviewers are never blocked. Registered in `.claude/settings.json` for every tool, harmless outside workers | Spec A1 says "a hook in every worker", not every session |
+| X12 | **How a blocked worker saves state and stops** (review Must fix 2). When the guard says STOP, the hook still allows exactly one thing: Write or Edit of `ops/state/worker_note.md` (the same way a job writes its last log line before ending). Every other tool is blocked, and the block message says: "Usage line reached. Write your state to ops/state/worker_note.md, then stop." Backup: after the worker exits, `chief_tick` records the exit reason and the note (if any) in STATUS.md and the ledger, so state is saved even if the worker ignored the message. Every worker prompt carries the line "If the guard blocks you, write the note and stop at once". Work is committed per step by the builder, so nothing is lost | AC-2 |
+| X13 | **Work-fact and paused stages** (review Should fix). The chief PROMPT decides what counts as a work fact (a judgment, not code). `chief_tick.py` provides two helpers the chief calls: `open_gian_issue(title, body, label)` (labels `needs-gian` or `needs-work-test`, no duplicate when an open issue has the same title) and `mark_paused(stage, issue)` (a line in STATUS.md). Tested with fake `gh`; `chief.md` is structure-tested for the rule | AC-4 |
+| X14 | **Merge helper** refuses any base except `auto/phases-7-10` AND any head whose checks are not all green (`gh pr checks`, fake `gh` in tests) | Spec section 7 step 5, AC-5 |
+| X15 | **Worker permissions.** The launcher runs `claude -p` with `--permission-mode dontAsk`, an allow list (Read, Grep, Glob, Edit, Write, the quiet runner, `git add/commit/push` to `auto/*` and `phase-*` only) and a deny list in `ops/worker_settings.json` (`git push` to `main`, `--force`, `.env`, plugin install). A test checks the deny rules exist and the launcher passes the flags. Prompts repeat the "Never" list; GitHub branch protection (O2) is the real wall. **Question 5** | Spec sections 4 and 6 |
+| X16 | `ops/state/` is added to `.gitignore` in step 3 (checked with `git check-ignore`). The usage token is never printed or logged; its path points outside the repo; a test checks an error message does not contain the token | Safety rules |
 | X10 | The chief agent file and worker prompts are prompts, so they are not unit-testable. They get a **structure test** (front matter, model, tool list, the section 6 table rows present, the "Never" list present) | Checkable without a real AI |
 
 ## Steps (each ends with tests and ruff clean; one commit per step; push `phase-a` after each group)
@@ -54,10 +60,12 @@ No new library: only the Python standard library (`json`, `csv`, `subprocess`, `
 3. **A1 Usage guard.** `ops/usage_guard.py`: `read_usage` (injected reader), `decide`,
    `write_state` (`ops/state/usage.json`, ignored by Git), `main` (prints GO or STOP, exit 0 or 1),
    and `ops/guard_hook.py` (PreToolUse hook: reads state, exit 2 when over the line or blind or
-   stale). Hook registered in `.claude/settings.json` for every tool (no matcher). Tests (AC-1, 2,
+   stale). Hook registered in `.claude/settings.json` for every tool (no matcher), acts only when `DA_WORKER=1` (X11), allows only the `worker_note.md` write on STOP (X12). `.gitignore` gets `ops/state/` (X16). Tests (AC-1, 2,
    3 parts): weekly 79 = GO, 80 = STOP; 5-hour 84 = GO, 85 = STOP; missing, stale or unreadable
    state = STOP with "guard blind"; reset time shown in SGT; hook exit 2 with a plain message on
-   STOP and exit 0 on GO; hook never crashes (any error = block). *Check:* `pytest tests/ops/test_usage_guard.py`.
+   STOP and exit 0 on GO; **hook does nothing when `DA_WORKER` is not set, even if state is
+   missing**; on STOP the `worker_note.md` write is allowed and every other tool is blocked;
+   hook never crashes inside a worker (any error = block); error messages never contain the token. *Check:* `pytest tests/ops/test_usage_guard.py`.
 4. **A2 Quiet runner.** `ops/quiet.py pytest|ruff|git ...`: runs the command, writes the full
    output to `logs/quiet/<time>.log`, prints a short summary plus failures only, returns the real
    exit code. Only `pytest`, `ruff`, `git status|diff|log` are allowed (anything else is refused
@@ -76,13 +84,16 @@ No new library: only the Python standard library (`json`, `csv`, `subprocess`, `
    and the step-by-step for O2 (fine-grained token, branch protection on `main`). `ops/chief_tick.py`:
    guard check first (zero tokens when STOP), writes STATUS.md "Stopped: weekly 8x%, resets
    <time SGT>" (AC-1), opens a `guard blind` issue once (AC-3, no duplicate when one is open),
-   opens `needs-gian` issues for work-fact items (AC-4 logic), launches a worker only if GO and
-   work exists, writes a ledger line, and the merge helper refuses any base branch except
-   `auto/phases-7-10` (AC-5, code side). Tests with a fake runner, fake `gh` and fake clock.
+   provides `open_gian_issue` and `mark_paused` (X13, AC-4), launches a worker (flags per X15,
+   sets `DA_WORKER=1`) only if GO and work exists, after the worker exits records its exit reason
+   and `worker_note.md` in STATUS.md (X12), writes a ledger line, and the merge helper refuses
+   any base except `auto/phases-7-10` and any red or pending checks (X14, AC-5 code side).
+   `ops/worker_settings.json` holds the deny rules (X15). Every worker prompt carries the
+   "guard blocks you: write the note and stop" line. Tests with a fake runner, fake `gh` and fake clock.
    *Check:* `pytest tests/ops/test_chief_tick.py tests/ops/test_agent_files.py`.
-7. **Windows Task Scheduler.** `ops/install_chief_task.ps1`? **Not built.** The spec says Task
-   Scheduler runs `ops/chief_tick.py` but Gian runs PowerShell commands himself, so I give him the
-   exact `schtasks` command in `docs/automation.md`, to run at A-P1. Nothing here runs it.
+7. **Windows Task Scheduler.** No script is built. The spec says Task Scheduler runs
+   `ops/chief_tick.py`; I give Gian the exact `schtasks` command in `docs/automation.md`, to run
+   at A-P1. Nothing here runs it.
 8. **Finish.** Full `pytest`, `ruff check .`, smoke check (all through the quiet runner once it
    exists, plus the plain commands pasted), `code-reviewer` (max 3 rounds), commit, push `phase-a`,
    and Gian's A-P1 check list (laptop) in the final report.
@@ -93,6 +104,12 @@ No new library: only the Python standard library (`json`, `csv`, `subprocess`, `
 - The quiet hook's rewrite actually working inside `claude -p` (F2, untested by the docs).
 - GitHub refusing a merge into `main` (O2, Gian sets branch protection himself).
 - A-P2 to A-P4 (pilot) are after this phase.
+
+## Plan review
+
+Round 1: 2 Must fix (guard hook would block every session, not only workers; a blocked worker
+had no way to save state). Both fixed above (X11, X12), plus the Should fix items (X13 to X16).
+Round 2: pending.
 
 ## Questions for Gian
 
@@ -105,3 +122,6 @@ No new library: only the Python standard library (`json`, `csv`, `subprocess`, `
 3. **Ledger and quiet logs stay local** (Git ignores `logs/`). OK? *Recommended:* yes.
 4. **Handoff note.** I cannot find a handoff file in the repo (it may be in your project chat). Send it
    when ready, or tell me there is nothing to archive. Phase A does not depend on it.
+5. **Worker permissions (X15).** OK that unattended workers run with `dontAsk` plus an allow list
+   and a deny list, instead of `bypassPermissions`? *Recommended:* yes. It is stricter, and a
+   worker that needs something outside the list stops and asks through an issue.
