@@ -1,0 +1,33 @@
+# Checks for every phase branch and every pull request that matters (Phase A).
+# AS400 comparison: the compile-and-test job that must pass before a promotion.
+# No secrets: the fake AI provider is used, nothing here talks to a real AI.
+name: CI
+
+on:
+  push:
+    branches: ["auto/**", "phase-*"]
+  pull_request:
+    branches: ["auto/phases-7-10", "main"]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DA_LLM_PROVIDER: fake
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Install the pinned libraries
+        run: python -m pip install -r requirements-home.txt
+      - name: Tests
+        run: python -m pytest
+      - name: Style (ruff)
+        run: python -m ruff check .
+      - name: Smoke check
+        run: python src/da_smoke_check.py

@@ -87,20 +87,6 @@ def test_missing_or_broken_state_file_is_blind_when_reader_fails(isolated_state)
 
 # ---- the real reader (no network in tests) ----
 
-def test_endpoint_reader_is_blind_until_settings_are_filled(monkeypatch):
-    monkeypatch.delenv("DA_USAGE_URL", raising=False)
-    monkeypatch.delenv("DA_USAGE_TOKEN_FILE", raising=False)
-    with pytest.raises(g.GuardBlind, match="not set yet"):
-        g.endpoint_reader()
-
-
-def test_endpoint_reader_refuses_plain_http(monkeypatch, tmp_path):
-    monkeypatch.setenv("DA_USAGE_URL", "http://example.invalid/usage")
-    monkeypatch.setenv("DA_USAGE_TOKEN_FILE", str(tmp_path / "t"))
-    with pytest.raises(g.GuardBlind, match="https"):
-        g.endpoint_reader()
-
-
 def test_parse_accepts_status_line_names_and_rejects_other_shapes():
     body = {
         "five_hour": {"used_percentage": 12.5, "resets_at": NOW},
@@ -110,22 +96,6 @@ def test_parse_accepts_status_line_names_and_rejects_other_shapes():
     assert (u.five_hour, u.weekly, u.weekly_resets_at) == (12.5, 40.0, NOW + 5)
     with pytest.raises(g.GuardBlind):
         g.parse_usage_response({"something": "else"}, NOW)
-
-
-def test_errors_never_contain_the_token(monkeypatch, tmp_path):
-    secret = "sk-test-SECRET-TOKEN-123"
-    token_file = tmp_path / "token"
-    token_file.write_text(secret)
-    monkeypatch.setenv("DA_USAGE_URL", "https://example.invalid/usage")
-    monkeypatch.setenv("DA_USAGE_TOKEN_FILE", str(token_file))
-
-    def boom(request, timeout):
-        raise OSError(f"failed with header {request.get_header('Authorization')}")
-
-    monkeypatch.setattr(g.urllib.request, "urlopen", boom)
-    with pytest.raises(g.GuardBlind) as err:
-        g.endpoint_reader()
-    assert secret not in str(err.value)
 
 
 def test_main_prints_go_or_stop(capsys, isolated_state):
@@ -247,3 +217,185 @@ def test_a_json_true_is_not_read_as_one_percent():
     body = {"five_hour": {"used_percentage": True}, "seven_day": {"used_percentage": 10}}
     with pytest.raises(g.GuardBlind):
         g.parse_usage_response(body, NOW)
+
+
+# ---- the real reader (Gian, 6 Nov): oauth usage endpoint, no network in tests ----
+
+SECRET = "sk-test-SECRET-TOKEN-123"
+GOOD_A = {"five_hour": {"used_percentage": 12.5, "resets_at": NOW},
+          "seven_day": {"used_percentage": 40, "resets_at": NOW + 5}}
+GOOD_B = {"five_hour": {"utilization": 12.5, "resets_at": "2027-01-15T09:00:00+00:00"},
+          "seven_day": {"utilization": 40.0, "resets_at": "2027-01-20T00:00:00Z"}}
+
+
+class FakeReply:
+    def __init__(self, body):
+        self._body = json.dumps(body).encode()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def read(self):
+        return self._body
+
+
+@pytest.fixture
+def creds(tmp_path, monkeypatch):
+    f = tmp_path / ".credentials.json"
+    f.write_text(json.dumps({"claudeAiOauth": {"accessToken": SECRET}}), encoding="utf-8")
+    monkeypatch.setenv("DA_CREDENTIALS_FILE", str(f))
+    monkeypatch.delenv("DA_USAGE_URL", raising=False)
+    monkeypatch.delenv("DA_USAGE_REFRESHING", raising=False)
+    return f
+
+
+def unauthorized(url="x"):
+    import urllib.error
+    return urllib.error.HTTPError(url, 401, "Unauthorized", {}, None)
+
+
+def fake_urlopen(monkeypatch, *answers):
+    """Each call returns/raises the next answer. Records the requests."""
+    seen = []
+    queue = list(answers)
+
+    def opener(request, timeout):
+        seen.append(request)
+        answer = queue.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return FakeReply(answer)
+
+    monkeypatch.setattr(g.urllib.request, "urlopen", opener)
+    return seen
+
+
+def test_default_url_header_and_token_are_used(creds, monkeypatch):
+    seen = fake_urlopen(monkeypatch, GOOD_A)
+    usage_ = g.endpoint_reader()
+    req = seen[0]
+    assert req.full_url == "https://api.anthropic.com/api/oauth/usage"
+    assert req.get_method() == "GET"
+    assert req.get_header("Anthropic-beta") == "oauth-2025-04-20"
+    assert req.get_header("Authorization") == f"Bearer {SECRET}"
+    assert (usage_.five_hour, usage_.weekly) == (12.5, 40.0)
+
+
+def test_both_reply_shapes_are_understood(creds, monkeypatch):
+    fake_urlopen(monkeypatch, GOOD_B)
+    u = g.endpoint_reader()
+    assert (u.five_hour, u.weekly) == (12.5, 40.0)
+    assert u.five_hour_resets_at == 1_800_003_600.0  # 2027-01-15 09:00 UTC (checked with datetime)
+
+
+def test_unknown_shape_or_bad_numbers_are_blind(creds, monkeypatch):
+    for body in ({"five_hour": {"pct": 5}, "seven_day": {"pct": 5}}, {},
+                 {"five_hour": {"utilization": float("nan")}, "seven_day": {"utilization": 1}}):
+        fake_urlopen(monkeypatch, body)
+        with pytest.raises(g.GuardBlind):
+            g.endpoint_reader()
+
+
+def test_the_credentials_file_is_only_read_never_written(creds, monkeypatch):
+    before = (creds.read_bytes(), creds.stat().st_mtime_ns)
+    fake_urlopen(monkeypatch, GOOD_A)
+    g.endpoint_reader()
+    assert (creds.read_bytes(), creds.stat().st_mtime_ns) == before
+
+
+@pytest.mark.parametrize("content", [None, "not json", "{}", '{"claudeAiOauth": {}}'])
+def test_missing_or_odd_credentials_are_blind_without_a_network_call(
+    tmp_path, monkeypatch, content
+):
+    f = tmp_path / "c.json"
+    if content is not None:
+        f.write_text(content, encoding="utf-8")
+    monkeypatch.setenv("DA_CREDENTIALS_FILE", str(f))
+    seen = fake_urlopen(monkeypatch)
+    with pytest.raises(g.GuardBlind):
+        g.endpoint_reader()
+    assert seen == []
+
+
+def test_http_401_runs_claude_usage_once_then_retries_with_the_new_token(creds, monkeypatch):
+    runs = []
+
+    def refresh():
+        runs.append(1)
+        creds.write_text(json.dumps({"claudeAiOauth": {"accessToken": "NEW-TOKEN"}}),
+                         encoding="utf-8")
+
+    monkeypatch.setattr(g, "refresh_login", refresh)
+    seen = fake_urlopen(monkeypatch, unauthorized(), GOOD_A)
+    assert g.endpoint_reader().weekly == 40.0
+    assert runs == [1]
+    assert seen[1].get_header("Authorization") == "Bearer NEW-TOKEN"
+
+
+def test_a_second_401_is_blind_and_claude_is_run_only_once(creds, monkeypatch):
+    runs = []
+    monkeypatch.setattr(g, "refresh_login", lambda: runs.append(1))
+    seen = fake_urlopen(monkeypatch, unauthorized(), unauthorized())
+    with pytest.raises(g.GuardBlind, match="still refused"):
+        g.endpoint_reader()
+    assert runs == [1] and len(seen) == 2
+
+
+def test_other_http_errors_do_not_trigger_a_refresh(creds, monkeypatch):
+    import urllib.error
+    monkeypatch.setattr(g, "refresh_login", lambda: pytest.fail("must not refresh"))
+    fake_urlopen(monkeypatch, urllib.error.HTTPError("x", 500, "boom", {}, None))
+    with pytest.raises(g.GuardBlind, match="did not answer"):
+        g.endpoint_reader()
+
+
+def test_refresh_runs_claude_p_usage_without_the_worker_variable(monkeypatch):
+    seen = {}
+
+    def fake_run(cmd, **kwargs):
+        seen["cmd"], seen["env"] = cmd, kwargs["env"]
+
+        class Done:
+            returncode = 0
+
+        return Done()
+
+    monkeypatch.setenv("DA_WORKER", "1")
+    monkeypatch.setattr(g.subprocess, "run", fake_run)
+    g.refresh_login()
+    assert seen["cmd"] == ["claude", "-p", "/usage"]
+    # no DA_WORKER, so the child claude's own hooks do nothing (no loop back into this guard)
+    assert "DA_WORKER" not in seen["env"] and seen["env"]["DA_USAGE_REFRESHING"] == "1"
+
+
+def test_refresh_refuses_to_nest_and_a_missing_claude_is_blind(monkeypatch):
+    monkeypatch.setenv("DA_USAGE_REFRESHING", "1")
+    with pytest.raises(g.GuardBlind, match="already refreshing"):
+        g.refresh_login()
+    monkeypatch.delenv("DA_USAGE_REFRESHING")
+
+    def missing(cmd, **kw):
+        raise FileNotFoundError("claude")
+
+    monkeypatch.setattr(g.subprocess, "run", missing)
+    with pytest.raises(g.GuardBlind, match="could not run claude"):
+        g.refresh_login()
+
+
+def test_nothing_in_any_error_contains_the_token(creds, monkeypatch):
+    monkeypatch.setattr(g, "refresh_login", lambda: None)
+    for answers in ([OSError(f"x {SECRET}")], [unauthorized(), unauthorized()],
+                    [ValueError(SECRET)]):
+        fake_urlopen(monkeypatch, *answers)
+        with pytest.raises(g.GuardBlind) as err:
+            g.endpoint_reader()
+        assert SECRET not in str(err.value)
+
+
+def test_plain_http_override_is_refused(creds, monkeypatch):
+    monkeypatch.setenv("DA_USAGE_URL", "http://example.invalid/usage")
+    with pytest.raises(g.GuardBlind, match="https"):
+        g.endpoint_reader()

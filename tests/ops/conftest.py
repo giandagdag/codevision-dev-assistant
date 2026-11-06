@@ -1,10 +1,12 @@
 """Safety net: no test in this folder may start a real `gh` or `claude` (rule: tests never
-call the internet). chief_tick's own `subprocess` is swapped for a stub that raises."""
+call the internet). chief_tick's and usage_guard's own `subprocess` are swapped for a stub
+that raises."""
 
 import subprocess
 
 import chief_tick
 import pytest
+import usage_guard
 
 
 class _NoProcesses:
@@ -18,3 +20,4 @@ class _NoProcesses:
 @pytest.fixture(autouse=True)
 def _no_real_gh_or_claude(monkeypatch):
     monkeypatch.setattr(chief_tick, "subprocess", _NoProcesses)
+    monkeypatch.setattr(usage_guard, "subprocess", _NoProcesses)

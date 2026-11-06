@@ -20,12 +20,21 @@ One GitHub issue per question, label `needs-gian` (or `needs-work-test` for thin
 work laptop). You get a phone notification and answer in a comment. The chief reads it on its next wake-up.
 
 ## Pilot A-P1 (laptop, you present). Do these in order
-1. **Fill in the usage settings.** The endpoint is not documented by Anthropic, so nothing is
-   guessed in the code. Set two environment variables (Windows PowerShell, this window only):
-   - `$env:DA_USAGE_URL = "<https address of the usage endpoint>"`
-   - `$env:DA_USAGE_TOKEN_FILE = "<path to a file outside the repo holding your login token>"`
-   Then run `.venv\Scripts\python ops\usage_guard.py`. Expect `GO: ...`. If it says `STOP: guard blind`,
-   the reply shape differs: send the reply shape (no token!) and the reader gets a small fix.
+1. **Check the guard reads your real usage.** Nothing to set up: it reads your Claude login from
+   `%USERPROFILE%\.claude\.credentials.json` (read only, never written) and asks
+   `GET https://api.anthropic.com/api/oauth/usage` with the header `anthropic-beta: oauth-2025-04-20`.
+   Log in to Claude Code once on the laptop first. Run `.venv\Scripts\python ops\usage_guard.py`.
+   - Expect `GO: within the usage lines`. Then run it with a Python prompt to see the numbers:
+     `.venv\Scripts\python -c "import sys; sys.path.insert(0,'ops'); import usage_guard as g; print(g.endpoint_reader())"`
+   - **Compare the 5-hour and weekly numbers with Settings, Usage in Claude.** They must match.
+     If they are 100 times too small (for example 0.4 instead of 40), tell me: that means the
+     endpoint sends a fraction, and the guard must be changed before any unattended run.
+   - On a 401 the guard runs `claude -p "/usage"` once and tries again. If it still fails you get
+     `STOP: guard blind` and nothing starts (that is the safe answer).
+   - This endpoint is not an official API and can change. The guard understands two reply shapes
+     (the status-line shape with `used_percentage`, and a `utilization` shape). Anything else is
+     "guard blind". The `utilization` shape and the token's place in the credentials file
+     (`claudeAiOauth.accessToken`) are my assumptions, so this step is the proof.
 2. **Fake STOP:** edit the stop lines at the top of `ops/usage_guard.py` to 1, run it again,
    expect `STOP`, then put them back to 85 and 80.
 3. **Hook interpreter.** The three hooks in `.claude/settings.json` run with `$DA_PYTHON`, which
@@ -48,10 +57,11 @@ work laptop). You get a phone notification and answer in a comment. The chief re
 1. **Branch protection on `main`:** Settings, Branches, add a rule for `main`: require a pull
    request and your approval, and include administrators. This is the real wall: permission
    rules cannot filter `git push` by branch.
-2. **A fine-grained token for this one repo only:** Settings, Developer settings, Personal access
-   tokens, Fine-grained. Repository access: only this repo. Permissions: Contents read/write,
-   Pull requests read/write, Issues read/write. Log in `gh` with it on the laptop
-   (`gh auth login`). Never put the token in the repo.
+2. **Agents use your own GitHub login** (`gh auth login`; your decision, 6 Nov: no bot account).
+   That means they have your rights, including admin on this repo. The hook and deny list stop
+   `main` pushes, force pushes and merges, but they are best-effort (see below). So in the
+   `main` rule also tick **Do not allow bypassing the above settings** (include administrators).
+   GitHub then refuses even you, and that is what makes the wall real.
 3. **Create the labels** `needs-gian` and `needs-work-test` in the repo (Issues, Labels).
 4. **Create the branch `auto/phases-7-10`** from `main` (the chief merges phase PRs into it).
 
@@ -64,8 +74,27 @@ permission layer accepts the quiet runner's rewritten command (it uses an absolu
 ## Laptop power (O3)
 Settings, System, Power: set "sleep" to Never while plugged in, during the hours the team works.
 
-## Known gap: no CI yet
-The merge helper only merges when GitHub shows every check green, and it refuses when there are
-no checks at all (it cannot prove green). The repo has no GitHub Actions yet, so every merge is
-refused until you decide: add a small GitHub Action that runs pytest and ruff, or accept the
-worker's local results. Until then the chief opens a `needs-gian` issue instead of merging.
+## Checks (GitHub Action)
+`.github/workflows/ci.yml` runs pytest, ruff and the smoke check (Python 3.14, fake AI, no secrets)
+on every push to `auto/**` and `phase-*`, and on pull requests into `auto/phases-7-10` and `main`.
+The chief's merge helper only merges when this check is green, and it still refuses when a PR has
+no checks. Add the check `checks` as a **required status check** in the `main` rule.
+It has not run on GitHub yet: its first run is the push of branch `phase-a`. Look at the Actions
+tab, and if it is red, tell me before A-P1 (for example if Python 3.14 is not available there).
+
+## Before the first unattended run
+Do these once, in this order:
+1. **Backup.** On GitHub open the repo, switch to the `main` branch, Code, **Download ZIP**.
+   Keep the file somewhere outside the repo folder (name it with today's date). This is your
+   "save library before the upgrade" copy.
+2. **Do not pull or switch branches on the laptop while agents run.** The workers use the same repo
+   folder, so a `git pull`, `git switch` or file edit under them breaks their work. For your own
+   reading or testing, use a second clone in another folder. Pull `main` only when the team is stopped.
+3. **If a bad merge happens, revert it, do not delete history.**
+   - A bad merge into `auto/phases-7-10`: on GitHub open the merged pull request, press **Revert**,
+     and merge the revert pull request it creates. Or on the laptop (team stopped):
+     `git switch auto/phases-7-10`, `git revert -m 1 <merge commit id>`, `git push`.
+     Find the id with `git log --merges --oneline`.
+   - A bad merge into `main` (you merged it): the same, through a revert pull request.
+   - Never force-push. If everything is lost, unzip the backup from step 1 into a new folder.
+4. Confirm branch protection (O2 above) and the labels exist, then follow the pilot list.

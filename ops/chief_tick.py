@@ -130,7 +130,8 @@ def _refuse_stopped(decision, usage, status_file, gh, as_of) -> None:
         open_gian_issue(
             GUARD_BLIND_TITLE,
             "The chief could not read the plan usage, so nothing was started. "
-            "Check DA_USAGE_URL and DA_USAGE_TOKEN_FILE on the laptop (A-P1).",
+            "Check that Claude Code is logged in on the laptop and that the usage endpoint "
+            "still answers (docs/automation.md, A-P1).",
             "needs-gian", gh)
 
 

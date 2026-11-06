@@ -155,3 +155,21 @@ the cap (1 fix round) is reached. STOPPED for Gian.
   force push, editing `.env`, deleting files outside `logs/` and `ops/state/`.
   Honest limit: permission rules cannot filter `git push` by branch, so GitHub branch protection
   (O2) is the real wall.
+
+## Gian's decisions, 6 Nov 2026 (second batch)
+
+- **No bot account, no workshop repo.** Agents use Gian's own GitHub login. The safety hook and
+  deny list stay as they are. (The fine-grained token step in the guide is removed; the guide now
+  says to tick "Do not allow bypassing" so GitHub refuses even Gian's login.)
+- **X20 GitHub Action** `.github/workflows/ci.yml`: pytest, ruff, smoke check; runs on `auto/**`,
+  `phase-*` and on PRs into `auto/phases-7-10` and `main`; Python 3.14; `DA_LLM_PROVIDER=fake`; no
+  secrets; read-only permissions. Closes the "no CI" gap for the merge helper.
+- **X21 Usage endpoint:** `GET https://api.anthropic.com/api/oauth/usage`, header
+  `anthropic-beta: oauth-2025-04-20`, token read only from `%USERPROFILE%\.claude\.credentials.json`,
+  two reply shapes, on 401 run `claude -p "/usage"` once and retry, else guard blind. Replaces
+  the empty-endpoint setup of Question 1. Assumptions to prove at A-P1: the second reply shape
+  (`utilization`, read as percent), and the token's place (`claudeAiOauth.accessToken`).
+- **X22** The child `claude -p "/usage"` runs without `DA_WORKER` and with `DA_USAGE_REFRESHING=1`,
+  so its own hooks do nothing and the refresh can never loop back into the guard.
+- **X23 Docs:** "Before the first unattended run" (ZIP backup of main, no pulling while agents run,
+  how to revert a bad merge).
