@@ -556,7 +556,7 @@ def test_typing_at_the_checkpoint_is_the_correction(settings):
     """Phase 6 fixes, section 2: the box is open and Send means "Correct something"."""
     view = to_checkpoint(settings)
     assert view.choices == [PROCEED_OPTION, HELP_OPTION]
-    assert view.typing_allowed and view.send_label == "Correct something"
+    assert view.send_label == "Correct something"
     assert view.text_prompt == "Type what should change, then press Correct something."
 
     view = answer(settings, view, "Also mention the sheet names in the output.")

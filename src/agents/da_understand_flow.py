@@ -462,7 +462,6 @@ def get_understand_view(settings: Settings, request_id: str) -> UnderstandView:
         changed_fields=session.last_changed_fields,
         visible_fields=visible_fields(session),
         custom_choice_allowed=session.step == "decision",
-        typing_allowed=session.step in ("decision", "checkpoint"),
         send_label=CHECKPOINT_SEND_LABEL if session.step == "checkpoint" else "Send",
         text_prompt=CHECKPOINT_PROMPT if session.step == "checkpoint" else "",
         revision=session.revision,

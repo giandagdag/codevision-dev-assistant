@@ -215,9 +215,7 @@ class UnderstandView(BaseModel):
     visible_fields: list[str]
     # At a decision the text box opens for "Other, type here" (W3).
     custom_choice_allowed: bool
-    # The text box is open next to the choice buttons (a decision, or the checkpoint), and the
-    # label of the Send button says what typing does there.
-    typing_allowed: bool = False
+    # The label of the Send button: at the checkpoint it says what typing does there.
     send_label: str = "Send"
     # What the open text box says about typing, next to the choice buttons ("" = nothing special).
     text_prompt: str = ""
