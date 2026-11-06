@@ -45,8 +45,20 @@ work laptop). You get a phone notification and answer in a comment. The chief re
    `chief_tick.py` sets to the Python that runs it (use your `.venv\Scripts\python.exe` in the
    scheduled task). Outside a worker it is unset, so the hooks do nothing. Before every worker the
    chief proves the three hooks start and fail closed; if not, no worker starts and a
-   `needs-gian` issue "hooks cannot start" is opened. Check the hooks' shell: Claude Code runs hook
-   commands through Git Bash on Windows, so Git for Windows must be installed.
+   `needs-gian` issue "hooks cannot start" is opened.
+   **The hook strings are bash syntax, and on Windows Claude Code runs them in Git Bash.** It finds
+   Git Bash like this (Claude Code docs, checked 6 Nov): first the default folders
+   `C:\Program Files\Git` and `C:\Program Files (x86)\Git` (`bin\bash.exe`), then the `git` on PATH.
+   So it works even when `bash` is not on your PowerShell PATH. To point it at another one, set
+   `CLAUDE_CODE_GIT_BASH_PATH` (in settings.json: `{"env": {"CLAUDE_CODE_GIT_BASH_PATH":
+   "C:\\Program Files\\Git\\bin\\bash.exe"}}`). A wrong path is ignored with a warning you can see
+   with `claude --debug`. No screen names the bash it picked, so check it yourself:
+   - `where.exe git` and look for `C:\Program Files\Git\bin\bash.exe`.
+   - `.venv\Scripts\python -m pytest tests\ops -k settings_hooks -rs`: it must PASS, not skip.
+     It runs the three real hook strings in that bash.
+   - **Without Git Bash the hooks run in PowerShell, fail, and the docs say a failed PreToolUse
+     hook then BLOCKS the tool call.** That would also block your own sessions in this repo, so
+     install Git for Windows before turning on the hooks.
 4. **Rewrite check:** in a worker (`$env:DA_WORKER = "1"`) run `claude -p "run pytest"` and check
    that a `logs/quiet/*.log` file appears. The Claude docs do not say whether the rewrite works in
    `-p` mode, so this is the real test. The CLAUDE.md rule is the fallback.
