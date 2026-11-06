@@ -109,7 +109,19 @@ No new library: only the Python standard library (`json`, `csv`, `subprocess`, `
 
 Round 1: 2 Must fix (guard hook would block every session, not only workers; a blocked worker
 had no way to save state). Both fixed above (X11, X12), plus the Should fix items (X13 to X16).
-Round 2: pending.
+Round 2: both round 1 items confirmed fixed. **1 new Must fix**, so the plan is NOT approved and
+the cap (1 fix round) is reached. STOPPED for Gian.
+- **Must fix:** nothing refreshes `ops/state/usage.json` while a worker runs, and X3 treats a
+  reading older than 10 minutes as blind. Every worker running longer than 10 minutes would be
+  blocked, and AC-2 could not see a live 85% crossing.
+- **Reviewer's proposed fix (not applied yet):** the guard hook re-reads the usage itself through
+  the injected reader when the file is older than 2 to 3 minutes, and blocks if that re-read
+  fails. Tests: fresh state = GO, stale state triggers a re-read, failed re-read = block.
+- **Should fix (to fold in with the above):** test that only the exact resolved path
+  `ops/state/worker_note.md` is allowed on STOP (`ops/state/../x` is blocked); and the guard
+  decision wins when the guard hook and the quiet rewrite hook both run on Bash.
+- **FYI:** `git push` cannot be filtered by branch name in permission rules, so GitHub branch
+  protection (O2) is the real wall. Question 5 should say so.
 
 ## Questions for Gian
 
