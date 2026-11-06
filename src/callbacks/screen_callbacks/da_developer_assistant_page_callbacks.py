@@ -86,6 +86,7 @@ from pydantic_classes.da_models import (
     STATUS_READY_FOR_REVIEW,
     STATUS_READY_TO_BUILD,
 )
+from styles import da_styles
 
 # Problems the developer can understand and act on. Their messages are already plain words.
 # Anything else is a real bug and is allowed to stop loudly.
@@ -114,6 +115,17 @@ WORKSPACE_STATUSES = (
     STATUS_NOT_PASSING,
 )
 
+
+# While an action runs, the page takes no clicks. A choice button stays on the screen for the 10 to
+# 20 seconds the AI needs (longer since one click can start the next step too); a second click
+# would carry the revision from before the first one finished, and the server rightly refuses it
+# with "updated in another window" even though there is only one window. The style goes back to
+# the normal page style when the action ends.
+PAGE_BUSY = (
+    Output(PAGE_CONTENT_ID, "style"),
+    {**da_styles.PAGE, "pointerEvents": "none", "opacity": 0.75},
+    da_styles.PAGE,
+)
 
 # Enter sends, Shift+Enter makes a new line. Dash cannot tell them apart in Python, so this small
 # browser script (a Dash clientside callback) does the one thing a function key does on a 5250
@@ -444,6 +456,7 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
             (Output(SKIP_ID, "disabled"), True, False),
             # The "searching" line, hidden in every other workspace (it has no text there).
             (Output(BUSY_ID, "style"), {"display": "block"}, {"display": "none"}),
+            PAGE_BUSY,
         ],
         prevent_initial_call=True,
     )(handle_action)
@@ -473,7 +486,10 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
         State({"type": FORM_BOX_TYPE, "index": ALL}, "value"),
         State(STATE_ID, "data"),
         State(REFRESH_ID, "data"),
-        running=[(Output(BUSY_ID, "style"), {"display": "block"}, {"display": "none"})],
+        running=[
+            (Output(BUSY_ID, "style"), {"display": "block"}, {"display": "none"}),
+            PAGE_BUSY,
+        ],
         prevent_initial_call=True,
     )(handle_form)
 

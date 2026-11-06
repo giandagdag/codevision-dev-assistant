@@ -266,11 +266,15 @@ def test_register_attaches_the_callbacks_and_the_busy_state():
         "da-text.readOnly": True,
         "da-skip.disabled": True,
         "da-busy.style": {"display": "block"},
+        # The whole page takes no clicks while the action runs, so a second click cannot carry
+        # an old revision (found at work: "updated in another window" with one window).
+        "da-page-content.style": cb.PAGE_BUSY[1],
     }
+    assert cb.PAGE_BUSY[1]["pointerEvents"] == "none"
     assert action["running"]["runningOff"]["da-busy.style"] == {"display": "none"}
-    assert {v for k, v in action["running"]["runningOff"].items() if k != "da-busy.style"} == {
-        False
-    }
+    assert action["running"]["runningOff"]["da-page-content.style"] == page.da_styles.PAGE
+    skip = ("da-busy.style", "da-page-content.style")
+    assert {v for k, v in action["running"]["runningOff"].items() if k not in skip} == {False}
     # Enter-to-send: a browser-side callback that runs after every redraw.
     assert enter["output"] == "da-keys-ready.data"
     assert enter["inputs"][0]["id"] == page.PAGE_CONTENT_ID
@@ -530,6 +534,7 @@ def test_register_attaches_the_form_callback_with_pattern_ids():
     form = [c for c in app._callback_list if page.FORM_SUBMIT_TYPE in str(c["inputs"])]
     assert len(form) == 1
     assert page.FORM_BOX_TYPE in str(form[0]["state"])
+    assert form[0]["running"]["running"]["da-page-content.style"]["pointerEvents"] == "none"
     assert page.FORM_ERROR_TYPE in str(form[0]["output"])
     assert form[0]["prevent_initial_call"] is True
 
