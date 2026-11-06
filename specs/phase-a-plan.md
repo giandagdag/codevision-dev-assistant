@@ -137,3 +137,21 @@ the cap (1 fix round) is reached. STOPPED for Gian.
 5. **Worker permissions (X15).** OK that unattended workers run with `dontAsk` plus an allow list
    and a deny list, instead of `bypassPermissions`? *Recommended:* yes. It is stricter, and a
    worker that needs something outside the list stops and asks through an issue.
+
+## Gian's answers, 6 Nov 2026 (plan APPROVED, build)
+
+- Reviewer's fix approved, with the 2 smaller items, no second plan review: **X17** the guard hook
+  re-reads usage through the injected reader when `usage.json` is older than 3 minutes, and blocks
+  if the re-read fails (tests: fresh = GO, stale = re-read, failed re-read = block). **X18** only the
+  exact resolved path `ops/state/worker_note.md` is allowed on STOP (`ops/state/../x` blocked).
+  **X19** when the guard and quiet hooks both run on Bash, the guard decision wins.
+- Q1 yes (endpoint empty, blind = STOP until A-P1). Q2 yes (6,000 bytes). Q3 yes (logs local),
+  plus **STATUS.md has a `Usage:` line the chief updates each run**:
+  `Usage: 5h X% / weekly Y% (as of <time SGT>), stopped yes/no`.
+- Q4: handoff note lives in the claude.ai project. Do not look for it or archive anything.
+  STATUS.md is created from Gian's facts (main has 0 to 6; next Phase 7; waiting on Q7, Q9, Q15
+  with label `needs-work-test`; leftovers P26, P27, P28).
+- Q5 yes (`dontAsk`, allow and deny lists). Deny list must include: push or merge to `main`,
+  force push, editing `.env`, deleting files outside `logs/` and `ops/state/`.
+  Honest limit: permission rules cannot filter `git push` by branch, so GitHub branch protection
+  (O2) is the real wall.

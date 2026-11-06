@@ -11,6 +11,17 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/ops/guard_hook.py\"",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   }
 }

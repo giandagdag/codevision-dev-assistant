@@ -37,6 +37,10 @@ Stop, push the work so far to the phase branch, and tell Gian what you need when
 - Surgical changes: touch only what the step needs. Mention unrelated problems, don't fix them.
 - Checkable goals: every step says how to prove it is done, usually a test.
 - Find the cause first: when something fails, explain why before changing code.
+- Quiet runner: run `pytest`, `ruff` and `git status|diff|log` as `python ops/quiet.py <command>`
+  (short summary, full output in `logs/quiet/`). A hook does this for you in workers.
+- End every reply with what you skipped, and the risks.
+- Size budget: keep this file under 6,000 bytes (a test checks it).
 - Evidence before "done": paste the real test, ruff and smoke check results. Never claim a pass
   you did not see.
 
@@ -75,5 +79,6 @@ laptop workspace). Source of truth: `specs/redesign-2026-10-31.md`.
 - No real UOB code, data, names, or internal addresses. Use made-up examples only.
 - No secrets in code, logs, or tests. Secrets only live in `.env`, which Git ignores.
 - Tests never call a real AI or the internet. Use the `fake` provider or mocks.
-- Push only to `phase-N` or setup branches on `origin`. Never push to `main`, never force-push.
+- Push only to `phase-N`, `auto/phase-N` or setup branches on `origin`, plus `auto/phases-7-10`
+  (only the chief merges into it, never into `main`). Never push to `main`, never force-push.
 - Never commit `.env`, database files (`*.db`), keys or tokens.
