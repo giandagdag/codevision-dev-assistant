@@ -42,3 +42,21 @@ def test_chief_never_writes_product_code_and_knows_the_helpers():
     assert "never write product code" in text
     assert "chief_tick.py issue" in text and "chief_tick.py pause" in text
     assert "chief_tick.py merge" in text
+
+
+DOCS = (AGENTS.parent.parent / "docs" / "automation.md").read_text(encoding="utf-8")
+
+
+def test_docs_do_not_rely_on_branch_protection_which_this_repo_cannot_have():
+    assert "Do not allow bypassing" not in DOCS
+    assert "required status check" not in DOCS
+    low = DOCS.lower()
+    assert "private" in low and "free" in low and "branch protection is not available" in low
+    for safety_net in ("hook", "deny list", "ZIP"):
+        assert safety_net in DOCS
+
+
+def test_docs_keep_the_unattended_run_checklist():
+    for need in ("Before the first unattended run", "Download ZIP", "Revert",
+                 "usage_raw.json"):
+        assert need in DOCS

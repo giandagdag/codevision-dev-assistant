@@ -7,7 +7,8 @@ the base branch), no touching `.env`, no deleting files outside `logs/` and `ops
 editing the guard itself (`ops/`, `.claude/`, `ops/state/usage.json`).
 
 This is best-effort defence in depth, not a sandbox: a determined program can still find a way.
-GitHub branch protection (O2) is the real wall for `main`.
+This repo is private on a free GitHub plan, so there is NO branch protection: this hook, the
+deny list and the ZIP backup of `main` are the safety net.
 """
 
 import glob
@@ -30,6 +31,7 @@ DELETERS = {"rm", "rmdir", "del", "erase", "unlink", "shred", "truncate", "dd"}
 WRITERS = {"sed", "tee", "mv", "cp", "install", "chmod", "ln", "perl", "patch"} | DELETERS
 SHELLS = {"bash", "sh", "zsh", "dash", "eval", "exec", "xargs"}
 GH_OK = {"issue": None, "pr": {"create", "view", "checks", "list", "diff", "status"}}
+REMOTE_CHANGES = {"add", "set-url", "remove", "rm"}
 GIT_VALUE_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}
 SEGMENT_SPLIT = re.compile(r"&&|\|\||[;|&\n]")
 ALLOWED_VARS = ("$DA_PYTHON", "${DA_PYTHON}", "$CLAUDE_PROJECT_DIR", "${CLAUDE_PROJECT_DIR}")
@@ -119,6 +121,10 @@ def _git_problem(words: list[str], cwd: Path) -> str | None:
         return f"deleting a {sub} is not allowed"
     if sub == "push":
         return _push_problem(args, cwd)
+    if sub == "remote" and args and args[0] in REMOTE_CHANGES:
+        return f"git remote {args[0]} is not allowed (the remotes must not change)"
+    if sub == "config" and any(a.lower().startswith(("remote.", "url.")) for a in args):
+        return "changing git remote or url settings is not allowed"
     return None
 
 

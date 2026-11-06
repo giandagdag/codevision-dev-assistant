@@ -173,3 +173,18 @@ the cap (1 fix round) is reached. STOPPED for Gian.
   so its own hooks do nothing and the refresh can never loop back into the guard.
 - **X23 Docs:** "Before the first unattended run" (ZIP backup of main, no pulling while agents run,
   how to revert a bad merge).
+
+## Gian's decisions, 6 Nov 2026 (third batch)
+
+- **X24 Raw reply saved:** every usage read writes the raw reply to `ops/state/usage_raw.json`
+  (local, Git ignores `ops/state/`), before parsing, so A-P1 can check the real layout. `utilization`
+  is a percent from 0 to 100 (confirmed). The "limits" list layout is unconfirmed and NOT supported
+  (guard blind). A value that is missing, not a plain number (text, true/false), or outside 0 to 100
+  is guard blind (I also reject text numbers like "12": my choice, fail closed).
+- **X25 No branch protection** (private repo, free plan). The "Do not allow bypassing" step and the
+  "required status check" step are removed from the guide. Safety net: hook, deny list, ZIP backup
+  of `main`, merge helper. **AC-5's "refused by GitHub" part cannot be met on this plan**; the hook,
+  deny list and merge helper refuse it instead.
+- **X26 Remote changes denied:** `git remote add / set-url / remove / rm` are in the deny list and
+  blocked by the safety hook (also behind `git -C` and `git -c`). I also block `git config` keys
+  starting with `remote.` or `url.` (e.g. `insteadOf`), which would change a remote the same way.

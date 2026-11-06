@@ -14,7 +14,10 @@ Two reply shapes are understood (A-P1 confirms them on the laptop):
   A. `{"five_hour": {"used_percentage": 12.5, "resets_at": <epoch seconds>}, "seven_day": {...}}`
      (the shape Claude Code's status line documents)
   B. `{"five_hour": {"utilization": 12.5, "resets_at": "<ISO time>"}, "seven_day": {...}}`
-     (ASSUMED shape of the endpoint, numbers read as percent 0 to 100; check at A-P1)
+     (`utilization` is a percent from 0 to 100, confirmed by Gian on 6 Nov)
+A third layout, a "limits" list, is NOT confirmed and is not supported: it is "guard blind".
+Every reply is saved raw to `ops/state/usage_raw.json` so A-P1 can check the real layout.
+A value that is missing, not a plain number, or outside 0 to 100 is also "guard blind".
 """
 
 import json
@@ -153,8 +156,8 @@ def _window(body: dict, name: str) -> tuple[float, float | None]:
         percent = window["utilization"]
     else:
         raise KeyError("percentage")
-    if isinstance(percent, bool):
-        raise ValueError("a true/false value is not a percentage")
+    if isinstance(percent, bool) or not isinstance(percent, int | float):
+        raise ValueError("a percentage must be a plain number")  # missing, text, true/false
     return float(percent), _epoch(window.get("resets_at"))
 
 
@@ -194,6 +197,17 @@ def read_token() -> str:
     raise GuardBlind("the Claude login file could not be read (run claude once and log in)")
 
 
+def _save_raw(raw: str) -> None:
+    """Keep the last raw reply in `ops/state/usage_raw.json` (local, Git ignores it), so A-P1 can
+    check the real layout. It holds the reply only, never the token. A save problem is ignored."""
+    try:
+        target = state_path().parent / "usage_raw.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(raw, encoding="utf-8")
+    except OSError:
+        pass
+
+
 def _fetch(token: str) -> Usage:
     url = os.environ.get("DA_USAGE_URL", "").strip() or DEFAULT_URL
     if not url.startswith("https://"):
@@ -203,7 +217,9 @@ def _fetch(token: str) -> Usage:
         headers={"Authorization": f"Bearer {token}", "anthropic-beta": BETA_HEADER})
     try:
         with urllib.request.urlopen(request, timeout=15) as reply:  # noqa: S310 (https only)
-            body = json.loads(reply.read().decode("utf-8"))
+            raw = reply.read().decode("utf-8")
+        _save_raw(raw)
+        body = json.loads(raw)
     except urllib.error.HTTPError as problem:
         if problem.code == 401:
             raise _Unauthorized from None

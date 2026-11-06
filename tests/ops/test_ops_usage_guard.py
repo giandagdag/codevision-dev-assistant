@@ -399,3 +399,62 @@ def test_plain_http_override_is_refused(creds, monkeypatch):
     monkeypatch.setenv("DA_USAGE_URL", "http://example.invalid/usage")
     with pytest.raises(g.GuardBlind, match="https"):
         g.endpoint_reader()
+
+
+# ---- Gian, 6 Nov (3rd batch): raw reply saved on every read; bad values are blind ----
+
+def raw_file(isolated_state):
+    return isolated_state / "usage_raw.json"
+
+
+def test_the_raw_reply_is_saved_on_a_good_read(creds, monkeypatch, isolated_state):
+    fake_urlopen(monkeypatch, GOOD_A)
+    g.endpoint_reader()
+    assert json.loads(raw_file(isolated_state).read_text(encoding="utf-8")) == GOOD_A
+
+
+def test_the_raw_reply_is_saved_even_when_the_shape_is_unknown(creds, monkeypatch, isolated_state):
+    limits_layout = {"limits": [{"name": "five_hour", "utilization": 3}]}
+    fake_urlopen(monkeypatch, limits_layout)
+    with pytest.raises(g.GuardBlind):  # an unconfirmed layout is blind, never a guess
+        g.endpoint_reader()
+    assert json.loads(raw_file(isolated_state).read_text(encoding="utf-8")) == limits_layout
+
+
+def test_the_raw_file_is_overwritten_each_run_and_is_git_ignored(
+    creds, monkeypatch, isolated_state
+):
+    fake_urlopen(monkeypatch, GOOD_A, GOOD_B)
+    g.endpoint_reader()
+    g.endpoint_reader()
+    assert json.loads(raw_file(isolated_state).read_text(encoding="utf-8")) == GOOD_B
+    ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+    assert "ops/state/" in ignore.splitlines()
+
+
+def test_a_save_problem_never_stops_the_guard_or_loses_the_answer(creds, monkeypatch, tmp_path):
+    blocker = tmp_path / "not-a-folder"
+    blocker.write_text("x")
+    monkeypatch.setenv("DA_STATE_DIR", str(blocker / "sub"))  # cannot be created
+    fake_urlopen(monkeypatch, GOOD_A)
+    assert g.endpoint_reader().weekly == 40.0
+
+
+@pytest.mark.parametrize("bad", [None, "", "12", [], {}, 101, -0.5, 100.01, float("inf")])
+def test_a_missing_or_out_of_range_value_is_blind(creds, monkeypatch, bad):
+    for key in ("used_percentage", "utilization"):
+        body = {"five_hour": {key: bad}, "seven_day": {key: 10}}
+        fake_urlopen(monkeypatch, body)
+        with pytest.raises(g.GuardBlind):
+            g.endpoint_reader()
+    body = {"five_hour": {"utilization": 10}, "seven_day": {}}
+    fake_urlopen(monkeypatch, body)
+    with pytest.raises(g.GuardBlind):
+        g.endpoint_reader()
+
+
+@pytest.mark.parametrize("edge", [0, 0.0, 100, 100.0])
+def test_the_edges_0_and_100_are_valid(creds, monkeypatch, edge):
+    fake_urlopen(monkeypatch, {"five_hour": {"utilization": edge},
+                               "seven_day": {"utilization": edge}})
+    assert g.endpoint_reader().weekly == float(edge)

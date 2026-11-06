@@ -82,6 +82,11 @@ def test_settings_json_registers_the_safety_hook():
 # ---- review round 1: bypass forms (written before the fix) ----
 
 @pytest.mark.parametrize("command", [
+    "git remote add evil https://example.invalid/x.git", "git remote set-url origin https://x.invalid",
+    "git remote remove origin", "git remote rm origin", "git -C . remote add x y",
+    "git -c a=b remote set-url origin z", "git config remote.origin.url https://x.invalid",
+    "git config --add remote.origin.pushurl https://x.invalid",
+    "git config url.https://x.invalid/.insteadOf https://github.com/",
     "git push origin HEAD:refs/heads/main", "git push origin HEAD:heads/main",
     "git push origin HEAD:refs/heads/auto/phases-7-10", "bash -c 'git push origin main'",
     "sh -c \"rm -rf src\"", "git -C . push origin main", "git -c x=y push origin main",
@@ -113,7 +118,8 @@ def test_bare_push_is_blocked_only_while_on_main(monkeypatch):
 @pytest.mark.parametrize("command", [
     "gh pr create --base auto/phases-7-10 --title x", "gh pr view 3", "gh pr checks 3",
     "gh issue list --label needs-gian", "git -C . status", "mv a.txt b.txt",
-    "git push -u origin auto/phase-7", "cat ops/usage_guard.py", "grep -n x ops/quiet.py",
+    "git push -u origin auto/phase-7", "git remote -v", "git remote show origin",
+    "git config user.name x", "cat ops/usage_guard.py", "grep -n x ops/quiet.py",
     "\"$DA_PYTHON\" ops/chief_tick.py issue --label needs-gian --title x --body y",
     "git diff -- ops/quiet.py",
 ])
@@ -158,3 +164,11 @@ def test_settings_matcher_covers_grep_and_glob():
     cfg = json.loads((ROOT / ".claude" / "settings.json").read_text(encoding="utf-8"))
     group = next(g for g in cfg["hooks"]["PreToolUse"] if "safety_hook" in json.dumps(g))
     assert "Grep" in group["matcher"] and "Glob" in group["matcher"]
+
+
+def test_worker_deny_list_has_the_git_remote_rules():
+    cfg = json.loads((ROOT / "ops" / "worker_settings.json").read_text(encoding="utf-8"))
+    deny = cfg["permissions"]["deny"]
+    for rule in ("Bash(git remote add:*)", "Bash(git remote set-url:*)",
+                 "Bash(git remote remove:*)", "Bash(git remote rm:*)"):
+        assert rule in deny

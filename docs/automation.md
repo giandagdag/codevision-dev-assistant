@@ -26,15 +26,19 @@ work laptop). You get a phone notification and answer in a comment. The chief re
    Log in to Claude Code once on the laptop first. Run `.venv\Scripts\python ops\usage_guard.py`.
    - Expect `GO: within the usage lines`. Then run it with a Python prompt to see the numbers:
      `.venv\Scripts\python -c "import sys; sys.path.insert(0,'ops'); import usage_guard as g; print(g.endpoint_reader())"`
-   - **Compare the 5-hour and weekly numbers with Settings, Usage in Claude.** They must match.
-     If they are 100 times too small (for example 0.4 instead of 40), tell me: that means the
-     endpoint sends a fraction, and the guard must be changed before any unattended run.
+   - **Compare the 5-hour and weekly numbers with Settings, Usage in Claude.** They must match
+     (`utilization` is a percent from 0 to 100).
+   - **Open `ops\state\usage_raw.json`.** Every read saves the raw reply there (local, Git
+     ignores it, it never holds your token). Check the layout: the guard understands
+     `five_hour` / `seven_day` with `used_percentage` or `utilization`. If the reply is a `limits`
+     list instead, that layout is not supported yet and the guard says "guard blind". Send me the
+     file (no secrets in it) and I add it.
    - On a 401 the guard runs `claude -p "/usage"` once and tries again. If it still fails you get
      `STOP: guard blind` and nothing starts (that is the safe answer).
    - This endpoint is not an official API and can change. The guard understands two reply shapes
-     (the status-line shape with `used_percentage`, and a `utilization` shape). Anything else is
-     "guard blind". The `utilization` shape and the token's place in the credentials file
-     (`claudeAiOauth.accessToken`) are my assumptions, so this step is the proof.
+     (the status-line shape with `used_percentage`, and a `utilization` shape). Anything else, a
+     missing value, or a value outside 0 to 100 is "guard blind". The token's place in the
+     credentials file (`claudeAiOauth.accessToken`) is my assumption, so this step is the proof.
 2. **Fake STOP:** edit the stop lines at the top of `ops/usage_guard.py` to 1, run it again,
    expect `STOP`, then put them back to 85 and 80.
 3. **Hook interpreter.** The three hooks in `.claude/settings.json` run with `$DA_PYTHON`, which
@@ -54,22 +58,28 @@ work laptop). You get a phone notification and answer in a comment. The chief re
    Stop it with `schtasks /Delete /TN "CodeVision chief tick"`.
 
 ## Things you set once in GitHub (O2)
-1. **Branch protection on `main`:** Settings, Branches, add a rule for `main`: require a pull
-   request and your approval, and include administrators. This is the real wall: permission
-   rules cannot filter `git push` by branch.
-2. **Agents use your own GitHub login** (`gh auth login`; your decision, 6 Nov: no bot account).
-   That means they have your rights, including admin on this repo. The hook and deny list stop
-   `main` pushes, force pushes and merges, but they are best-effort (see below). So in the
-   `main` rule also tick **Do not allow bypassing the above settings** (include administrators).
-   GitHub then refuses even you, and that is what makes the wall real.
-3. **Create the labels** `needs-gian` and `needs-work-test` in the repo (Issues, Labels).
-4. **Create the branch `auto/phases-7-10`** from `main` (the chief merges phase PRs into it).
+**Branch protection is not available** (private repo on the free GitHub plan), so GitHub itself
+will not refuse a push or merge into `main`. Only your own rules and tools do. The safety net is:
+1. **The safety hook** (`ops/safety_hook.py`): checks every command a worker runs.
+2. **The deny list** (`ops/worker_settings.json`): no push or merge to `main`, no force push, no
+   `git remote add / set-url / remove`, no `.env`, no deleting outside `logs/` and `ops/state/`.
+3. **The ZIP backup of `main`** (see "Before the first unattended run").
+4. **The merge helper** only merges into `auto/phases-7-10`, and only when the check is green.
+
+What to do once:
+1. **Agents use your own GitHub login** (`gh auth login`; your decision, 6 Nov: no bot account).
+   They have your rights, including admin on this repo, so the three items above matter.
+2. **Create the labels** `needs-gian` and `needs-work-test` in the repo (Issues, Labels).
+3. **Create the branch `auto/phases-7-10`** from `main` (the chief merges phase PRs into it).
 
 ## Honest limits of the safety hook
 `ops/safety_hook.py` is best-effort. A worker can run Python (`.venv` python is allowed because it
-must run pytest), and a program can build a forbidden path from pieces. So the branch protection
-above is not optional: **turn it on before any unattended run (A-P4)**. Also check at A-P1 that the
+must run pytest), and a program can build a forbidden path from pieces. With no branch protection
+available, nothing on GitHub catches that. So the ZIP backup of `main` is not optional: take it
+before the first unattended run, and again before each A-P4 round. Also check at A-P1 that the
 permission layer accepts the quiet runner's rewritten command (it uses an absolute path).
+Spec AC-5 ("a merge into `main` is refused by GitHub") therefore cannot be met on this plan; the
+hook, the deny list and the merge helper refuse it instead.
 
 ## Laptop power (O3)
 Settings, System, Power: set "sleep" to Never while plugged in, during the hours the team works.
@@ -78,7 +88,7 @@ Settings, System, Power: set "sleep" to Never while plugged in, during the hours
 `.github/workflows/ci.yml` runs pytest, ruff and the smoke check (Python 3.14, fake AI, no secrets)
 on every push to `auto/**` and `phase-*`, and on pull requests into `auto/phases-7-10` and `main`.
 The chief's merge helper only merges when this check is green, and it still refuses when a PR has
-no checks. Add the check `checks` as a **required status check** in the `main` rule.
+no checks.
 It has not run on GitHub yet: its first run is the push of branch `phase-a`. Look at the Actions
 tab, and if it is red, tell me before A-P1 (for example if Python 3.14 is not available there).
 
@@ -97,4 +107,4 @@ Do these once, in this order:
      Find the id with `git log --merges --oneline`.
    - A bad merge into `main` (you merged it): the same, through a revert pull request.
    - Never force-push. If everything is lost, unzip the backup from step 1 into a new folder.
-4. Confirm branch protection (O2 above) and the labels exist, then follow the pilot list.
+4. Confirm the labels and the `auto/phases-7-10` branch exist (O2 above), then follow the pilot list.
