@@ -34,7 +34,6 @@ TESTS_NOTE = "These tests run on the CodeVision server. They are not copied to y
 TURN_TITLE = "Your turn"
 TURN_LINES = (
     "Try it yourself: start CodeVision on your laptop and test the change by hand.",
-    "Edit anything, then click Re-scan.",
     "Tell me if a requirement is missing.",
 )
 LAYER_C_TEXT = "Coming in Phase 7"

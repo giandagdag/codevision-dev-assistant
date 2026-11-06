@@ -12,7 +12,7 @@ from db_table_functions.db_tbl_da_requests import read_request
 from db_table_functions.db_tbl_da_workspace import WorkspaceError, read_workspace_state
 from tests.da_approach_play import event_types, events_of
 from tests.da_discover_play import moves
-from tests.da_workspace_play import good_folder, pick, ready_to_build_id, texts
+from tests.da_workspace_play import MODIFY, good_folder, pick, ready_to_build_id, texts
 
 pytestmark = pytest.mark.usefixtures("published_rulebook")
 
@@ -32,9 +32,10 @@ def request_id(settings):
 @pytest.fixture
 def blocked(settings, request_id):
     folder = good_folder()
-    del folder.files["src/callbacks/da_calls.py"]
+    del folder.files[MODIFY]  # B3: the plan changes a file this folder does not have
+    folder.files["src/agents/other.py"] = "x\n"  # keep the folder src/agents there
     view, _ = pick(settings, request_id, folder)
-    assert view.step == "ws_blocked"
+    assert view.step == "ws_blocked" and [b.code for b in view.check.blockers] == ["B3"]
     return view
 
 
@@ -103,7 +104,7 @@ def test_get_help_keeps_the_workspace_step_at_ws_blocked(settings, request_id, b
         state = read_workspace_state(conn, request_id)
 
     assert state.step == "ws_blocked"  # not lost, not replaced by "escalated"
-    assert state.last_check.blockers[0].code == "B1"
+    assert state.last_check.blockers[0].code == "B3"
 
 
 def test_p14_a_failure_midway_saves_nothing(settings, request_id, blocked, monkeypatch):
@@ -123,7 +124,7 @@ def test_p14_a_failure_midway_saves_nothing(settings, request_id, blocked, monke
         assert read_workspace_state(conn, request_id).revision == revision
     assert "approach_reopened" not in event_types(settings, request_id)
     assert "escalated" not in event_types(settings, request_id)
-    assert texts(flow.get_workspace_view(settings, request_id))[-1].startswith("B1:")
+    assert texts(flow.get_workspace_view(settings, request_id))[-1].startswith("B3:")
 
 
 def test_exits_are_only_possible_from_a_blocked_check(settings, request_id):

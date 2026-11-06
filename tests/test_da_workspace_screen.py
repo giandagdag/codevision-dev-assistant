@@ -71,7 +71,15 @@ def test_5_1_before_a_folder_the_chip_says_none_and_choose_is_active(settings, r
     assert state["workspace"] is True and state["revision"] == 0
 
 
-def test_a_blocked_folder_shows_the_blockers_the_chip_and_the_three_ways_out(settings, request_id):
+def planned_file_blocked_folder():
+    """B3: the plan changes a file this folder does not have (the plan, not the folder, is off)."""
+    folder = good_folder()
+    del folder.files[MODIFY]
+    folder.files["src/agents/other.py"] = "x\n"
+    return folder
+
+
+def test_a_wrong_folder_shows_the_blocker_the_chip_and_two_ways_out(settings, request_id):
     folder = good_folder()
     del folder.files["src/callbacks/da_calls.py"]
     pick(settings, request_id, folder)
@@ -80,6 +88,17 @@ def test_a_blocked_folder_shows_the_blockers_the_chip_and_the_three_ways_out(set
 
     assert "Not a CodeVision folder" in chip_text(tree)
     assert "B1:" in all_text(tree)
+    assert "This folder doesn't match the plan yet:" in all_text(tree)
+    assert button_labels(tree, panel.WS_BTN_TYPE) == ["Choose another folder"]
+    assert button_labels(tree, page.CHOICE_TYPE) == ["Get help"]  # F6: not the plan's fault
+
+
+def test_a_blocker_about_a_planned_file_shows_the_three_ways_out(settings, request_id):
+    pick(settings, request_id, planned_file_blocked_folder())
+
+    tree = draw(request_id)
+
+    assert "B3:" in all_text(tree)
     assert button_labels(tree, panel.WS_BTN_TYPE) == ["Choose another folder"]
     assert button_labels(tree, page.CHOICE_TYPE) == ["Change the approach", "Get help"]
 
@@ -93,12 +112,12 @@ def test_5_31_a_ready_workspace_has_a_status_only_chip_the_build_tab_and_the_app
 
     chip = chip_text(tree)
     assert "codevision" in chip and "✅" in chip
-    # P30: the chip is status only. Re-scan, Change and Reconnect are chat buttons, once each.
+    # P30: the chip is status only. Change folder and Reconnect are chat buttons, once each.
+    # F7: no manual Re-scan button; the Build button already re-scans by itself.
     assert [b for b in components(by_id(tree, "da-ws-chip"), "Button")] == []
     assert sorted(button_labels(tree, panel.WS_BTN_TYPE)) == [
         "Build",
-        "Change",
-        "Re-scan",
+        "Change folder",
         "Reconnect",
     ]
     reconnect = by_id(tree, panel.ws_button_id("reconnect", "bar"))
@@ -177,7 +196,7 @@ def test_5_31_the_build_tab_has_no_re_scan_button(settings, request_id):
     buttons_in_tab = components(panel.build_panel(view), "Button")
 
     assert buttons_in_tab == []  # the Build button is under the chat, once (P30)
-    assert button_labels(draw(request_id), panel.WS_BTN_TYPE).count("Re-scan") == 1
+    assert "Re-scan" not in button_labels(draw(request_id), panel.WS_BTN_TYPE)  # F7
 
 
 def test_5_31_reconnect_is_drawn_only_at_ws_ready(settings, request_id):
@@ -205,9 +224,7 @@ def click(settings, tree, index):
 
 
 def test_get_help_and_change_the_approach_buttons_reach_the_workspace_flow(settings, request_id):
-    folder = good_folder()
-    del folder.files["src/callbacks/da_calls.py"]
-    pick(settings, request_id, folder)
+    pick(settings, request_id, planned_file_blocked_folder())
     tree = draw(request_id)
 
     click(settings, tree, 1)  # Get help
@@ -218,9 +235,7 @@ def test_get_help_and_change_the_approach_buttons_reach_the_workspace_flow(setti
 
 
 def test_change_the_approach_button_moves_the_request_back(settings, request_id):
-    folder = good_folder()
-    del folder.files["src/callbacks/da_calls.py"]
-    pick(settings, request_id, folder)
+    pick(settings, request_id, planned_file_blocked_folder())
 
     click(settings, draw(request_id), 0)
 

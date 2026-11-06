@@ -96,7 +96,7 @@ def _blocked_by_folder(check: CheckResult | None) -> bool:
 
 def workspace_chip(view: WorkspaceView) -> dmc.Group:
     """The header chip (spec section 3). It shows STATUS ONLY: the folder name and its state. It
-    has no buttons; Re-scan, Change and Reconnect are buttons under the chat (work test, P30)."""
+    has no buttons; Change folder and Reconnect are buttons under the chat (work test, P30)."""
     if view.mode == "download" and view.step in ("ws_fallback", "ws_ready", "ws_blocked"):
         return dmc.Group([dmc.Text("📁 Download mode", size="sm", fw=600)], gap=6, id="da-ws-chip")
     if not view.folder_name or view.step == "start":

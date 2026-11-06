@@ -108,6 +108,19 @@ def test_after_the_build_the_poll_is_off_and_the_page_asks_for_the_automatic_wri
     assert "READY FOR REVIEW" in all_text(by_id(tree, "da-build-chat-status"))
 
 
+def test_f7_there_is_no_manual_rescan_button_while_building_or_after_the_build(settings, ready):
+    request_id, _ = ready
+    start(settings, request_id)
+    running = draw(request_id)
+    loop.run_build(settings, request_id)
+    done = draw(request_id)
+
+    for tree in (running, done):
+        every = labels(tree)
+        assert "Re-scan" not in every  # Phase 8 (Refine) brings it back after a build
+        assert "Change folder" not in every and "Change" not in every
+
+
 def test_6_42_the_written_tab_says_try_it_yourself_and_has_no_run_the_tests_line(settings, ready):
     request_id, folder = ready
     start(settings, request_id)
@@ -121,7 +134,8 @@ def test_6_42_the_written_tab_says_try_it_yourself_and_has_no_run_the_tests_line
     turn = all_text(by_id(tree, bp.TURN_ID))
     assert "Your turn" in turn
     assert "Try it yourself: start CodeVision on your laptop and test the change by hand." in turn
-    assert "Edit anything, then click Re-scan." in turn
+    # F7: there is no working Re-scan after a build in Phase 6 (that is Phase 8, Refine).
+    assert "Re-scan" not in turn and "Edit anything" not in turn
     assert "Tell me if a requirement is missing." in turn
     assert "run the tests" not in all_text(tree).lower()
     table = all_text(by_id(tree, bp.FILES_ID))

@@ -90,12 +90,16 @@ logger = get_logger(__name__)
 CHOOSE_KEY, CHOOSE_LABEL = "choose", "Choose workspace folder"
 CHOOSE_OTHER_LABEL = "Choose another folder"
 RESCAN_KEY, RESCAN_LABEL = "rescan", "Re-scan"
-CHANGE_FOLDER_KEY, CHANGE_FOLDER_LABEL = "change_folder", "Change"
+CHANGE_FOLDER_KEY, CHANGE_FOLDER_LABEL = "change_folder", "Change folder"
 DOWNLOAD_KEY, DOWNLOAD_LABEL = "download", "Download ZIP"
 UPLOAD_KEY, UPLOAD_LABEL = "upload", "Upload folder to check"
 RETRY_PICKER_KEY, RETRY_PICKER_LABEL = "retry_picker", "Try the folder picker again"
 CHANGE_APPROACH_KEY = "change_approach"
 HELP_KEY = "help"
+NOT_MATCHING_LINE = "This folder doesn't match the plan yet:"
+# Blockers about a planned file (B3 to B6). "Change the approach" can fix these; B1 and B2 (wrong
+# folder, picked src) are about the folder itself, so the plan is not the problem.
+PLANNED_FILE_BLOCKERS = ("B3", "B4", "B5", "B6")
 BUILD_LABEL = "Build (coming in Phase 6)"
 
 ESCALATED_PREFIX = "Escalated in Workspace: "
@@ -465,7 +469,9 @@ def get_workspace_view(settings, request_id: str) -> WorkspaceView:
     mode: WorkspaceMode = state.mode if state else "picker"
     capped = approach_state is not None and approach_state.change_count >= MAX_CHANGES
     rows = _file_rows(approach, known, baselines, scan)
-    server, browser, note = _buttons_for(step, mode, capped, bool(state and state.folder_name))
+    server, browser, note = _buttons_for(
+        step, mode, capped, bool(state and state.folder_name), state.last_check if state else None
+    )
     return WorkspaceView(
         request=request,
         messages=messages,
@@ -541,7 +547,7 @@ def _save_blocked(
     )
     for warning in result.warnings:
         tx.say("assistant", warning)
-    tx.say("assistant", "I cannot use this folder yet:")
+    tx.say("assistant", NOT_MATCHING_LINE)
     for blocker in result.blockers:
         tx.say("assistant", f"{blocker.code}: {blocker.text}")
     state = _base_state(snap, tx.request.request_id).model_copy(
@@ -672,24 +678,35 @@ def _file_rows(approach: ApproachVersion, known, baselines, scan) -> list[FileRo
     return rows
 
 
-def _buttons_for(step: str, mode: str, capped: bool, linked: bool = False):
+def _buttons_for(
+    step: str, mode: str, capped: bool, linked: bool = False, check: CheckResult | None = None
+):
     """(server buttons, browser buttons, note) for one step (spec section 1 table). Once a
-    folder has been linked, Change is also offered at start, so a same-named different folder
-    (P26) can be linked on purpose."""
+    folder has been linked, Change folder is also offered at start, so a same-named different
+    folder (P26) can be linked on purpose. At ws_blocked, Change the approach is offered only when
+    a blocker is about a planned file (Phase 6 fixes, F6). At ws_ready there is no manual Re-scan
+    button (F7): Build re-scans by itself; Phase 8 brings Re-scan back after a build."""
     if step == "start":
         change = [(CHANGE_FOLDER_KEY, CHANGE_FOLDER_LABEL)] if linked else []
         return [], [(CHOOSE_KEY, CHOOSE_LABEL), *change], ""
     if step == "ws_blocked":
-        server = [] if capped else [(CHANGE_APPROACH_KEY, CHANGE_APPROACH_OPTION)]
+        about_plan = check is not None and any(
+            blocker.code in PLANNED_FILE_BLOCKERS for blocker in check.blockers
+        )
+        server = [] if capped or not about_plan else [(CHANGE_APPROACH_KEY, CHANGE_APPROACH_OPTION)]
         server.append((HELP_KEY, HELP_BUTTON))
         pick_again = (CHOOSE_KEY, CHOOSE_OTHER_LABEL)
         browser = [(UPLOAD_KEY, UPLOAD_LABEL)] if mode == "download" else [pick_again]
-        return server, browser, CAP_MESSAGE if capped else ""
+        if not about_plan:
+            note = NOT_MATCHING_LINE.rstrip(":") + ". Choose another folder or get help"
+        else:
+            note = CAP_MESSAGE if capped else ""
+        return server, browser, note
     if step == "ws_ready":
         if mode == "download":
             upload = (UPLOAD_KEY, "Upload folder to re-scan")
             return [], [(DOWNLOAD_KEY, DOWNLOAD_LABEL), upload], ""
-        return [], [(RESCAN_KEY, RESCAN_LABEL), (CHANGE_FOLDER_KEY, CHANGE_FOLDER_LABEL)], ""
+        return [], [(CHANGE_FOLDER_KEY, CHANGE_FOLDER_LABEL)], ""
     if step == "ws_fallback":
         return (
             [],
@@ -773,9 +790,9 @@ def _require_step(snap: _Snap, *steps: str) -> None:
 def _wrong_step_message(step: str) -> str:
     messages = {
         "start": f"Please press {CHOOSE_LABEL} first.",
-        "ws_blocked": "The folder has a problem. Choose another folder, change the approach, "
-        f"or {HELP_BUTTON}.",
-        "ws_ready": "The workspace is ready. Use Re-scan or Change.",
+        "ws_blocked": "This folder doesn't match the plan yet. Choose another folder, change "
+        f"the approach, or {HELP_BUTTON}.",
+        "ws_ready": "The workspace is ready. Press Build, or use Change folder.",
         "ws_fallback": "Download mode is on. Download the ZIP or upload your folder.",
         "escalated": "This request was handed to a senior developer.",
     }

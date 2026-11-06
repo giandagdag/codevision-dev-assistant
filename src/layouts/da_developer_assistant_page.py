@@ -124,7 +124,7 @@ BUILD_NOTES: dict[str, str] = {
 }
 WORKSPACE_NOTES: dict[str, str] = {
     "start": "Choose your local CodeVision folder. Your browser asks you to allow it",
-    "ws_blocked": "This folder cannot be used yet. Choose another folder or get help",
+    "ws_blocked": "This folder doesn't match the plan yet. Choose another folder or get help",
     "ws_ready": "Your workspace is ready",
     "ws_fallback": "Your browser cannot reach the folder. Use the ZIP and upload instead",
 }
