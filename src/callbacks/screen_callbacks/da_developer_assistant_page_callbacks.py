@@ -340,7 +340,6 @@ def _approach_action(settings: Settings, trigger, request_id: str, revision: int
         approach_flow.HELP_KEY: approach_flow.request_help,
         approach_flow.WRITE_PLAN_KEY: approach_flow.write_test_plan_again,
         approach_flow.ACCEPT_PLAN_KEY: approach_flow.accept_test_plan,
-        approach_flow.ADD_CASE_KEY: approach_flow.request_case,
         approach_flow.CHANGE_APPROACH_KEY: approach_flow.request_plan_change,
         approach_flow.KEEP_KEY: approach_flow.keep_case,
         approach_flow.DISCARD_KEY: approach_flow.discard_case,

@@ -196,7 +196,6 @@ def test_buttons_at_the_wrong_step_are_refused(settings, request_id):
         lambda: flow.request_change(settings, request_id, view.revision),
         lambda: flow.accept_test_plan(settings, request_id, view.revision),
         lambda: flow.keep_case(settings, request_id, view.revision),
-        lambda: flow.request_case(settings, request_id, view.revision),
         lambda: flow.write_test_plan_again(settings, request_id, view.revision),
         lambda: flow.request_help(settings, request_id, view.revision),
     ):

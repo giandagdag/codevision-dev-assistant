@@ -92,7 +92,11 @@ CORRECTION_QUESTION = "What should change?"
 HELP_OPTION = "I need help deciding"
 PROCEED_OPTION = "Proceed with this understanding"
 CORRECT_OPTION = "Correct something"
-CHECKPOINT_OPTIONS: tuple[str, ...] = (PROCEED_OPTION, CORRECT_OPTION, HELP_OPTION)
+# Two buttons. Typing in the open text box and pressing "Correct something" is the correction
+# (Phase 6 fixes, section 2), so there is no Correct button.
+CHECKPOINT_OPTIONS: tuple[str, ...] = (PROCEED_OPTION, HELP_OPTION)
+CHECKPOINT_SEND_LABEL = CORRECT_OPTION
+CHECKPOINT_PROMPT = "Type what should change, then press Correct something."
 SKIP_TEXT = "Skip"
 
 # The form (Phase 6 fixes, U1): the 4 mandatory questions in their wording, plus the optional box.
@@ -358,12 +362,18 @@ def submit_answer(
         return _submit_custom_decision(settings, session, text, base_revision, client, now)
     _require_text_step(session)
     step_name, question = _interpreter_step(session)
-    result = _interpret(settings, session, step_name, question, text, client)
+    result = _interpret(
+        settings, _without_checkpoint_help(session), step_name, question, text, client
+    )
 
     with _turn(settings.db_path, request_id, base_revision, now) as turn:
         turn.say("developer", text)
         turn.audit("developer", "question_answered", {"step": step_name})
         if result.ok:
+            if session.step == "checkpoint":
+                # Typing at the checkpoint is "Correct something": the same as the old two
+                # clicks. A failed AI call leaves the request at the checkpoint untouched.
+                _start_correction(turn)
             answered = (session.current_question,) if session.step == "question" else ()
             _apply_result(turn, result, answered)
             if session.step == "optional":
@@ -452,7 +462,9 @@ def get_understand_view(settings: Settings, request_id: str) -> UnderstandView:
         changed_fields=session.last_changed_fields,
         visible_fields=visible_fields(session),
         custom_choice_allowed=session.step == "decision",
-        typing_allowed=session.step == "decision",
+        typing_allowed=session.step in ("decision", "checkpoint"),
+        send_label=CHECKPOINT_SEND_LABEL if session.step == "checkpoint" else "Send",
+        text_prompt=CHECKPOINT_PROMPT if session.step == "checkpoint" else "",
         revision=session.revision,
         demo_mode=settings.llm_provider == "fake",
     )
@@ -787,8 +799,8 @@ def _choose_checkpoint(turn: _Turn, option: str) -> None:
     if option == HELP_OPTION:
         if session.checkpoint_help:
             raise UnderstandError(
-                "Help has already been requested. Choose Proceed or Correct something "
-                "when you are ready."
+                f"Help has already been requested. Choose Proceed or type what should change "
+                f"and press {CORRECT_OPTION} when you are ready."
             )
         session.checkpoint_help = True
         _set_open_items(session, [*session.record.open_items, CHECKPOINT_HELP_ITEM])
@@ -797,13 +809,22 @@ def _choose_checkpoint(turn: _Turn, option: str) -> None:
         turn.audit("developer", "help_requested", {"question": "confirmation"})
         turn.say(
             "assistant",
-            "Help requested. This request will wait here. When you are ready, choose Proceed "
-            "or Correct something.",
+            f"Help requested. This request will wait here. When you are ready, choose Proceed "
+            f"or type what should change and press {CORRECT_OPTION}.",
         )
         return
 
+    _clear_checkpoint_help(turn)
+    # Proceed: the gate runs again, then record v1 is saved. From DECISION_REQUIRED this is
+    # one action with every move audited, no second click (review S1).
+    if _run_gate(turn, announce=False):
+        _confirm(turn)
+
+
+def _clear_checkpoint_help(turn: _Turn) -> None:
+    """Choosing later clears the help item, the same way a decision does (review M2)."""
+    session = turn.session
     if session.checkpoint_help:
-        # Choosing later clears the help item, the same way a decision does (review M2).
         session.checkpoint_help = False
         _set_open_items(
             session, [i for i in session.record.open_items if i != CHECKPOINT_HELP_ITEM]
@@ -811,17 +832,22 @@ def _choose_checkpoint(turn: _Turn, option: str) -> None:
         session.last_changed_fields = ["open_items"]
         turn.move_to(STATUS_CLARIFICATION)
 
-    if option == CORRECT_OPTION:
-        session.step = "correction"
-        turn.move_to(STATUS_CLARIFICATION)
-        turn.audit("developer", "correction_requested")
-        turn.say("assistant", CORRECTION_QUESTION)
-        return
 
-    # Proceed: the gate runs again, then record v1 is saved. From DECISION_REQUIRED this is
-    # one action with every move audited, no second click (review S1).
-    if _run_gate(turn, announce=False):
-        _confirm(turn)
+def _without_checkpoint_help(session: UnderstandSession) -> UnderstandSession:
+    """Typing a correction clears a waiting "help requested" item (as choosing Proceed does), so
+    the interpreter's record must not hold it, or applying the reply would bring it back."""
+    if session.step != "checkpoint" or not session.checkpoint_help:
+        return session
+    items = [i for i in session.record.open_items if i != CHECKPOINT_HELP_ITEM]
+    record = session.record.model_copy(update={"open_items": items})
+    return session.model_copy(update={"record": record})
+
+
+def _start_correction(turn: _Turn) -> None:
+    """The developer typed a correction at the checkpoint (Send = Correct something)."""
+    _clear_checkpoint_help(turn)
+    turn.move_to(STATUS_CLARIFICATION)
+    turn.audit("developer", "correction_requested")
 
 
 def _confirm(turn: _Turn) -> None:
@@ -962,7 +988,7 @@ def _accept_developer_text(text: str) -> str:
 
 
 def _require_text_step(session: UnderstandSession) -> None:
-    if _INPUT_MODES[session.step] != "text":
+    if _INPUT_MODES[session.step] != "text" and session.step != "checkpoint":
         raise UnderstandError(_wrong_step_message(session))
 
 
@@ -974,8 +1000,8 @@ def _wrong_step_message(session: UnderstandSession) -> str:
         "correction": "Please type what should change first.",
         "decision": "A decision is waiting. Please choose an option or type your own answer.",
         "checkpoint": (
-            f"Please choose one of the options: {PROCEED_OPTION}, {CORRECT_OPTION}, "
-            f"or {HELP_OPTION}."
+            f"Please choose {PROCEED_OPTION} or {HELP_OPTION}, or type what should change "
+            f"and press {CORRECT_OPTION}."
         ),
         "senior": SENIOR_MESSAGE,
         "done": "This request is already confirmed. It cannot be changed in this phase.",

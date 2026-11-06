@@ -107,6 +107,8 @@ PROCEED_DISCOVERY_OPTION = "Proceed to Discovery"
 SEARCH_AGAIN_OPTION = "Search again"
 BUSY_TEXT = "⏳ Searching approved sources…"
 APPROACH_BUSY_TEXT = "⏳ Working on it…"
+# Approach buttons that are real main actions (filled). A design choice is NOT one of them.
+MAIN_ACTION_KEYS = ("start", "accept", "accept_plan", "write_plan", "keep")
 BUILD_LABEL = "Build"
 BUILD_KEY = "build"
 # What the note above the workspace buttons says at each step.
@@ -261,7 +263,13 @@ def render_workspace(view: UnderstandView) -> list:
         messages=[parts.chat_bubble(message) for message in view.messages]
         + ([_form()] if view.input_mode == "form" else []),
         composer=_composer(
-            view.input_mode, view.choices, view.can_skip, view.prompt, view.custom_choice_allowed
+            view.input_mode,
+            view.choices,
+            view.can_skip,
+            view.prompt,
+            view.custom_choice_allowed,
+            view.send_label,
+            view.text_prompt,
         ),
         panel=_summary_panel(view),
         state={"request_id": view.request.request_id, "revision": view.revision},
@@ -539,7 +547,9 @@ def _approach_composer(
         [
             dmc.Textarea(
                 id=TEXT_ID,
-                placeholder=prompt or "Text input is paused until you choose",
+                # A box that is closed because a limit was reached says so (the cap message).
+                placeholder=prompt
+                or (view.note if view and view.note else "Text input is paused until you choose"),
                 disabled=not text_open,
                 autosize=True,
                 minRows=2,
@@ -550,7 +560,7 @@ def _approach_composer(
                 [
                     dmc.Button("Skip", id=SKIP_ID, style={"display": "none"}),
                     dmc.Button(
-                        "Send",
+                        view.send_label if view else "Send",
                         id=SEND_ID,
                         disabled=not text_open,
                         leftSection=DashIconify(icon="tabler:send", width=16),
@@ -681,14 +691,21 @@ def _workspace_buttons(workspace: WorkspaceView) -> dmc.Box:
     )
 
 
+def approach_button_kind(key: str) -> str:
+    """The style of an Approach button: filled for the real main actions, outlined for help and
+    for going back, light for the rest. Position does not matter, so the options of a design
+    choice all look equal (Phase 6 fixes, section 4)."""
+    if key in ("help", "decide_help", "change_approach"):
+        return parts.SECONDARY
+    if key in MAIN_ACTION_KEYS:
+        return parts.PRIMARY
+    return parts.NORMAL
+
+
 def _approach_bar(buttons: list[tuple[str, str]], note: str) -> dmc.Box:
     shown = [
         parts.choice_button(
-            label,
-            {"type": CHOICE_TYPE, "index": number},
-            parts.SECONDARY
-            if key in ("help", "decide_help")
-            else (parts.PRIMARY if number == 0 else parts.NORMAL),
+            label, {"type": CHOICE_TYPE, "index": number}, approach_button_kind(key)
         )
         for number, (key, label) in enumerate(buttons)
     ]
@@ -841,12 +858,19 @@ def _discover_bar(buttons: list[tuple[str, str]], note: str) -> dmc.Box:
 
 
 def _composer(
-    mode: str, choices: list[str], can_skip: bool, prompt: str, custom_allowed: bool = False
+    mode: str,
+    choices: list[str],
+    can_skip: bool,
+    prompt: str,
+    custom_allowed: bool = False,
+    send_label: str = "Send",
+    typing_prompt: str = "",
 ) -> dmc.Box:
     """The bottom of the chat. The text box, Send and Skip always exist (the callbacks name
     them); the mode decides which ones can be used. At a decision the buttons stay and the text
-    box opens too, for "Other, type here" (W3)."""
-    text_open = mode == "text" or custom_allowed
+    box opens too, for "Other, type here" (W3). At the checkpoint the box is open too and Send is
+    "Correct something" (send_label, typing_prompt: Phase 6 fixes, section 2)."""
+    text_open = mode == "text" or custom_allowed or bool(typing_prompt)
     paused = {
         "form": FORM_COMPOSER_TEXT,
         "choices": "Text input is paused until you choose",
@@ -858,7 +882,9 @@ def _composer(
             dmc.Textarea(
                 id=TEXT_ID,
                 placeholder=(
-                    OTHER_PLACEHOLDER
+                    typing_prompt
+                    if typing_prompt
+                    else OTHER_PLACEHOLDER
                     if custom_allowed
                     else "Type your message..."
                     if text_open
@@ -879,7 +905,7 @@ def _composer(
                         style={} if can_skip else {"display": "none"},
                     ),
                     dmc.Button(
-                        "Send",
+                        send_label,
                         id=SEND_ID,
                         disabled=not text_open,
                         leftSection=DashIconify(icon="tabler:send", width=16),

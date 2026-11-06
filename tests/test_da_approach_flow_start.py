@@ -72,9 +72,7 @@ def test_a_plan_with_no_choice_goes_straight_to_review(settings, request_id):
     view = proposed(settings, request_id, no_choice)
 
     assert view.step == "review"
-    assert [label for _, label in view.buttons] == [
-        "Accept approach", "Change something", "Get help"
-    ]
+    assert [label for _, label in view.buttons] == ["Accept approach", "Get help"]
 
 
 def test_4_2_a_first_call_that_fails_twice_changes_nothing_and_offers_try_again(

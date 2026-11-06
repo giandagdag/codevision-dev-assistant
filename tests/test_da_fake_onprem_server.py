@@ -272,7 +272,6 @@ def test_4_29_a_full_approach_against_the_pretend_server_reaches_ready_to_build(
         view = flow.choose_design_option(settings, request_id, view.buttons[0][1], view.revision)
         view = flow.accept_approach(settings, request_id, view.revision)
         assert view.step == "tests" and len(view.plan.cases) == 9
-        view = flow.request_case(settings, request_id, view.revision)
         view = flow.submit_text(settings, request_id, "Every visible sheet empty", view.revision)
         view = flow.keep_case(settings, request_id, view.revision)
         view = flow.accept_test_plan(settings, request_id, view.revision)

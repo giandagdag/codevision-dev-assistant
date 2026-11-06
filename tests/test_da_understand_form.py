@@ -160,7 +160,7 @@ def test_a_vague_opening_reaches_the_checkpoint_with_the_four_questions_answered
     view = choose_option(settings, rid(view), VISIBLE_ONLY, view.revision, now=T0)
 
     assert view.request.status == "READY_FOR_CONFIRMATION"
-    assert view.choices == [PROCEED_OPTION, flow.CORRECT_OPTION, HELP_OPTION]
+    assert view.choices == [PROCEED_OPTION, HELP_OPTION]
     view = choose_option(settings, rid(view), PROCEED_OPTION, view.revision, now=T0)
     assert view.request.status == "CONFIRMED_FOR_DISCOVERY"
     assert view.record.answered_questions == [1, 2, 3, 4]

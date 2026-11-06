@@ -108,7 +108,7 @@ def last_message(view):
 def test_full_fake_script_reaches_confirmed_record_v1(settings):
     view = to_checkpoint(settings)
     assert view.request.status == "READY_FOR_CONFIRMATION"
-    assert view.choices == [PROCEED_OPTION, CORRECT_OPTION, HELP_OPTION]
+    assert view.choices == [PROCEED_OPTION, HELP_OPTION]
 
     view = choose(settings, view, PROCEED_OPTION)
 
@@ -552,24 +552,61 @@ def test_skip_optional_goes_to_the_checkpoint(settings):
     assert view.record.references == []
 
 
-def test_correct_something_reopens_text_then_returns_to_the_checkpoint(settings):
-    view = choose(settings, to_checkpoint(settings), CORRECT_OPTION)
-
-    assert view.request.status == "CLARIFICATION_IN_PROGRESS"
-    assert view.prompt == "What should change?"
-    assert "correction_requested" in event_types(settings, view)
+def test_typing_at_the_checkpoint_is_the_correction(settings):
+    """Phase 6 fixes, section 2: the box is open and Send means "Correct something"."""
+    view = to_checkpoint(settings)
+    assert view.choices == [PROCEED_OPTION, HELP_OPTION]
+    assert view.typing_allowed and view.send_label == "Correct something"
+    assert view.text_prompt == "Type what should change, then press Correct something."
 
     view = answer(settings, view, "Also mention the sheet names in the output.")
 
     assert view.request.status == "READY_FOR_CONFIRMATION"
-    assert view.choices == [PROCEED_OPTION, CORRECT_OPTION, HELP_OPTION]
+    assert view.choices == [PROCEED_OPTION, HELP_OPTION]
+    assert "correction_requested" in event_types(settings, view)
+    assert status_moves(settings, view)[-2:] == [
+        ("READY_FOR_CONFIRMATION", "CLARIFICATION_IN_PROGRESS"),
+        ("CLARIFICATION_IN_PROGRESS", "READY_FOR_CONFIRMATION"),
+    ]
+    texts = [m.text for m in view.messages]
+    assert "Also mention the sheet names in the output." in texts
+    assert CORRECT_OPTION not in texts  # the old button press is not in the chat any more
+
+
+def test_there_is_no_correct_something_button_any_more(settings):
+    view = to_checkpoint(settings)
+
+    with pytest.raises(UnderstandError, match="is not one of the choices"):
+        choose(settings, view, CORRECT_OPTION)
+
+
+def test_empty_text_at_the_checkpoint_does_nothing(settings):
+    view = to_checkpoint(settings)
+
+    for blank in ("", "   "):
+        with pytest.raises(UnderstandError, match="Please type a message first"):
+            answer(settings, view, blank)
+
+    after = get_understand_view(settings, rid(view))
+    assert after.revision == view.revision and after.request.status == view.request.status
+
+
+def test_a_failed_correction_leaves_the_request_at_the_checkpoint(settings):
+    view = to_checkpoint(settings)
+
+    after = answer(settings, view, "Also mention sheet names", client=StubClient("no", "no"))
+
+    assert after.request.status == "READY_FOR_CONFIRMATION"
+    assert after.choices == [PROCEED_OPTION, HELP_OPTION]
+    assert last_message(after) == FAILED_MESSAGE
+    assert after.record == view.record
 
 
 def test_help_at_checkpoint_then_proceed_confirms_in_one_action(settings):
     view = choose(settings, to_checkpoint(settings), HELP_OPTION)
     assert view.request.status == "DECISION_REQUIRED"
     assert view.record.open_items == [CHECKPOINT_HELP_ITEM]
-    assert view.choices == [PROCEED_OPTION, CORRECT_OPTION, HELP_OPTION]
+    assert view.choices == [PROCEED_OPTION, HELP_OPTION]
 
     view = choose(settings, view, PROCEED_OPTION)
 
@@ -583,14 +620,13 @@ def test_help_at_checkpoint_then_proceed_confirms_in_one_action(settings):
     ]
 
 
-def test_help_at_checkpoint_then_correct_clears_the_help_item(settings):
+def test_help_at_checkpoint_then_typing_a_correction_clears_the_help_item(settings):
     view = choose(settings, to_checkpoint(settings), HELP_OPTION)
 
-    view = choose(settings, view, CORRECT_OPTION)
+    view = answer(settings, view, "Also mention the sheet names in the output.")
 
-    assert view.request.status == "CLARIFICATION_IN_PROGRESS"
+    assert view.request.status == "READY_FOR_CONFIRMATION"
     assert view.record.open_items == []
-    assert view.prompt == "What should change?"
 
 
 def test_gate_failure_lists_every_missing_item(settings):

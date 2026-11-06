@@ -175,12 +175,15 @@ def test_decision_locks_the_text_box_and_shows_the_choices(settings):
     assert "Clarification required: 1 open item" in all_text(tree)
 
 
-def test_checkpoint_stays_buttons_only(settings):
+def test_checkpoint_has_an_open_box_and_send_says_correct_something(settings):
     view = da_play.to_checkpoint(settings)
     tree = page.render_workspace(view)
-    assert by_id(tree, page.TEXT_ID).disabled is True
-    assert by_id(tree, page.SEND_ID).disabled is True
-    assert "Text input is paused until you choose" in by_id(tree, page.TEXT_ID).placeholder
+    assert by_id(tree, page.TEXT_ID).disabled is False
+    assert by_id(tree, page.SEND_ID).disabled is False
+    assert all_text(by_id(tree, page.SEND_ID)) == "Correct something"
+    assert by_id(tree, page.TEXT_ID).placeholder == (
+        "Type what should change, then press Correct something."
+    )
 
 
 def test_optional_area_shows_skip_for_an_old_request(settings):

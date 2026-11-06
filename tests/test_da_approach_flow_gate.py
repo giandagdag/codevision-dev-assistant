@@ -127,14 +127,19 @@ def test_has_approach_is_false_before_the_first_call(settings, request_id):
 
 def test_buttons_follow_the_step(settings, request_id):
     view = at_review(settings, request_id)
-    assert [k for k, _ in view.buttons] == ["accept", "change", "help"]
-    assert view.text_prompt == ""
+    assert [k for k, _ in view.buttons] == ["accept", "help"]
+    assert view.send_label == "Change something" and "press Change something" in view.text_prompt
     view = flow.accept_approach(
         settings, request_id, view.revision, tester=ScriptedTesterClient("test_plan")
     )
-    assert [k for k, _ in view.buttons] == ["accept_plan", "add_case", "change_approach", "help"]
-    view = flow.request_case(settings, request_id, view.revision)
-    assert view.buttons == [] and "up to 500 characters" in view.text_prompt
+    assert [k for k, _ in view.buttons] == ["accept_plan", "change_approach", "help"]
+    assert [label for _, label in view.buttons] == [
+        "Accept test plan", "Go back and change the approach", "Get help"
+    ]
+    assert view.send_label == "Add a test case" and "press Add a test case" in view.text_prompt
+    view = flow.request_plan_change(settings, request_id, view.revision)
+    assert view.buttons == [] and "What should change" in view.text_prompt
+    assert view.send_label == "Send"
 
 
 @pytest.mark.parametrize(
@@ -148,7 +153,6 @@ def test_buttons_follow_the_step(settings, request_id):
         lambda s, r, rev: flow.request_plan_change(s, r, rev),
         lambda s, r, rev: flow.request_help(s, r, rev),
         lambda s, r, rev: flow.write_test_plan_again(s, r, rev),
-        lambda s, r, rev: flow.request_case(s, r, rev),
         lambda s, r, rev: flow.keep_case(s, r, rev),
         lambda s, r, rev: flow.discard_case(s, r, rev),
         lambda s, r, rev: flow.accept_test_plan(s, r, rev),

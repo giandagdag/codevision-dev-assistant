@@ -425,7 +425,6 @@ def _run_approach(settings: Settings, request_id: str):
     view = approach.start_approach(settings, request_id, 0)
     view = approach.choose_design_option(settings, request_id, view.buttons[0][1], view.revision)
     view = approach.accept_approach(settings, request_id, view.revision)
-    view = approach.request_case(settings, request_id, view.revision)
     view = approach.submit_text(settings, request_id, SAMPLE_CASE, view.revision)
     view = approach.keep_case(settings, request_id, view.revision)
     view = approach.accept_test_plan(settings, request_id, view.revision)

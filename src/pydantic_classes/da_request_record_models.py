@@ -219,5 +219,7 @@ class UnderstandView(BaseModel):
     # label of the Send button says what typing does there.
     typing_allowed: bool = False
     send_label: str = "Send"
+    # What the open text box says about typing, next to the choice buttons ("" = nothing special).
+    text_prompt: str = ""
     revision: int
     demo_mode: bool

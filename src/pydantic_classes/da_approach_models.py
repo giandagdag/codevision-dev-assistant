@@ -238,6 +238,8 @@ class ApproachView(BaseModel):
     buttons: list[tuple[str, str]]
     # What the text box is for at this step, or "" when it is closed.
     text_prompt: str
+    # The label of the Send button: at the review and tests steps it is the action itself.
+    send_label: str = "Send"
     note: str
     open_item: str
     draft_case: TestCaseReply | None
