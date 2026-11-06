@@ -133,6 +133,7 @@
     "approved_libraries": ["pydantic", "dash", "dash_mantine_components", "dash_iconify", "flask", "plotly", "requests", "pandas", "openpyxl"],
     "max_files": 5,
     "max_design_choices": 3,
+    "max_material_decisions": 5,
     "workspace_markers": ["src/web", "src/callbacks"],
     "workspace_max_file_kb": 512,
     "build_max_rounds": 3,

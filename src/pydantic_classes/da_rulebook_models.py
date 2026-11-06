@@ -118,6 +118,8 @@ DEFAULT_APPROVED_LIBRARIES = [
 ]
 DEFAULT_MAX_FILES = 5
 DEFAULT_MAX_DESIGN_CHOICES = 3
+# Phase 6 fixes (U6): how many AI clarifying questions one request may ask in Understand.
+DEFAULT_MAX_MATERIAL_DECISIONS = 5
 # Phase 5: folders that must exist in a CodeVision clone, and the biggest file the browser reads.
 DEFAULT_WORKSPACE_MARKERS = ["src/web", "src/callbacks"]
 DEFAULT_WORKSPACE_MAX_FILE_KB = 512
@@ -184,6 +186,9 @@ class Policy(_RulebookPart):
     )
     max_files: int = Field(default=DEFAULT_MAX_FILES, ge=1)
     max_design_choices: int = Field(default=DEFAULT_MAX_DESIGN_CHOICES, ge=1)
+    # Phase 6 fixes (U6): moved here from a constant in Understand. 1 to 10, so a typo cannot
+    # switch the questions off or make them endless.
+    max_material_decisions: int = Field(default=DEFAULT_MAX_MATERIAL_DECISIONS, ge=1, le=10)
     flag_review_zones: list[FlagReviewZone] = Field(default_factory=_default_zones)
     # Phase 5 (Workspace), spec section 8. Same defaults idea: older versions still load.
     workspace_markers: list[str] = Field(default_factory=lambda: list(DEFAULT_WORKSPACE_MARKERS))

@@ -366,3 +366,37 @@ def test_a_broken_file_name_pattern_is_refused(seed_rulebook):
 
     with pytest.raises(ValidationError, match="regular expression"):
         Rulebook.model_validate(data)
+
+
+# --- Phase 6 fixes batch, item U6: the AI question limit lives in the policy ---
+
+
+def test_seed_has_the_ai_question_limit(seed_rulebook):
+    assert seed_rulebook.policy.max_material_decisions == 5
+
+
+def test_a_rulebook_saved_before_the_limit_existed_loads_with_5(seed_rulebook):
+    old = seed_rulebook.model_dump(mode="json")
+    del old["policy"]["max_material_decisions"]
+
+    loaded = Rulebook.model_validate(old)
+
+    assert loaded.policy.max_material_decisions == 5
+    assert loaded.policy == seed_rulebook.policy
+
+
+@pytest.mark.parametrize("value", [1, 10])
+def test_ai_question_limit_accepts_1_to_10(seed_rulebook, value):
+    data = seed_rulebook.model_dump(mode="json")
+    data["policy"]["max_material_decisions"] = value
+
+    assert Rulebook.model_validate(data).policy.max_material_decisions == value
+
+
+@pytest.mark.parametrize("value", [0, 11, -1])
+def test_ai_question_limit_outside_1_to_10_is_refused(seed_rulebook, value):
+    data = seed_rulebook.model_dump(mode="json")
+    data["policy"]["max_material_decisions"] = value
+
+    with pytest.raises(ValidationError):
+        Rulebook.model_validate(data)

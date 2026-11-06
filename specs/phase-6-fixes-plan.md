@@ -55,7 +55,9 @@ extra decision screens. Everything else is wording, button labels and two auto-c
 9. **Docs and test code (sections 8 and 9, 9a.3).** `docs/workspace-work-test.md`, `docs/build-work-test.md` (one exact `echo` line to create `upload_validator.py`, a `type` step, the warning, fake needs no `DA_SANDBOX_SOURCE_DIR`, onprem does, Command Prompt only, a grep that no PowerShell or DevTools words remain). `tests/test_da_sandbox.py` `is_alive` Windows-safe with `tasklist` (standard library), the existing "alive check" guard test must still pass on Linux. Approach tab: remove the `tests/<id>/` row (the field `tests_folder` stays in the model, mentioned only).
 10. **Finish (section 11).** `docs`/README touch-ups, `src/da_smoke_check.py` updated for the form, full `pytest`, `ruff check .`, smoke check, `code-reviewer` (max 3 rounds), commit, push `phase-6`, Gian's home check list in the final report.
 
-## Questions for Gian (I will not build step 4 until answered; steps 1 to 3 do not depend on them)
+## Questions for Gian: ALL ANSWERED YES (recommended option each time), 6 Nov 2026
+
+Plan review: round 1 had 1 Must fix (fixed), round 2 had 0 Must fix = approved.
 
 1. **X9, too many files.** When a plan has more files than the limit, the typed text means "the reason". May "Change something" stay as a button at that one step? (Recommended: yes.)
 2. **X14, download mode.** May "Upload folder to re-scan" stay in download mode? (Recommended: yes, it is the only way the Build gets its scan there.)
