@@ -60,3 +60,14 @@ def test_docs_keep_the_unattended_run_checklist():
     for need in ("Before the first unattended run", "Download ZIP", "Revert",
                  "usage_raw.json"):
         assert need in DOCS
+
+
+def test_builder_is_told_the_exact_test_commands_to_use():
+    _, text = front("builder")
+    assert "plain `pytest`" in text and "`ruff check .`" in text
+    assert '"$DA_PYTHON" ops/quiet.py pytest' in text
+    assert "not the interpreter path" in text and "PowerShell" in text
+
+
+def test_docs_say_where_to_look_when_a_worker_did_nothing():
+    assert "logs\\workers" in DOCS and "permission_denials" in DOCS

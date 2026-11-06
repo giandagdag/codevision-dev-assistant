@@ -188,3 +188,28 @@ the cap (1 fix round) is reached. STOPPED for Gian.
 - **X26 Remote changes denied:** `git remote add / set-url / remove / rm` are in the deny list and
   blocked by the safety hook (also behind `git -C` and `git -c`). I also block `git config` keys
   starting with `remote.` or `url.` (e.g. `insteadOf`), which would change a remote the same way.
+
+## A-P1 results and fixes, 6 Nov 2026 (Windows laptop)
+
+A-P1: step 1 PASS (GO, 5h 20%, weekly 19%, reply uses `five_hour`/`seven_day` with `utilization`),
+step 2 PASS, step 3 PASS (Git Bash found). Step 4 FAIL (launch printed "ran", no `logs/quiet`,
+349 output tokens, so pytest never ran: cause not yet proven, see X27). Step 5: ledger line written,
+`input_tokens=4` is uncached only. Hook-string test failed on Windows (bash not on PATH): fixed in `bf6823a`.
+
+- **X27 See why a worker stopped.** Every worker's whole reply (result text, `permission_denials`,
+  usage, stderr, crash) is saved to `logs/workers/<time>-<agent>.json` (local, gitignored); STATUS.md's
+  Log gets one line: first line of the result, number of denied tool calls, file name. The ledger
+  outcome also shows "(N tool calls denied)". `launch` prints where to look. The cause of step 4 is a
+  hypothesis (PowerShell tool or a command form not in the allow list under `dontAsk`) until the
+  first saved reply is read. The field name `permission_denials` is from memory of the CLI output and
+  is NOT verified here (no logged-in worker in the cloud); the whole reply is saved either way.
+- **X28 Worker environment.** Windows only: `CLAUDE_CODE_USE_POWERSHELL_TOOL=0`, and
+  `CLAUDE_CODE_GIT_BASH_PATH=C:\Program Files\Git\bin\bash.exe` when that file exists and Gian has not
+  set his own. All platforms: the venv folder goes first on PATH so plain `pytest`/`ruff` resolve (my
+  addition). `PowerShell` is in the deny list.
+- **X29 Allow list.** Added `.venv/Scripts/python`, `python -m pytest`, `python -m ruff`,
+  `python ops/quiet.py`. `builder.md` tells the builder to use plain `pytest` / `ruff check .` (the hook
+  routes them) or `"$DA_PYTHON" ops/quiet.py pytest`, never the interpreter path, never PowerShell.
+- **X30 Ledger.** New columns `cache_read_input_tokens`, `cache_creation_input_tokens`. A ledger with
+  the old header is renamed `usage-ledger.old-<time>.csv`, so rows never misalign.
+

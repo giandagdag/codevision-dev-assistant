@@ -59,11 +59,20 @@ work laptop). You get a phone notification and answer in a comment. The chief re
    - **Without Git Bash the hooks run in PowerShell, fail, and the docs say a failed PreToolUse
      hook then BLOCKS the tool call.** That would also block your own sessions in this repo, so
      install Git for Windows before turning on the hooks.
-4. **Rewrite check:** in a worker (`$env:DA_WORKER = "1"`) run `claude -p "run pytest"` and check
-   that a `logs/quiet/*.log` file appears. The Claude docs do not say whether the rewrite works in
-   `-p` mode, so this is the real test. The CLAUDE.md rule is the fallback.
-5. **Ledger:** run one worker and check `logs/usage-ledger.csv` has a line. Check the token
-   column names against the real `--output-format json` output.
+4. **Rewrite check:** run `.venv\Scripts\python ops\chief_tick.py launch --agent builder --stage test --prompt "Run pytest -q and tell me the last line"`.
+   The Claude docs do not say whether the rewrite works in `-p` mode, so this is the real test.
+   Look for a file in `logs\quiet\`. **If nothing appears, read what the worker said:**
+   - `STATUS.md`, the Log section: one line per worker with the first line of its answer, how many tool
+     calls were denied, and the file name.
+   - `logs\workers\<time>-<agent>.json`: the whole reply (`result` text, `permission_denials`,
+     `usage`, errors). Local only, Git ignores it. `permission_denials` lists every tool call the
+     permission rules refused, with the command.
+   Workers start with the PowerShell tool switched off and the `.venv` folder first on PATH (so plain
+   `pytest` works); Git Bash is pointed at `C:\Program Files\Git\bin\bash.exe` when it is there.
+5. **Ledger:** run one worker and check `logs/usage-ledger.csv` has a line. `input_tokens` counts
+   only the uncached input: the real input is `input_tokens + cache_read_input_tokens +
+   cache_creation_input_tokens` (separate columns). An older ledger file with the old columns is set
+   aside as `usage-ledger.old-<time>.csv`, never mixed.
 6. **Dry tick:** `.venv\Scripts\python ops\chief_tick.py tick` (no `--launch`) prints what it would do.
 7. **Schedule it** (only when you are happy). Replace `C:\path` with the repo folder:
    `schtasks /Create /TN "CodeVision chief tick" /SC MINUTE /MO 30 /TR "C:\path\.venv\Scripts\python.exe C:\path\ops\chief_tick.py tick --launch"`

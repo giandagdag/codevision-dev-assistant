@@ -172,3 +172,20 @@ def test_worker_deny_list_has_the_git_remote_rules():
     for rule in ("Bash(git remote add:*)", "Bash(git remote set-url:*)",
                  "Bash(git remote remove:*)", "Bash(git remote rm:*)"):
         assert rule in deny
+
+
+def test_the_powershell_tool_is_denied_for_workers():
+    cfg = json.loads((ROOT / "ops" / "worker_settings.json").read_text(encoding="utf-8"))
+    assert "PowerShell" in cfg["permissions"]["deny"]
+    assert "PowerShell" not in cfg["permissions"]["allow"]
+
+
+def test_every_pytest_form_a_worker_may_use_on_windows_and_linux_is_allowed():
+    cfg = json.loads((ROOT / "ops" / "worker_settings.json").read_text(encoding="utf-8"))
+    allow = [a[len("Bash("):-len(":*)")] for a in cfg["permissions"]["allow"]
+             if a.startswith("Bash(") and a.endswith(":*)")]
+    for command in ("pytest -q", "ruff check .", ".venv/Scripts/python -m pytest -q",
+                    ".venv\\Scripts\\python -m pytest", ".venv/bin/python -m pytest",
+                    "python -m pytest -q", "python -m ruff check .",
+                    "python ops/quiet.py pytest", '"$DA_PYTHON" ops/quiet.py pytest'):
+        assert any(command.startswith(prefix) for prefix in allow), command

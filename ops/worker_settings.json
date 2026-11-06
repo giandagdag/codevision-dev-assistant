@@ -24,7 +24,11 @@
       "Bash(gh pr view:*)",
       "Bash(gh pr checks:*)",
       "Bash(\"$DA_PYTHON\" ops/quiet.py:*)",
-      "Bash(\"$DA_PYTHON\" ops/chief_tick.py:*)"
+      "Bash(\"$DA_PYTHON\" ops/chief_tick.py:*)",
+      "Bash(.venv/Scripts/python:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python -m ruff:*)",
+      "Bash(python ops/quiet.py:*)"
     ],
     "deny": [
       "Bash(git push --force:*)",
@@ -50,7 +54,8 @@
       "Bash(git remote add:*)",
       "Bash(git remote set-url:*)",
       "Bash(git remote remove:*)",
-      "Bash(git remote rm:*)"
+      "Bash(git remote rm:*)",
+      "PowerShell"
     ]
   }
 }

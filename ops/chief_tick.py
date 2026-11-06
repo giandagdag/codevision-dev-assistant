@@ -15,6 +15,7 @@ import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 import ledger
@@ -30,6 +31,7 @@ GREEN = {"SUCCESS", "NEUTRAL", "SKIPPED"}
 HOOKS_BROKEN_TITLE = "hooks cannot start: no worker was launched"
 AGENT_MODELS = {"chief": "sonnet", "spec-writer": "opus", "builder": "sonnet",
                 "status-digest": "haiku", "plan-reviewer": "sonnet", "code-reviewer": "sonnet"}
+GIT_BASH_DEFAULT = r"C:\Program Files\Git\bin\bash.exe"
 HOOK_FILES = ("guard_hook.py", "quiet_hook.py", "safety_hook.py")
 
 Gh = Callable[[list[str]], str]
@@ -44,6 +46,7 @@ class WorkerResult:
     exit_code: int
     stdout: str = ""
     crash: str = ""  # the error type when the launcher itself failed
+    stderr: str = ""
 
 
 Launcher = Callable[[str, str], WorkerResult]  # (prompt, agent)
@@ -149,7 +152,7 @@ def tick(
     launcher: Launcher | None = None,
     status_file: Path = STATUS_FILE,
     now: float | None = None,
-    preflight: Callable[[], str | None] = hooks_ready,
+    preflight: Callable[[], str | None] | None = None,
 ) -> str:
     """One wake-up. Returns 'stopped', 'idle', 'would-start', 'hooks-broken' or 'ran'."""
     now = time.time() if now is None else now
@@ -170,11 +173,81 @@ def tick(
                          "", reader, gh, launcher, status_file, now, preflight)
 
 
+def worker_log_dir() -> Path:
+    return Path(os.environ.get("DA_WORKER_LOG_DIR", ROOT / "logs" / "workers"))
+
+
+def _parse_reply(stdout: str):
+    try:
+        data = json.loads(stdout)
+    except (ValueError, TypeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def denial_count(result: WorkerResult) -> int:
+    data = _parse_reply(result.stdout) or {}
+    denials = data.get("permission_denials")
+    return len(denials) if isinstance(denials, list) else 0
+
+
+def reply_first_line(result: WorkerResult) -> str:
+    """The first line of the worker's answer, or why there is none (never empty)."""
+    data = _parse_reply(result.stdout) or {}
+    text = data.get("result")
+    if isinstance(text, str) and text.strip():
+        return text.strip().splitlines()[0][:160]
+    detail = (result.stderr or result.stdout or "").strip().splitlines()
+    return "(no reply text" + (f": {detail[0][:120]}" if detail else "") + ")"
+
+
+def save_worker_reply(agent: str, result: WorkerResult, now: float) -> Path | None:
+    """Keep the worker's whole reply (result text, permission denials, usage, errors) in
+    `logs/workers/` so Gian can see why a worker stopped. Local only (`logs/` is ignored).
+    A save problem returns None and never stops the run."""
+    reply = _parse_reply(result.stdout)
+    record = {"agent": agent, "exit_code": result.exit_code, "crash": result.crash,
+              "reply": reply, "raw_stdout": None if reply is not None else result.stdout,
+              "stderr": result.stderr}
+    stamp = datetime.fromtimestamp(now, UTC).strftime("%Y%m%d-%H%M%S")
+    try:
+        folder = worker_log_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        number, path = 1, folder / f"{stamp}-{agent}.json"
+        while path.exists():  # two runs in the same second
+            number += 1
+            path = folder / f"{stamp}-{number}-{agent}.json"
+        path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        return path
+    except OSError:
+        return None
+
+
+def worker_env(agent: str, base: dict | None = None, platform: str | None = None,
+               exists=os.path.exists) -> dict:
+    """The environment a worker runs in.
+
+    DA_PYTHON is the interpreter the hooks use. DA_AGENT tells the safety hook who is writing.
+    The venv folder goes first on PATH, so plain `pytest` and `ruff` resolve. On Windows the
+    PowerShell tool is switched off (the allow list is written for Bash) and Claude Code is
+    pointed at Git Bash when it sits in the default place (a value Gian set himself wins).
+    """
+    env = dict(os.environ if base is None else base)
+    env.update({"DA_WORKER": "1", "DA_AGENT": agent, "DA_PYTHON": sys.executable})
+    env["PATH"] = os.path.dirname(sys.executable) + os.pathsep + env.get("PATH", "")
+    if (platform or sys.platform) == "win32":
+        env["CLAUDE_CODE_USE_POWERSHELL_TOOL"] = "0"
+        if not env.get("CLAUDE_CODE_GIT_BASH_PATH") and exists(GIT_BASH_DEFAULT):
+            env["CLAUDE_CODE_GIT_BASH_PATH"] = GIT_BASH_DEFAULT
+    return env
+
+
 def launch_worker(agent, prompt, stage, phase, reader, gh, launcher, status_file, now,
-                  preflight=hooks_ready) -> str:
+                  preflight=None) -> str:
     """Start ONE worker if the guard says GO and the hooks can start. Writes a ledger line."""
     if agent not in AGENT_MODELS:
         raise ValueError(f"unknown agent {agent!r}; choose one of {sorted(AGENT_MODELS)}")
+    preflight = preflight or hooks_ready  # looked up now, not when the function was defined
     usage = usage_guard.get_usage(reader, now=now)
     decision = usage_guard.decide(usage)
     as_of = usage_guard.format_sgt(now)
@@ -196,9 +269,19 @@ def launch_worker(agent, prompt, stage, phase, reader, gh, launcher, status_file
     except Exception:  # noqa: BLE001 - any failure reading usage after the run means "unknown"
         after = None
     saved = note.read_text(encoding="utf-8").strip() if note.exists() else ""
+    reply_file = save_worker_reply(agent, result, now)
+    denied = denial_count(result)
+    line = f"{as_of}: {agent}: {reply_first_line(result)}"
+    if denied:
+        line += f" [{denied} tool call{'s' if denied != 1 else ''} denied]"
+    if reply_file:
+        line += f" -> logs/workers/{reply_file.name}"
+    status.add_log(status_file, line.replace("\n", " "))
     outcome = ("ok" if result.exit_code == 0 else
                f"launcher error: {result.crash}" if result.crash
                else f"exit code {result.exit_code}")
+    if denied:
+        outcome += f" ({denied} tool call{'s' if denied != 1 else ''} denied)"
     if saved:
         outcome += " (worker saved a note)"
         status.add_log(status_file, f"{as_of}: worker note: " + saved.replace("\n", " ")[:200])
@@ -225,12 +308,9 @@ def worker_command(prompt: str, agent: str = "chief", model: str = "sonnet") -> 
 
 
 def real_launcher(prompt: str, agent: str = "chief") -> WorkerResult:
-    # DA_PYTHON is the interpreter the hooks run with (settings.json uses it). DA_AGENT lets the
-    # safety hook know who is writing (only the chief edits STATUS.md).
-    env = {**os.environ, "DA_WORKER": "1", "DA_AGENT": agent, "DA_PYTHON": sys.executable}
     done = subprocess.run(worker_command(prompt, agent, AGENT_MODELS[agent]), capture_output=True,
-                          text=True, env=env, cwd=ROOT, check=False)
-    return WorkerResult(done.returncode, done.stdout)
+                          text=True, env=worker_env(agent), cwd=ROOT, check=False)
+    return WorkerResult(done.returncode, done.stdout, stderr=done.stderr)
 
 
 def main(argv: list[str] | None = None, gh: Gh | None = None) -> int:
@@ -261,9 +341,13 @@ def main(argv: list[str] | None = None, gh: Gh | None = None) -> int:
         elif args.cmd == "issue":
             print(open_gian_issue(args.title, args.body, args.label, gh) or "already open")
         elif args.cmd == "launch":
-            print(launch_worker(args.agent, args.prompt, args.stage, args.phase,
-                                usage_guard.endpoint_reader, gh, real_launcher, STATUS_FILE,
-                                time.time()))
+            outcome = launch_worker(args.agent, args.prompt, args.stage, args.phase,
+                                    usage_guard.endpoint_reader, gh, real_launcher, STATUS_FILE,
+                                    time.time())
+            print(outcome)
+            if outcome == "ran":  # "ran" only means the worker process ended, not that it worked
+                print("What the worker said: last line of the Log in STATUS.md, "
+                      "full reply in logs/workers/")
         elif args.cmd == "pause":
             status.mark_paused(STATUS_FILE, args.stage, args.issue)
         else:

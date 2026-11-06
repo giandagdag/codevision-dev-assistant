@@ -39,6 +39,7 @@ class FakeGh:
 def isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("DA_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setenv("DA_LEDGER_FILE", str(tmp_path / "ledger.csv"))
+    monkeypatch.setenv("DA_WORKER_LOG_DIR", str(tmp_path / "workers"))
     return tmp_path
 
 
@@ -118,7 +119,7 @@ def test_worker_run_writes_one_ledger_line_and_records_the_note(status_file, iso
     assert c.tick(reader, FakeGh(), launcher, status_file, NOW, preflight=ok_hooks) == "ran"
     rows = (isolated / "ledger.csv").read_text(encoding="utf-8").splitlines()
     assert len(rows) == 2  # header plus ONE line (AC-7)
-    assert ",chief,sonnet,10,20,10,12,9,3,0.5,ok (worker saved a note)" in rows[1]
+    assert ",chief,sonnet,10,20,10,12,9,3,,,0.5,ok (worker saved a note)" in rows[1]
     assert "stopped at step 3" in status_file.read_text(encoding="utf-8")
 
 
@@ -198,7 +199,7 @@ def test_real_launcher_sets_the_worker_variable(monkeypatch):
         seen["env"] = kwargs["env"]
 
         class Done:
-            returncode, stdout = 0, "{}"
+            returncode, stdout, stderr = 0, "{}", ""
 
         return Done()
 
@@ -389,3 +390,149 @@ def test_launch_command_line_passes_the_agent_and_its_model():
     cmd = c.worker_command("go", "spec-writer", c.AGENT_MODELS["spec-writer"])
     assert cmd[cmd.index("--agent") + 1] == "spec-writer"
     assert cmd[cmd.index("--model") + 1] == "opus"
+
+
+# ---- A-P1 fixes (Gian, 6 Nov): see why a worker stopped ----
+
+REPLY = {"type": "result", "result": "I could not run pytest.\nSecond line.",
+         "permission_denials": [{"tool_name": "PowerShell", "tool_input": {"command": "x"}},
+                                {"tool_name": "Bash", "tool_input": {"command": "y"}}],
+         "total_cost_usd": 0.04, "usage": {"input_tokens": 4, "output_tokens": 349}}
+
+
+def run_one(status_file, stdout, isolated, exit_code=0, stderr=""):
+    c.launch_worker("builder", "x", "build", "7", lambda: usage(), FakeGh(),
+                    lambda p, a="chief": c.WorkerResult(exit_code, stdout, stderr=stderr),
+                    status_file, NOW, ok_hooks)
+    files = list((isolated / "workers").glob("*.json"))
+    return files
+
+
+def test_the_full_reply_is_saved_per_run_with_the_agent_in_the_name(status_file, isolated):
+    files = run_one(status_file, json.dumps(REPLY), isolated)
+    assert len(files) == 1 and files[0].name.endswith("-builder.json")
+    saved = json.loads(files[0].read_text(encoding="utf-8"))
+    assert saved["agent"] == "builder" and saved["exit_code"] == 0
+    assert saved["reply"]["result"].startswith("I could not run pytest.")
+    assert saved["reply"]["permission_denials"][0]["tool_name"] == "PowerShell"
+
+
+def test_status_log_shows_the_first_line_of_the_result_and_the_denials(status_file, isolated):
+    run_one(status_file, json.dumps(REPLY), isolated)
+    log = status_file.read_text(encoding="utf-8")
+    assert "builder: I could not run pytest." in log
+    assert "Second line" not in log  # only the first line
+    assert "[2 tool calls denied]" in log and "-builder.json" in log
+
+
+def test_a_reply_that_is_not_json_or_has_no_result_is_still_saved_and_explained(
+    status_file, isolated
+):
+    files = run_one(status_file, "Error: not logged in", isolated, exit_code=1,
+                    stderr="Error: not logged in\nmore")
+    saved = json.loads(files[0].read_text(encoding="utf-8"))
+    assert saved["raw_stdout"] == "Error: not logged in" and saved["reply"] is None
+    assert saved["stderr"].startswith("Error: not logged in")
+    assert "no reply text" in status_file.read_text(encoding="utf-8")
+    assert "Error: not logged in" in status_file.read_text(encoding="utf-8")
+
+
+def test_two_runs_in_the_same_second_get_two_files(status_file, isolated):
+    run_one(status_file, json.dumps(REPLY), isolated)
+    files = run_one(status_file, json.dumps(REPLY), isolated)
+    assert len(files) == 2
+
+
+def test_a_crashed_launcher_also_leaves_a_reply_file(status_file, isolated):
+    def boom(prompt, agent="chief"):
+        raise FileNotFoundError("claude")
+
+    c.launch_worker("builder", "x", "build", "7", lambda: usage(), FakeGh(), boom,
+                    status_file, NOW, ok_hooks)
+    saved = json.loads(next((isolated / "workers").glob("*.json")).read_text(encoding="utf-8"))
+    assert saved["crash"] == "FileNotFoundError"
+
+
+def test_the_ledger_outcome_mentions_denied_calls(status_file, isolated):
+    run_one(status_file, json.dumps(REPLY), isolated)
+    assert "ok (2 tool calls denied)" in (isolated / "ledger.csv").read_text(encoding="utf-8")
+
+
+def test_a_failed_save_never_breaks_the_run(status_file, isolated, monkeypatch):
+    blocker = isolated / "blocker"
+    blocker.write_text("x")
+    monkeypatch.setenv("DA_WORKER_LOG_DIR", str(blocker / "sub"))
+    out = c.launch_worker("builder", "x", "build", "7", lambda: usage(), FakeGh(),
+                          lambda p, a="chief": c.WorkerResult(0, "{}"), status_file, NOW,
+                          ok_hooks)
+    assert out == "ran"
+
+
+def test_worker_logs_live_under_logs_which_git_ignores():
+    ignore = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert "logs/" in ignore
+    os.environ.pop("DA_WORKER_LOG_DIR", None)  # the fixture re-sets it for the next test
+    assert c.worker_log_dir() == ROOT / "logs" / "workers"
+
+
+# ---- worker environment (Windows fixes) ----
+
+GIT_BASH = r"C:\Program Files\Git\bin\bash.exe"
+
+
+def test_on_windows_the_worker_has_no_powershell_tool_and_a_known_git_bash():
+    env = c.worker_env("builder", {"PATH": "p"}, "win32", lambda path: path == GIT_BASH)
+    assert env["CLAUDE_CODE_USE_POWERSHELL_TOOL"] == "0"
+    assert env["CLAUDE_CODE_GIT_BASH_PATH"] == GIT_BASH
+    assert env["DA_WORKER"] == "1" and env["DA_AGENT"] == "builder"
+    assert env["DA_PYTHON"] == sys.executable
+
+
+def test_windows_keeps_a_git_bash_path_the_user_already_set_and_skips_a_missing_one():
+    mine = r"D:\tools\Git\bin\bash.exe"
+    env = c.worker_env("chief", {"CLAUDE_CODE_GIT_BASH_PATH": mine}, "win32", lambda p: True)
+    assert env["CLAUDE_CODE_GIT_BASH_PATH"] == mine
+    env = c.worker_env("chief", {}, "win32", lambda p: False)
+    assert "CLAUDE_CODE_GIT_BASH_PATH" not in env
+    assert env["CLAUDE_CODE_USE_POWERSHELL_TOOL"] == "0"
+
+
+def test_off_windows_the_powershell_variables_are_not_set():
+    env = c.worker_env("chief", {"PATH": "p"}, "linux", lambda p: True)
+    assert "CLAUDE_CODE_USE_POWERSHELL_TOOL" not in env
+    assert "CLAUDE_CODE_GIT_BASH_PATH" not in env
+
+
+def test_the_worker_path_starts_with_the_venv_folder_so_plain_pytest_resolves():
+    env = c.worker_env("builder", {"PATH": "old"}, "linux", lambda p: False)
+    first = env["PATH"].split(os.pathsep)[0]
+    assert first == os.path.dirname(sys.executable) and env["PATH"].endswith("old")
+
+
+def test_real_launcher_uses_the_worker_env(monkeypatch):
+    seen = {}
+
+    def fake_run(cmd, **kwargs):
+        seen["env"] = kwargs["env"]
+
+        class Done:
+            returncode, stdout, stderr = 0, "{}", "warn"
+
+        return Done()
+
+    monkeypatch.setattr(c.subprocess, "run", fake_run)
+    result = c.real_launcher("hi", "builder")
+    assert seen["env"]["DA_AGENT"] == "builder" and result.stderr == "warn"
+
+
+def test_launch_command_tells_you_where_to_read_what_the_worker_said(
+    status_file, isolated, monkeypatch, capsys
+):
+    monkeypatch.setattr(c, "STATUS_FILE", status_file)
+    monkeypatch.setattr(c.usage_guard, "endpoint_reader", lambda: usage())
+    monkeypatch.setattr(c, "hooks_ready", lambda python=None: None)
+    monkeypatch.setattr(c, "real_launcher", lambda p, a="chief": c.WorkerResult(0, "{}"))
+    assert c.main(["launch", "--agent", "builder", "--stage", "t", "--prompt", "x"],
+                  FakeGh()) == 0
+    out = capsys.readouterr().out
+    assert "ran" in out and "logs/workers/" in out
