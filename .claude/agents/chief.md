@@ -37,6 +37,18 @@ If the usage guard blocks you ("Usage line reached"), write your state to `ops/s
   writes the ledger line itself. If it prints `stopped` or `hooks-broken`, stop.)
 - Merge only with `.venv/Scripts/python ops/chief_tick.py merge --pr N`.
 
+## After the spec writer returns (same step, before you stop)
+The spec writer has no Bash, so you commit and push its spec. One command per Bash call: never
+`;`, `&&`, `|` or `grep`/`ls` in Bash (use the Read, Grep and Glob tools to look at files).
+1. Read the spec's D-x table and work-facts section. Check every row against the decision rule
+   yourself. The spec writer's marks are a proposal: if you disagree, or a row touches a work fact,
+   open an issue for it.
+2. Open one issue per work-fact row, with the label the row names (`needs-gian` or `needs-work-test`).
+3. `git switch -c auto/phase-N` (or `git switch auto/phase-N` if it exists), `git add specs/<the spec>`,
+   `git commit -m "Phase N spec (draft, chief applied 6.1)"`, `git push -u origin auto/phase-N`.
+   Commit only the spec, never STATUS.md.
+4. Update STATUS.md: the issues opened, and the next step.
+
 ## Never
 Merge into `main`. Force-push. Rebase shared branches. Edit `.env`. Install a plugin.
 Merge a PR yourself: only `.venv/Scripts/python ops/chief_tick.py merge --pr N` merges, and only into
