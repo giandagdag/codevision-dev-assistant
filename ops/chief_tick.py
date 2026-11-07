@@ -10,6 +10,7 @@ Nothing in the tests starts a real `claude`, a real `gh` or touches GitHub.
 import argparse
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -17,6 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from subprocess import DEVNULL
 
 import ledger
 import status
@@ -31,6 +33,15 @@ GREEN = {"SUCCESS", "NEUTRAL", "SKIPPED"}
 HOOKS_BROKEN_TITLE = "hooks cannot start: no worker was launched"
 AGENT_MODELS = {"chief": "sonnet", "spec-writer": "opus", "builder": "sonnet",
                 "status-digest": "haiku", "plan-reviewer": "sonnet", "code-reviewer": "sonnet"}
+# Turns a worker may use (F7). A whole-phase builder needs far more than a chief step.
+AGENT_MAX_TURNS = {"chief": 60, "spec-writer": 80, "builder": 400, "status-digest": 20,
+                   "plan-reviewer": 80, "code-reviewer": 80}
+MAX_WORKER_HOURS = 6  # D-B: a worker running longer than this is stopped by the tick
+LAUNCH_GRACE_SECONDS = 60  # running.json is written just before the pid is known
+# Windows creation flags (F1): detached, own process group, no window. Plain numbers, because
+# the subprocess module only has these names on Windows.
+DETACHED_PROCESS, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW = 0x8, 0x200, 0x08000000
+WIN_FLAGS = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
 GIT_BASH_DEFAULT = r"C:\Program Files\Git\bin\bash.exe"
 HOOK_FILES = ("guard_hook.py", "quiet_hook.py", "safety_hook.py")
 
@@ -153,9 +164,18 @@ def tick(
     status_file: Path = STATUS_FILE,
     now: float | None = None,
     preflight: Callable[[], str | None] | None = None,
+    alive: Callable[[int], bool] | None = None,
+    killer: Callable[[int], None] | None = None,
 ) -> str:
-    """One wake-up. Returns 'stopped', 'idle', 'would-start', 'hooks-broken' or 'ran'."""
+    """One wake-up. Returns 'busy', 'stopped', 'idle', 'would-start', 'hooks-broken' or 'ran'.
+
+    The job queue is looked at first (F4): a worker still running means 'busy' and nothing else
+    happens (zero tokens). A finished, vanished or over-time worker is recorded, then the normal
+    tick goes on, so the chief wakes up and acts on the result.
+    """
     now = time.time() if now is None else now
+    if check_queue(reader, status_file, now, alive, killer) == "busy":
+        return "busy"
     usage = usage_guard.get_usage(reader, now=now)
     decision = usage_guard.decide(usage)
     as_of = usage_guard.format_sgt(now)
@@ -242,40 +262,63 @@ def worker_env(agent: str, base: dict | None = None, platform: str | None = None
     return env
 
 
-def launch_worker(agent, prompt, stage, phase, reader, gh, launcher, status_file, now,
-                  preflight=None) -> str:
-    """Start ONE worker if the guard says GO and the hooks can start. Writes a ledger line."""
-    if agent not in AGENT_MODELS:
-        raise ValueError(f"unknown agent {agent!r}; choose one of {sorted(AGENT_MODELS)}")
+def _check_guard_and_hooks(reader, gh, status_file, now, preflight):
+    """(usage, None) when a worker may start, else (None, 'stopped' or 'hooks-broken')."""
     preflight = preflight or hooks_ready  # looked up now, not when the function was defined
     usage = usage_guard.get_usage(reader, now=now)
     decision = usage_guard.decide(usage)
     as_of = usage_guard.format_sgt(now)
     if not decision.go:
         _refuse_stopped(decision, usage, status_file, gh, as_of)
-        return "stopped"
+        return None, "stopped"
     problem = preflight()
     if problem:
         _refuse_hooks(problem, status_file, gh, as_of)
-        return "hooks-broken"
+        return None, "hooks-broken"
+    return usage, None
+
+
+def launch_worker(agent, prompt, stage, phase, reader, gh, launcher, status_file, now,
+                  preflight=None) -> str:
+    """Run ONE worker in the foreground (the chief, from `tick`). Writes the Log and ledger line.
+
+    Other workers go through `start_background`, which returns at once.
+    """
+    if agent not in AGENT_MODELS:
+        raise ValueError(f"unknown agent {agent!r}; choose one of {sorted(AGENT_MODELS)}")
+    usage, refusal = _check_guard_and_hooks(reader, gh, status_file, now, preflight)
+    if refusal:
+        return refusal
     note = worker_note_path()
     note.unlink(missing_ok=True)
     try:
         result = launcher(prompt, agent)
     except Exception as crash:  # noqa: BLE001 - the ledger line must still be written
         result = WorkerResult(-1, "", type(crash).__name__)
-    try:
-        after = reader()
-    except Exception:  # noqa: BLE001 - any failure reading usage after the run means "unknown"
-        after = None
-    saved = note.read_text(encoding="utf-8").strip() if note.exists() else ""
     reply_file = save_worker_reply(agent, result, now)
+    record_result(agent, stage, phase, result, usage.five_hour, usage.weekly, _read_after(reader),
+                  now, status_file, reply_file.name if reply_file else "")
+    return "ran"
+
+
+def _read_after(reader):
+    try:
+        return reader()
+    except Exception:  # noqa: BLE001 - any failure reading usage after the run means "unknown"
+        return None
+
+
+def record_result(agent, stage, phase, result, five_before, weekly_before, after, now,
+                  status_file, reply_name="") -> None:
+    """The STATUS.md Log line and the ONE ledger line for a worker that ended with a result."""
+    as_of = usage_guard.format_sgt(now)
+    saved = _take_worker_note()
     denied = denial_count(result)
     line = f"{as_of}: {agent}: {reply_first_line(result)}"
     if denied:
         line += f" [{denied} tool call{'s' if denied != 1 else ''} denied]"
-    if reply_file:
-        line += f" -> logs/workers/{reply_file.name}"
+    if reply_name:
+        line += f" -> logs/workers/{reply_name}"
     status.add_log(status_file, line.replace("\n", " "))
     outcome = ("ok" if result.exit_code == 0 else
                f"launcher error: {result.crash}" if result.crash
@@ -285,14 +328,210 @@ def launch_worker(agent, prompt, stage, phase, reader, gh, launcher, status_file
     if saved:
         outcome += " (worker saved a note)"
         status.add_log(status_file, f"{as_of}: worker note: " + saved.replace("\n", " ")[:200])
+    _ledger(agent, stage, phase, five_before, weekly_before, after, outcome, now,
+            ledger.tokens_from_result(result.stdout))
+
+
+def _take_worker_note() -> str:
+    note = worker_note_path()
+    return note.read_text(encoding="utf-8").strip() if note.exists() else ""
+
+
+def _ledger(agent, stage, phase, five_before, weekly_before, after, outcome, now, tokens) -> None:
     ledger.add_line({
-        "phase": phase, "stage": stage, "model": AGENT_MODELS[agent],
-        "five_hour_before": usage.five_hour, "weekly_before": usage.weekly,
+        "phase": phase, "stage": stage, "model": AGENT_MODELS.get(agent, ""),
+        "five_hour_before": five_before, "weekly_before": weekly_before,
         "five_hour_after": after.five_hour if after else None,
         "weekly_after": after.weekly if after else None,
-        **ledger.tokens_from_result(result.stdout), "outcome": outcome,
+        **tokens, "outcome": outcome,
     }, now=now)
-    return "ran"
+
+
+# ---- background workers (Phase A fix 1) ----
+# AS400 comparison: `launch` is SBMJOB (submit and return), `running.json` is the job queue entry,
+# `worker_done.json` is the job's end message, and the tick looks at the queue on each wake-up.
+
+def running_path() -> Path:
+    return usage_guard.state_path().parent / "running.json"
+
+
+def done_path() -> Path:
+    return usage_guard.state_path().parent / "worker_done.json"
+
+
+def _read_note(path: Path) -> dict | None:
+    """The note as a dict, or None when it is missing or damaged."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _write_note(path: Path, data: dict) -> None:
+    """Write whole or not at all, so a reader never sees half a file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(path.name + ".tmp")
+    temp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    os.replace(temp, path)
+
+
+def pid_alive(pid: int, platform: str | None = None) -> bool:
+    """Does this process id exist? (On Windows os.kill(pid, 0) would KILL it, so ask the API.)"""
+    if (platform or sys.platform) == "win32":
+        import ctypes
+        kernel = ctypes.windll.kernel32
+        handle = kernel.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        code = ctypes.c_ulong()
+        ok = kernel.GetExitCodeProcess(handle, ctypes.byref(code))
+        kernel.CloseHandle(handle)
+        return bool(ok) and code.value == 259  # STILL_ACTIVE
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def stop_tree(pid: int, platform: str | None = None, run=None, killpg=None) -> None:
+    """Stop the runner and everything it started (claude and its tools)."""
+    if (platform or sys.platform) == "win32":
+        (run or subprocess.run)(["taskkill", "/PID", str(pid), "/T", "/F"],
+                                capture_output=True, check=False)
+        return
+    try:  # the runner leads its own session (start_new_session), so its pid is the group id
+        (killpg or os.killpg)(pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def spawn_runner(agent: str, prompt: str, platform: str | None = None, popen=None) -> int:
+    """Start `run-worker` as its own process that outlives this one. Returns its process id.
+
+    All three standard streams go to nowhere, so the chief's Bash tool is not held open by a
+    pipe the runner inherited.
+    """
+    command = [sys.executable, str(Path(__file__).resolve()), "run-worker", "--agent", agent,
+               "--prompt", prompt]
+    options = {"stdin": DEVNULL, "stdout": DEVNULL, "stderr": DEVNULL, "cwd": ROOT}
+    if (platform or sys.platform) == "win32":
+        options["creationflags"] = WIN_FLAGS
+    else:
+        options["start_new_session"] = True
+    return (popen or subprocess.Popen)(command, **options).pid
+
+
+def start_background(agent, prompt, stage, phase, reader, gh, status_file, now,
+                     preflight=None, spawn=None) -> str:
+    """F1: check the queue, the guard and the hooks, start the runner, return at once.
+
+    Returns 'started <agent>', 'busy <agent>', 'stopped' or 'hooks-broken'.
+    """
+    if agent not in AGENT_MODELS:
+        raise ValueError(f"unknown agent {agent!r}; choose one of {sorted(AGENT_MODELS)}")
+    if running_path().exists():
+        return f"busy {(_read_note(running_path()) or {}).get('agent', 'worker')}"
+    usage, refusal = _check_guard_and_hooks(reader, gh, status_file, now, preflight)
+    if refusal:
+        return refusal
+    worker_note_path().unlink(missing_ok=True)
+    done_path().unlink(missing_ok=True)  # a leftover from an older run must not pass as ours
+    note = {"agent": agent, "stage": stage, "phase": phase, "prompt": prompt[:200], "pid": None,
+            "started": now, "five_hour_before": usage.five_hour, "weekly_before": usage.weekly}
+    _write_note(running_path(), note)  # before the start, so a fast worker never beats the note
+    try:
+        note["pid"] = (spawn or spawn_runner)(agent, prompt)
+    except OSError as problem:
+        running_path().unlink(missing_ok=True)
+        status.add_log(status_file, f"{usage_guard.format_sgt(now)}: {agent} could not be "
+                                    f"started ({type(problem).__name__})")
+        raise RuntimeError(f"{agent} could not be started: {problem}") from problem
+    _write_note(running_path(), note)
+    return f"started {agent}"
+
+
+def run_worker(agent: str, prompt: str, launcher: Launcher | None = None) -> None:
+    """F2: the runner. Run `claude -p` like the foreground launcher, then write the end message."""
+    try:
+        result = (launcher or real_launcher)(prompt, agent)
+    except Exception as crash:  # noqa: BLE001 - the end message must still be written
+        result = WorkerResult(-1, "", type(crash).__name__)
+    finished = time.time()
+    reply_file = save_worker_reply(agent, result, finished)
+    _write_note(done_path(), {
+        "agent": agent, "exit_code": result.exit_code, "crash": result.crash,
+        "finished": finished, "reply_file": reply_file.name if reply_file else "",
+        "stdout": result.stdout, "stderr": result.stderr})
+
+
+def _forget_notes() -> None:
+    running_path().unlink(missing_ok=True)
+    done_path().unlink(missing_ok=True)
+
+
+def _record_without_result(running: dict, text: str, outcome: str, reader, status_file, now):
+    agent = running.get("agent") or "worker"
+    status.add_log(status_file, f"{usage_guard.format_sgt(now)}: {agent} {text}")
+    _ledger(agent, running.get("stage", ""), running.get("phase", ""),
+            running.get("five_hour_before"), running.get("weekly_before"), _read_after(reader),
+            outcome, now, {})
+
+
+def check_queue(reader, status_file, now, alive=None, killer=None) -> str | None:
+    """F4 to F6: look at the running worker. Returns 'busy' (touch nothing) or None.
+
+    None means there is nothing to wait for any more: a finished, vanished or over-time worker
+    was recorded (one Log line, one ledger line) and both notes are gone.
+    """
+    alive, killer = alive or pid_alive, killer or stop_tree
+    if not running_path().exists() and not done_path().exists():
+        return None
+    # A damaged running.json reads as {} and falls through to "vanished" below.
+    running, done = _read_note(running_path()) or {}, _read_note(done_path())
+    if done is not None:
+        _forget_notes()  # first, so a second call can never record the same worker twice
+        result = WorkerResult(done.get("exit_code", -1), done.get("stdout", ""),
+                              done.get("crash", ""), done.get("stderr", ""))
+        record_result(running.get("agent") or done.get("agent", "worker"),
+                      running.get("stage", ""), running.get("phase", ""), result,
+                      running.get("five_hour_before"), running.get("weekly_before"),
+                      _read_after(reader), done.get("finished", now), status_file,
+                      done.get("reply_file", ""))
+        return None
+    age, pid = now - float(running.get("started") or 0), running.get("pid")
+    limit = MAX_WORKER_HOURS * 3600
+    if age <= limit and ((pid and alive(pid)) or (pid is None and age < LAUNCH_GRACE_SECONDS)):
+        return "busy"
+    if age > limit and pid and alive(pid):
+        killer(pid)
+        _forget_notes()
+        _record_without_result(running, "stopped: over the time limit",
+                               "stopped: over the time limit", reader, status_file, now)
+    else:
+        _forget_notes()
+        _record_without_result(running, "ended without a result (vanished)", "vanished",
+                               reader, status_file, now)
+    return None
+
+
+def stop_worker(reader, status_file, now, alive=None, killer=None) -> str:
+    """For Gian: stop the running worker and record it like the time limit does (F6, AF-12)."""
+    killer = killer or stop_tree
+    running = _read_note(running_path())
+    if running is None:
+        return "nothing running"
+    if _read_note(done_path()) is not None:
+        return "already finished; the next tick records it"
+    if running.get("pid"):
+        killer(running["pid"])
+    _forget_notes()
+    _record_without_result(running, "stopped: by hand", "stopped: by hand",
+                           reader, status_file, now)
+    return f"stopped {running.get('agent', 'worker')}"
 
 
 def worker_command(prompt: str, agent: str = "chief", model: str = "sonnet") -> list[str]:
@@ -303,7 +542,7 @@ def worker_command(prompt: str, agent: str = "chief", model: str = "sonnet") -> 
         "--settings", str(ROOT / "ops" / "worker_settings.json"),
         "--setting-sources", "project,local",
         "--strict-mcp-config", "--mcp-config", str(ROOT / ".claude" / "mcp-empty.json"),
-        "--disable-slash-commands", "--max-turns", "60",
+        "--disable-slash-commands", "--max-turns", str(AGENT_MAX_TURNS.get(agent, 60)),
     ]
 
 
@@ -333,6 +572,10 @@ def main(argv: list[str] | None = None, gh: Gh | None = None) -> int:
     ln.add_argument("--prompt", required=True)
     ln.add_argument("--stage", required=True)
     ln.add_argument("--phase", default="")
+    rw = sub.add_parser("run-worker", help="the detached runner (started by `launch`, not by hand)")
+    rw.add_argument("--agent", required=True, choices=sorted(AGENT_MODELS))
+    rw.add_argument("--prompt", required=True)
+    sub.add_parser("stop", help="stop the running worker (for Gian)")
     args = parser.parse_args(argv)
     try:
         if args.cmd == "tick":
@@ -341,13 +584,12 @@ def main(argv: list[str] | None = None, gh: Gh | None = None) -> int:
         elif args.cmd == "issue":
             print(open_gian_issue(args.title, args.body, args.label, gh) or "already open")
         elif args.cmd == "launch":
-            outcome = launch_worker(args.agent, args.prompt, args.stage, args.phase,
-                                    usage_guard.endpoint_reader, gh, real_launcher, STATUS_FILE,
-                                    time.time())
-            print(outcome)
-            if outcome == "ran":  # "ran" only means the worker process ended, not that it worked
-                print("What the worker said: last line of the Log in STATUS.md, "
-                      "full reply in logs/workers/")
+            print(start_background(args.agent, args.prompt, args.stage, args.phase,
+                                   usage_guard.endpoint_reader, gh, STATUS_FILE, time.time()))
+        elif args.cmd == "run-worker":
+            run_worker(args.agent, args.prompt)
+        elif args.cmd == "stop":
+            print(stop_worker(usage_guard.endpoint_reader, STATUS_FILE, time.time()))
         elif args.cmd == "pause":
             status.mark_paused(STATUS_FILE, args.stage, args.issue)
         else:
