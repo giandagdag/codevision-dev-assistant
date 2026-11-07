@@ -79,6 +79,7 @@ def test_builder_can_start_its_reviewers():
     # Pilot A-P4 (7 Nov): without the Agent tool the builder stopped at the plan-review gate.
     meta, text = front("builder")
     assert "Agent" in meta["tools"]
-    settings = json.loads((AGENTS.parents[1] / "ops" / "worker_settings.json").read_text(encoding="utf-8"))
+    settings_file = AGENTS.parents[1] / "ops" / "worker_settings.json"
+    settings = json.loads(settings_file.read_text(encoding="utf-8"))
     assert "Agent" in settings["permissions"]["allow"]
     assert "One command per Bash call" in text
