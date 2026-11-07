@@ -247,6 +247,7 @@ def action(kind, fid="F-1", review_number=1):
         ([finding("must_fix")], [], "done", [], "Not passing"),
         ([finding("must_fix", kept=False)], [], "done", [], "Ready for your review"),
         ([], [], "unable", [], "Unable to assess"),
+        ([finding("must_fix")], [], "unable", [], "Not passing"),  # a plain Must fix wins
     ],
 )
 def test_label_rules(findings, zones, result, acts, label):

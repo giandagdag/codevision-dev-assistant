@@ -259,11 +259,12 @@ def compute_label(
     actions: list[FindingAction],
 ) -> str:
     """The label from the last review and the developer's actions. Plain code only."""
-    if result == "unable":
-        return LABEL_UNABLE
     kept = [item for item in findings if item.kept]
+    # A plain-code Must fix (checks 1 to 3) beats "unable": the build ends Not passing then.
     if any(item.severity == "must_fix" for item in kept):
         return LABEL_NOT_PASSING
+    if result == "unable":
+        return LABEL_UNABLE
     open_should = [
         item
         for item in kept

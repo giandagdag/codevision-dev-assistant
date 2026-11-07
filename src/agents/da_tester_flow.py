@@ -200,6 +200,11 @@ def _report_turn(settings, request_id, base_revision, now):
         reviews = read_reviews(tx.conn, tx.request.request_id, number)
         if not reviews:
             raise BuildError("The Tester has not reviewed this build.")
+        rounds = read_rounds(tx.conn, tx.request.request_id, number)
+        if not rounds or reviews[-1].round != rounds[-1].round:
+            raise BuildError(
+                "Layer C did not run in the last round, so there is nothing to answer."
+            )
         actions = read_actions(tx.conn, tx.request.request_id, number)
         yield tx, reviews[-1], actions
 

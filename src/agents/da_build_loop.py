@@ -232,6 +232,11 @@ class _Run:
             raise BuildError("This build changed. Reload the page and try again.") from None
         except _Paused as paused:
             raise BuildError(f"{paused.message} Nothing was changed.") from None
+        except (BuildError, StaleRevisionError):
+            raise
+        except Exception:  # noqa: BLE001 - the page must show a plain message, not a trace
+            logger.exception("The Tester re-run stopped on an unexpected error.")
+            raise BuildError("The Tester review could not run. Nothing was changed.") from None
         return "done"
 
     def _check_rerun_allowed(self) -> None:

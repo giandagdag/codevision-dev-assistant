@@ -91,7 +91,10 @@ def tests_tab(view: BuildView | None) -> list:
             )
         ]
     report = tester_report(
-        view.tester, view.state.step in ACT_STEPS and view.request_status in ACT_STATUSES
+        view.tester,
+        view.state.step in ACT_STEPS
+        and view.request_status in ACT_STATUSES
+        and bool(view.tester and view.tester.layer_c_ran),
     )
     rows = [_test_row(item) for item in view.tests]
     not_run = (
