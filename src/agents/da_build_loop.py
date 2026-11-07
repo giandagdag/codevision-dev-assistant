@@ -52,6 +52,7 @@ from db_table_functions.db_tbl_da_approach import (
 )
 from db_table_functions.db_tbl_da_audit import ensure_audit_table
 from db_table_functions.db_tbl_da_build import (
+    BuildError,
     add_progress,
     ensure_build_tables,
     insert_build_file,
@@ -65,7 +66,11 @@ from db_table_functions.db_tbl_da_build import (
 )
 from db_table_functions.db_tbl_da_requests import get_rulebook_for_request
 from db_table_functions.db_tbl_da_tester import insert_review, next_review_number, read_reviews
-from db_table_functions.db_tbl_da_understand import read_confirmed_record
+from db_table_functions.db_tbl_da_understand import (
+    STALE_MESSAGE,
+    StaleRevisionError,
+    read_confirmed_record,
+)
 from db_table_functions.db_tbl_da_workspace import ensure_workspace_tables, read_file_versions
 from pydantic_classes.da_approach_models import ApproachVersion, PlannedFile, TestCase
 from pydantic_classes.da_build_models import (
@@ -83,6 +88,8 @@ from pydantic_classes.da_build_models import (
 )
 from pydantic_classes.da_models import (
     STATUS_BUILDING,
+    STATUS_NOT_PASSING,
+    STATUS_READY_FOR_REVIEW,
     STATUS_READY_TO_BUILD,
     STATUS_TESTER_REVIEW,
     Request,
@@ -98,6 +105,7 @@ logger = get_logger(__name__)
 FIXTURE_REFERENCE = PROJECT_ROOT / "tests" / "fixtures" / "da_reference_codevision"
 CONTRACT_FILE = "contract.json"
 TESTER_PAUSE = "The Tester review paused"
+RERUN_STEPS = ("b_done", "b_written", "b_write_stopped")
 
 
 class _Paused(Exception):
@@ -164,6 +172,23 @@ def run_build(
     return run.go()
 
 
+def rerun_review(
+    settings: Settings,
+    request_id: str,
+    base_revision: int,
+    client_factory: Callable[[Settings, str], object] | None = None,
+    now_fn: Callable[[], datetime] | None = None,
+) -> str:
+    """Run the Tester review again (spec 7-12), only when the label is Unable to assess. Same
+    machinery as a round's review, but no round is used and the build stays finished: read with
+    no lock, ask the AI outside any transaction, then ONE write holding both status moves.
+    Returns `done`. Raises BuildError (nothing changed) when the AI cannot be reached."""
+    run = _Run(settings, request_id, client_factory or agent.get_build_client, now_fn)
+    run.rerun = True
+    run.base_revision = base_revision
+    return run.go_rerun()
+
+
 class _Run:
     def __init__(self, settings, request_id, client_factory, now_fn):
         self.settings = settings
@@ -171,6 +196,8 @@ class _Run:
         self.client_factory = client_factory
         self.now_fn = now_fn or (lambda: datetime.now(UTC))
         self.expected_build: int | None = None
+        self.rerun = False
+        self.base_revision = 0
         self.inp: _Inputs
         self.reference: Path
         self.context: agent.BuildContext
@@ -194,6 +221,28 @@ class _Run:
                 return self._pause_early(f"The build could not start ({type(error).__name__}).")
             return self._pause(
                 "interrupted", f"An unexpected error stopped the build ({type(error).__name__})."
+            )
+
+    def go_rerun(self) -> str:
+        try:
+            self._load()
+            self._check_rerun_allowed()
+            self._layer_c(self.inp.rounds[-1])
+        except _Cancelled:
+            raise BuildError("This build changed. Reload the page and try again.") from None
+        except _Paused as paused:
+            raise BuildError(f"{paused.message} Nothing was changed.") from None
+        return "done"
+
+    def _check_rerun_allowed(self) -> None:
+        reviews = self.inp.reviews
+        if (
+            self.inp.request.status != STATUS_READY_FOR_REVIEW
+            or not reviews
+            or reviews[-1].result != "unable"
+        ):
+            raise BuildError(
+                "Run the Tester review again only works when the label is Unable to assess."
             )
 
     def _pause_early(self, message: str) -> str:
@@ -246,10 +295,12 @@ class _Run:
             conn.execute("BEGIN")
             request = _require_request(conn, self.request_id)
             state = read_build_state(conn, self.request_id)
-            if state is None or state.step not in RUNNING_STEPS:
+            if state is None or state.step not in self._live_steps:
                 raise _Cancelled
             if self.expected_build is not None and state.build_number != self.expected_build:
                 raise _Cancelled
+            if self.rerun and state.revision != self.base_revision:
+                raise StaleRevisionError(STALE_MESSAGE)
             approach_state = read_approach_state(conn, self.request_id)
             versions = {
                 v.approach_version: v for v in read_approach_versions(conn, self.request_id)
@@ -628,7 +679,7 @@ class _Run:
         False when a Must fix sends the next round (spec sections 2, 5, 7). Read with no lock, plain
         checks, the AI call outside any transaction, then ONE write (rule T2)."""
         number = last.round
-        line = self._enter_layer_c(number)
+        line = None if self.rerun else self._enter_layer_c(number)
         data = self._review_input(last)
         plain = self._plain_findings(last)
         check_one_failed = any(f.check == 1 for f in plain)
@@ -705,7 +756,7 @@ class _Run:
         findings: list[Finding],
         outcome: tester_agent.ReviewOutcome,
         check_one_failed: bool,
-        line: int,
+        line: int | None,
         seconds: int,
     ) -> bool:
         """The one write of a review: the review and its findings, audit events, chat lines, and
@@ -739,7 +790,9 @@ class _Run:
             self.inp.reviews.append(saved)
             self._audit_review(tx, saved, outcome)
             self._note_review(tx, saved, line, seconds)
-            if check_one_failed:
+            if self.rerun:
+                self._finish_rerun(tx, saved, label, bool(must) or check_one_failed)
+            elif check_one_failed:
                 criterion = next(f for f in findings if f.check == 1)
                 text = f"Criterion {criterion.cites} has no test. Change the approach or get help."
                 self._close(tx, False, used, LABEL_NOT_PASSING, text)
@@ -756,6 +809,25 @@ class _Run:
                 text = _passed_text(last.round, label, _counts(saved), zones, self._cases)
                 self._close(tx, True, used, label, text)
         return True
+
+    def _finish_rerun(self, tx: BuildTx, saved: ReviewRecord, label: str, must: bool) -> None:
+        """The end of a re-run: both moves in one transaction. A Must fix ends NOT_PASSING (Gian,
+        7 Nov): the build is closed, and fixing it is Phase 8. The run row stays as it was."""
+        tx.move_to(STATUS_TESTER_REVIEW)
+        tx.move_to(STATUS_NOT_PASSING if must else STATUS_READY_FOR_REVIEW)
+        counts = _counts(saved)
+        tx.audit(
+            "developer",
+            "tester_review_rerun",
+            {"round": saved.round, "review": saved.review_number, "label": label} | counts,
+        )
+        shown = LABEL_NOT_PASSING if must else label
+        tx.say(
+            "assistant",
+            f"The Tester reviewed round {saved.round} again: {counts['must_fix']} Must fix, "
+            f"{counts['should_fix']} Should fix, {counts['fyi']} FYI. Result: {shown}.",
+        )
+        tx.set()  # the revision goes up, so an old window is refused
 
     def _start_fix_round(self, tx: BuildTx, number: int, findings: list[Finding]) -> None:
         """A Must fix with budget left: back to BUILDING, the next round fixes only the cited
@@ -814,6 +886,11 @@ class _Run:
     # --- helpers ---
 
     @property
+    def _live_steps(self) -> tuple[str, ...]:
+        """The steps this run may write in: the running steps, or (a re-run) a finished build."""
+        return RERUN_STEPS if self.rerun else RUNNING_STEPS
+
+    @property
     def test_id(self) -> str:
         return self.request_id.lower().replace("-", "_")
 
@@ -839,10 +916,15 @@ class _Run:
             state = read_build_state(conn, self.request_id)
             if (
                 state is None
-                or state.step not in RUNNING_STEPS
+                or state.step not in self._live_steps
                 or state.build_number != self.inp.state.build_number
             ):
                 raise _Cancelled
+            if self.rerun and (
+                state.revision != self.inp.state.revision
+                or request.status != STATUS_READY_FOR_REVIEW
+            ):
+                raise StaleRevisionError(STALE_MESSAGE)
             tx = BuildTx(conn, request, state, self.now_fn())
             yield tx
             if tx.dirty:

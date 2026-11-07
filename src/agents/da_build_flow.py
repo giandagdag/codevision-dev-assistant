@@ -267,25 +267,30 @@ def request_help(
     with _turn(settings.db_path, request_id, base_revision, now) as tx:
         _require_step(tx.state, *HELP_STEPS)
         step = tx.state.step
-        open_item = f"{ESCALATED_PREFIX}{step}"
-        approach_state = read_approach_state(tx.conn, tx.request.request_id)
-        if approach_state is None:
-            raise BuildError("There is no approach to escalate.")
-        approach_revision = approach_state.revision
-        approach_state.step = "escalated"
-        approach_state.open_item = open_item
-        if _run_is_open(tx):
-            tx.close_run("", "", "Escalated.", tx.state.current_round)
         tx.say("developer", HELP_BUTTON)
-        tx.audit("developer", "escalated", {"step": step, "open_item": open_item})
-        tx.move_to(STATUS_ESCALATION)
-        tx.say(
-            "assistant",
-            "A senior developer will pick this up. (The escalations inbox comes in Phase 10.)",
-        )
-        save_approach_state(tx.conn, approach_state, approach_revision, now)
-        tx.set(step="escalated")
+        escalate(tx, f"{ESCALATED_PREFIX}{step}", {"step": step})
     return get_state(settings, request_id)
+
+
+def escalate(tx: BuildTx, open_item: str, details: dict) -> None:
+    """Hand the request to a senior (ESCALATION_REQUIRED) with a named open item. Used by Get help
+    and by Dispute (Phase 7). Call it inside an action's transaction."""
+    approach_state = read_approach_state(tx.conn, tx.request.request_id)
+    if approach_state is None:
+        raise BuildError("There is no approach to escalate.")
+    approach_revision = approach_state.revision
+    approach_state.step = "escalated"
+    approach_state.open_item = open_item
+    if _run_is_open(tx):
+        tx.close_run("", "", "Escalated.", tx.state.current_round)
+    tx.audit("developer", "escalated", details | {"open_item": open_item})
+    tx.move_to(STATUS_ESCALATION)
+    tx.say(
+        "assistant",
+        "A senior developer will pick this up. (The escalations inbox comes in Phase 10.)",
+    )
+    save_approach_state(tx.conn, approach_state, approach_revision, tx.now)
+    tx.set(step="escalated")
 
 
 def change_approach(
