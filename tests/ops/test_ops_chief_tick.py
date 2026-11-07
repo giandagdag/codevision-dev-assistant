@@ -325,7 +325,10 @@ def test_every_chief_command_is_in_the_allow_list_and_none_is_denied():
              if a.startswith("Bash(") and a.endswith(":*)")]
     for name in ("chief", "builder"):
         text = (ROOT / ".claude" / "agents" / f"{name}.md").read_text(encoding="utf-8")
-        commands = re.findall(r"`(\"\$DA_PYTHON\" ops/[a-z_]+\.py[^`]*)`", text)
+        # Plain path, never "$DA_PYTHON": don't-ask mode refuses any command with a `$` variable
+        # in it, even when an allow rule matches (found in pilot A-P3, 7 Nov).
+        assert '`"$DA_PYTHON"' not in text
+        commands = re.findall(r"`(\.venv/Scripts/python ops/[a-z_]+\.py[^`]*)`", text)
         if name == "chief":
             assert len(commands) >= 5
         for command in commands:

@@ -65,7 +65,8 @@ def test_docs_keep_the_unattended_run_checklist():
 def test_builder_is_told_the_exact_test_commands_to_use():
     _, text = front("builder")
     assert "plain `pytest`" in text and "`ruff check .`" in text
-    assert '"$DA_PYTHON" ops/quiet.py pytest' in text
+    # Don't-ask mode refuses any command with a `$` variable (A-P3, 7 Nov), so none is suggested.
+    assert "$DA_PYTHON" not in text
     assert "not the interpreter path" in text and "PowerShell" in text
 
 

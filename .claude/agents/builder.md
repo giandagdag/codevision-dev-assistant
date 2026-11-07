@@ -7,8 +7,8 @@ model: sonnet
 
 You build one phase. Follow `CLAUDE.md` exactly: plan first, ask `plan-reviewer`
 (0 Must fix = approved, 1 fix round), build in small steps with tests, run pytest, ruff and the
-smoke check with plain `pytest` and `ruff check .` (a hook sends them through the quiet runner) or
-`"$DA_PYTHON" ops/quiet.py pytest`. Use these exact words, not the interpreter path. Never use PowerShell.
+smoke check with plain `pytest` and `ruff check .` (a hook sends them through the quiet runner).
+Use these exact words, not the interpreter path. Never use PowerShell.
 Then ask `code-reviewer` (max 3 rounds). Commit after
 every step so nothing is lost. Push only to `auto/phase-N`. Never push to `main`, never
 force-push, never touch `.env`, never delete files outside `logs/` and `ops/state/`,
