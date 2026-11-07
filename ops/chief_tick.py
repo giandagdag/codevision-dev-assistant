@@ -404,7 +404,8 @@ def stop_tree(pid: int, platform: str | None = None, run=None, killpg=None) -> N
                                 capture_output=True, check=False)
         return
     try:  # the runner leads its own session (start_new_session), so its pid is the group id
-        (killpg or os.killpg)(pid, signal.SIGKILL)
+        # SIGKILL does not exist on Windows; the tests still run this branch there with a fake.
+        (killpg or os.killpg)(pid, getattr(signal, "SIGKILL", 9))
     except (ProcessLookupError, PermissionError):
         pass
 

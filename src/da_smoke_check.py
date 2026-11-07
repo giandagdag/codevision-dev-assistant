@@ -12,6 +12,7 @@ from tempfile import TemporaryDirectory
 from agents import da_approach_flow as approach
 from agents import da_build_flow as build
 from agents import da_build_loop as build_loop
+from agents import da_tester_flow as tester_flow
 from agents import da_workspace_flow as workspace
 from agents.da_discover_flow import confirm_discovery, start_discovery
 from agents.da_llm_client import LLMClient, LLMClientError, get_llm_client
@@ -38,7 +39,11 @@ from db_table_functions.db_tbl_da_rulebook import (
     restore_version,
     save_new_version,
 )
-from db_table_functions.db_tbl_da_understand import UnderstandError, get_confirmed_record
+from db_table_functions.db_tbl_da_understand import (
+    UnderstandError,
+    get_confirmed_record,
+    list_messages,
+)
 from pydantic_classes.da_discovery_models import SearchFilters
 from pydantic_classes.da_models import (
     STATUS_CONFIRMED,
@@ -220,9 +225,7 @@ def _run_onprem_steps(db_path: Path, settings: Settings) -> None:
             onprem, SAMPLE_FIRST_MESSAGE, developer_id=SAMPLE_DEVELOPER
         )
         request_id = view.request.request_id
-        view = submit_form(
-            onprem, request_id, [*SAMPLE_ANSWERS, SAMPLE_REFERENCE], view.revision
-        )
+        view = submit_form(onprem, request_id, [*SAMPLE_ANSWERS, SAMPLE_REFERENCE], view.revision)
         view = choose_option(onprem, request_id, view.choices[0], view.revision)
         view = choose_option(onprem, request_id, PROCEED_OPTION, view.revision)
     if view.request.status != STATUS_CONFIRMED:
@@ -285,15 +288,12 @@ def _run_reveal_step(db_path: Path, settings: Settings) -> None:
     demo = replace(settings, llm_provider="fake", db_path=db_path)
     view = create_understand_request(demo, SAMPLE_FIRST_MESSAGE, developer_id=SAMPLE_DEVELOPER)
     before = [name for name in view.visible_fields if name not in ALWAYS_VISIBLE]
-    view = submit_form(
-        demo, view.request.request_id, [*SAMPLE_ANSWERS, ""], view.revision
-    )
+    view = submit_form(demo, view.request.request_id, [*SAMPLE_ANSWERS, ""], view.revision)
     revealed = [name for name in view.visible_fields if name not in ALWAYS_VISIBLE]
     if before or "objective" not in revealed or "inputs" not in revealed:
         raise UnderstandError(f"Before Submit {before}; after Submit {revealed}.")
     print(
-        f"18. Before Submit the Summary shows no form field; after it, all {len(revealed)} "
-        "at once"
+        f"18. Before Submit the Summary shows no form field; after it, all {len(revealed)} at once"
     )
 
 
@@ -383,7 +383,7 @@ def _run_build_steps(settings: Settings, request_id: str, folder: FakeBrowserFol
     facts = folder.facts(view.planned_paths, view.markers, request_id, view.max_file_kb)
     build.start_build(settings, request_id, build.get_revision(settings, request_id), facts=facts)
     outcome = build_loop.run_build(settings, request_id)
-    shown = build.get_build_view(settings, request_id)
+    shown = tester_flow.get_build_view(settings, request_id)
     if outcome != "done" or shown.request_status != "READY_FOR_REVIEW" or shown.run is None:
         raise UnderstandError(
             f"The build ended as {outcome} at {shown.state.step}: {shown.banner_text}"
@@ -393,6 +393,7 @@ def _run_build_steps(settings: Settings, request_id: str, folder: FakeBrowserFol
         f"({shown.label}) in {shown.run.rounds_used} rounds, "
         f"{shown.tests_passing} frozen tests passing"
     )
+    _check_tester_review(settings, request_id, shown)
 
     revision = build.get_revision(settings, request_id)
     job = build.prepare_write(settings, request_id, revision)
@@ -403,6 +404,35 @@ def _run_build_steps(settings: Settings, request_id: str, folder: FakeBrowserFol
     print(
         f"25. {len(report.written)} code files written to the pretend folder (no tests folder); "
         f"the step is {state.step}"
+    )
+
+
+def _check_tester_review(settings: Settings, request_id: str, shown) -> None:
+    """Item 26 (Phase 7): the build went through TESTER_REVIEW, the scripted findings are there,
+    and the old Phase 6 'Layer C is not built yet' warning is gone."""
+    report = shown.tester
+    moves = [
+        (e.details["from"], e.details["to"])
+        for e in list_audit_events(settings.db_path, request_id)
+        if e.event_type == "status_changed"
+    ]
+    if ("BUILDING", "TESTER_REVIEW") not in moves or (
+        "TESTER_REVIEW",
+        "READY_FOR_REVIEW",
+    ) not in moves:
+        raise UnderstandError("The build did not go through TESTER_REVIEW.")
+    if report is None or report.review is None or not report.layer_c_ran:
+        raise UnderstandError("The build has no Tester review.")
+    severities = [row.finding.severity for row in report.rows]
+    if severities != ["should_fix", "fyi"] or len(report.dropped) != 1:
+        raise UnderstandError(f"The Tester review had {severities}, not the scripted findings.")
+    said = " ".join(m.text for m in list_messages(settings.db_path, request_id))
+    if "not built yet" in said or "not built yet" in shown.banner_text:
+        raise UnderstandError("The old Layer C warning is still shown.")
+    print(
+        f"26. Tester review (round {report.review.round}, model {report.review.model}): "
+        f"{len(severities)} findings kept, {len(report.dropped)} dropped, label {report.label}; "
+        "the old Layer C warning is gone"
     )
 
 
@@ -449,9 +479,7 @@ def _ticks(view) -> str:
 def _confirmed_request(settings: Settings) -> str:
     view = create_understand_request(settings, SAMPLE_FIRST_MESSAGE, developer_id=SAMPLE_DEVELOPER)
     request_id = view.request.request_id
-    view = submit_form(
-        settings, request_id, [*SAMPLE_ANSWERS, SAMPLE_REFERENCE], view.revision
-    )
+    view = submit_form(settings, request_id, [*SAMPLE_ANSWERS, SAMPLE_REFERENCE], view.revision)
     view = choose_option(settings, request_id, view.choices[0], view.revision)
     view = choose_option(settings, request_id, PROCEED_OPTION, view.revision)
     if view.request.status != STATUS_CONFIRMED:

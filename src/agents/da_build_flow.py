@@ -119,7 +119,7 @@ CHANGE_APPROACH_KEY = "change_approach"
 HELP_KEY = "help"
 
 ESCALATED_PREFIX = "Escalated in Build: "
-RUNNING_STEPS = ("b_running", "b_round_failed")
+RUNNING_STEPS = ("b_running", "b_round_failed", "b_tester_review")
 # Steps from which Get help is offered (B6).
 HELP_STEPS = ("b_interrupted", "b_unable", "b_done", "b_written", "b_write_stopped")
 UNABLE_MESSAGE = "I could not write tests from your plan."
@@ -267,25 +267,30 @@ def request_help(
     with _turn(settings.db_path, request_id, base_revision, now) as tx:
         _require_step(tx.state, *HELP_STEPS)
         step = tx.state.step
-        open_item = f"{ESCALATED_PREFIX}{step}"
-        approach_state = read_approach_state(tx.conn, tx.request.request_id)
-        if approach_state is None:
-            raise BuildError("There is no approach to escalate.")
-        approach_revision = approach_state.revision
-        approach_state.step = "escalated"
-        approach_state.open_item = open_item
-        if _run_is_open(tx):
-            tx.close_run("", "", "Escalated.", tx.state.current_round)
         tx.say("developer", HELP_BUTTON)
-        tx.audit("developer", "escalated", {"step": step, "open_item": open_item})
-        tx.move_to(STATUS_ESCALATION)
-        tx.say(
-            "assistant",
-            "A senior developer will pick this up. (The escalations inbox comes in Phase 10.)",
-        )
-        save_approach_state(tx.conn, approach_state, approach_revision, now)
-        tx.set(step="escalated")
+        escalate(tx, f"{ESCALATED_PREFIX}{step}", {"step": step})
     return get_state(settings, request_id)
+
+
+def escalate(tx: BuildTx, open_item: str, details: dict) -> None:
+    """Hand the request to a senior (ESCALATION_REQUIRED) with a named open item. Used by Get help
+    and by Dispute (Phase 7). Call it inside an action's transaction."""
+    approach_state = read_approach_state(tx.conn, tx.request.request_id)
+    if approach_state is None:
+        raise BuildError("There is no approach to escalate.")
+    approach_revision = approach_state.revision
+    approach_state.step = "escalated"
+    approach_state.open_item = open_item
+    if _run_is_open(tx):
+        tx.close_run("", "", "Escalated.", tx.state.current_round)
+    tx.audit("developer", "escalated", details | {"open_item": open_item})
+    tx.move_to(STATUS_ESCALATION)
+    tx.say(
+        "assistant",
+        "A senior developer will pick this up. (The escalations inbox comes in Phase 10.)",
+    )
+    save_approach_state(tx.conn, approach_state, approach_revision, tx.now)
+    tx.set(step="escalated")
 
 
 def change_approach(
@@ -783,6 +788,16 @@ def _banner(state, status, run, last, cases: int, limit: int, stopped_path: str)
     if step in RUNNING_STEPS:
         if last is not None and not (last.layer_a.ok and last.layer_b and last.layer_b.ok):
             return "red", _failed_banner(last, cases, limit)
+        if step == "b_tester_review" and last is not None:
+            return "blue", (
+                f"Round {last.round} of {limit}: tests pass. "
+                "The independent Tester is reviewing the code."
+            )
+        if step == "b_round_failed" and last is not None:  # the Tester's Must fix (Phase 7)
+            return "red", (
+                f"Round {last.round} of {limit}: the Tester found a Must fix. Only the file it "
+                f"names is regenerated. Tests stay frozen. 1 shared budget of {limit} rounds."
+            )
         number = last.round + 1 if last else 1
         return "blue", (
             f"Round {number} of {limit}. Running on the server. "
@@ -900,6 +915,7 @@ def _wrong_step_message(step: str) -> str:
         "start": "Press Build first.",
         "b_running": "The build is running. You can cancel it or wait.",
         "b_round_failed": "The build is running. You can cancel it or wait.",
+        "b_tester_review": "The independent Tester is reviewing the code. You can cancel or wait.",
         "b_interrupted": "The build paused. Resume it, cancel it, or get help.",
         "b_unable": "I could not write tests. Resume the build, change the approach, or get help.",
         "b_done": "The build is finished and is being written to your folder.",

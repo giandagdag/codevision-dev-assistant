@@ -364,8 +364,9 @@ def test_6_33_a_full_build_against_the_pretend_server_reaches_ready_for_review(
 
     assert outcome == "done"
     state = build.get_state(settings, request_id)
-    assert state.step == "b_done" and state.current_round == 2
+    assert state.step == "b_done" and state.current_round == 3
     assert build.get_build_view(settings, request_id).request_status == "READY_FOR_REVIEW"
-    assert sum("Task: write one file" in p for p in prompts) == 3  # one AI call per file
+    assert sum("Task: write one file" in p for p in prompts) == 4  # one AI call per file
+    assert sum("Task: review the code" in p for p in prompts) == 2  # Layer C, rounds 2 and 3
     assert sum("Task: write the tests" in p for p in prompts) == 1
     assert not da_rejected_reply_log.LOG_FILE.exists()

@@ -342,6 +342,31 @@ def test_phase_6_numbers_outside_their_limits_are_refused(seed_rulebook, name, b
         Rulebook.model_validate(data)
 
 
+def test_7_32_a_rulebook_saved_before_phase_7_loads_with_the_starter_values(seed_rulebook):
+    old = seed_rulebook.model_dump(mode="json")
+    for name in ("tester_max_prompt_chars", "tester_max_attempts", "tester_quote_window"):
+        del old["policy"][name]
+
+    loaded = Rulebook.model_validate(old)
+
+    assert loaded.policy.tester_max_prompt_chars == 60000
+    assert loaded.policy.tester_max_attempts == 2
+    assert loaded.policy.tester_quote_window == 2
+    assert loaded.policy == seed_rulebook.policy
+
+
+@pytest.mark.parametrize(
+    ("name", "bad"),
+    [("tester_max_prompt_chars", 999), ("tester_max_attempts", 0), ("tester_quote_window", 11)],
+)
+def test_7_tester_numbers_outside_their_limits_are_refused(seed_rulebook, name, bad):
+    data = seed_rulebook.model_dump(mode="json")
+    data["policy"][name] = bad
+
+    with pytest.raises(ValidationError):
+        Rulebook.model_validate(data)
+
+
 def test_a_rulebook_saved_before_phase_4_loads_with_the_starter_values(seed_rulebook):
     old = seed_rulebook.model_dump(mode="json")
     for name in (

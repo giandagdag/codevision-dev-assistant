@@ -11,6 +11,7 @@ from typing import Literal
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from pydantic_classes.da_models import REQUEST_ID_PATTERN
+from pydantic_classes.da_tester_models import TesterView
 
 # Where the build is. "start" is not a saved row state of a running build: it means no build is
 # running (no row yet, or the last build was stopped). b_prescan is shown by the browser only,
@@ -19,6 +20,7 @@ BuildStep = Literal[
     "start",
     "b_running",
     "b_round_failed",
+    "b_tester_review",
     "b_interrupted",
     "b_done",
     "b_written",
@@ -34,11 +36,11 @@ TestResultKind = Literal["pass", "fail", "error", "skipped"]
 ProgressState = Literal["pending", "running", "done", "failed"]
 ContractKind = Literal["function", "class"]
 
-# The label shown to the developer (spec section 8, decision D-F). Never "Approved".
+# The label shown to the developer (Phase 7 spec section 8). Never "Approved".
+LABEL_READY = "Ready for your review"
 LABEL_WITH_WARNINGS = "Ready with warnings"
 LABEL_NOT_PASSING = "Not passing"
 LABEL_UNABLE = "Unable to assess"
-LAYER_C_WARNING = "The independent Tester review (Layer C) is not built yet."
 
 NAME_LIMIT = 100
 TEXT_LIMIT = 300
@@ -299,3 +301,5 @@ class BuildView(BaseModel):
     mode: str = "picker"
     seconds_taken: int = 0
     tests_passing: str = ""
+    # Phase 7: the Tester's report, added by da_tester_flow.get_build_view (not by the build flow).
+    tester: TesterView | None = None

@@ -20,6 +20,7 @@ from datetime import datetime
 
 from db_table_functions.da_db import to_db_time
 from db_table_functions.db_tbl_da_approach import ensure_approach_tables
+from db_table_functions.db_tbl_da_tester import ensure_tester_tables
 from db_table_functions.db_tbl_da_understand import (
     STALE_MESSAGE,
     StaleRevisionError,
@@ -154,6 +155,7 @@ def ensure_build_tables(conn: sqlite3.Connection) -> None:
     # These tables point at da_requests, which the Understand tables set up first.
     ensure_approach_tables(conn)
     conn.executescript(_CREATE_TABLES_SQL)
+    ensure_tester_tables(conn)  # Phase 7: the Tester's three tables ride along
 
 
 # --- the working state ---
@@ -207,7 +209,7 @@ def read_running_requests(conn: sqlite3.Connection) -> list[str]:
     """Requests whose build is marked running (including between rounds). Used at server
     start-up, when no build can really still be running (spec section 10)."""
     rows = conn.execute("SELECT request_id, state FROM da_build_state").fetchall()
-    running = ("b_running", "b_round_failed")
+    running = ("b_running", "b_round_failed", "b_tester_review")
     return [row["request_id"] for row in rows if json.loads(row["state"]).get("step") in running]
 
 

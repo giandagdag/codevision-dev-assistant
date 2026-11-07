@@ -130,6 +130,10 @@ DEFAULT_BUILD_MAX_ROUNDS = 3
 DEFAULT_BUILD_TEST_TIMEOUT_SECONDS = 60
 DEFAULT_BUILD_MAX_PROMPT_CHARS = 60000
 DEFAULT_BUILD_MAX_PARALLEL = 2
+# Phase 7 (Independent Tester), spec section 11. Made-up starter values.
+DEFAULT_TESTER_MAX_PROMPT_CHARS = 60000
+DEFAULT_TESTER_MAX_ATTEMPTS = 2
+DEFAULT_TESTER_QUOTE_WINDOW = 2
 DEFAULT_BUILD_BLOCKED_IMPORTS = [
     "subprocess",
     "socket",
@@ -207,6 +211,11 @@ class Policy(_RulebookPart):
     build_sandbox_exclude: list[str] = Field(
         default_factory=lambda: list(DEFAULT_BUILD_SANDBOX_EXCLUDE)
     )
+    # Phase 7 (Independent Tester), spec section 11. Separate from the build prompt size because
+    # the Tester may run on another model with another server limit.
+    tester_max_prompt_chars: int = Field(default=DEFAULT_TESTER_MAX_PROMPT_CHARS, ge=1000)
+    tester_max_attempts: int = Field(default=DEFAULT_TESTER_MAX_ATTEMPTS, ge=1, le=5)
+    tester_quote_window: int = Field(default=DEFAULT_TESTER_QUOTE_WINDOW, ge=0, le=10)
 
     @field_validator("new_file_name_pattern")
     @classmethod
