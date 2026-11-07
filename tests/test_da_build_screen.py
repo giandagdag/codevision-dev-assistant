@@ -141,7 +141,7 @@ def test_6_42_the_written_tab_says_try_it_yourself_and_has_no_run_the_tests_line
     table = all_text(by_id(tree, bp.FILES_ID))
     assert "src/agents/excel_processor.py" in table and table.count("Written") == 2
     summary = all_text(by_id(tree, bp.SUMMARY_ID))
-    assert "Rounds used: 2 of 3" in summary and "Tests passing: 9 of 9" in summary
+    assert "Rounds used: 3 of 3" in summary and "Tests passing: 9 of 9" in summary
     assert "Time taken:" in summary
     assert "Ready with warnings. The code files are in your folder." in all_text(
         by_id(tree, bp.BANNER_ID)
@@ -178,11 +178,12 @@ def test_the_failure_report_table_and_the_regenerated_file_note(settings, ready,
     assert by_id(tree, bp.POLL_ID).disabled is False  # b_round_failed still polls
     layers = all_text(by_id(tree, bp.LAYERS_ID))
     assert "Does it run?" in layers and "Does it behave?" in layers
-    assert "Matches the agreement?" in layers and "Coming in Phase 7" in layers
+    assert "Matches the agreement?" in layers and "Coming in Phase 7" not in layers
+    assert "Waiting" in layers  # Layer C has not run yet in round 1
     assert "6 of 9 passed" in layers
 
 
-def test_the_progress_list_has_the_frozen_tests_line_and_layer_c_coming_in_phase_7(settings, ready):
+def test_the_progress_list_has_the_frozen_tests_line_and_the_layer_c_result(settings, ready):
     request_id, _ = ready
     start(settings, request_id)
     loop.run_build(settings, request_id)
@@ -191,7 +192,8 @@ def test_the_progress_list_has_the_frozen_tests_line_and_layer_c_coming_in_phase
 
     assert "Tester wrote 9 tests (frozen)" in progress
     assert "Layer B: 9 of 9 tests passed (time limit 60 seconds per run)" in progress
-    assert "Layer C: independent Tester review (coming in Phase 7)" in progress
+    assert "Layer C: 0 Must fix, 1 Should fix, 1 FYI" in progress
+    assert "coming in Phase 7" not in progress
 
 
 def test_the_tests_tab_lists_the_frozen_tests_and_says_they_stay_on_the_server(settings, ready):

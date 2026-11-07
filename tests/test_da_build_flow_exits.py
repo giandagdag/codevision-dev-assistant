@@ -169,7 +169,8 @@ def test_6_19_try_again_resumes_without_rewriting_finished_files_or_using_a_roun
     first_file = [p for p in code_calls if f"File: {CREATE_PATH}" in p and "Round: 1" in p]
     assert len(first_file) == 1  # the finished file was NOT asked for again
     run = run_row(settings, request_id)
-    assert run.rounds_used == 2 and request_status(settings, request_id) == "READY_FOR_REVIEW"
+    # home script: round 1 tests fail, round 2 Tester Must fix, round 3 passes
+    assert run.rounds_used == 3 and request_status(settings, request_id) == "READY_FOR_REVIEW"
 
 
 CREATE_PATH = "src/agents/excel_processor.py"
@@ -188,9 +189,10 @@ def test_after_a_stop_the_next_build_asks_for_no_new_contract_or_tests(settings,
     loop.run_build(settings, request_id, factory)
 
     assert second.build_number == 2
-    assert factory.prompts("tester") == []  # the Tester was not asked again
+    writing = [p for p in factory.prompts("tester") if agent.TESTS_MARKER in p]
+    assert writing == []  # the Tester was not asked to write the tests again
     assert all(agent.CONTRACT_MARKER not in prompt for prompt in factory.prompts())
-    assert run_row(settings, request_id, 2).rounds_used == 2  # a fresh budget of 3, two used
+    assert run_row(settings, request_id, 2).rounds_used == 3  # a fresh budget of 3, all used
 
 
 # --- Get help (B6, row 6-30) ---

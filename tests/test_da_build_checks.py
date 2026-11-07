@@ -487,8 +487,9 @@ def test_failure_report_names_a_timeout_and_layer_a_problems():
 
 
 def test_result_and_label_for_a_pass_and_for_a_used_up_budget():
-    assert checks.result_for(True) == ("READY_FOR_REVIEW", LABEL_WITH_WARNINGS)
-    assert checks.result_for(False) == ("NOT_PASSING", LABEL_NOT_PASSING)
+    assert checks.result_for(True, LABEL_WITH_WARNINGS) == ("READY_FOR_REVIEW", LABEL_WITH_WARNINGS)
+    assert checks.result_for(True, "Ready for your review")[1] == "Ready for your review"
+    assert checks.result_for(False, "ignored") == ("NOT_PASSING", LABEL_NOT_PASSING)
     assert LABEL_WITH_WARNINGS == "Ready with warnings" and "Approved" not in LABEL_NOT_PASSING
 
 

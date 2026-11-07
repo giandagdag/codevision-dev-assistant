@@ -449,8 +449,8 @@ What happens when you press **Build** (after your workspace is ready):
 7. **Rounds.** One shared budget of 3. A failed round sends a plain failure report back and only
    the failing files are fixed. The AI not answering, a prompt that is too big, or a restart
    **never** uses a round: the build pauses and **Resume build** resumes it.
-8. **Result.** A pass is **Ready with warnings** (the warning says the independent Tester review,
-   Layer C, comes in Phase 7). The budget used up is **Not passing** (red). Never "Approved".
+8. **Result.** After Layers A and B pass, the independent Tester reviews the code (Layer C, Phase 7,
+   see "How Phase 7 works"). The budget used up is **Not passing** (red). Never "Approved".
 9. **Write.** The page writes the code files by itself when the build is done and your folder is
    allowed (otherwise press **Reconnect**). It is the Phase 5 write job: it creates **no** folders
    and never overwrites a file you changed (the edit guard). **The tests are never written to your
@@ -470,6 +470,44 @@ and call rules are the guard. Question Q14 (d) asks the CodeVision team about mo
 `build_max_rounds` 3, `build_test_timeout_seconds` 60, `build_max_prompt_chars` 60000,
 `build_max_parallel` 2, `build_blocked_imports`, `build_sandbox_exclude`. The protected-file and
 approved-library lists are the **Phase 4 ones** (one list each, so Approach and Build agree).
+
+## How Phase 7 works
+
+Phase 7 is the **Independent Tester** (Layer C). AS400 picture: the peer code review before the
+promotion to the QA library. A second programmer reads the source against the change request and
+the shop standards; he was not in the design meeting and never saw the Generator's chat.
+
+- **When.** Only after Layers A and B pass in a round. Status `TESTER_REVIEW`, step
+  `b_tester_review`. **Cancel build**, the stale check, restart recovery all work as before.
+- **Seven checks.** 1, 2, 3 and 7 are plain Python (a test for every criterion, those tests pass,
+  files match the file plan, flag-for-review zones). 4, 5 and 6 are one AI call (approach decisions
+  followed, nothing extra built, judgement rules kept).
+- **Evidence rule.** Every AI finding must name a planned file, a real line, a quote found within
+  2 lines, and an allowed cite (`DD-n`, `RU-n`, `PLAN:path`, `AC-n` or a rule ID). Plain code drops
+  any finding that fails; dropped ones are saved with the reason (**Show dropped** on the Tests tab).
+- **Severity.** **Must fix** goes back to the Generator and uses a round of the same shared budget
+  of 3 (only the cited files; Should fix and FYI never reach the Generator). **Should fix**: accept
+  with a reason (10 to 300 characters) or leave open. **FYI**: shown only. **Fix it** is greyed
+  ("Coming in Phase 8").
+- **Labels** (worked out by plain code, never by the AI): **Ready for your review** (green),
+  **Ready with warnings** (yellow: an open Should fix or a zone touched), **Not passing** (red),
+  **Unable to assess** (grey: the reply was unusable twice; **Run the Tester review again** makes a
+  new review and uses no round). Never "Approved". The label is recalculated from the newest review
+  plus your accept and reopen actions; the closed run row is not edited.
+- **A Must fix found by a re-run** ends the build as **Not passing** (Gian's decision, 7 Nov).
+- **Dispute** a Must fix: the request goes to a senior (`Disputed Must fix: F-n`); the inbox comes
+  in Phase 10.
+- **Too big.** If the prompt is over `tester_max_prompt_chars` (60000), or the server answers HTTP
+  400, the review is split into one call per file. If one file is still too big, the build pauses
+  and **Resume build** repeats the review. No round is used.
+- **The report stays in the app** (Tests tab). Nothing from it goes to your folder.
+- **The Tester model** is a setting (`DA_CLAUDE_TESTER_MODEL`, `DA_ONPREM_TESTER_MODEL`); empty
+  means the Generator's model. Which model at work is open question Q9; see `docs/tester-work-test.md`.
+- **At home** the fake Tester follows a script, so a default build takes 3 rounds: round 1 the tests
+  fail, round 2 the Tester's Must fix, round 3 passes yellow. `interrupted` is a possible review
+  result in the table, but Phase 7 never writes it (an interrupted review only writes an audit event).
+- **Three new rulebook policy fields:** `tester_max_prompt_chars` 60000, `tester_max_attempts` 2,
+  `tester_quote_window` 2 (older versions load with these starter values).
 
 **Phase 6 fixes batch (work test, 6 Nov 2026).** Built on the same branch before the merge.
 Spec `specs/phase-6-fixes-2026-11-06.md`, plan `specs/phase-6-fixes-plan.md`.

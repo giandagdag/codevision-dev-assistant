@@ -29,6 +29,7 @@ from pydantic_classes.da_models import (
     STATUS_READY_TO_BUILD,
     STATUS_SEARCHING,
     STATUS_SIMILAR_FOUND,
+    STATUS_TESTER_REVIEW,
     display_status,
 )
 from pydantic_classes.da_request_record_models import ChatMessage
@@ -61,6 +62,7 @@ _PILL_COLOURS: dict[str, str] = {
     STATUS_BUILDING: "blue",
     STATUS_READY_FOR_REVIEW: "yellow",
     STATUS_NOT_PASSING: "red",
+    STATUS_TESTER_REVIEW: "blue",
 }
 
 FALLBACK_BANNER = "AI summary unavailable. Showing plain search results."

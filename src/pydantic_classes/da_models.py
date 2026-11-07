@@ -26,6 +26,8 @@ STATUS_READY_TO_BUILD = "READY_TO_BUILD"
 STATUS_BUILDING = "BUILDING"
 STATUS_READY_FOR_REVIEW = "READY_FOR_REVIEW"
 STATUS_NOT_PASSING = "NOT_PASSING"
+# Phase 7 (Independent Tester), spec section 3. TESTING stays unused.
+STATUS_TESTER_REVIEW = "TESTER_REVIEW"
 
 STATUSES: tuple[str, ...] = (
     STATUS_DRAFT,
@@ -43,6 +45,7 @@ STATUSES: tuple[str, ...] = (
     STATUS_BUILDING,
     STATUS_READY_FOR_REVIEW,
     STATUS_NOT_PASSING,
+    STATUS_TESTER_REVIEW,
 )
 
 # The only moves allowed: the spec 3.1 table, plus the Discover moves of Phase 3 (spec section 2).
@@ -60,17 +63,28 @@ ALLOWED_MOVES: dict[str, tuple[str, ...]] = {
     # Phase 5 (Workspace): "Change the approach" and "Get help" from a blocked workspace check.
     # Phase 6 (Build): Build starts a build. The escalation inbox comes in Phase 10.
     STATUS_READY_TO_BUILD: (STATUS_APPROACH_PROPOSED, STATUS_BUILDING, STATUS_ESCALATION),
-    # Stop build and "unable to write tests" go back to READY_TO_BUILD; a pass or a used-up
-    # budget ends in READY_FOR_REVIEW or NOT_PASSING (spec section 2).
+    # Stop build and "unable to write tests" go back to READY_TO_BUILD; a used-up budget ends in
+    # NOT_PASSING. Phase 7: a pass goes to TESTER_REVIEW first (BUILDING to READY_FOR_REVIEW is
+    # gone: every pass is reviewed by the independent Tester).
     STATUS_BUILDING: (
         STATUS_READY_TO_BUILD,
-        STATUS_READY_FOR_REVIEW,
+        STATUS_TESTER_REVIEW,
         STATUS_NOT_PASSING,
         STATUS_ESCALATION,
     ),
-    # Get help, or "Re-scan and build again" after the edit guard stopped the write (B9).
+    # Phase 7 (spec section 3): Must fix with budget left goes back to BUILDING; a clean or
+    # unassessable review ends in READY_FOR_REVIEW; Stop build and Get help as in Phase 6.
+    STATUS_TESTER_REVIEW: (
+        STATUS_BUILDING,
+        STATUS_READY_FOR_REVIEW,
+        STATUS_NOT_PASSING,
+        STATUS_READY_TO_BUILD,
+        STATUS_ESCALATION,
+    ),
+    # Get help, "Re-scan and build again" after the edit guard stopped the write (B9), and
+    # "Run the Tester review again" when the label is Unable to assess (Phase 7, D-D).
     # Refine (Phase 8) adds the other ways out of these two.
-    STATUS_READY_FOR_REVIEW: (STATUS_BUILDING, STATUS_ESCALATION),
+    STATUS_READY_FOR_REVIEW: (STATUS_BUILDING, STATUS_ESCALATION, STATUS_TESTER_REVIEW),
     STATUS_NOT_PASSING: (STATUS_BUILDING, STATUS_ESCALATION),
     STATUS_ESCALATION: (),
 }

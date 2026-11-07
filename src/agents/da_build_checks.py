@@ -24,7 +24,6 @@ from agents.da_workspace_checks import (
 from pydantic_classes.da_approach_models import TestCase
 from pydantic_classes.da_build_models import (
     LABEL_NOT_PASSING,
-    LABEL_WITH_WARNINGS,
     Contract,
     ContractFile,
     ContractItem,
@@ -663,10 +662,11 @@ def report_for_generator(report: FailureReport) -> str:
 # --- results and labels (spec section 8) ---
 
 
-def result_for(passed: bool) -> tuple[str, str]:
-    """(status, label) once the build ends: a pass, or the budget used up."""
+def result_for(passed: bool, label: str) -> tuple[str, str]:
+    """(status, label) once the build ends. A pass keeps the label the Tester review gave it
+    (Phase 7, plain code in da_tester_review.compute_label); anything else is Not passing."""
     if passed:
-        return STATUS_READY_FOR_REVIEW, LABEL_WITH_WARNINGS
+        return STATUS_READY_FOR_REVIEW, label
     return STATUS_NOT_PASSING, LABEL_NOT_PASSING
 
 

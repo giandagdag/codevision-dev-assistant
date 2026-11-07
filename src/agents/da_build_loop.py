@@ -19,6 +19,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from agents import da_build_agent as agent
+from agents import da_tester_review as tester
+from agents import da_tester_review_agent as tester_agent
 from agents.da_approach_checks import normalise_path
 from agents.da_build_checks import (
     LayerAContext,
@@ -50,6 +52,7 @@ from db_table_functions.db_tbl_da_approach import (
 )
 from db_table_functions.db_tbl_da_audit import ensure_audit_table
 from db_table_functions.db_tbl_da_build import (
+    BuildError,
     add_progress,
     ensure_build_tables,
     insert_build_file,
@@ -62,10 +65,16 @@ from db_table_functions.db_tbl_da_build import (
     save_build_state,
 )
 from db_table_functions.db_tbl_da_requests import get_rulebook_for_request
-from db_table_functions.db_tbl_da_understand import read_confirmed_record
+from db_table_functions.db_tbl_da_tester import insert_review, next_review_number, read_reviews
+from db_table_functions.db_tbl_da_understand import (
+    STALE_MESSAGE,
+    StaleRevisionError,
+    read_confirmed_record,
+)
 from db_table_functions.db_tbl_da_workspace import ensure_workspace_tables, read_file_versions
 from pydantic_classes.da_approach_models import ApproachVersion, PlannedFile, TestCase
 from pydantic_classes.da_build_models import (
+    LABEL_NOT_PASSING,
     LABEL_UNABLE,
     BuildFile,
     BuildState,
@@ -77,9 +86,17 @@ from pydantic_classes.da_build_models import (
     ProgressState,
     RoundRecord,
 )
-from pydantic_classes.da_models import STATUS_READY_TO_BUILD, Request
+from pydantic_classes.da_models import (
+    STATUS_BUILDING,
+    STATUS_NOT_PASSING,
+    STATUS_READY_FOR_REVIEW,
+    STATUS_READY_TO_BUILD,
+    STATUS_TESTER_REVIEW,
+    Request,
+)
 from pydantic_classes.da_request_record_models import RequestRecord
-from pydantic_classes.da_rulebook_models import Charter, Policy
+from pydantic_classes.da_rulebook_models import Charter, Policy, Rule
+from pydantic_classes.da_tester_models import Finding, ReviewRecord
 
 logger = get_logger(__name__)
 
@@ -87,6 +104,8 @@ logger = get_logger(__name__)
 # DA_SANDBOX_SOURCE_DIR is not set (spec section 11).
 FIXTURE_REFERENCE = PROJECT_ROOT / "tests" / "fixtures" / "da_reference_codevision"
 CONTRACT_FILE = "contract.json"
+TESTER_PAUSE = "The Tester review paused"
+RERUN_STEPS = ("b_done", "b_written", "b_write_stopped")
 
 
 class _Paused(Exception):
@@ -127,6 +146,8 @@ class _Inputs:
     rounds: list[RoundRecord]
     code: dict[str, BuildFile]
     next_line: int
+    rules: list[Rule]
+    reviews: list[ReviewRecord]
     planned: list[PlannedFile] = field(init=False)
 
     def __post_init__(self) -> None:
@@ -151,6 +172,23 @@ def run_build(
     return run.go()
 
 
+def rerun_review(
+    settings: Settings,
+    request_id: str,
+    base_revision: int,
+    client_factory: Callable[[Settings, str], object] | None = None,
+    now_fn: Callable[[], datetime] | None = None,
+) -> str:
+    """Run the Tester review again (spec 7-12), only when the label is Unable to assess. Same
+    machinery as a round's review, but no round is used and the build stays finished: read with
+    no lock, ask the AI outside any transaction, then ONE write holding both status moves.
+    Returns `done`. Raises BuildError (nothing changed) when the AI cannot be reached."""
+    run = _Run(settings, request_id, client_factory or agent.get_build_client, now_fn)
+    run.rerun = True
+    run.base_revision = base_revision
+    return run.go_rerun()
+
+
 class _Run:
     def __init__(self, settings, request_id, client_factory, now_fn):
         self.settings = settings
@@ -158,6 +196,8 @@ class _Run:
         self.client_factory = client_factory
         self.now_fn = now_fn or (lambda: datetime.now(UTC))
         self.expected_build: int | None = None
+        self.rerun = False
+        self.base_revision = 0
         self.inp: _Inputs
         self.reference: Path
         self.context: agent.BuildContext
@@ -181,6 +221,33 @@ class _Run:
                 return self._pause_early(f"The build could not start ({type(error).__name__}).")
             return self._pause(
                 "interrupted", f"An unexpected error stopped the build ({type(error).__name__})."
+            )
+
+    def go_rerun(self) -> str:
+        try:
+            self._load()
+            self._check_rerun_allowed()
+            self._layer_c(self.inp.rounds[-1])
+        except _Cancelled:
+            raise BuildError("This build changed. Reload the page and try again.") from None
+        except _Paused as paused:
+            raise BuildError(f"{paused.message} Nothing was changed.") from None
+        except (BuildError, StaleRevisionError):
+            raise
+        except Exception:  # noqa: BLE001 - the page must show a plain message, not a trace
+            logger.exception("The Tester re-run stopped on an unexpected error.")
+            raise BuildError("The Tester review could not run. Nothing was changed.") from None
+        return "done"
+
+    def _check_rerun_allowed(self) -> None:
+        reviews = self.inp.reviews
+        if (
+            self.inp.request.status != STATUS_READY_FOR_REVIEW
+            or not reviews
+            or reviews[-1].result != "unable"
+        ):
+            raise BuildError(
+                "Run the Tester review again only works when the label is Unable to assess."
             )
 
     def _pause_early(self, message: str) -> str:
@@ -213,7 +280,9 @@ class _Run:
                     tx.say("assistant", f"{UNABLE_MESSAGE} Result: {LABEL_UNABLE}.")
                 else:
                     tx.set(step="b_interrupted", message=message)
-                    tx.say("assistant", f"The build paused: {message}")
+                    # A Tester pause already says what it is (spec section 2).
+                    own = message.startswith(TESTER_PAUSE)
+                    tx.say("assistant", message if own else f"The build paused: {message}")
         except _Cancelled:
             return "cancelled"
         return kind
@@ -231,10 +300,12 @@ class _Run:
             conn.execute("BEGIN")
             request = _require_request(conn, self.request_id)
             state = read_build_state(conn, self.request_id)
-            if state is None or state.step not in RUNNING_STEPS:
+            if state is None or state.step not in self._live_steps:
                 raise _Cancelled
             if self.expected_build is not None and state.build_number != self.expected_build:
                 raise _Cancelled
+            if self.rerun and state.revision != self.base_revision:
+                raise StaleRevisionError(STALE_MESSAGE)
             approach_state = read_approach_state(conn, self.request_id)
             versions = {
                 v.approach_version: v for v in read_approach_versions(conn, self.request_id)
@@ -265,6 +336,8 @@ class _Run:
                 rounds=read_rounds(conn, self.request_id, number),
                 code=read_latest_code(conn, self.request_id, number),
                 next_line=(progress[-1].line_number + 1) if progress else 1,
+                rules=list(rulebook.rules),
+                reviews=read_reviews(conn, self.request_id, number),
             )
         self.context = agent.BuildContext(
             charter=self.inp.charter,
@@ -353,32 +426,46 @@ class _Run:
     # --- the rounds (spec section 7) ---
 
     def _rounds(self, contract: Contract, tests: str) -> str:
+        """Round after round until the build ends. A round that passes Layers A and B is reviewed
+        by the independent Tester (Layer C, Phase 7). A Must fix there uses a round like a failing
+        test does: one shared budget (spec section 7)."""
         limit = self.inp.policy.build_max_rounds
         while True:
             done = self.inp.rounds
-            if done and _round_passed(done[-1]):
-                return self._finish(True, len(done))  # saved, but the finish was not
+            last = done[-1] if done else None
+            if last is not None and _round_passed(last) and self._review_of(last.round) is None:
+                if self._layer_c(last):
+                    return "done"
+                continue
             if len(done) >= limit:
-                return self._finish(False, len(done))
-            number = len(done) + 1
-            passed = self._one_round(number, contract, tests)
-            if passed:
-                return self._finish(True, number)
-            if number >= limit:
-                return self._finish(False, number)
+                return self._finish_failed(len(done))
+            self._one_round(len(done) + 1, contract, tests)
+
+    def _review_of(self, round_number: int) -> ReviewRecord | None:
+        """The saved review of a round. A saved review of a passed round that is not the end of the
+        build is a Must fix review: the next round is waiting for its fix."""
+        found = [item for item in self.inp.reviews if item.round == round_number]
+        return found[-1] if found else None
+
+    def _fix_input(self, number: int) -> tuple[list[str], str]:
+        """(files to write, the failure text for the Generator) for a round (spec section 7)."""
+        planned = [_clean(item.path) for item in self.inp.planned]
+        if number == 1:
+            return planned, ""
+        last = self.inp.rounds[-1]
+        if _round_passed(last):  # Layer C found a Must fix: only its lines go to the Generator
+            review = self._review_of(last.round)
+            findings = review.findings if review else []
+            return tester.files_to_fix(findings, planned), tester.report_for_generator(findings)
+        failures = report_for_generator(last.failure_report) if last.failure_report else ""
+        return last.files_to_fix, failures
 
     def _one_round(self, number: int, contract: Contract, tests: str) -> bool:
         limit = self.inp.policy.build_max_rounds
-        if number == 1:
-            to_write = [_clean(item.path) for item in self.inp.planned]
-        else:
-            to_write = self.inp.rounds[-1].files_to_fix
+        to_write, failures = self._fix_input(number)
         with self._turn() as tx:
             tx.set(step="b_running", current_round=len(self.inp.rounds))
             self._note(tx, f"Round {number} of {limit}", "done")
-        failures = ""
-        if self.inp.rounds and self.inp.rounds[-1].failure_report:
-            failures = report_for_generator(self.inp.rounds[-1].failure_report)
         generated: dict[str, str] = {}
         problems: list[LayerAProblem] = []
         for path in to_write:
@@ -560,30 +647,253 @@ class _Run:
 
     # --- the end (spec section 8) ---
 
-    def _finish(self, passed: bool, rounds_used: int) -> str:
-        status, label = result_for(passed)
+    def _finish_failed(self, rounds_used: int) -> str:
+        """The budget is used up with tests still failing (Layer C did not run in that round)."""
         with self._turn() as tx:
-            tx.close_run(status, label, "", rounds_used)
-            tx.move_to(status)
-            tx.set(step="b_done", current_round=rounds_used, write_state="not_written", message="")
-            event = "build_passed" if passed else "build_not_passing"
-            tx.audit(
-                "system",
-                event,
-                {
-                    "rounds": rounds_used,
-                    "label": label,
-                    "zones_touched": self.inp.approach.zones_touched,
-                },
-            )
-            tx.say(
-                "assistant",
-                _finish_text(passed, rounds_used, label, self.inp.rounds, len(self.inp.cases)),
-            )
-            self._note(tx, "Layer C: independent Tester review (coming in Phase 7)", "pending")
+            text = _finish_text(False, rounds_used, LABEL_NOT_PASSING, self.inp.rounds, self._cases)
+            self._close(tx, False, rounds_used, LABEL_NOT_PASSING, text)
         return "done"
 
+    def _close(self, tx: BuildTx, passed: bool, rounds_used: int, label: str, text: str) -> None:
+        """Close the build inside the caller's transaction: run row, status, step, audit, chat.
+        Used by the failed finish and by the review that ends the build (rule T2: one write)."""
+        status, label = result_for(passed, label)
+        tx.close_run(status, label, "", rounds_used)
+        tx.move_to(status)
+        tx.set(step="b_done", current_round=rounds_used, write_state="not_written", message="")
+        event = "build_passed" if passed else "build_not_passing"
+        tx.audit(
+            "system",
+            event,
+            {
+                "rounds": rounds_used,
+                "label": label,
+                "zones_touched": self.inp.approach.zones_touched,
+            },
+        )
+        tx.say("assistant", text)
+
+    @property
+    def _cases(self) -> int:
+        return len(self.inp.cases)
+
+    # --- Layer C: the independent Tester (Phase 7) ---
+
+    def _layer_c(self, last: RoundRecord) -> bool:
+        """Review a round that passed Layers A and B. True when the build ended in this review,
+        False when a Must fix sends the next round (spec sections 2, 5, 7). Read with no lock, plain
+        checks, the AI call outside any transaction, then ONE write (rule T2)."""
+        number = last.round
+        line = None if self.rerun else self._enter_layer_c(number)
+        data = self._review_input(last)
+        plain = self._plain_findings(last)
+        check_one_failed = any(f.check == 1 for f in plain)
+        started = self.now_fn()
+        client = self.client("tester")
+        outcome = tester_agent.ReviewOutcome(model=getattr(client, "model", ""))
+        if not check_one_failed:  # no need to ask the AI when the build ends anyway
+            outcome = tester_agent.review_code(client, data, self.request_id)
+            if outcome.kind in ("unreachable", "too_big"):
+                reason = (
+                    "the change is too big for the Tester to review in one go."
+                    if outcome.kind == "too_big"
+                    else "the AI did not answer."
+                )
+                raise _Paused("interrupted", f"{TESTER_PAUSE}: {reason}")
+        ai_findings = (
+            []
+            if outcome.kind
+            else tester.split_findings(
+                outcome.findings,
+                data.code,
+                self.inp.approach,
+                self.inp.record,
+                self.inp.rules,
+                data.planned_paths,
+                self.inp.policy.tester_quote_window,
+            )
+        )
+        findings = tester.number_findings(plain + ai_findings)
+        seconds = int((self.now_fn() - started).total_seconds())
+        return self._save_review(last, findings, outcome, check_one_failed, line, seconds)
+
+    def _enter_layer_c(self, number: int) -> int:
+        """Status TESTER_REVIEW, step b_tester_review, the audit event and the progress line."""
+        with self._turn() as tx:
+            if tx.request.status == STATUS_BUILDING:
+                tx.move_to(STATUS_TESTER_REVIEW)
+            tx.set(step="b_tester_review", current_round=number)
+            tx.audit("system", "tester_review_started", {"round": number})
+            tx.say("assistant", "Tests pass. The independent Tester is now reviewing the code.")
+            return self._note(
+                tx, "Layer C: the independent Tester is reviewing the code.", "running"
+            )
+
+    def _review_input(self, last: RoundRecord) -> tester.ReviewInput:
+        return tester.ReviewInput(
+            charter=self.inp.charter,
+            rules=self.inp.rules,
+            record=self.inp.record,
+            approach=self.inp.approach,
+            cases=self.inp.cases,
+            policy=self.inp.policy,
+            layer_b=last.layer_b,
+            code={path: item.text for path, item in self.inp.code.items()},
+            start_texts=self.inp.start_texts,
+            planned_paths=[_clean(item.path) for item in self.inp.planned],
+            round=last.round,
+        )
+
+    def _plain_findings(self, last: RoundRecord) -> list[Finding]:
+        """Checks 1, 2 and 3 (check 7 is a warning, not a finding)."""
+        test_text = self.inp.frozen["test"].text
+        planned = [(_clean(item.path), item.action) for item in self.inp.planned]
+        code = {path: item.text for path, item in self.inp.code.items()}
+        return (
+            tester.check_criteria_have_tests(self.inp.record, test_text)
+            + tester.check_tests_pass(self.inp.record, last.layer_b)
+            + tester.check_files_match_plan(planned, code, self.inp.start_texts)
+        )
+
+    def _save_review(
+        self,
+        last: RoundRecord,
+        findings: list[Finding],
+        outcome: tester_agent.ReviewOutcome,
+        check_one_failed: bool,
+        line: int | None,
+        seconds: int,
+    ) -> bool:
+        """The one write of a review: the review and its findings, audit events, chat lines, and
+        either the next round or the end of the build. True when the build ended."""
+        zones = self.inp.approach.zones_touched
+        one_failed = check_one_failed
+        unable = outcome.kind == "unable"
+        limit = self.inp.policy.build_max_rounds
+        used = len(self.inp.rounds)
+        must = tester.must_fix_items(findings)
+        label = tester.compute_label(findings, zones, "unable" if unable else "done", 1, [])
+        with self._turn() as tx:
+            record = ReviewRecord(
+                request_id=self.request_id,
+                build_number=tx.state.build_number,
+                round=last.round,
+                review_number=next_review_number(
+                    tx.conn, self.request_id, tx.state.build_number
+                ),
+                model=outcome.model,
+                calls=outcome.calls,
+                prompt_chars=outcome.prompt_chars,
+                attempts=outcome.attempts,
+                result="unable" if unable else "done",
+                checks=tester.check_results(findings, zones, ran_ai=not (unable or one_failed)),
+                zone_warnings=tester.zone_warnings(zones),
+                label=label,
+                findings=findings,
+            )
+            saved = insert_review(tx.conn, record, tx.now)
+            self.inp.reviews.append(saved)
+            self._audit_review(tx, saved, outcome)
+            self._note_review(tx, saved, line, seconds)
+            if self.rerun:
+                self._finish_rerun(tx, saved, label, bool(must) or check_one_failed)
+            elif check_one_failed:
+                criterion = next(f for f in findings if f.check == 1)
+                text = f"Criterion {criterion.cites} has no test. Change the approach or get help."
+                self._close(tx, False, used, LABEL_NOT_PASSING, text)
+            elif must and used >= limit:
+                text = (
+                    f"I used all {used} rounds and the Tester's Must fix is still open. "
+                    f"Result: {LABEL_NOT_PASSING}. I will still write the code files."
+                )
+                self._close(tx, False, used, LABEL_NOT_PASSING, text)
+            elif must:
+                self._start_fix_round(tx, last.round, findings)
+                return False
+            else:
+                text = _passed_text(last.round, label, _counts(saved), zones, self._cases)
+                self._close(tx, True, used, label, text)
+        return True
+
+    def _finish_rerun(self, tx: BuildTx, saved: ReviewRecord, label: str, must: bool) -> None:
+        """The end of a re-run: both moves in one transaction. A Must fix ends NOT_PASSING (Gian,
+        7 Nov): the build is closed, and fixing it is Phase 8. The run row stays as it was."""
+        tx.move_to(STATUS_TESTER_REVIEW)
+        tx.move_to(STATUS_NOT_PASSING if must else STATUS_READY_FOR_REVIEW)
+        counts = _counts(saved)
+        tx.audit(
+            "developer",
+            "tester_review_rerun",
+            {"round": saved.round, "review": saved.review_number, "label": label} | counts,
+        )
+        shown = LABEL_NOT_PASSING if must else label
+        tx.say(
+            "assistant",
+            f"The Tester reviewed round {saved.round} again: {counts['must_fix']} Must fix, "
+            f"{counts['should_fix']} Should fix, {counts['fyi']} FYI. Result: {shown}.",
+        )
+        tx.set()  # the revision goes up, so an old window is refused
+
+    def _start_fix_round(self, tx: BuildTx, number: int, findings: list[Finding]) -> None:
+        """A Must fix with budget left: back to BUILDING, the next round fixes only the cited
+        files. Should fix and FYI never reach the Generator."""
+        planned = [_clean(item.path) for item in self.inp.planned]
+        fix = tester.files_to_fix(findings, planned)
+        tx.move_to(STATUS_BUILDING)
+        tx.set(step="b_round_failed", current_round=number)
+        names = ", ".join(path.rsplit("/", 1)[-1] for path in fix)
+        count = len(tester.must_fix_items(findings))
+        tx.audit("system", "round_failed", {"round": number, "files_to_fix": fix, "by": "tester"})
+        tx.say(
+            "assistant",
+            f"Round {number}: the Tester found {count} Must fix. "
+            + (f"Fixing only {names}." if len(fix) == 1 else f"Fixing only these files: {names}."),
+        )
+
+    def _audit_review(self, tx: BuildTx, saved: ReviewRecord, outcome) -> None:
+        if saved.calls > 1:
+            tx.audit("system", "tester_review_split", {"calls": saved.calls})
+        for attempt in range(1, outcome.attempts - outcome.calls + 1):
+            tx.audit("system", "tester_reply_unusable", {"attempt": attempt})
+        for item in saved.findings:
+            if not item.kept:
+                tx.audit(
+                    "system",
+                    "tester_finding_rejected",
+                    {"finding": item.finding_id, "reason": item.reject_reason},
+                )
+        if saved.result == "unable":
+            tx.audit("system", "tester_unable_to_assess", {"round": saved.round})
+        counts = _counts(saved)
+        tx.audit(
+            "system",
+            "tester_review_done",
+            {"round": saved.round, "review": saved.review_number, "model": saved.model}
+            | counts
+            | {"zones": self.inp.approach.zones_touched},
+        )
+
+    def _note_review(self, tx, saved: ReviewRecord, line: int, seconds: int) -> None:
+        counts = _counts(saved)
+        if saved.result == "unable":
+            text = "Layer C: the Tester's reply could not be used (Unable to assess)"
+            state = "failed"
+        else:
+            text = (
+                f"Layer C: {counts['must_fix']} Must fix, {counts['should_fix']} Should fix, "
+                f"{counts['fyi']} FYI ({seconds} seconds)"
+            )
+            if saved.calls > 1:
+                text += f". Reviewed file by file ({saved.calls} calls)"
+            state = "failed" if counts["must_fix"] else "done"
+        self._note(tx, text, state, line)
+
     # --- helpers ---
+
+    @property
+    def _live_steps(self) -> tuple[str, ...]:
+        """The steps this run may write in: the running steps, or (a re-run) a finished build."""
+        return RERUN_STEPS if self.rerun else RUNNING_STEPS
 
     @property
     def test_id(self) -> str:
@@ -611,10 +921,15 @@ class _Run:
             state = read_build_state(conn, self.request_id)
             if (
                 state is None
-                or state.step not in RUNNING_STEPS
+                or state.step not in self._live_steps
                 or state.build_number != self.inp.state.build_number
             ):
                 raise _Cancelled
+            if self.rerun and (
+                state.revision != self.inp.state.revision
+                or request.status != STATUS_READY_FOR_REVIEW
+            ):
+                raise StaleRevisionError(STALE_MESSAGE)
             tx = BuildTx(conn, request, state, self.now_fn())
             yield tx
             if tx.dirty:
@@ -638,8 +953,11 @@ class _Run:
             )
         return number
 
-    def _note(self, tx: BuildTx, text: str, state: ProgressState, line: int | None = None) -> None:
-        """Add a progress line, or a new row for an existing line number (its newest row wins)."""
+    def _note(
+        self, tx: BuildTx, text: str, state: ProgressState, line: int | None = None
+    ) -> int:
+        """Add a progress line, or a new row for an existing line number (its newest row wins).
+        Returns the line number."""
         if line is None:
             line = self.inp.next_line
             self.inp.next_line += 1
@@ -655,6 +973,7 @@ class _Run:
                 ended_at=tx.now if state in ("done", "failed") else None,
             ),
         )
+        return line
 
 
 def _clean(path: str) -> str:
@@ -682,14 +1001,39 @@ def _round_failed_text(
     return f"Round {number}: {failed} of {cases} tests failed. {only}"
 
 
+def _counts(review: ReviewRecord) -> dict[str, int]:
+    """Kept findings by severity, and how many were dropped by the evidence rule."""
+    kept = [item for item in review.findings if item.kept]
+    return {
+        "must_fix": sum(1 for item in kept if item.severity == "must_fix"),
+        "should_fix": sum(1 for item in kept if item.severity == "should_fix"),
+        "fyi": sum(1 for item in kept if item.severity == "fyi"),
+        "dropped": len(review.findings) - len(kept),
+    }
+
+
+def _passed_text(round_number: int, label: str, counts: dict, zones: list, cases: int) -> str:
+    """The chat line when the Tester review ends the build well (green, yellow or grey)."""
+    if label == LABEL_UNABLE:
+        review = "The Tester's reply could not be used, so I could not assess the code."
+    else:
+        review = (
+            f"Tester review of round {round_number}: {counts['must_fix']} Must fix, "
+            f"{counts['should_fix']} Should fix, {counts['fyi']} FYI."
+        )
+        if zones:
+            review += f" Touches the {', '.join(zones)} zone."
+    return (
+        f"All {cases} tests passed in round {round_number}. {review} Result: {label}. "
+        "Writing your code files now."
+    )
+
+
 def _finish_text(
     passed: bool, rounds: int, label: str, records: list[RoundRecord], cases: int
 ) -> str:
     if passed:
-        return (
-            f"All {cases} tests passed in round {rounds}. Result: {label}. "
-            "The independent Tester review (Layer C) is not built yet. Writing your code files now."
-        )
+        return f"All {cases} tests passed in round {rounds}. Result: {label}."
     last = records[-1].layer_b if records else None
     still_writing = "I will still write the code files so you can see them."
     if last is None:

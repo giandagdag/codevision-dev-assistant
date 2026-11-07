@@ -396,7 +396,8 @@ def test_register_attaches_the_workspace_hops():
     app = Dash(__name__, suppress_callback_exceptions=True)
     cb.register_da_developer_assistant_page_callbacks(app)
 
-    hops = app._callback_list[5:]  # after draw, action, enter-to-send, the build poll, the form
+    # after draw, action, enter-to-send, the build poll, the form, the finding buttons (Phase 7)
+    hops = app._callback_list[6:]
 
     assert len(hops) == 8
     click_hop = hops[0]

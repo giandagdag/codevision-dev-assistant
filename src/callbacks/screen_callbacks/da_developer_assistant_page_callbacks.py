@@ -16,6 +16,7 @@ from dash.exceptions import PreventUpdate
 from agents import da_approach_flow as approach_flow
 from agents import da_build_flow as build_flow
 from agents import da_build_runner as build_runner
+from agents import da_tester_flow as tester_flow
 from agents import da_workspace_flow as workspace_flow
 from agents.da_discover_flow import (
     add_hint_and_search,
@@ -72,6 +73,7 @@ from layouts.da_developer_assistant_page import (
     render_new_workspace,
     render_workspace,
 )
+from layouts.da_tester_panel import FINDING_ACT_TYPE, FINDING_REASON_TYPE
 from pydantic_classes.da_models import (
     STATUS_APPROACH_PROPOSED,
     STATUS_BUILDING,
@@ -85,6 +87,7 @@ from pydantic_classes.da_models import (
     STATUS_READY,
     STATUS_READY_FOR_REVIEW,
     STATUS_READY_TO_BUILD,
+    STATUS_TESTER_REVIEW,
 )
 from styles import da_styles
 
@@ -104,6 +107,7 @@ APPROACH_STATUSES = (
     STATUS_APPROACH_PROPOSED,
     STATUS_READY_TO_BUILD,
     STATUS_BUILDING,
+    STATUS_TESTER_REVIEW,
     STATUS_READY_FOR_REVIEW,
     STATUS_NOT_PASSING,
 )
@@ -111,6 +115,7 @@ APPROACH_STATUSES = (
 WORKSPACE_STATUSES = (
     STATUS_READY_TO_BUILD,
     STATUS_BUILDING,
+    STATUS_TESTER_REVIEW,
     STATUS_READY_FOR_REVIEW,
     STATUS_NOT_PASSING,
 )
@@ -187,7 +192,7 @@ def show_page(search: str | None, refresh: int | None):
                 workspace = (
                     workspace_flow.get_workspace_view(settings, request_id) if has_build else None
                 )
-                build = build_flow.get_build_view(settings, request_id) if has_build else None
+                build = tester_flow.get_build_view(settings, request_id) if has_build else None
                 return render_approach_workspace(view, discovery, approach, workspace, build)
             if status == STATUS_DISCOVERY_CONFIRMED:
                 approach = approach_flow.get_approach_view(settings, request_id)
@@ -312,19 +317,54 @@ def _build_action(settings: Settings, trigger, request_id: str, revision: int) -
     with no button behind it, is refused. A build that (re)starts is handed to the runner."""
     if not _is_choice(trigger):
         raise PreventUpdate
-    view = build_flow.get_build_view(settings, request_id)
+    view = tester_flow.get_build_view(settings, request_id)
     index = trigger["index"]
     if view.revision != revision or not 0 <= index < len(view.buttons):
         raise StaleRevisionError(STALE_MESSAGE)
+    key = view.buttons[index][0]
+    if key == tester_flow.RERUN_KEY:  # Phase 7: a synchronous review; the busy mode covers the wait
+        tester_flow.rerun_review(settings, request_id, revision)
+        return
     actions = {
         build_flow.STOP_KEY: build_flow.stop_build,
         build_flow.TRY_AGAIN_KEY: build_flow.try_again,
         build_flow.CHANGE_APPROACH_KEY: build_flow.change_approach,
         build_flow.HELP_KEY: build_flow.request_help,
     }
-    state = actions[view.buttons[index][0]](settings, request_id, revision)
+    state = actions[key](settings, request_id, revision)
     if state.step == "b_running":
         build_runner.submit_build(settings, request_id)
+
+
+def handle_finding(clicks, reasons, state, refresh):
+    """A finding button was pressed on the Tests tab (Accept, Reopen or Dispute)."""
+    trigger = ctx.triggered_id
+    if not isinstance(trigger, dict) or not ctx.triggered[0]["value"]:
+        raise PreventUpdate
+    boxes = ctx.states_list[0]
+    typed = {box["id"]["index"]: value for box, value in zip(boxes, reasons, strict=True)}
+    return perform_finding_action(get_settings(), trigger["index"], typed, state, refresh)
+
+
+def perform_finding_action(settings: Settings, index: str, reasons: dict, state, refresh):
+    """Call the one Tester flow function the button stands for. `index` is `action:F-n`.
+    Returns (refresh counter, message under the chat). Every check lives in the flow."""
+    state = state or {}
+    action, _, finding_id = index.partition(":")
+    request_id, revision = state.get("request_id"), state.get("revision")
+    try:
+        if not state.get("build") or action not in ("accept", "reopen", "dispute"):
+            raise PreventUpdate
+        reason = reasons.get(finding_id) or ""
+        if action == "accept":
+            tester_flow.accept_finding(settings, request_id, revision, finding_id, reason)
+        elif action == "reopen":
+            tester_flow.reopen_finding(settings, request_id, revision, finding_id)
+        else:
+            tester_flow.dispute_finding(settings, request_id, revision, finding_id, reason)
+    except SHOWN_ERRORS as error:
+        return no_update, str(error)
+    return (refresh or 0) + 1, ""
 
 
 def poll_build(n_intervals, state, refresh):
@@ -492,5 +532,20 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
         ],
         prevent_initial_call=True,
     )(handle_form)
+
+    # Phase 7: Accept, Reopen and Dispute on the Tests tab. Pattern ids exist only on that tab.
+    app.callback(
+        Output(REFRESH_ID, "data", allow_duplicate=True),
+        Output(MESSAGE_ID, "children", allow_duplicate=True),
+        Input({"type": FINDING_ACT_TYPE, "index": ALL}, "n_clicks"),
+        State({"type": FINDING_REASON_TYPE, "index": ALL}, "value"),
+        State(STATE_ID, "data"),
+        State(REFRESH_ID, "data"),
+        running=[
+            (Output(BUSY_ID, "style"), {"display": "block"}, {"display": "none"}),
+            PAGE_BUSY,
+        ],
+        prevent_initial_call=True,
+    )(handle_finding)
 
     register_da_workspace_callbacks(app, lambda: get_settings())

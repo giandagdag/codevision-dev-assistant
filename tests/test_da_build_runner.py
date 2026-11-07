@@ -113,7 +113,8 @@ def test_submitting_the_same_request_twice_runs_one_thread(settings):
     first.join(timeout=60)
 
     assert second is first  # rule B4
-    assert len(factory.prompts("tester")) == 1  # the tests were written once
+    writing = [p for p in factory.prompts("tester") if agent.TESTS_MARKER in p]
+    assert len(writing) == 1  # the tests were written once
 
 
 def test_6_28_a_third_build_waits_for_a_free_slot_then_runs(settings):
@@ -217,8 +218,8 @@ def test_6_27_try_again_after_a_restart_does_not_regenerate_finished_files(setti
     loop.run_build(settings, request_id, factory)
 
     first_file_asked = [p for p in factory.code_calls() if f"File: {CREATE_PATH}" in p]
-    assert all("Round: 2" in p for p in first_file_asked)  # never asked again for round 1
-    assert run_row(settings, request_id).rounds_used == 2
+    assert all("Round: 1" not in p for p in first_file_asked)  # never asked again for round 1
+    assert run_row(settings, request_id).rounds_used == 3
     assert request_status(settings, request_id) == "READY_FOR_REVIEW"
 
 
