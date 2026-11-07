@@ -22,3 +22,6 @@ logs/
 
 # Editor settings (Phase 5, P25)
 .vscode/
+
+# Usage guard state, machine-specific (Phase A)
+ops/state/

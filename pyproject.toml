@@ -2,7 +2,7 @@
 
 [tool.pytest.ini_options]
 # Let tests import our modules the same way the app does, e.g. "from configs.da_config import ...".
-pythonpath = ["src"]
+pythonpath = ["src", "ops"]
 testpaths = ["tests"]
 
 [tool.ruff]

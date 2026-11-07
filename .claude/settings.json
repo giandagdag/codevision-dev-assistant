@@ -11,6 +11,37 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${DA_PYTHON:-true}\" \"$CLAUDE_PROJECT_DIR/ops/guard_hook.py\"",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${DA_PYTHON:-true}\" \"$CLAUDE_PROJECT_DIR/ops/quiet_hook.py\"",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|Read|Edit|Write|NotebookEdit|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${DA_PYTHON:-true}\" \"$CLAUDE_PROJECT_DIR/ops/safety_hook.py\"",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   }
 }
