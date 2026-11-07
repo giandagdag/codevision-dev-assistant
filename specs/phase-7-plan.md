@@ -83,3 +83,10 @@ the Tester model (Q9) and the real size limit (Q7).
 - The default home build now takes 3 rounds (see fake script note above).
 - Re-run is synchronous inside a page callback (a real AI may take 10 to 20 s; the busy mode covers it).
 - `.pyc`/Windows: none.
+
+## Gian's decisions on the plan (7 Nov 2026, project chat)
+Accepted all 4 choices the builder flagged: (1) the home build takes 3 rounds, round 2 has the
+Tester's Must fix; (2) `BUILDING -> READY_FOR_REVIEW` is removed, every pass goes through
+`TESTER_REVIEW`; (3) a review row is saved only when the review closes, an interrupted review writes
+an audit event only; (4) "Run the Tester review again" runs inside the page callback (note the 10 to
+20 s wait for the work test). The `plan-reviewer` still reviews the whole plan before the build.
