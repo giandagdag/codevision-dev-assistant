@@ -20,6 +20,7 @@ from datetime import datetime
 
 from db_table_functions.da_db import to_db_time
 from db_table_functions.db_tbl_da_approach import ensure_approach_tables
+from db_table_functions.db_tbl_da_tester import ensure_tester_tables
 from db_table_functions.db_tbl_da_understand import (
     STALE_MESSAGE,
     StaleRevisionError,
@@ -154,6 +155,7 @@ def ensure_build_tables(conn: sqlite3.Connection) -> None:
     # These tables point at da_requests, which the Understand tables set up first.
     ensure_approach_tables(conn)
     conn.executescript(_CREATE_TABLES_SQL)
+    ensure_tester_tables(conn)  # Phase 7: the Tester's three tables ride along
 
 
 # --- the working state ---
