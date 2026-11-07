@@ -39,6 +39,9 @@ def test_fake_provider_prints_the_build_items_24_and_25(make_settings, capsys):
     assert "in 3 rounds" in output and "frozen tests passing" in output
     assert "25. 2 code files written to the pretend folder (no tests folder)" in output
     assert "the step is b_written" in output
+    assert "26. Tester review (round 3, model " in output
+    assert "2 findings kept, 1 dropped, label Ready with warnings" in output
+    assert "the old Layer C warning is gone" in output
 
 
 def test_fake_provider_prints_the_first_four_items(make_settings, capsys):
