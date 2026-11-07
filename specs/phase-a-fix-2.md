@@ -1,5 +1,6 @@
 # Phase A fix 2: the "Team status" issue (a dashboard Gian can peek at)
 
+Version 1.1 APPROVED, 7 Nov 2026 (v1.1 adds progress bars, section 3a, Gian 18:17).
 Version 1.0 APPROVED, 7 Nov 2026. Gian chose option 1A in the project chat: one pinned GitHub
 issue, refreshed by the tick, built after Phase 7 is merged into `auto/phases-7-10`.
 Branch `phase-a-fix-2` (from `auto/phases-7-10`). PR into `auto/phases-7-10`; **Gian merges it**
@@ -30,7 +31,14 @@ can look; nobody has to run a report.
 
 ```
 ## 🟢 WORKING: builder on Phase 7 (running 1h 12m, since 12:03 SGT)
-Updated 13:17 SGT · Usage 5h 71% / weekly 29% · stop lines 85% / 80%
+Updated 13:17 SGT
+
+| Progress | |
+|---|---|
+| Phases 7 to 10 | `▓▓▓░░░░░░░` 31% (Phase 7 of 10) |
+| Phase 7 | `▓▓▓▓▓░░░░░` 52% · Build, step 4 of 9 |
+| Usage 5h | `▓▓▓▓▓▓▓▓░░` 71% of the 85% stop line |
+| Usage weekly | `▓▓▓░░░░░░░` 29% of the 80% stop line |
 
 ### Waiting for you
 None.                                   (or a list of open needs-gian issues, with links)
@@ -67,6 +75,32 @@ Sources (all local, read only): STATUS.md, `ops/state/running.json`, `ops/state/
 issue: `usage_raw.json`, anything from `.env`, worker reply files, or prompt text beyond 200
 characters.
 
+## 3a. Progress bars (v1.1, Gian 7 Nov 18:17)
+
+Gian wants build progress and token usage as percentages, at a glance. Bars are 10 characters of
+`▓` and `░`, rounded down, with the number next to them. All values come from local files, zero tokens.
+
+**Phase progress** (the current phase N, from 7 to 10). Each stage has a fixed share; a stage
+counts as done when its marker is found:
+
+| Stage | Share | Done when (marker) |
+|---|---|---|
+| Spec | 15% | `specs/phase-N-*.md` (not `-plan`, not `-facts`) exists and says APPROVED |
+| Plan | 10% | `specs/phase-N-plan.md` exists and a commit message on `auto/phase-N` says the plan-reviewer approved |
+| Build | 55% | split by steps: (highest K in commits "Phase N step K") / (number of `Step` headings in `specs/phase-N-plan.md`). No plan steps found = 0% of this share |
+| Code review | 15% | 5% per "code review round" commit, max 15%; full 15% once tests are green and the branch is pushed |
+| Merged | 5% | `auto/phase-N` is merged into `auto/phases-7-10` (`git merge-base --is-ancestor`) |
+
+The line shows the current stage name and, during Build, "step K of T".
+
+**Overall progress (Phases 7 to 10):** (merged phases × 100 + current phase %) / 4.
+
+**Usage bars:** each bar is the % read by the guard (`ops/state/usage.json`), with the stop line
+written next to it. When the guard is blind, both bars read `blind` instead of a number.
+
+If a marker cannot be read (missing file, odd commit message), that stage counts as not done, and
+the line ends with `(estimate)`. The board never fails because of progress.
+
 ## 4. Choices (D-x), recommended options already applied
 
 | # | Question | Options (ranked) | Chosen |
@@ -93,6 +127,9 @@ Gian may overrule any of them before the build.
 | AS-10 | Any tick result (`busy`, `stopped`, `idle`, `ran`) | the tick ends | the board is refreshed |
 | AS-11 | Windows (mocked) | the runner starts `claude` | `CREATE_NO_WINDOW` is passed |
 | AS-12 | `usage_raw.json` and `.env` exist | the board is built | the body contains nothing from them |
+| AS-13 | Phase 8: spec approved, plan approved, commits up to "Phase 8 step 3", plan has 6 steps | the board is built | Phase 8 reads 52% (15 + 10 + 27.5, rounded down) with "Build, step 3 of 6"; overall reads (100 + 52) / 4 = 38% |
+| AS-14 | Usage 5h 34%, weekly 34% | the board is built | the bars show 34% with stop lines 85% and 80% |
+| AS-15 | The plan file is missing | the board is built | Build counts 0%, the line ends with "(estimate)", the board is still written |
 
 ## 6. Out of scope
 - A web page or Claude artifact (Gian chose the issue).
