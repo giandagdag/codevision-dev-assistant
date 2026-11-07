@@ -142,6 +142,9 @@
     "build_max_parallel": 2,
     "build_blocked_imports": ["subprocess", "socket", "ctypes", "multiprocessing", "urllib", "http", "requests", "ftplib", "smtplib", "telnetlib", "webbrowser"],
     "build_sandbox_exclude": [".env", "*.db", ".git", "*.key", "*.pem"],
+    "tester_max_prompt_chars": 60000,
+    "tester_max_attempts": 2,
+    "tester_quote_window": 2,
     "flag_review_zones": [
       {"name": "Security", "description": "Encryption, key handling, and permission checks.", "examples": ["Encrypting a customer field", "Checking a user's role"], "path_patterns": ["*security*", "*crypto*", "*permission*"]},
       {"name": "Login", "description": "Sign-in, sessions, and passwords.", "examples": ["Login page", "Session timeout handling"], "path_patterns": ["*login*", "*session*", "*password*"]}

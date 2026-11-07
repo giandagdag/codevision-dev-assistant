@@ -34,11 +34,11 @@ TestResultKind = Literal["pass", "fail", "error", "skipped"]
 ProgressState = Literal["pending", "running", "done", "failed"]
 ContractKind = Literal["function", "class"]
 
-# The label shown to the developer (spec section 8, decision D-F). Never "Approved".
+# The label shown to the developer (Phase 7 spec section 8). Never "Approved".
+LABEL_READY = "Ready for your review"
 LABEL_WITH_WARNINGS = "Ready with warnings"
 LABEL_NOT_PASSING = "Not passing"
 LABEL_UNABLE = "Unable to assess"
-LAYER_C_WARNING = "The independent Tester review (Layer C) is not built yet."
 
 NAME_LIMIT = 100
 TEXT_LIMIT = 300
