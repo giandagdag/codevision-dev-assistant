@@ -299,9 +299,11 @@ def must_fix_items(findings: list[Finding]) -> list[Finding]:
 
 
 def files_to_fix(findings: list[Finding], planned: list[str]) -> list[str]:
-    """The planned files named by the Must fix findings, in file-plan order. Never the tests."""
+    """The planned files named by the Must fix findings, in file-plan order. Never the tests.
+    A Must fix that names no planned file (a guard failure) sends every planned file."""
     named = {item.file for item in must_fix_items(findings)}
-    return [path for path in planned if path in named]
+    chosen = [path for path in planned if path in named]
+    return chosen or list(planned)
 
 
 def report_for_generator(findings: list[Finding]) -> str:

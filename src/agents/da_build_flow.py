@@ -119,7 +119,7 @@ CHANGE_APPROACH_KEY = "change_approach"
 HELP_KEY = "help"
 
 ESCALATED_PREFIX = "Escalated in Build: "
-RUNNING_STEPS = ("b_running", "b_round_failed")
+RUNNING_STEPS = ("b_running", "b_round_failed", "b_tester_review")
 # Steps from which Get help is offered (B6).
 HELP_STEPS = ("b_interrupted", "b_unable", "b_done", "b_written", "b_write_stopped")
 UNABLE_MESSAGE = "I could not write tests from your plan."
@@ -900,6 +900,7 @@ def _wrong_step_message(step: str) -> str:
         "start": "Press Build first.",
         "b_running": "The build is running. You can cancel it or wait.",
         "b_round_failed": "The build is running. You can cancel it or wait.",
+        "b_tester_review": "The independent Tester is reviewing the code. You can cancel or wait.",
         "b_interrupted": "The build paused. Resume it, cancel it, or get help.",
         "b_unable": "I could not write tests. Resume the build, change the approach, or get help.",
         "b_done": "The build is finished and is being written to your folder.",

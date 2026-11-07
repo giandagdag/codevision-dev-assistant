@@ -45,10 +45,10 @@ def switches(monkeypatch, *names):
     monkeypatch.setattr(agent, "FAKE_SWITCHES", frozenset(names))
 
 
-# --- a normal build: round 1 fails, round 2 passes ---
+# --- a normal build (home script): round 1 tests fail, round 2 Tester Must fix, round 3 yellow ---
 
 
-def test_6_20_round_one_fails_round_two_passes_and_the_label_has_the_layer_c_warning(
+def test_7_the_home_build_takes_three_rounds_and_ends_yellow_without_the_old_warning(
     settings, request_id
 ):
     factory = RecordingFactory()
@@ -57,18 +57,19 @@ def test_6_20_round_one_fails_round_two_passes_and_the_label_has_the_layer_c_war
 
     assert outcome == "done"
     state = build_state(settings, request_id)
-    assert (state.step, state.current_round, state.write_state) == ("b_done", 2, "not_written")
+    assert (state.step, state.current_round, state.write_state) == ("b_done", 3, "not_written")
     assert request_status(settings, request_id) == "READY_FOR_REVIEW"
     run = run_row(settings, request_id)
     assert (run.rounds_used, run.label, run.result_status) == (
-        2,
+        3,
         LABEL_WITH_WARNINGS,
         "READY_FOR_REVIEW",
     )
     assert run.ended_at is not None
     said = " ".join(chat(settings, request_id, "assistant"))
-    assert "The independent Tester review (Layer C) is not built yet." in said
+    assert "not built yet" not in said  # test 7-23
     assert "Ready with warnings" in said and "Approved" not in said
+    assert "Round 2: the Tester found 1 Must fix. Fixing only excel_processor.py." in said
 
 
 def test_6_18_round_one_fails_three_tests_and_only_the_traced_file_is_regenerated(
@@ -87,9 +88,14 @@ def test_6_18_round_one_fails_three_tests_and_only_the_traced_file_is_regenerate
 
     build(settings, request_id, factory)
 
-    # After round 1 the step is b_round_failed; after round 2 the loop only has to finish.
-    assert seen == [(1, False, "b_round_failed"), (2, True, "b_running")]
-    first, second = rounds_of(settings, request_id)
+    # After round 1 the step is b_round_failed; rounds 2 and 3 pass Layers A and B, and the
+    # Tester review (round 2: a Must fix) decides what happens next.
+    assert seen == [
+        (1, False, "b_round_failed"),
+        (2, True, "b_running"),
+        (3, True, "b_running"),
+    ]
+    first, second, _third = rounds_of(settings, request_id)
     assert first.layer_b.failed == 3 and not first.layer_b.ok
     report = first.failure_report
     assert [(i.test_id, i.criterion_id) for i in report.items] == [
@@ -101,10 +107,13 @@ def test_6_18_round_one_fails_three_tests_and_only_the_traced_file_is_regenerate
     assert first.files_to_fix == [CREATE] == report.files_to_fix
     assert second.failure_report is None and second.layer_b.ok
     code = factory.code_calls()
-    assert len(code) == 3  # round 1: two files; round 2: only the failing one
+    assert len(code) == 4  # round 1: two files; rounds 2 and 3: only the file to fix
     assert f"File: {CREATE}" in code[2] and "Round: 2" in code[2]
     assert agent.FAILURE_HEADING in code[2] and "T-2" in code[2]
     assert "Do not change the tests" in code[2]
+    # Round 3 gets the Tester's Must fix line only (test 7-13): no Should fix, no FYI.
+    assert f"File: {CREATE}" in code[3] and "Round: 3" in code[3]
+    assert "(Must fix)" in code[3] and "F-1" in code[3] and "Should fix" not in code[3]
     chat_lines = chat(settings, request_id, "assistant")
     assert "Round 1: 3 of 9 tests failed. Fixing only excel_processor.py." in chat_lines
 
@@ -115,7 +124,17 @@ def test_6_8_one_ai_call_per_file_and_one_each_for_the_contract_and_the_tests(se
     build(settings, request_id, factory)
 
     roles = [role for role, _ in factory.calls]
-    assert roles == ["generator", "tester", "generator", "generator", "generator"]
+    # contract, tests, round 1 (2 files), round 2 (1 file) + review, round 3 (1 file) + review
+    assert roles == [
+        "generator",
+        "tester",
+        "generator",
+        "generator",
+        "generator",
+        "tester",
+        "generator",
+        "tester",
+    ]
     contract_call, tests_call = factory.prompts()[0], factory.prompts()[1]
     assert agent.CONTRACT_MARKER in contract_call and agent.TESTS_MARKER in tests_call
 
@@ -138,7 +157,7 @@ def test_6_5_the_tester_prompt_holds_no_code_text(settings, request_id):
 
     build(settings, request_id, factory)
 
-    tester = factory.prompts("tester")
+    tester = [p for p in factory.prompts("tester") if agent.TESTS_MARKER in p]
     assert len(tester) == 1
     assert ORIGINAL not in tester[0] and "return True" not in tester[0]
     assert "def " not in tester[0].split("## How to reply")[0]
@@ -160,16 +179,25 @@ def test_the_audit_trail_lists_every_step_of_the_build_in_order(settings, reques
         "code_generated",
         "layer_a_result",
         "layer_b_result",
+        "tester_review_started",
+        "tester_review_done",
+        "round_failed",
+        "code_generated",
+        "layer_a_result",
+        "layer_b_result",
+        "tester_review_started",
+        "tester_finding_rejected",
+        "tester_review_done",
         "build_passed",
     ]
     types = [t for t in event_types(settings, request_id) if t in set(wanted)]
     assert types == wanted
     passed = events_of(settings, request_id, "build_passed")[0].details
-    assert passed["rounds"] == 2 and passed["label"] == LABEL_WITH_WARNINGS
+    assert passed["rounds"] == 3 and passed["label"] == LABEL_WITH_WARNINGS
     assert passed["zones_touched"] == []  # recorded for Phase 10, never blocks
 
 
-def test_the_progress_list_tells_the_story_and_shows_layer_c_as_coming_later(settings, request_id):
+def test_the_progress_list_tells_the_story_and_ends_with_the_layer_c_result(settings, request_id):
     build(settings, request_id)
 
     lines = progress_of(settings, request_id)
@@ -179,7 +207,9 @@ def test_the_progress_list_tells_the_story_and_shows_layer_c_as_coming_later(set
     limit = "(time limit 60 seconds per run)"
     assert (f"Layer B: 6 of 9 tests passed {limit}", "failed") in texts
     assert (f"Layer B: 9 of 9 tests passed {limit}", "done") in texts
-    assert texts[-1] == ("Layer C: independent Tester review (coming in Phase 7)", "pending")
+    last_text, last_state = texts[-1]
+    assert last_text.startswith("Layer C: 0 Must fix, 1 Should fix, 1 FYI") and last_state == "done"
+    assert not any("coming in Phase 7" in text for text, _ in texts)
     assert [line.line_number for line in lines] == sorted({item.line_number for item in lines})
 
 

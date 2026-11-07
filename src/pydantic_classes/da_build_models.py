@@ -19,6 +19,7 @@ BuildStep = Literal[
     "start",
     "b_running",
     "b_round_failed",
+    "b_tester_review",
     "b_interrupted",
     "b_done",
     "b_written",

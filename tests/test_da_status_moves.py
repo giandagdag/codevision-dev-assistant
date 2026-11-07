@@ -39,7 +39,6 @@ SPEC_TABLE = {
     # Phase 6, Build (spec section 2).
     ("READY_TO_BUILD", "BUILDING"),
     ("BUILDING", "READY_TO_BUILD"),
-    ("BUILDING", "READY_FOR_REVIEW"),
     ("BUILDING", "NOT_PASSING"),
     ("BUILDING", "ESCALATION_REQUIRED"),
     ("READY_FOR_REVIEW", "ESCALATION_REQUIRED"),
@@ -81,7 +80,8 @@ def test_moves_out_of_ready_to_build():
 
 
 def test_build_moves():
-    assert set(ALLOWED_MOVES["BUILDING"]) >= {
+    # Phase 7: every pass goes through the Tester, so BUILDING no longer reaches READY_FOR_REVIEW.
+    assert set(ALLOWED_MOVES["BUILDING"]) == {
         "READY_TO_BUILD",
         "TESTER_REVIEW",
         "NOT_PASSING",

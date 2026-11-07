@@ -68,7 +68,6 @@ ALLOWED_MOVES: dict[str, tuple[str, ...]] = {
     # gone: every pass is reviewed by the independent Tester).
     STATUS_BUILDING: (
         STATUS_READY_TO_BUILD,
-        STATUS_READY_FOR_REVIEW,  # TEMPORARY: removed in plan step 5 when the loop uses Layer C
         STATUS_TESTER_REVIEW,
         STATUS_NOT_PASSING,
         STATUS_ESCALATION,
