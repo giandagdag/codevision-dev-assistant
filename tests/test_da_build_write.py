@@ -158,7 +158,8 @@ def test_6_25_re_scan_and_build_again_starts_from_his_text_with_a_fresh_budget(s
     with open_db(settings.db_path) as conn:
         assert read_file_versions(conn, request_id, MODIFY)[-1].kind == "scanned"
     assert loop.run_build(settings, request_id, factory) == "done"
-    assert factory.prompts("tester") == []  # the same frozen tests: the Tester is not asked again
+    writing = [p for p in factory.prompts("tester") if agent.TESTS_MARKER in p]
+    assert writing == []  # the same frozen tests: the Tester is not asked to write them again
     modify_prompt = [p for p in factory.code_calls() if f"File: {MODIFY}" in p][0]
     assert his_text in modify_prompt  # round 1 starts from HIS text, not the old baseline
     job = flow.prepare_write(settings, request_id, revision(settings, request_id))

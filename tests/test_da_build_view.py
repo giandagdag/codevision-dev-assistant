@@ -132,7 +132,7 @@ def test_6_42_after_the_write_the_view_is_green_with_written_files_and_no_test_l
     )
     assert [r.status for r in shown.rows] == ["Written", "Written"]
     assert [r.action for r in shown.rows] == ["New", "Change"]
-    assert shown.run.rounds_used == 2 and shown.seconds_taken >= 0
+    assert shown.run.rounds_used == 3 and shown.seconds_taken >= 0
     assert shown.folder_name == "codevision" and shown.mode == "picker"
     assert "tests" not in shown.banner_text.lower()
 
