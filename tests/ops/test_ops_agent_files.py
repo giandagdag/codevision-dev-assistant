@@ -1,3 +1,4 @@
+import json
 import re
 from pathlib import Path
 
@@ -72,3 +73,12 @@ def test_builder_is_told_the_exact_test_commands_to_use():
 
 def test_docs_say_where_to_look_when_a_worker_did_nothing():
     assert "logs\\workers" in DOCS and "permission_denials" in DOCS
+
+
+def test_builder_can_start_its_reviewers():
+    # Pilot A-P4 (7 Nov): without the Agent tool the builder stopped at the plan-review gate.
+    meta, text = front("builder")
+    assert "Agent" in meta["tools"]
+    settings = json.loads((AGENTS.parents[1] / "ops" / "worker_settings.json").read_text(encoding="utf-8"))
+    assert "Agent" in settings["permissions"]["allow"]
+    assert "One command per Bash call" in text

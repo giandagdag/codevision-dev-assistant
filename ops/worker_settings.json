@@ -4,6 +4,7 @@
       "Read",
       "Grep",
       "Glob",
+      "Agent",
       "Edit",
       "Write",
       "Bash(pytest:*)",
