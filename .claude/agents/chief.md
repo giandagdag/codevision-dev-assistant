@@ -40,10 +40,10 @@ If the usage guard blocks you ("Usage line reached"), write your state to `ops/s
 
 ## A launch ENDS your step
 `launch` starts the worker in the background and prints `started <agent>` at once. The worker may
-run for hours, so do not wait for it. As soon as you see `started`, write "Running: <agent> since
-<time>" in STATUS.md and stop. The next tick looks at the worker first: while it runs the tick
-does nothing, and when it ends the tick writes its result in the Log and wakes you. Everything
-below that says "after the worker returns" happens on that next wake-up, when the Log shows the
+run for hours, so do not wait for it. As soon as you see `started`, write
+"Running: <agent> since <time>" in STATUS.md and stop. The next tick looks at the worker first:
+while it runs the tick does nothing, and when it ends the tick writes its result in the Log and
+wakes you. Everything below that says "after the worker returns" happens on that next wake-up, when the Log shows the
 result, not in the step that launched it.
 - Log says `ended without a result (vanished)` or `stopped: over the time limit`: relaunch the
   same worker once with the prompt "continue from your last commit". A second time for the same
