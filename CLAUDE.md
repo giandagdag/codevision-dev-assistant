@@ -45,8 +45,8 @@ Stop, push the work so far to the phase branch, and tell Gian what you need when
   you did not see.
 
 ## Current phase
-Phase A: Automation foundation. Spec: `specs/phase-a-automation.md` v1.0. Plan: `specs/phase-a-plan.md`. Branch `phase-a` (Phase 6 is merged into `main`).
-(Phase 6 and its fixes batch are done; their specs stay in `specs/`.)
+Phase 7: Independent Tester, run by the agent team (`docs/automation.md`). Facts: `specs/phase-7-facts.md`. Branch `auto/phase-7`, merged into `auto/phases-7-10`.
+(Phases 0 to 6 and Phase A are merged into `main`; their specs stay in `specs/`.)
 
 Phases 4 onwards were redesigned on 31 Oct 2026 (LLM writes 100% of the code, built-in testing,
 laptop workspace). Source of truth: `specs/redesign-2026-10-31.md`.
