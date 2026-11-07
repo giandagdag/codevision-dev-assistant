@@ -254,6 +254,31 @@ def test_a_rerun_is_refused_when_the_label_is_not_unable(settings, request_id):
         tflow.rerun_review(settings, request_id, revision(settings, request_id))
 
 
+def test_a_stale_review_cannot_be_answered(settings, request_id, monkeypatch):
+    built(settings, request_id)
+    finding = should_fix_id(settings, request_id)
+    monkeypatch.setattr(tflow, "read_rounds", lambda conn, rid, number: [])
+
+    with pytest.raises(BuildError, match="Layer C did not run in the last round"):
+        tflow.accept_finding(
+            settings, request_id, revision(settings, request_id), finding, GOOD_REASON
+        )
+
+
+def test_an_unexpected_error_in_a_rerun_becomes_a_plain_message(settings, request_id, monkeypatch):
+    built(settings, request_id, monkeypatch, "review_unusable")
+
+    def boom(self, last):
+        raise RuntimeError("secret detail")
+
+    monkeypatch.setattr(loop._Run, "_layer_c", boom)
+
+    with pytest.raises(BuildError, match="could not run. Nothing was changed") as caught:
+        tflow.rerun_review(settings, request_id, revision(settings, request_id))
+
+    assert "secret detail" not in str(caught.value)
+
+
 def test_a_rerun_when_the_ai_does_not_answer_changes_nothing(settings, request_id, monkeypatch):
     built(settings, request_id, monkeypatch, "review_unusable")
     before = revision(settings, request_id)
