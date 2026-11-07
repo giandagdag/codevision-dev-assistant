@@ -86,6 +86,9 @@ class FakeGh:
         return [a for a in self.calls if a[: len(verb)] == list(verb)]
 
 
+MERGE_BASE_REF = sb.MERGE_BASE
+
+
 def phase8_git(steps=3, plan_steps=6, plan=True, clean=False):
     plan_text = "\n".join(["# Plan", "## Steps"] + ["0. **Done**"]
                           + [f"{n}. **Step {n}**" for n in range(1, plan_steps + 1)])
@@ -322,6 +325,19 @@ def test_an_issue_deleted_by_hand_is_created_again():
     gh = Gone()
     sb.write_issue("one\n", gh, NOW)
     assert sb.write_issue("two\n", gh, NOW + 5) == "created"
+
+
+def test_an_issue_with_a_garbled_emoji_is_still_found_by_title():
+    gh = FakeGh(existing={"number": 9, "title": "ðŸ¤– Team status"})
+    assert sb.write_issue("## body\n", gh, NOW) == "edited" and gh.verbs("issue", "create") == []
+
+
+def test_a_branch_cut_from_the_base_with_no_work_is_not_merged():
+    refs = {"auto/phase-7", MERGE_BASE_REF, "origin/" + MERGE_BASE_REF}
+    git = FakeGit(merged={"auto/phase-7"}, refs=refs)
+    # both tips resolve to the same commit ("abc"): nothing was merged, nothing was built
+    _, facts, _ = sb.current_phase(git, Path("/nonexistent"))
+    assert facts.phase == 7 and not facts.merged
 
 
 def test_a_failing_pin_is_ignored_and_a_damaged_state_file_acts_as_no_state():

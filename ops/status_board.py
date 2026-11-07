@@ -42,7 +42,9 @@ class GitError(Exception):
 
 
 def run_git(args: list[str]) -> str:
-    done = subprocess.run(["git", *args], capture_output=True, text=True, check=False, cwd=ROOT)
+    # git prints UTF-8; the Windows default (cp1252) would garble commit subjects.
+    done = subprocess.run(["git", *args], capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", check=False, cwd=ROOT)
     if done.returncode != 0:
         raise GitError(f"git {' '.join(args[:2])} failed")
     return done.stdout
@@ -164,6 +166,15 @@ def _ok(git: Git, args: list[str]) -> bool:
     return True
 
 
+def _merged_into(git: Git, ref: str, base: str) -> bool:
+    """An ancestor of the base, but not the same commit: a branch just cut from the base with
+    no work yet is an ancestor too, and must not count as merged."""
+    if not _ok(git, ["merge-base", "--is-ancestor", ref, base]):
+        return False
+    tips = (_try(git, ["rev-parse", ref]), _try(git, ["rev-parse", base]))
+    return not (tips[0] and tips[0] == tips[1])
+
+
 def _try(git: Git, args: list[str]) -> str | None:
     try:
         return git(args)
@@ -175,7 +186,7 @@ def phase_facts(phase: int, git: Git, root: Path = ROOT) -> PhaseFacts:
     f = PhaseFacts(phase)
     mine = [f"auto/phase-{phase}", f"origin/auto/phase-{phase}"]
     bases = [MERGE_BASE, f"origin/{MERGE_BASE}"]
-    f.merged = any(_ok(git, ["merge-base", "--is-ancestor", r, b]) for r in mine for b in bases)
+    f.merged = any(_merged_into(git, r, b) for r in mine for b in bases)
     if f.merged:
         return f
     if _try(git, ["rev-parse", "--is-inside-work-tree"]) is None:
@@ -459,11 +470,13 @@ def _save_state(state: dict) -> None:
 
 
 def _find_by_title(gh: Gh) -> int | None:
-    raw = gh(["issue", "list", "--label", LABEL, "--state", "open", "--search",
-              f'"{TITLE}" in:title', "--json", "number,title", "--limit", "20"]) or "[]"
+    # By label, not `--search`: GitHub's search index lags behind new issues. The match ignores
+    # the emoji, in case the console encoding garbled it on the way in.
+    raw = gh(["issue", "list", "--label", LABEL, "--state", "open",
+              "--json", "number,title", "--limit", "20"]) or "[]"
     for item in json.loads(raw):
-        if isinstance(item, dict) and item.get("title") == TITLE and isinstance(
-                item.get("number"), int):
+        if isinstance(item, dict) and str(item.get("title", "")).endswith("Team status") \
+                and isinstance(item.get("number"), int):
             return item["number"]
     return None
 
