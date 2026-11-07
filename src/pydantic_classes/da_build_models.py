@@ -11,6 +11,7 @@ from typing import Literal
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from pydantic_classes.da_models import REQUEST_ID_PATTERN
+from pydantic_classes.da_tester_models import TesterView
 
 # Where the build is. "start" is not a saved row state of a running build: it means no build is
 # running (no row yet, or the last build was stopped). b_prescan is shown by the browser only,
@@ -300,3 +301,5 @@ class BuildView(BaseModel):
     mode: str = "picker"
     seconds_taken: int = 0
     tests_passing: str = ""
+    # Phase 7: the Tester's report, added by da_tester_flow.get_build_view (not by the build flow).
+    tester: TesterView | None = None

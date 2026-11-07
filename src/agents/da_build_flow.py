@@ -788,6 +788,16 @@ def _banner(state, status, run, last, cases: int, limit: int, stopped_path: str)
     if step in RUNNING_STEPS:
         if last is not None and not (last.layer_a.ok and last.layer_b and last.layer_b.ok):
             return "red", _failed_banner(last, cases, limit)
+        if step == "b_tester_review" and last is not None:
+            return "blue", (
+                f"Round {last.round} of {limit}: tests pass. "
+                "The independent Tester is reviewing the code."
+            )
+        if step == "b_round_failed" and last is not None:  # the Tester's Must fix (Phase 7)
+            return "red", (
+                f"Round {last.round} of {limit}: the Tester found a Must fix. Only the file it "
+                f"names is regenerated. Tests stay frozen. 1 shared budget of {limit} rounds."
+            )
         number = last.round + 1 if last else 1
         return "blue", (
             f"Round {number} of {limit}. Running on the server. "

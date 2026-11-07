@@ -7,6 +7,7 @@ decided (BuildView) into components. Nothing here judges code, runs a test or wr
 import dash_mantine_components as dmc
 from dash import dcc
 
+from layouts.da_tester_panel import layer_c_state, tester_lines, tester_report
 from pydantic_classes.da_build_models import (
     BuildView,
     LayerAResult,
@@ -37,8 +38,17 @@ TURN_LINES = (
     "Try it yourself: start CodeVision on your laptop and test the change by hand.",
     "Tell me if a requirement is missing.",
 )
-LAYER_C_TEXT = "Coming in Phase 7"
-BANNER_COLOURS = {"blue": "blue", "red": "red", "green": "green", "orange": "orange"}
+BANNER_COLOURS = {
+    "blue": "blue",
+    "red": "red",
+    "green": "green",
+    "orange": "orange",
+    "yellow": "yellow",
+    "gray": "gray",
+}
+# The Tester report can be acted on only on a finished build that waits for his review.
+ACT_STEPS = ("b_done", "b_written", "b_write_stopped")
+ACT_STATUSES = ("READY_FOR_REVIEW", "NOT_PASSING")
 STATE_ICON = {"done": "✅", "running": "⏳", "failed": "❌", "pending": "⬜"}
 RESULT_TEXT = {"pass": "Passed", "fail": "Failed", "error": "Error", "skipped": "Skipped", "": "-"}
 RESULT_COLOUR = {"pass": "green", "fail": "red", "error": "red", "skipped": "gray", "": "gray"}
@@ -80,6 +90,9 @@ def tests_tab(view: BuildView | None) -> list:
                 id=TESTS_LIST_ID,
             )
         ]
+    report = tester_report(
+        view.tester, view.state.step in ACT_STEPS and view.request_status in ACT_STATUSES
+    )
     rows = [_test_row(item) for item in view.tests]
     not_run = (
         dmc.Text(TESTS_NOT_RUN, size="sm", c="orange", id="da-tests-not-run")
@@ -113,6 +126,7 @@ def tests_tab(view: BuildView | None) -> list:
     return [
         dmc.Stack(
             [
+                *report,
                 dmc.Text(f"{len(view.tests)} frozen tests", fw=600, size="sm"),
                 not_run,
                 table,
@@ -166,11 +180,19 @@ def _layer_boxes(view: BuildView) -> dmc.SimpleGrid:
         [
             _layer_box("Does it run?", *_layer_a_state(last.layer_a if last else None)),
             _layer_box("Does it behave?", *_layer_b_state(last.layer_b if last else None)),
-            _layer_box("Matches the agreement?", LAYER_C_TEXT, "gray"),
+            _layer_c_box(view),
         ],
         cols=3,
         id=LAYERS_ID,
     )
+
+
+def _layer_c_box(view: BuildView) -> dmc.Paper:
+    text, colour = layer_c_state(view)
+    box = _layer_box("Matches the agreement?", text, colour)
+    if view.tester is not None and view.tester.review is not None:
+        box.children.append(dmc.Text("See the Tester report on the Tests tab.", size="xs"))
+    return box
 
 
 def _layer_a_state(result: LayerAResult | None) -> tuple[str, str]:
@@ -278,6 +300,7 @@ def _this_build(view: BuildView) -> dmc.Paper:
         f"Rounds used: {run.rounds_used} of {view.max_rounds}",
         f"Tests passing: {view.tests_passing or '-'}",
         f"Time taken: {minutes}:{seconds:02d}",
+        *tester_lines(view),
     ]
     return dmc.Paper(
         [dmc.Text("This build", fw=600, size="sm"), *[dmc.Text(t, size="sm") for t in lines]],

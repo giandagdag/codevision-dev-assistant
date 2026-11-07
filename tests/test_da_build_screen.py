@@ -178,7 +178,8 @@ def test_the_failure_report_table_and_the_regenerated_file_note(settings, ready,
     assert by_id(tree, bp.POLL_ID).disabled is False  # b_round_failed still polls
     layers = all_text(by_id(tree, bp.LAYERS_ID))
     assert "Does it run?" in layers and "Does it behave?" in layers
-    assert "Matches the agreement?" in layers and "Coming in Phase 7" in layers
+    assert "Matches the agreement?" in layers and "Coming in Phase 7" not in layers
+    assert "Waiting" in layers  # Layer C has not run yet in round 1
     assert "6 of 9 passed" in layers
 
 

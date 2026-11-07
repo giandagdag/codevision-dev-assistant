@@ -136,8 +136,11 @@ def test_an_fyi_cannot_be_accepted_and_a_not_accepted_finding_cannot_be_reopened
 ):
     built(settings, request_id)
     finding = should_fix_id(settings, request_id)
-    fyi = next(r.finding.finding_id for r in tflow.get_tester_view(settings, request_id).rows
-               if r.finding.severity == "fyi")
+    fyi = next(
+        r.finding.finding_id
+        for r in tflow.get_tester_view(settings, request_id).rows
+        if r.finding.severity == "fyi"
+    )
 
     with pytest.raises(BuildError, match="is a FYI"):
         tflow.accept_finding(settings, request_id, revision(settings, request_id), fyi, GOOD_REASON)

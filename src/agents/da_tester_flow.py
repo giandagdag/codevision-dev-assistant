@@ -10,6 +10,7 @@ review sheet each time it is printed).
 from contextlib import contextmanager
 from datetime import UTC, datetime
 
+from agents import da_build_flow as build_flow
 from agents import da_build_loop as loop
 from agents import da_tester_review as tester
 from agents.da_build_flow import BuildTx, _turn, escalate
@@ -28,6 +29,13 @@ from db_table_functions.db_tbl_da_tester import (
     read_actions,
     read_reviews,
 )
+from pydantic_classes.da_build_models import (
+    LABEL_NOT_PASSING,
+    LABEL_READY,
+    LABEL_UNABLE,
+    LABEL_WITH_WARNINGS,
+    BuildView,
+)
 from pydantic_classes.da_models import STATUS_NOT_PASSING, STATUS_READY_FOR_REVIEW
 from pydantic_classes.da_tester_models import (
     ACCEPT_MAX_CHARS,
@@ -40,10 +48,15 @@ from pydantic_classes.da_tester_models import (
 )
 
 DONE_STEPS = ("b_done", "b_written", "b_write_stopped")
-REASON_MESSAGE = (
-    f"Please write a reason of {ACCEPT_MIN_CHARS} to {ACCEPT_MAX_CHARS} characters."
-)
+REASON_MESSAGE = f"Please write a reason of {ACCEPT_MIN_CHARS} to {ACCEPT_MAX_CHARS} characters."
 DISPUTE_PREFIX = "Disputed Must fix: "
+RERUN_KEY, RERUN_LABEL = "rerun_review", "Run the Tester review again"
+LABEL_COLOUR = {
+    LABEL_READY: "green",
+    LABEL_WITH_WARNINGS: "yellow",
+    LABEL_NOT_PASSING: "red",
+    LABEL_UNABLE: "gray",
+}
 
 
 # --- actions ---
@@ -153,9 +166,22 @@ def get_tester_view(settings, request_id: str) -> TesterView:
     )
 
 
-def current_label(settings, request_id: str) -> str:
-    """The live label of the newest build (empty when no review has run)."""
-    return get_tester_view(settings, request_id).label
+def get_build_view(settings, request_id: str) -> BuildView:
+    """The Build flow's view plus the Tester's report. The label is the live one (the closed run
+    row is never edited), and the banner and the buttons follow it (spec sections 8, 9 and 10)."""
+    view = build_flow.get_build_view(settings, request_id)
+    if view.state.build_number == 0:
+        return view
+    report = get_tester_view(settings, request_id)
+    changes: dict = {"tester": report}
+    if report.layer_c_ran and view.state.step in DONE_STEPS:
+        changes["label"] = report.label
+        if view.state.step == "b_written":
+            changes["banner_kind"] = LABEL_COLOUR.get(report.label, "green")
+            changes["banner_text"] = f"{report.label}. The code files are in your folder."
+    if report.can_rerun:
+        changes["buttons"] = [*view.buttons, (RERUN_KEY, RERUN_LABEL)]
+    return view.model_copy(update=changes)
 
 
 # --- helpers ---
