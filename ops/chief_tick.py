@@ -450,7 +450,12 @@ def start_background(agent, prompt, stage, phase, reader, gh, status_file, now,
         status.add_log(status_file, f"{usage_guard.format_sgt(now)}: {agent} could not be "
                                     f"started ({type(problem).__name__})")
         raise RuntimeError(f"{agent} could not be started: {problem}") from problem
-    _write_note(running_path(), note)
+    try:
+        _write_note(running_path(), note)
+    except OSError:  # without the pid the tick would call a live worker "vanished"
+        stop_tree(note["pid"])
+        running_path().unlink(missing_ok=True)
+        raise
     return f"started {agent}"
 
 
@@ -526,12 +531,17 @@ def stop_worker(reader, status_file, now, alive=None, killer=None) -> str:
         return "nothing running"
     if _read_note(done_path()) is not None:
         return "already finished; the next tick records it"
-    if running.get("pid"):
-        killer(running["pid"])
+    alive = alive or pid_alive
+    pid = running.get("pid")
     _forget_notes()
-    _record_without_result(running, "stopped: by hand", "stopped: by hand",
+    if pid and alive(pid):  # a dead pid may now belong to a stranger: never kill it
+        killer(pid)
+        _record_without_result(running, "stopped: by hand", "stopped: by hand",
+                               reader, status_file, now)
+        return f"stopped {running.get('agent', 'worker')}"
+    _record_without_result(running, "ended without a result (vanished)", "vanished",
                            reader, status_file, now)
-    return f"stopped {running.get('agent', 'worker')}"
+    return "worker was already gone (recorded as vanished)"
 
 
 def worker_command(prompt: str, agent: str = "chief", model: str = "sonnet") -> list[str]:

@@ -44,7 +44,7 @@ run for hours, so do not wait for it. As soon as you see `started`, write
 "Running: <agent> since <time>" in STATUS.md and stop. The next tick looks at the worker first:
 while it runs the tick does nothing, and when it ends the tick writes its result in the Log and
 wakes you. Everything below that says "after the worker returns" happens on that next wake-up, when the Log shows the
-result, not in the step that launched it.
+result, not in the step that launched it. On that wake-up, delete the "Running:" line first.
 - Log says `ended without a result (vanished)` or `stopped: over the time limit`: relaunch the
   same worker once with the prompt "continue from your last commit". A second time for the same
   stage: open a `needs-gian` issue and pause the stage.

@@ -295,12 +295,40 @@ def test_a_worker_just_under_the_limit_is_left_alone(status_file):
 def test_af12_stop_ends_the_worker_and_records_it(status_file, ledger_rows):
     write_running()
     killed = []
-    out = c.stop_worker(lambda: usage(), status_file, NOW, killer=killed.append)
+    out = c.stop_worker(lambda: usage(), status_file, NOW, alive=lambda pid: True,
+                        killer=killed.append)
     assert out == "stopped builder" and killed == [4242]
     assert "builder stopped: by hand" in status_file.read_text(encoding="utf-8")
     assert ledger_rows()[0].endswith(",stopped: by hand") and not c.running_path().exists()
     assert c.stop_worker(lambda: usage(), status_file, NOW) == "nothing running"
     assert len(ledger_rows()) == 1  # a second stop writes nothing
+
+
+def test_stop_never_kills_a_pid_that_is_gone(status_file, ledger_rows):
+    write_running()
+    out = c.stop_worker(lambda: usage(), status_file, NOW, alive=lambda pid: False,
+                        killer=lambda pid: 1 / 0)
+    assert "already gone" in out
+    assert "ended without a result (vanished)" in status_file.read_text(encoding="utf-8")
+    assert ledger_rows()[0].endswith(",vanished") and not c.running_path().exists()
+
+
+def test_a_failed_pid_note_stops_the_runner_and_leaves_no_note(status_file, monkeypatch):
+    stopped = []
+    real_write = c._write_note
+    calls = []
+
+    def flaky(path, data):
+        calls.append(path)
+        if len(calls) == 2:
+            raise OSError("disk full")
+        real_write(path, data)
+
+    monkeypatch.setattr(c, "_write_note", flaky)
+    monkeypatch.setattr(c, "stop_tree", stopped.append)
+    with pytest.raises(OSError):
+        start(status_file)
+    assert stopped == [4242] and not c.running_path().exists()
 
 
 def test_stop_leaves_a_finished_worker_for_the_tick_to_record(status_file, ledger_rows):
@@ -341,7 +369,8 @@ def test_af8_worker_settings_have_the_two_bash_time_outs():
 
 def test_af9_chief_rulebook_says_a_launch_ends_the_step():
     text = (ROOT / ".claude" / "agents" / "chief.md").read_text(encoding="utf-8")
-    assert "ENDS your step" in text and "Running: <agent> since <time>" in text
+    assert 'delete the "Running:" line' in text and "ENDS your step" in text
+    assert "Running: <agent> since <time>" in text
     assert "vanished" in text and "over the time limit" in text
     assert "continue from your last commit" in text and "second time" in text
     assert "run-worker" not in text  # only `launch` starts the runner
