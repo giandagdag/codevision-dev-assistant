@@ -55,7 +55,21 @@
       "Bash(git remote set-url:*)",
       "Bash(git remote remove:*)",
       "Bash(git remote rm:*)",
-      "PowerShell"
+      "PowerShell",
+      "Bash(.venv/bin/python ops/chief_tick.py run-worker:*)",
+      "Bash(.venv\\Scripts\\python ops/chief_tick.py run-worker:*)",
+      "Bash(.venv/Scripts/python ops/chief_tick.py run-worker:*)",
+      "Bash(\"$DA_PYTHON\" ops/chief_tick.py run-worker:*)",
+      "Bash(python ops/chief_tick.py run-worker:*)",
+      "Bash(.venv/bin/python ops/chief_tick.py stop:*)",
+      "Bash(.venv\\Scripts\\python ops/chief_tick.py stop:*)",
+      "Bash(.venv/Scripts/python ops/chief_tick.py stop:*)",
+      "Bash(\"$DA_PYTHON\" ops/chief_tick.py stop:*)",
+      "Bash(python ops/chief_tick.py stop:*)"
     ]
+  },
+  "env": {
+    "BASH_DEFAULT_TIMEOUT_MS": "900000",
+    "BASH_MAX_TIMEOUT_MS": "1800000"
   }
 }
