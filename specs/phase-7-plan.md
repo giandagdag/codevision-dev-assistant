@@ -74,6 +74,13 @@ the loop and the flow get small additions. Every step has tests and its own comm
    Playwright test 7-35 is written but skipped when no browser (cloud only).
 9. **Full run and code review** (max 3 rounds).
 
+## Plan review result (plan-reviewer, 7 Nov 2026): 0 Must fix, 4 Should fix, all taken
+- Re-run: read with no lock, AI call OUTSIDE any transaction, then one `_turn()` with both moves; a test proves the AI call is not inside the write (step 6).
+- Re-run finding a Must fix ends NOT_PASSING: this is a guess, flagged as an OPEN QUESTION for Gian (alternative: use a round if budget is left).
+- Test 7-34 (W6: Phase 6 tests-writing prompt holds no code) is in step 4.
+- Step 5 is split into 5a (enter Layer C and finish), 5b (Must fix next round and the cap), 5c (Stop, restart recovery, old Phase 6 test updates). Step 7 is split into 7a (Tests tab: 7 check rows with "Not run", earlier reviews collapsed, Show dropped toggle) and 7b (Build tab: Layer C box, findings by severity, model name, "Reviewed file by file (N calls)", elapsed time).
+- `docs/tester-work-test.md` matches the real flow: round 1 tests fail, round 2 Tester Must fix, round 3 yellow. README says `interrupted` is never written in Phase 7.
+
 ## Out of scope (as the spec)
 Fix it (Phase 8), inbox/overrule/auto-escalation (Phase 10), admin screens (Phase 11), choosing
 the Tester model (Q9) and the real size limit (Q7).
