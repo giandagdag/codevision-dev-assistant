@@ -42,6 +42,7 @@ from agents.da_tester_agent import (  # noqa: E402
     PLAN_STEP,
     ScriptedTesterClient,
 )
+from agents.da_tester_review import REVIEW_MARKER  # noqa: E402
 from agents.da_understand_agent import FAKE_SCRIPT_FILE, ScriptedUnderstandClient  # noqa: E402
 from agents.da_understand_flow import (  # noqa: E402
     CORRECTION_QUESTION,
@@ -88,12 +89,13 @@ NOT_JSON_REPLY = "Sorry, here is my answer in words and not in JSON."
 _APPROACH_CALLS = {marker: call for call, marker in TASK_MARKERS.items()}
 
 
-# Phase 6: the three Build calls (contract, tests, one code file), told apart by the task line each
+# Phase 6: the three Build calls (contract, tests, one code file), and the Phase 7 Tester review of
+# the code, told apart by the task line each
 # prompt carries on a line of its own. The same scripted replies as the fake provider answer them,
 # so a build through the onprem connector follows the same path as the fake one.
 _BUILD_LINES = tuple(
     re.compile(rf"^{re.escape(marker)}$", re.MULTILINE)
-    for marker in (CONTRACT_MARKER, TESTS_MARKER, CODE_MARKER)
+    for marker in (CONTRACT_MARKER, TESTS_MARKER, CODE_MARKER, REVIEW_MARKER)
 )
 
 

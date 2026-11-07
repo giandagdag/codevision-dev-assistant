@@ -134,6 +134,11 @@ def scripted_build_reply(prompt: str, switches: frozenset[str] | None = None) ->
         return _scripted_tests(prompt, switches)
     if re.search(rf"^{re.escape(CODE_MARKER)}$", prompt, re.MULTILINE):
         return _scripted_code(prompt, script, switches)
+    # Phase 7: the Tester's review of the code. Imported here because that file imports this one.
+    from agents.da_tester_review_agent import is_review_prompt, scripted_review_reply
+
+    if is_review_prompt(prompt):
+        return scripted_review_reply(prompt, switches)
     raise LLMClientError("The scripted build client was given a prompt it does not know.")
 
 
