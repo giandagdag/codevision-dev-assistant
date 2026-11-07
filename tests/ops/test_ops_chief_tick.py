@@ -526,16 +526,3 @@ def test_real_launcher_uses_the_worker_env(monkeypatch):
     monkeypatch.setattr(c.subprocess, "run", fake_run)
     result = c.real_launcher("hi", "builder")
     assert seen["env"]["DA_AGENT"] == "builder" and result.stderr == "warn"
-
-
-def test_launch_command_tells_you_where_to_read_what_the_worker_said(
-    status_file, isolated, monkeypatch, capsys
-):
-    monkeypatch.setattr(c, "STATUS_FILE", status_file)
-    monkeypatch.setattr(c.usage_guard, "endpoint_reader", lambda: usage())
-    monkeypatch.setattr(c, "hooks_ready", lambda python=None: None)
-    monkeypatch.setattr(c, "real_launcher", lambda p, a="chief": c.WorkerResult(0, "{}"))
-    assert c.main(["launch", "--agent", "builder", "--stage", "t", "--prompt", "x"],
-                  FakeGh()) == 0
-    out = capsys.readouterr().out
-    assert "ran" in out and "logs/workers/" in out

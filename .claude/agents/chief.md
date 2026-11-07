@@ -33,11 +33,25 @@ If the usage guard blocks you ("Usage line reached"), write your state to `ops/s
   refuses any command with a `$` variable in it. Keep `--prompt`, `--title` and `--body` text plain:
   no quotes inside, and no `;` `&` `|` `>` characters (the safety hook cannot read them).
 - `.venv/Scripts/python ops/chief_tick.py launch --agent spec-writer --stage spec --phase 7 --prompt "..."`
-  (agents: spec-writer, builder, status-digest; it checks the usage guard and hooks first and
-  writes the ledger line itself. If it prints `stopped` or `hooks-broken`, stop.)
+  (agents: spec-writer, builder, status-digest; it checks the usage guard and hooks first.
+  If it prints `stopped` or `hooks-broken`, stop. If it prints `busy <agent>`, a worker is
+  already running: stop.)
 - Merge only with `.venv/Scripts/python ops/chief_tick.py merge --pr N`.
 
-## After the spec writer returns (same step, before you stop)
+## A launch ENDS your step
+`launch` starts the worker in the background and prints `started <agent>` at once. The worker may
+run for hours, so do not wait for it. As soon as you see `started`, write
+"Running: <agent> since <time>" in STATUS.md and stop. The next tick looks at the worker first:
+while it runs the tick does nothing, and when it ends the tick writes its result in the Log and
+wakes you. Everything below that says "after the worker returns" happens on that next wake-up, when the Log shows the
+result, not in the step that launched it. On that wake-up, delete the "Running:" line first.
+- Log says `ended without a result (vanished)` or `stopped: over the time limit`: relaunch the
+  same worker once with the prompt "continue from your last commit". A second time for the same
+  stage: open a `needs-gian` issue and pause the stage.
+- Log says `stopped: by hand`: Gian did it on purpose. Do not relaunch. Read STATUS.md and wait
+  for a new instruction there.
+
+## After the spec writer returns (on the wake-up whose Log shows its result)
 The spec writer has no Bash, so you commit and push its spec. One command per Bash call: never
 `;`, `&&`, `|` or `grep`/`ls` in Bash (use the Read, Grep and Glob tools to look at files).
 1. Read the spec's D-x table and work-facts section. Check every row against the decision rule

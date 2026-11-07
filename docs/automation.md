@@ -15,6 +15,39 @@ AS400 comparison: a job schedule entry wakes a small job every 30 minutes. It ch
 
 All three hooks only act inside workers (`DA_WORKER=1`). Your own sessions are never blocked.
 
+## Workers run in the background (Phase A fix 1)
+AS400 comparison: `launch` is `SBMJOB` (submit and return). The tick is the job that looks at the
+job queue on each wake-up.
+
+A worker (builder, spec writer, reviewer) runs 1 to 3 hours, far longer than a Bash command in
+Claude Code may run. So `chief_tick.py launch` only checks the guard and hooks, starts the worker as
+its own detached process (`chief_tick.py run-worker`, not for you or the chief), prints
+`started <agent>` and returns. The chief writes "Running: <agent> since <time>" in STATUS.md and
+stops. The chief itself still runs in the foreground from `tick`.
+
+Two notes in `ops/state/` (local, Git ignores them):
+| File | Written by | Holds |
+|---|---|---|
+| `running.json` | `launch` | agent, stage, phase, first 200 characters of the prompt, process id, start time, usage before |
+| `worker_done.json` | the runner | exit code, finish time, the reply (the reply also goes to `logs/workers/`) |
+
+What the tick does first on every wake-up (zero tokens while a worker runs):
+- **`busy`**: the worker is alive and younger than 6 hours (`MAX_WORKER_HOURS`). Nothing changes.
+  `launch` also says `busy <agent>` while `running.json` exists: one worker at a time.
+- **Finished** (`worker_done.json`): one Log line, one ledger line, both notes removed, then the
+  normal tick goes on and the chief wakes up.
+- **Vanished** (process gone, no `worker_done.json`, for example the laptop restarted): Log says
+  `ended without a result (vanished)`, ledger outcome `vanished`. The chief relaunches once with
+  "continue from your last commit"; a second time it opens a `needs-gian` issue.
+- **Over the time limit**: the tick stops the whole process tree and logs `stopped: over the time
+  limit`. Same relaunch rule.
+
+**Stop a running worker by hand:** `.venv\Scripts\python ops\chief_tick.py stop` (Log says
+`stopped: by hand`, the chief does not relaunch), or end `python.exe` and `claude.exe` in Task
+Manager (the tick then logs it as vanished). Task Scheduler: keep "do not start a new instance".
+Turns per worker are in `AGENT_MAX_TURNS` (builder 400, chief 60). Inside a worker a Bash command may
+run 15 minutes (30 at most), because the full pytest run takes about 8.5 minutes.
+
 ## How questions reach you
 One GitHub issue per question, label `needs-gian` (or `needs-work-test` for things that need the
 work laptop). You get a phone notification and answer in a comment. The chief reads it on its next wake-up.
