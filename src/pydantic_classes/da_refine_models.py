@@ -16,11 +16,14 @@ from pydantic_classes.da_request_record_models import (
     CriterionKind,
     RequestRecord,
 )
+from pydantic_classes.da_tester_models import Finding
 
 LaneName = Literal["requirement", "approach", "bug"]
 LANES: tuple[str, ...] = ("requirement", "approach", "bug")
 # The bug lane while its fix build runs; the build loop closes the Refine when that build ends.
 STEP_BUG_FIXING = "bug_fixing"
+# Fix it on a Should fix: the same kind of fix build, with the finding as the only input.
+STEP_FINDING_FIXING = "finding_fixing"
 # Why a Refine started (spec section 13).
 RefineSource = Literal["feedback", "finding", "failed_check", "added_test"]
 ConflictChoice = Literal["mine", "ai"]
@@ -159,6 +162,8 @@ class RefineState(_Shape):
     repro: PendingRepro | None = None
     repro_tries: int = Field(default=0, ge=0)
     repro_passed_today: int = Field(default=0, ge=0)
+    # Fix it: the Should fix finding being fixed (its text goes to the Generator in round 1).
+    fix_finding: Finding | None = None
 
 
 class RefineRow(_Shape):

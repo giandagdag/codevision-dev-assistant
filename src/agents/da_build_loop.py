@@ -103,7 +103,7 @@ from pydantic_classes.da_models import (
     STATUS_TESTER_REVIEW,
     Request,
 )
-from pydantic_classes.da_refine_models import STEP_BUG_FIXING
+from pydantic_classes.da_refine_models import STEP_BUG_FIXING, STEP_FINDING_FIXING
 from pydantic_classes.da_request_record_models import RequestRecord
 from pydantic_classes.da_rulebook_models import Charter, Policy, Rule
 from pydantic_classes.da_tester_models import Finding, ReviewRecord
@@ -214,6 +214,7 @@ class _Run:
         self.kind = "build"
         self.check = False
         self.bug_fix = False
+        self.finding_fix = None
         self.base_revision = 0
         self.inp: _Inputs
         self.reference: Path
@@ -350,6 +351,13 @@ class _Run:
             # The bug lane's fix build: a rebuild started from "Yes, this is the bug".
             self.bug_fix = (
                 self.kind == "rebuild" and refine is not None and refine.step == STEP_BUG_FIXING
+            )
+            # Fix it on a Should fix: the finding is the only input of round 1.
+            self.finding_fix = (
+                refine.fix_finding
+                if self.kind == "rebuild" and refine is not None
+                and refine.step == STEP_FINDING_FIXING
+                else None
             )
             self.inp = _Inputs(
                 test_set_text=latest_set.text if latest_set else "",
@@ -494,6 +502,8 @@ class _Run:
         limit = self.inp.policy.build_max_rounds
         if number == 1 and self.bug_fix:
             to_write, failures = self._trace_bug(contract, tests)
+        elif number == 1 and self.finding_fix is not None:
+            to_write, failures = self._finding_input()
         else:
             to_write, failures = self._fix_input(number)
         with self._turn() as tx:
@@ -532,6 +542,18 @@ class _Run:
         report = build_failure_report(empty, result, self.inp.cases, tests, traced)
         self._keep_untraced(starts, traced)
         return traced, report_for_generator(report)
+
+    def _finding_input(self) -> tuple[list[str], str]:
+        """Round 1 of Fix it (spec section 7): only the cited file goes to the Generator, with the
+        finding as a Must fix line. Every other planned file stays as his text."""
+        planned = [_clean(item.path) for item in self.inp.planned]
+        starts = {p: self.inp.start_texts[p] for p in planned if p in self.inp.start_texts}
+        finding = self.finding_fix
+        cited = _clean(finding.file)
+        traced = [cited] if cited in planned else planned
+        self._keep_untraced(starts, traced)
+        as_must = finding.model_copy(update={"severity": "must_fix"})
+        return traced, tester.report_for_generator([as_must])
 
     def _keep_untraced(self, starts: dict[str, str], traced: list[str]) -> None:
         """His text of each file the Generator will not touch becomes part of this build's code."""
@@ -822,20 +844,42 @@ class _Run:
         set_last_tested(tx.conn, self.request_id, tx.state.build_number, self.kind, tx.now)
         if self.kind == "rebuild":
             add_build_result(tx.conn, self.request_id, not passed, tx.now)
-        if self.bug_fix:
+        if self.bug_fix or self.finding_fix is not None:
             self._close_bug_refine(tx, passed)
 
+    def _finding_gone(self, tx: BuildTx, finding) -> bool:
+        """The finding is gone when the newest review of this build no longer has it (same file,
+        same check, same quoted line)."""
+        reviews = read_reviews(tx.conn, self.request_id, tx.state.build_number)
+        if not reviews:
+            return False
+        same = [
+            f for f in reviews[-1].findings
+            if f.kept and f.file == finding.file and f.check == finding.check
+            and f.quote == finding.quote
+        ]
+        return not same
+
     def _close_bug_refine(self, tx: BuildTx, passed: bool) -> None:
-        """The bug lane ends with its fix build: the Refine row is closed and the Refine screen is
-        free again (same write transaction as the build's own end, rule F1)."""
+        """The bug lane and Fix it end with their fix build: the Refine row is closed and the Refine
+        screen is free again (same write transaction as the build's own end, rule F1)."""
         state = read_refine_state(tx.conn, self.request_id)
-        if state is None or state.step != STEP_BUG_FIXING:
+        if state is None or state.step not in (STEP_BUG_FIXING, STEP_FINDING_FIXING):
             return
+        result = "fixed" if passed else "not_passing"
+        if state.fix_finding is not None:
+            gone = self._finding_gone(tx, state.fix_finding)
+            result = "fixed" if gone else "not_fixed"
+            tx.audit(
+                "system",
+                "finding_fixed" if gone else "finding_not_fixed",
+                {"finding": state.fix_finding.finding_id, "build": tx.state.build_number},
+            )
         close_refine(
             tx.conn,
             self.request_id,
             state.refine_number,
-            result="fixed" if passed else "not_passing",
+            result=result,
             record_version_after=tx.request.version,
             approach_version_after=tx.state.approach_version,
             build_number=tx.state.build_number,
@@ -851,6 +895,7 @@ class _Run:
                 "suggested_criterion": "",
                 "chosen_lane": "",
                 "repro": None,
+                "fix_finding": None,
                 "repro_tries": 0,
                 "repro_passed_today": 0,
             }

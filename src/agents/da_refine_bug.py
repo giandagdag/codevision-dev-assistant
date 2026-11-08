@@ -230,34 +230,41 @@ def start_bug_fix(
     with _write(settings.db_path) as conn:
         state = _load_state(conn, request_id, base_revision)
         _require_step(state, STEP_BUG_REBUILD)
-        request = _request_of(conn, request_id)
-        build = read_build_state(conn, request_id)
-        number = next_build_number(conn, request_id)
-        insert_build_run(
-            conn,
-            BuildRun(
-                request_id=request_id,
-                build_number=number,
-                approach_version=build.approach_version,
-                started_at=now,
-                kind="rebuild",
-            ),
-        )
-        build_tx = BuildTx(conn, request, build, now)
-        build_tx.say("assistant", STARTED_MESSAGE)
-        build_tx.move_to(STATUS_BUILDING)
-        build_tx.audit("system", "build_started", {"build": number, "kind": "rebuild"})
-        build_tx.set(
-            build_number=number,
-            step="b_running",
-            current_round=0,
-            write_state="not_written",
-            message="",
-        )
-        build_save(build_tx, build.revision)
-        tx = RefineTx(conn, build_tx.request, state, now)
+        request = begin_rebuild(conn, _request_of(conn, request_id), now)
+        tx = RefineTx(conn, request, state, now)
         tx.set(step=STEP_BUG_FIXING)
         return _save(tx, base_revision)
+
+
+def begin_rebuild(conn: sqlite3.Connection, request, now: datetime):
+    """The shared start of a fix build: a new build number, kind `rebuild`, status BUILDING.
+    Returns the request as it is after the move."""
+    request_id = request.request_id
+    build = read_build_state(conn, request_id)
+    number = next_build_number(conn, request_id)
+    insert_build_run(
+        conn,
+        BuildRun(
+            request_id=request_id,
+            build_number=number,
+            approach_version=build.approach_version,
+            started_at=now,
+            kind="rebuild",
+        ),
+    )
+    build_tx = BuildTx(conn, request, build, now)
+    build_tx.say("assistant", STARTED_MESSAGE)
+    build_tx.move_to(STATUS_BUILDING)
+    build_tx.audit("system", "build_started", {"build": number, "kind": "rebuild"})
+    build_tx.set(
+        build_number=number,
+        step="b_running",
+        current_round=0,
+        write_state="not_written",
+        message="",
+    )
+    build_save(build_tx, build.revision)
+    return build_tx.request
 
 
 # --- helpers ---
