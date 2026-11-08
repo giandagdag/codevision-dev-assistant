@@ -27,6 +27,7 @@ from pydantic_classes.da_refine_models import (
     RefineState,
     TestSet,
 )
+from pydantic_classes.da_request_record_models import RequestRecord
 
 _CREATE_TABLES_SQL = """
 CREATE TABLE IF NOT EXISTS da_refine_state (
@@ -234,6 +235,19 @@ def _write_tested(
         " not_passing_in_a_row = excluded.not_passing_in_a_row, updated_at = excluded.updated_at",
         (request_id, build, kind, count, to_db_time(now)),
     )
+
+
+# --- record versions (read only; the Understand file saves them) ---
+
+
+def read_all_records(conn: sqlite3.Connection, request_id: str) -> list[RequestRecord]:
+    """Every confirmed version of the request record, oldest first. Used for numbering criteria
+    (an ID is never reused) and for the Summary tab's version history."""
+    rows = conn.execute(
+        "SELECT record FROM da_request_records WHERE request_id = ? ORDER BY version",
+        (request_id,),
+    ).fetchall()
+    return [RequestRecord.model_validate(json.loads(row["record"])) for row in rows]
 
 
 # --- Refines ---

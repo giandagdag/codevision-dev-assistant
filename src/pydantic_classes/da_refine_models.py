@@ -11,7 +11,11 @@ from typing import Any, Literal
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from pydantic_classes.da_models import REQUEST_ID_PATTERN
-from pydantic_classes.da_request_record_models import CRITERION_ID_PATTERN, CriterionKind
+from pydantic_classes.da_request_record_models import (
+    CRITERION_ID_PATTERN,
+    CriterionKind,
+    RequestRecord,
+)
 
 LaneName = Literal["requirement", "approach", "bug"]
 LANES: tuple[str, ...] = ("requirement", "approach", "bug")
@@ -127,6 +131,17 @@ class RefineState(_Shape):
     # Rebuilds in a row that ended NOT_PASSING (F4). Acts in Phase 10.
     not_passing_in_a_row: int = Field(default=0, ge=0)
     revision: int = Field(default=1, ge=1)
+    # The Refine in progress (saved when the lane suggestion is shown, kept until it closes).
+    pending_feedback: str = ""
+    pending_source: RefineSource = "feedback"
+    suggested_lane: LaneName | Literal[""] = ""
+    suggested_reason: str = ""
+    suggested_criterion: str = ""
+    chosen_lane: LaneName | Literal[""] = ""
+    from_status: str = ""
+    # Requirement lane: the proposed next record version, shown with its diff until he decides.
+    pending_record: RequestRecord | None = None
+    lane_unusable: bool = False
 
 
 class RefineRow(_Shape):
