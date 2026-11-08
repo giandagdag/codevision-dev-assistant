@@ -2,6 +2,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import chief_tick
+import pytest
 import status
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -75,3 +77,81 @@ def test_script_prints_line_count(tmp_path):
     out = subprocess.run([sys.executable, str(ROOT / "ops" / "status.py"), str(f)],
                          capture_output=True, text=True).stdout
     assert out.strip() == "3 lines"
+
+
+# ---- Phase A fix 3, F2: set_next and the `next` command ----
+
+def _next_lines(path):
+    return [x for x in path.read_text(encoding="utf-8").splitlines()
+            if x.lstrip("- ").startswith("Next:")]
+
+
+def _status(tmp_path, body):
+    path = tmp_path / "STATUS.md"
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+def test_as5_next_replaces_the_line_and_its_continuation_lines(tmp_path):
+    path = _status(tmp_path, "# S\n## Where we are\n- a\n- Next: old\n  more old\n- b\n## Log\n")
+    status.set_next(path, "builder continue Phase 8 from step 10")
+    assert path.read_text(encoding="utf-8") == (
+        "# S\n## Where we are\n- a\n- Next: builder continue Phase 8 from step 10\n- b\n## Log\n")
+
+
+def test_next_removes_a_second_next_line(tmp_path):
+    path = _status(tmp_path, "## Where we are\n- Next: a\n- x\n- Next: b\n  tail\n## Log\n")
+    status.set_next(path, "c")
+    assert _next_lines(path) == ["- Next: c"]
+    assert "tail" not in path.read_text(encoding="utf-8")
+
+
+def test_next_is_added_under_where_we_are_when_missing(tmp_path):
+    path = _status(tmp_path, "# S\n## Where we are\n- a\n\n## Other\n- z\n## Log\n- 1\n")
+    status.set_next(path, "go")
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert lines[lines.index("## Where we are") + 1:][:3] == ["- a", "- Next: go", ""]
+
+
+def test_next_creates_the_heading_before_the_log_when_it_is_missing(tmp_path):
+    path = _status(tmp_path, "# S\nUsage: x\n## Log\n- 1\n")
+    status.set_next(path, "go")
+    assert path.read_text(encoding="utf-8") == (
+        "# S\nUsage: x\n## Where we are\n- Next: go\n\n## Log\n- 1\n")
+
+
+def test_as6_empty_text_is_refused_and_the_file_is_unchanged(tmp_path):
+    path = _status(tmp_path, "## Where we are\n- Next: keep me\n## Log\n")
+    for bad in ("", "   ", "\n"):
+        with pytest.raises(ValueError):
+            status.set_next(path, bad)
+    assert path.read_text(encoding="utf-8") == "## Where we are\n- Next: keep me\n## Log\n"
+
+
+def test_next_collapses_line_breaks_into_one_line(tmp_path):
+    path = _status(tmp_path, "## Where we are\n- Next: a\n## Log\n")
+    status.set_next(path, "one\ntwo")
+    assert _next_lines(path) == ["- Next: one two"]
+
+
+def test_as5_a_full_file_stays_at_60_lines_or_fewer(tmp_path):
+    body = "## Where we are\n- Next: a\n## Log\n" + "".join(f"- log {n}\n" for n in range(57))
+    path = _status(tmp_path, body)
+    assert len(path.read_text(encoding="utf-8").splitlines()) == 60
+    status.set_next(path, "builder continue Phase 8 from step 10")
+    assert len(path.read_text(encoding="utf-8").splitlines()) <= 60
+    assert _next_lines(path) == ["- Next: builder continue Phase 8 from step 10"]
+
+
+def test_as5_the_next_command_changes_the_status_file(tmp_path, capsys):
+    # the shared fixture points chief_tick.STATUS_FILE at a temp STATUS.md
+    assert chief_tick.main(["next", "builder continue Phase 8 from step 10"]) == 0
+    assert "builder continue Phase 8 from step 10" in capsys.readouterr().out
+    assert _next_lines(chief_tick.STATUS_FILE) == ["- Next: builder continue Phase 8 from step 10"]
+
+
+def test_as6_the_next_command_refuses_empty_text(tmp_path, capsys):
+    before = chief_tick.STATUS_FILE.read_text(encoding="utf-8")
+    assert chief_tick.main(["next", ""]) == 1
+    assert "Refused" in capsys.readouterr().err
+    assert chief_tick.STATUS_FILE.read_text(encoding="utf-8") == before

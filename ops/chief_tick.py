@@ -609,6 +609,8 @@ def main(argv: list[str] | None = None, gh: Gh | None = None) -> int:
     rw.add_argument("--agent", required=True, choices=sorted(AGENT_MODELS))
     rw.add_argument("--prompt", required=True)
     sub.add_parser("stop", help="stop the running worker (for Gian)")
+    nx = sub.add_parser("next", help="set the one 'Next:' line in STATUS.md")
+    nx.add_argument("text")
     args = parser.parse_args(argv)
 
     def board(result: str) -> None:
@@ -631,6 +633,9 @@ def main(argv: list[str] | None = None, gh: Gh | None = None) -> int:
             result = stop_worker(usage_guard.endpoint_reader, STATUS_FILE, time.time())
             print(result)
             run_board(board, result)
+        elif args.cmd == "next":
+            status.set_next(STATUS_FILE, args.text)
+            print(f"Next: {' '.join(args.text.split())}")
         elif args.cmd == "pause":
             status.mark_paused(STATUS_FILE, args.stage, args.issue)
         else:
