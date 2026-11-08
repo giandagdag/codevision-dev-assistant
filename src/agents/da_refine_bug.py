@@ -16,7 +16,8 @@ import sqlite3
 from datetime import UTC, datetime
 
 from agents.da_approach_checks import normalise_path
-from agents.da_build_flow import _approach_of, planned_paths_of
+from agents.da_build_flow import STARTED_MESSAGE, BuildTx, _approach_of, planned_paths_of
+from agents.da_build_flow import _save as build_save
 from agents.da_build_loop import resolve_reference_dir
 from agents.da_llm_client import LLMClient
 from agents.da_refine_agent import REPRO_ROLE, write_repro_test
@@ -41,6 +42,8 @@ from configs.da_config import ConfigError
 from db_table_functions.da_db import open_db
 from db_table_functions.db_tbl_da_build import (
     ensure_build_tables,
+    insert_build_run,
+    next_build_number,
     read_build_state,
     read_frozen_files,
 )
@@ -53,8 +56,9 @@ from db_table_functions.db_tbl_da_refine import (
 )
 from db_table_functions.db_tbl_da_requests import get_rulebook_for_request, read_request
 from db_table_functions.db_tbl_da_workspace import ensure_workspace_tables, read_file_versions
-from pydantic_classes.da_build_models import Contract, LayerBResult
-from pydantic_classes.da_refine_models import PendingRepro, RefineState, TestSet
+from pydantic_classes.da_build_models import BuildRun, Contract, LayerBResult
+from pydantic_classes.da_models import STATUS_BUILDING
+from pydantic_classes.da_refine_models import STEP_BUG_FIXING, PendingRepro, RefineState, TestSet
 
 YES_LABEL = "Yes, this is the bug"
 NO_LABEL = "No, describe again"
@@ -201,6 +205,49 @@ def reject_repro(
         tx.audit("developer", "repro_test_rejected", {"case": case})
         tx.say("assistant", "Describe the bug again in your own words.")
         tx.set(step=STEP_BUG, repro=None, repro_tries=0)
+        return _save(tx, base_revision)
+
+
+# --- 3. the fix build (section 7, step 5) ---
+
+
+def start_bug_fix(
+    settings, request_id: str, base_revision: int, now: datetime | None = None
+) -> RefineState:
+    """After the confirm: a new build number with a fresh budget, kind `rebuild`. The build loop
+    (run by the caller) writes only the traced file and never changes the tests.
+    REVISION_IN_PROGRESS goes to BUILDING; the loop ends the Refine when the build ends."""
+    now = now or datetime.now(UTC)
+    with _write(settings.db_path) as conn:
+        state = _load_state(conn, request_id, base_revision)
+        _require_step(state, STEP_BUG_REBUILD)
+        request = _request_of(conn, request_id)
+        build = read_build_state(conn, request_id)
+        number = next_build_number(conn, request_id)
+        insert_build_run(
+            conn,
+            BuildRun(
+                request_id=request_id,
+                build_number=number,
+                approach_version=build.approach_version,
+                started_at=now,
+                kind="rebuild",
+            ),
+        )
+        build_tx = BuildTx(conn, request, build, now)
+        build_tx.say("assistant", STARTED_MESSAGE)
+        build_tx.move_to(STATUS_BUILDING)
+        build_tx.audit("system", "build_started", {"build": number, "kind": "rebuild"})
+        build_tx.set(
+            build_number=number,
+            step="b_running",
+            current_round=0,
+            write_state="not_written",
+            message="",
+        )
+        build_save(build_tx, build.revision)
+        tx = RefineTx(conn, build_tx.request, state, now)
+        tx.set(step=STEP_BUG_FIXING)
         return _save(tx, base_revision)
 
 

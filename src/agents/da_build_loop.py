@@ -65,7 +65,14 @@ from db_table_functions.db_tbl_da_build import (
     read_rounds,
     save_build_state,
 )
-from db_table_functions.db_tbl_da_refine import add_build_result, set_last_tested
+from db_table_functions.db_tbl_da_refine import (
+    add_build_result,
+    close_refine,
+    read_latest_test_set,
+    read_refine_state,
+    save_refine_state,
+    set_last_tested,
+)
 from db_table_functions.db_tbl_da_requests import get_rulebook_for_request
 from db_table_functions.db_tbl_da_tester import insert_review, next_review_number, read_reviews
 from db_table_functions.db_tbl_da_understand import (
@@ -96,6 +103,7 @@ from pydantic_classes.da_models import (
     STATUS_TESTER_REVIEW,
     Request,
 )
+from pydantic_classes.da_refine_models import STEP_BUG_FIXING
 from pydantic_classes.da_request_record_models import RequestRecord
 from pydantic_classes.da_rulebook_models import Charter, Policy, Rule
 from pydantic_classes.da_tester_models import Finding, ReviewRecord
@@ -150,6 +158,8 @@ class _Inputs:
     next_line: int
     rules: list[Rule]
     reviews: list[ReviewRecord]
+    # Phase 8: the newest frozen test set version (the bug lane appends to it); "" when none.
+    test_set_text: str = ""
     planned: list[PlannedFile] = field(init=False)
 
     def __post_init__(self) -> None:
@@ -203,6 +213,7 @@ class _Run:
         # is one pass of Layers A, B and C on his files: no Generator, no fix rounds, no budget.
         self.kind = "build"
         self.check = False
+        self.bug_fix = False
         self.base_revision = 0
         self.inp: _Inputs
         self.reference: Path
@@ -334,7 +345,14 @@ class _Run:
                     # is treated like an old one, so his edits are patched, never overwritten.
                     starts[_clean(item.path)] = versions_of[-1].text
             progress = read_progress(conn, self.request_id, number)
+            latest_set = read_latest_test_set(conn, self.request_id, state.approach_version)
+            refine = read_refine_state(conn, self.request_id)
+            # The bug lane's fix build: a rebuild started from "Yes, this is the bug".
+            self.bug_fix = (
+                self.kind == "rebuild" and refine is not None and refine.step == STEP_BUG_FIXING
+            )
             self.inp = _Inputs(
+                test_set_text=latest_set.text if latest_set else "",
                 request=request,
                 state=state,
                 charter=rulebook.charter,
@@ -377,7 +395,8 @@ class _Run:
         contract = Contract.model_validate_json(self.inp.frozen["contract"].text)
         if "test" not in self.inp.frozen:
             self._write_tests(contract)
-        return contract, self.inp.frozen["test"].text
+        # The frozen file is never changed; test set versions only add methods to it.
+        return contract, self.inp.test_set_text or self.inp.frozen["test"].text
 
     def _write_contract(self) -> None:
         self._alive()
@@ -473,7 +492,10 @@ class _Run:
 
     def _one_round(self, number: int, contract: Contract, tests: str) -> bool:
         limit = self.inp.policy.build_max_rounds
-        to_write, failures = self._fix_input(number)
+        if number == 1 and self.bug_fix:
+            to_write, failures = self._trace_bug(contract, tests)
+        else:
+            to_write, failures = self._fix_input(number)
         with self._turn() as tx:
             tx.set(step="b_running", current_round=len(self.inp.rounds))
             self._note(tx, f"Round {number} of {limit}", "done")
@@ -488,6 +510,49 @@ class _Run:
             return self._record_round(number, layer_a, None, contract, tests)
         layer_b = self._layer_b(tests)
         return self._record_round(number, layer_a, layer_b, contract, tests)
+
+    def _trace_bug(self, contract: Contract, tests: str) -> tuple[list[str], str]:
+        """Round 1 of a bug fix (spec section 7): run the new test set on his files as they are,
+        and send ONLY the traced files to the Generator, with the failure. Every other planned
+        file is kept as his text, so the sandbox still sees it. No round is used by this run."""
+        planned = [_clean(item.path) for item in self.inp.planned]
+        starts = {p: self.inp.start_texts[p] for p in planned if p in self.inp.start_texts}
+        result = run_tests(
+            self.reference,
+            starts,
+            self.test_id,
+            tests,
+            exclude=self.inp.policy.build_sandbox_exclude,
+            timeout_seconds=self.inp.policy.build_test_timeout_seconds,
+        )
+        if not result.ran:
+            raise _Paused("interrupted", result.error)
+        empty = LayerAResult()
+        traced = choose_files_to_fix(empty, result, planned, contract, tests)
+        report = build_failure_report(empty, result, self.inp.cases, tests, traced)
+        self._keep_untraced(starts, traced)
+        return traced, report_for_generator(report)
+
+    def _keep_untraced(self, starts: dict[str, str], traced: list[str]) -> None:
+        """His text of each file the Generator will not touch becomes part of this build's code."""
+        with self._turn() as tx:
+            for path, text in starts.items():
+                if path in traced or path in self.inp.code:
+                    continue
+                self.inp.code[path] = insert_build_file(
+                    tx.conn,
+                    BuildFile(
+                        request_id=self.request_id,
+                        build_number=tx.state.build_number,
+                        round=1,
+                        path=path,
+                        kind="code",
+                        text=text,
+                        fingerprint=fingerprint(text),
+                        made_by="system",
+                    ),
+                    tx.now,
+                )
 
     def _write_file(
         self, path: str, number: int, contract: Contract, tests: str, failures: str
@@ -757,6 +822,40 @@ class _Run:
         set_last_tested(tx.conn, self.request_id, tx.state.build_number, self.kind, tx.now)
         if self.kind == "rebuild":
             add_build_result(tx.conn, self.request_id, not passed, tx.now)
+        if self.bug_fix:
+            self._close_bug_refine(tx, passed)
+
+    def _close_bug_refine(self, tx: BuildTx, passed: bool) -> None:
+        """The bug lane ends with its fix build: the Refine row is closed and the Refine screen is
+        free again (same write transaction as the build's own end, rule F1)."""
+        state = read_refine_state(tx.conn, self.request_id)
+        if state is None or state.step != STEP_BUG_FIXING:
+            return
+        close_refine(
+            tx.conn,
+            self.request_id,
+            state.refine_number,
+            result="fixed" if passed else "not_passing",
+            record_version_after=tx.request.version,
+            approach_version_after=tx.state.approach_version,
+            build_number=tx.state.build_number,
+            repro_passed_today=state.repro_passed_today,
+            now=tx.now,
+        )
+        idle = state.model_copy(
+            update={
+                "step": "start",
+                "pending_feedback": "",
+                "suggested_lane": "",
+                "suggested_reason": "",
+                "suggested_criterion": "",
+                "chosen_lane": "",
+                "repro": None,
+                "repro_tries": 0,
+                "repro_passed_today": 0,
+            }
+        )
+        save_refine_state(tx.conn, idle, state.revision, tx.now)
 
     @property
     def _cases(self) -> int:

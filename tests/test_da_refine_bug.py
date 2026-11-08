@@ -141,6 +141,39 @@ def test_an_unusable_answer_saves_nothing_and_stays_at_the_start(settings):
     assert "describe it again" in chat(settings, request_id, "assistant")[-1].lower()
 
 
+def test_8_24_the_fix_build_is_fresh_writes_only_traced_files_and_keeps_the_tests(settings):
+    from agents import da_build_loop as loop
+    from tests.da_build_play import RecordingFactory, files_of, run_row
+
+    request_id, _ = at_bug_lane(settings)
+    bug.start_repro(settings, request_id, rev(settings, request_id), client=Reproducer())
+    bug.confirm_repro(settings, request_id, rev(settings, request_id))
+    frozen_before = files_of(settings, request_id, 1, "test")[0].fingerprint
+
+    state = bug.start_bug_fix(settings, request_id, rev(settings, request_id))
+
+    assert state.step == "bug_fixing"
+    assert request_status(settings, request_id) == "BUILDING"
+    assert run_row(settings, request_id, 2).kind == "rebuild"
+    assert loop.run_build(settings, request_id, RecordingFactory(), build_number=2) == "done"
+
+    written = [f for f in files_of(settings, request_id, 2, "code") if f.made_by != "system"]
+    planned = len({f.path for f in files_of(settings, request_id, 1, "code")})
+    first_round = {f.path for f in written if f.round == 1}
+    assert 1 <= len(first_round) <= planned
+    assert files_of(settings, request_id, 2, "test") == []  # the tests are not written again
+    assert files_of(settings, request_id, 1, "test")[0].fingerprint == frozen_before
+    after = lanes.get_refine_state(settings, request_id)
+    assert after.step == "start" and after.repro is None  # the Refine ended with the build
+
+
+def test_start_bug_fix_only_after_the_confirm(settings):
+    request_id, _ = at_bug_lane(settings)
+
+    with pytest.raises(RefineError):
+        bug.start_bug_fix(settings, request_id, rev(settings, request_id))
+
+
 def test_the_steps_run_in_order_and_a_stale_window_is_refused(settings):
     request_id, _ = at_bug_lane(settings)
     old = rev(settings, request_id)

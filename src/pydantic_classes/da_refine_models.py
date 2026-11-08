@@ -19,6 +19,8 @@ from pydantic_classes.da_request_record_models import (
 
 LaneName = Literal["requirement", "approach", "bug"]
 LANES: tuple[str, ...] = ("requirement", "approach", "bug")
+# The bug lane while its fix build runs; the build loop closes the Refine when that build ends.
+STEP_BUG_FIXING = "bug_fixing"
 # Why a Refine started (spec section 13).
 RefineSource = Literal["feedback", "finding", "failed_check", "added_test"]
 ConflictChoice = Literal["mine", "ai"]
