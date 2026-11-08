@@ -61,7 +61,7 @@ def poll_interval(view: BuildView) -> dcc.Interval:
     return dcc.Interval(id=POLL_ID, interval=POLL_MS, disabled=not view.polling)
 
 
-def build_tab(view: BuildView, edit_hint: str = "") -> list:
+def build_tab(view: BuildView, edit_hint: str = "", refine_blocks: list | None = None) -> list:
     """The Build tab for a build that has started (any step after `start`). `edit_hint` is the
     Refine line "Edit anything, then click Re-scan." (empty when Refine is not offered)."""
     blocks: list = []
@@ -79,6 +79,7 @@ def build_tab(view: BuildView, edit_hint: str = "") -> list:
         blocks.append(_your_turn())
     if edit_hint:
         blocks.append(dmc.Text(edit_hint, size="sm", fw=600, id=EDIT_HINT_ID))
+    blocks.extend(refine_blocks or [])
     if view.run is not None and view.run.ended_at is not None:
         blocks.append(_this_build(view))
     return [dmc.Stack(blocks, gap="sm")]

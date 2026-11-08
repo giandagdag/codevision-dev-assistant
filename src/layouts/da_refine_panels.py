@@ -57,6 +57,128 @@ def version_history_blocks(history: VersionHistory | None) -> list:
     ]
 
 
+TAG_ID = "da-refine-tag"
+SIDE_ID = "da-edit-side-by-side"
+CONFLICTS_ID = "da-conflicts"
+CONFLICT_PICK_TYPE = "da-conflict-pick"
+VERSIONS_ID = "da-versions"
+PROTECTION_ID = "da-edit-protection"
+MONO = {"fontFamily": "monospace", "whiteSpace": "pre-wrap"}
+
+
+def _side_by_side(diff) -> dmc.Box:
+    """Left: what the app last wrote. Right: his version. Changed rows are marked."""
+    rows = [
+        dmc.TableTr(
+            [
+                dmc.TableTd(dmc.Text(left, size="xs", style=MONO)),
+                dmc.TableTd(
+                    dmc.Text(right, size="xs", style=MONO, fw=700 if changed else 400),
+                    bg="yellow.1" if changed else None,
+                ),
+            ]
+        )
+        for left, right, changed in diff.rows
+    ]
+    head = dmc.TableThead(dmc.TableTr([dmc.TableTh("App wrote"), dmc.TableTh("Your version")]))
+    return dmc.Box(
+        [dmc.Text(diff.path, fw=600, size="sm"), dmc.Table([head, dmc.TableTbody(rows)])]
+    )
+
+
+def _lines(label: str, lines: list[str]) -> dmc.Box:
+    text = "\n".join(lines) if lines else "(nothing)"
+    return dmc.Box([dmc.Text(label, fw=600, size="xs"), dmc.Code(text, block=True)])
+
+
+def _conflict(item) -> dmc.Box:
+    picked = {"mine": "Keep mine", "ai": "Take the AI's"}.get(item.choice or "", "")
+    buttons = [
+        dmc.Button(
+            label,
+            id={
+                "type": CONFLICT_PICK_TYPE,
+                "path": item.path,
+                "conflict": item.conflict_id,
+                "choice": key,
+            },
+            size="xs",
+            variant="filled" if item.choice == key else "default",
+        )
+        for key, label in (("mine", "Keep mine"), ("ai", "Take the AI's"))
+    ]
+    return dmc.Box(
+        [
+            dmc.Text(
+                f"{item.path} {item.conflict_id}: lines {item.his_start} to {item.his_end}",
+                fw=600,
+                size="sm",
+            ),
+            *([_lines("Before", item.context_before)] if item.context_before else []),
+            _lines("Yours", item.his_lines),
+            _lines("AI's", item.ai_lines),
+            *([_lines("After", item.context_after)] if item.context_after else []),
+            dmc.Group(buttons, gap="xs"),
+            dmc.Text(f"Picked: {picked}", size="xs") if picked else None,
+        ]
+    )
+
+
+def refine_build_blocks(panel) -> list:
+    """The Refine parts of the Build tab. Empty list when there is nothing to show."""
+    blocks: list = []
+    if panel is None:
+        return blocks
+    if panel.tag:
+        blocks.append(dmc.Badge(panel.tag, id=TAG_ID, variant="light"))
+    if panel.conflicts:
+        blocks.append(
+            dmc.Stack(
+                [
+                    dmc.Text("Places where your lines and the AI's change meet", fw=600),
+                    *[_conflict(c) for c in panel.conflicts],
+                ],
+                id=CONFLICTS_ID,
+                gap="xs",
+            )
+        )
+    if panel.diffs:
+        blocks.append(
+            dmc.Stack(
+                [
+                    dmc.Text("Your edits", fw=600),
+                    *[_side_by_side(d) for d in panel.diffs],
+                    dmc.Text(panel.not_tested_line, size="sm", c="orange"),
+                    dmc.Text(panel.only_planned_line, size="xs", c="dimmed"),
+                ],
+                id=SIDE_ID,
+                gap="xs",
+            )
+        )
+    if panel.versions:
+        rows = [
+            dmc.Text(
+                f"Build {v.build_number} ({v.kind}): {v.label}, {', '.join(v.files)}"
+                + (" (last tested)" if v.is_last_tested else ""),
+                size="sm",
+            )
+            for v in panel.versions
+        ]
+        blocks.append(dmc.Stack([dmc.Text("Versions", fw=600), *rows], id=VERSIONS_ID, gap="xs"))
+    if panel.rules:
+        blocks.append(
+            dmc.Stack(
+                [
+                    dmc.Text("How your edits are protected", fw=600),
+                    *[dmc.Text(f"{n}. {rule}", size="sm") for n, rule in enumerate(panel.rules, 1)],
+                ],
+                id=PROTECTION_ID,
+                gap="xs",
+            )
+        )
+    return blocks
+
+
 def approach_version_blocks(history: VersionHistory | None) -> list:
     """Empty list when no approach version exists."""
     if history is None or not history.approaches:

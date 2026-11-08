@@ -25,7 +25,12 @@ from agents.da_discover_flow import (
     get_discovery_view,
     start_discovery,
 )
-from agents.da_refine_screen import get_history, get_refine_box, get_tagged_build
+from agents.da_refine_screen import (
+    get_history,
+    get_refine_box,
+    get_refine_build_panel,
+    get_tagged_build,
+)
 from agents.da_understand_flow import (
     FORM_OPTIONAL_BOX,
     FormError,
@@ -88,6 +93,7 @@ from pydantic_classes.da_models import (
     STATUS_READY,
     STATUS_READY_FOR_REVIEW,
     STATUS_READY_TO_BUILD,
+    STATUS_REVISION,
     STATUS_TESTER_REVIEW,
 )
 from styles import da_styles
@@ -111,6 +117,7 @@ APPROACH_STATUSES = (
     STATUS_TESTER_REVIEW,
     STATUS_READY_FOR_REVIEW,
     STATUS_NOT_PASSING,
+    STATUS_REVISION,  # Phase 8: a Refine lane is open; the pill shows REVISION IN PROGRESS
 )
 # The statuses where the request has a workspace and a build to draw.
 WORKSPACE_STATUSES = (
@@ -119,6 +126,7 @@ WORKSPACE_STATUSES = (
     STATUS_TESTER_REVIEW,
     STATUS_READY_FOR_REVIEW,
     STATUS_NOT_PASSING,
+    STATUS_REVISION,
 )
 
 
@@ -208,8 +216,13 @@ def show_page(search: str | None, refresh: int | None):
                     else None
                 )
                 history = get_history(settings, request_id) if build is not None else None
+                panel = (
+                    get_refine_build_panel(settings, request_id, build)
+                    if build is not None
+                    else None
+                )
                 return render_approach_workspace(
-                    view, discovery, approach, workspace, build, refine, history
+                    view, discovery, approach, workspace, build, refine, history, panel
                 )
             if status == STATUS_DISCOVERY_CONFIRMED:
                 approach = approach_flow.get_approach_view(settings, request_id)

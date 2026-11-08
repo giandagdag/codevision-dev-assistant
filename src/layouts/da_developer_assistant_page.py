@@ -17,7 +17,7 @@ from agents.da_discover_flow import (
     HINT_QUESTION,
     outcome_status,
 )
-from agents.da_refine_screen import RefineBox, VersionHistory
+from agents.da_refine_screen import RefineBox, RefineBuildPanel, VersionHistory
 from agents.da_understand_checks import MAX_MESSAGE_LENGTH
 from agents.da_understand_flow import (
     ALWAYS_VISIBLE,
@@ -29,7 +29,11 @@ from agents.da_understand_flow import (
 )
 from layouts.da_approach_panel import approach_panel
 from layouts.da_build_panel import build_tab, poll_interval, tests_tab
-from layouts.da_refine_panels import approach_version_blocks, version_history_blocks
+from layouts.da_refine_panels import (
+    approach_version_blocks,
+    refine_build_blocks,
+    version_history_blocks,
+)
 from layouts.da_workspace_panel import (
     RECONNECT_KEY,
     USE_KEY,
@@ -491,6 +495,7 @@ def render_approach_workspace(
     build: BuildView | None = None,
     refine: RefineBox | None = None,
     history: VersionHistory | None = None,
+    refine_panel: RefineBuildPanel | None = None,
 ) -> list:
     """The workspace from APPROACH_PROPOSED on: Approach is step 3 and its tab opens first.
 
@@ -510,7 +515,11 @@ def render_approach_workspace(
         if building:
             state["build"] = True
         if building:
-            build_content = build_tab(build, refine.hint if refine and refine.offered else "")
+            build_content = build_tab(
+                build,
+                refine.hint if refine and refine.offered else "",
+                refine_build_blocks(refine_panel),
+            )
         else:
             build_content = build_panel(workspace) if workspace.step == "ws_ready" else None
         return _workspace(

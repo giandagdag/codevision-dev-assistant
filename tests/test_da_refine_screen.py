@@ -1,5 +1,7 @@
 """The Refine composer on screen (Phase 8 step 13a, rows 8-1, 8-2, 8-12)."""
 
+from datetime import UTC, datetime
+
 import pytest
 
 from agents import da_refine_screen as screen
@@ -10,7 +12,7 @@ from layouts import da_build_panel as bp
 from layouts import da_refine_panels as rp
 from layouts import da_workspace_panel as panel
 from pydantic_classes.da_build_models import BuildState, BuildView, TestRow
-from pydantic_classes.da_refine_models import RefineState, TestSet
+from pydantic_classes.da_refine_models import Conflict, RefineRow, RefineState, TestSet
 from tests.da_refine_play import records_of, written_request
 from tests.da_tree import all_text, by_id, components
 
@@ -164,6 +166,80 @@ def test_13c_tests_get_new_bug_and_yours_tags_and_a_version_line():
 def test_13c_no_test_sets_means_no_note():
     tagged = screen.tag_tests(_view([]), set(), set(), [])
     assert tagged.tests_note == ""
+
+
+def test_13d_written_build_shows_the_protection_card(settings):
+    request_id, _ = written_request(settings)
+
+    tree = draw(request_id)
+
+    card = all_text(by_id(tree, rp.PROTECTION_ID))
+    assert "How your edits are protected" in card
+    assert "Re-scan first" in card and "Keep mine" in card and "Restore" in card
+    assert by_id(tree, rp.CONFLICTS_ID) is None
+    assert by_id(tree, rp.SIDE_ID) is None  # nothing re-scanned yet
+
+
+def test_13d_refine_tag_names_the_refine_and_lane():
+    rows = [
+        RefineRow(
+            request_id="CVDA-2026-0001", refine_number=1, chosen_lane="approach", build_number=1
+        ),
+        RefineRow(request_id="CVDA-2026-0001", refine_number=2, chosen_lane="bug", build_number=2),
+    ]
+    assert screen.refine_tag(rows, 2) == "Refine 2: bug"
+    assert screen.refine_tag(rows, 3) == ""
+
+
+def test_13d_conflicts_show_both_sides_and_two_picks():
+    conflict = Conflict(
+        path="a.py",
+        conflict_id="C-1",
+        his_start=4,
+        his_end=5,
+        his_lines=["mine"],
+        ai_lines=["theirs"],
+        context_before=["x"],
+        context_after=["y"],
+    )
+    panel = screen.RefineBuildPanel(conflicts=[conflict])
+
+    blocks = rp.refine_build_blocks(panel)
+
+    text = all_text(blocks[0])
+    assert "a.py C-1" in text and "Yours" in text and "AI's" in text
+    assert "mine" in text and "theirs" in text
+    assert "Keep mine" in text and "Take the AI's" in text
+
+
+def test_13d_side_by_side_versions_and_empty_panel():
+    diff = screen.FileDiff("a.py", [("old", "new", True), ("same", "same", False)])
+    version = screen.VersionRow(2, "rebuild", datetime.now(UTC), "Ready", ["a.py"], True)
+    panel = screen.RefineBuildPanel(
+        diffs=[diff], not_tested_line="Your edits are not tested yet.", versions=[version]
+    )
+
+    text = all_text(rp.refine_build_blocks(panel))
+
+    assert "App wrote" in text and "Your version" in text and "new" in text
+    assert "Your edits are not tested yet." in text
+    assert "Build 2 (rebuild)" in text and "(last tested)" in text
+    assert rp.refine_build_blocks(screen.RefineBuildPanel()) == []
+    assert rp.refine_build_blocks(None) == []
+
+
+def test_13d_revision_in_progress_draws_with_its_own_pill(settings):
+    request_id, _ = written_request(settings)
+    with open_db(settings.db_path) as conn:
+        conn.execute(
+            "UPDATE da_requests SET status = 'REVISION_IN_PROGRESS' WHERE request_id = ?",
+            (request_id,),
+        )
+
+    tree = draw(request_id)
+
+    assert "REVISION IN PROGRESS" in all_text(tree)
+    assert "Re-scan" not in button_labels(tree)  # the Refine box is off during a lane
 
 
 def test_download_mode_says_upload_folder_to_rescan():
