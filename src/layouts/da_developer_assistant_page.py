@@ -17,6 +17,7 @@ from agents.da_discover_flow import (
     HINT_QUESTION,
     outcome_status,
 )
+from agents.da_refine_screen import RefineBox
 from agents.da_understand_checks import MAX_MESSAGE_LENGTH
 from agents.da_understand_flow import (
     ALWAYS_VISIBLE,
@@ -487,6 +488,7 @@ def render_approach_workspace(
     view: ApproachView,
     workspace: WorkspaceView | None = None,
     build: BuildView | None = None,
+    refine: RefineBox | None = None,
 ) -> list:
     """The workspace from APPROACH_PROPOSED on: Approach is step 3 and its tab opens first.
 
@@ -506,7 +508,7 @@ def render_approach_workspace(
         if building:
             state["build"] = True
         if building:
-            build_content = build_tab(build)
+            build_content = build_tab(build, refine.hint if refine and refine.offered else "")
         else:
             build_content = build_panel(workspace) if workspace.step == "ws_ready" else None
         return _workspace(
@@ -515,7 +517,7 @@ def render_approach_workspace(
             status=view.request.status,
             demo_mode=view.demo_mode,
             messages=[parts.chat_bubble(message) for message in view.messages],
-            composer=_approach_composer(view, workspace, build if building else None),
+            composer=_approach_composer(view, workspace, build if building else None, refine),
             panel=_summary_panel(understand),
             state=state,
             step=BUILD_STEP if building else APPROACH_STEP,
@@ -556,12 +558,16 @@ def _approach_composer(
     view: ApproachView | None,
     workspace: WorkspaceView | None = None,
     build: BuildView | None = None,
+    refine: RefineBox | None = None,
 ) -> dmc.Box:
     """The bottom of the chat in Approach: the buttons of the step, and a text box that opens
-    only at the steps that take typed text (rule G1)."""
+    only at the steps that take typed text (rule G1). The Refine box (Phase 8) opens the text
+    box at `b_written`, or closes it with the cap message."""
     buttons = view.buttons if view else []
     prompt = view.text_prompt if view else ""
     text_open = bool(prompt)
+    if refine is not None and refine.offered:
+        prompt, text_open = refine.placeholder, refine.text_open
     controls = dmc.Box(
         [
             dmc.Textarea(
@@ -592,7 +598,7 @@ def _approach_composer(
         style=da_styles.COMPOSER if text_open else {**da_styles.COMPOSER, "opacity": 0.6},
     )
     if build is not None and not (view is not None and view.step == "escalated"):
-        return dmc.Box([_build_bar(build, workspace), controls])
+        return dmc.Box([_build_bar(build, workspace, refine), controls])
     if view is not None and view.request.status == STATUS_READY_TO_BUILD:
         done = dmc.Box(
             [
@@ -629,20 +635,27 @@ def _hidden_reconnect(workspace: WorkspaceView | None):
     return button
 
 
-def _build_bar(build: BuildView, workspace: WorkspaceView | None = None) -> dmc.Box:
+def _build_bar(
+    build: BuildView, workspace: WorkspaceView | None = None, refine: RefineBox | None = None
+) -> dmc.Box:
     """The buttons under the chat once a build has started (spec section 1). Browser-run ones
-    (Re-scan and build again) start JavaScript; server-run ones use the normal choice path."""
+    (Re-scan and build again) start JavaScript; server-run ones use the normal choice path.
+    At `b_written` the Refine buttons (Re-scan, Check my edits, Restore) are added."""
+    extra_browser = refine.browser_buttons if refine and refine.offered else []
+    extra_server = refine.buttons if refine and refine.offered else []
     shown = [
         parts.choice_button(label, ws_button_id(key, "bar"), parts.PRIMARY)
-        for key, label in build.browser_buttons
+        for key, label in [*build.browser_buttons, *extra_browser]
     ]
+    # Position in this list is the button id (P19). The Build buttons keep their positions; the
+    # Refine ones come after them, so the Build callback still reads the same index.
     shown += [
         parts.choice_button(
             label,
             {"type": CHOICE_TYPE, "index": number},
             parts.SECONDARY if key == "help" else parts.NORMAL,
         )
-        for number, (key, label) in enumerate(build.buttons)
+        for number, (key, label) in enumerate([*build.buttons, *extra_server])
     ]
     reconnect = _hidden_reconnect(workspace)
     if reconnect is not None:

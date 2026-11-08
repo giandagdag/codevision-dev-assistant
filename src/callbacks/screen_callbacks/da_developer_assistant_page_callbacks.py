@@ -25,6 +25,7 @@ from agents.da_discover_flow import (
     get_discovery_view,
     start_discovery,
 )
+from agents.da_refine_screen import get_refine_box
 from agents.da_understand_flow import (
     FORM_OPTIONAL_BOX,
     FormError,
@@ -193,7 +194,20 @@ def show_page(search: str | None, refresh: int | None):
                     workspace_flow.get_workspace_view(settings, request_id) if has_build else None
                 )
                 build = tester_flow.get_build_view(settings, request_id) if has_build else None
-                return render_approach_workspace(view, discovery, approach, workspace, build)
+                refine = (
+                    get_refine_box(
+                        settings,
+                        request_id,
+                        status,
+                        build.state.step,
+                        build.mode,
+                    )
+                    if build is not None
+                    else None
+                )
+                return render_approach_workspace(
+                    view, discovery, approach, workspace, build, refine
+                )
             if status == STATUS_DISCOVERY_CONFIRMED:
                 approach = approach_flow.get_approach_view(settings, request_id)
                 return render_discover_workspace(view, discovery, approach)
