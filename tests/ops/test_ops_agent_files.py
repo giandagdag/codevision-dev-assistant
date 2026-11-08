@@ -118,3 +118,13 @@ def test_every_agent_that_may_use_bash_is_told_one_command_per_call(name):
     _, text = front(name)
     assert "one command per" in text.lower()
     assert "`;`" in text and "`&&`" in text
+
+
+def test_docs_explain_fix_3():
+    for need in ("No more silent stalls", "🔴 Team stalled", "no valid Next line",
+                 "nothing to do, but the job is not finished", "unpushed commits on",
+                 "UNPUSHED: 2 commits on auto/phase-8", "chief_tick.py next",
+                 "exactly one `- Next:`",
+                 "at most 3 plan steps", "one\ncommand per Bash call", "you close it",
+                 "test_ops_zz_real_logs.py", "spec O1"):
+        assert need in DOCS, need

@@ -10,7 +10,7 @@ AS400 comparison: a job schedule entry wakes a small job every 30 minutes. It ch
 | Quiet runner | `ops/quiet.py`, `ops/quiet_hook.py` | Short summary of pytest, ruff, git status/diff/log. Full output in `logs/quiet/` |
 | Safety hook | `ops/safety_hook.py` | No push to `main`, no force push, no `.env`, no deleting outside `logs/` and `ops/state/` |
 | Chief and team | `.claude/agents/chief.md` and others, `ops/chief_tick.py` | The decision rule and the wake-up job |
-| Memory | `STATUS.md` | The chief's whole memory (max 60 lines, has a `Usage:` line) |
+| Memory | `STATUS.md` | The chief's whole memory (max 60 lines, has a `Usage:` line, exactly one `- Next:` line) |
 | Ledger | `logs/usage-ledger.csv` | One line per worker run (stays on the laptop) |
 
 All three hooks only act inside workers (`DA_WORKER=1`). Your own sessions are never blocked.
@@ -86,6 +86,57 @@ The issue is created on the first tick if it does not exist (found by number in
 Nothing from `usage_raw.json`, `.env` or worker reply files is put into it.
 
 The runner starts `claude` with `CREATE_NO_WINDOW` on Windows, so no black window appears.
+
+## No more silent stalls (Phase A fix 3)
+AS400 comparison: a job waiting on a message (MSGW) looks the same as a quiet job until someone
+runs WRKACTJOB. Fix 3 is the alarm that rings, so "stuck" no longer looks like "nothing to do".
+Plain Python, zero tokens: it never starts Claude. Live on the laptop once `auto/phases-7-10` with
+fix 3 is pulled there (Phase 9 starts from it).
+
+**The stall alarm** (`ops/stall.py`, run by `ops/chief_tick.py` on a tick that ends `idle`). The team
+is stalled, first match wins, when:
+1. STATUS.md has no `- Next:` line, or more than one: "no valid Next line".
+2. `Next: none`, no open `needs-gian` issue, and the final PR (`auto/phases-7-10` into `main`) is not
+   open: "nothing to do, but the job is not finished".
+3. A finished worker left commits that `origin` lacks: "unpushed commits on auto/phase-N". This one
+   is checked even while a `needs-gian` issue is open.
+
+A stall opens ONE `needs-gian` issue `🔴 Team stalled: <reason>` (phone notification, same channel as
+questions), one Log line, and a note the board reads. No second issue while one with that title is
+open. The tick never closes it: **you close it** once the cause is fixed. The board stops showing
+STALLED the moment the rule no longer matches. Because the issue itself is `needs-gian`, the board
+normally shows WAITING FOR YOU; STALLED shows alone only if `gh` was down. If `gh` or `git` fails
+inside the alarm, one line goes to `logs/status_board.log` and the tick still returns `idle`.
+Expect one alarm on day one if some STATUS.md was made by hand (spec O1): that is the alarm working.
+A doubled `Next:` line raises it only when the first one says `none` (the tick reads the first line).
+
+**Unpushed commits.** When the tick records a finished, vanished or over-time worker, it compares
+`auto/phase-N` with `origin/auto/phase-N` (`git rev-list --count`, no fetch). More than 0 gives the Log
+line `UNPUSHED: 2 commits on auto/phase-8` and a board warning line, re-counted each tick, so it goes
+away after a push.
+
+**One `Next:` line.** STATUS.md has exactly one `- Next:` line under "## Where we are". Set it with
+`.venv\Scripts\python ops\chief_tick.py next "builder continue Phase 8 from step 10"` (empty text is
+refused; keep the text plain: no quotes inside and no `;` `&` `|` `>`, the safety hook cannot read
+them). It replaces the line and its indented continuation lines, never appends, so STATUS.md stays at
+60 lines or fewer. The chief and builder use this command and never hand-edit the line.
+
+**Builder runs are small.** The builder builds at most 3 plan steps per run, tests, commits and
+pushes after each, then runs `next "builder continue Phase N from step K"` and stops. The chief sees
+that line and relaunches the builder (never a `needs-gian` question). Code review starts only after
+the last plan step. Phase 8's 15 steps become 5 runs.
+
+**Fewer denied calls.** Workers may now run read-only `grep`, `head`, `tail`, `wc`, `git show`,
+`git rev-parse`, `git rev-list`, `git branch`, `git ls-remote` and the smoke check. The deny list is
+unchanged, and the safety hook still blocks workers from editing `ops/`. Agents are told **one
+command per Bash call**: no `;`, `&&` or pipes (they are refused), and to use the Read and Grep tools
+to look at files. Note: `git branch` can still rename or force-move a branch (`-m`, `-f`); only the
+delete flags are blocked by the safety hook.
+
+**Tests no longer write to the real files.** `tests/ops/conftest.py` points the ledger, worker reply
+folder, state folder, quiet logs, board log and STATUS.md at a temp folder for every ops test, and a
+last test (`test_ops_zz_real_logs.py`) checks that the real `logs/usage-ledger.csv` and `logs/workers/`
+did not change. The 5 junk rows already in the laptop ledger are not touched; remove them by hand.
 
 ## How questions reach you
 One GitHub issue per question, label `needs-gian` (or `needs-work-test` for things that need the
