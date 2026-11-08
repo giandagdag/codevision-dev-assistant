@@ -43,9 +43,9 @@ MAX_CHANGES = 3
 
 FileAction = Literal["create", "modify"]
 ReuseChoice = Literal["reuse", "extend", "ignore"]
-ApproachSource = Literal["proposal", "settled", "change"]
+ApproachSource = Literal["proposal", "settled", "change", "revision", "refine"]
 CaseSource = Literal["tester", "developer"]
-PlanChangeSource = Literal["tester_plan", "developer_case"]
+PlanChangeSource = Literal["tester_plan", "developer_case", "revision", "refine"]
 
 # Where the Approach conversation is. "start" is not stored: it means no state row yet.
 ApproachStep = Literal[
@@ -177,6 +177,8 @@ class TestCase(_Shape):
     given: str
     expect: str
     source: CaseSource
+    # Phase 8: written by the Tester for a new or changed criterion in the requirement lane.
+    new: bool = False
 
 
 class TestPlanVersion(_Shape):

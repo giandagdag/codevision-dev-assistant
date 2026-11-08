@@ -42,6 +42,7 @@ from agents.da_approach_checks import (
     limit_reason_problem,
 )
 from agents.da_llm_client import LLMClient, LLMClientError
+from agents.da_refine_hooks import finish_revision, revision_plan_of
 from agents.da_tester_agent import (
     CASE_STEP,
     PLAN_STEP,
@@ -68,6 +69,7 @@ from db_table_functions.db_tbl_da_approach import (
     save_approach_state,
 )
 from db_table_functions.db_tbl_da_audit import ensure_audit_table, insert_audit_event
+from db_table_functions.db_tbl_da_build import ensure_build_tables
 from db_table_functions.db_tbl_da_discovery import count_rounds, read_latest_result
 from db_table_functions.db_tbl_da_requests import (
     get_rulebook_for_request,
@@ -82,6 +84,7 @@ from db_table_functions.db_tbl_da_understand import (
     read_confirmed_record,
     read_messages,
 )
+from db_table_functions.db_tbl_da_workspace import ensure_workspace_tables
 from pydantic_classes.da_approach_models import (
     MAX_CHANGES,
     MAX_DEVELOPER_CASES,
@@ -510,6 +513,8 @@ def accept_test_plan(
                 "All 4 gates passed. READY TO BUILD. The next step is choosing your workspace "
                 "folder with the button below.",
             )
+            # A requirement-lane Refine ends here (no effect for any other request).
+            finish_revision(turn.conn, request_id, now)
     return get_approach_view(settings, request_id)
 
 
@@ -756,13 +761,21 @@ def _run_tester(
     snap = _snapshot(settings, request_id, base_revision)
     decisions = snap.state.decisions
     client, error = _tester_client(settings, PLAN_STEP, tester)
+    revision = revision_plan_of(settings.db_path, request_id)
     result = None
-    if client is not None:
-        result = write_test_plan(client, snap.record, decisions, snap.developer_text)
+    # A change that only removed criteria needs no new cases: the Tester is not asked.
+    no_new_cases = revision is not None and not revision.needs_cases
+    if client is not None and not no_new_cases:
+        # Requirement lane: the Tester sees only the new and changed criteria (spec section 5).
+        asked = snap.record
+        if revision is not None:
+            wanted = [c for c in snap.record.acceptance_criteria if c.id in revision.needs_cases]
+            asked = snap.record.model_copy(update={"acceptance_criteria": wanted})
+        result = write_test_plan(client, asked, decisions, snap.developer_text)
     with _turn(settings.db_path, request_id, base_revision, now) as turn:
         if say_button:
             turn.say("developer", say_button)
-        if result is None or not result.ok:
+        if not no_new_cases and (result is None or not result.ok):
             detail = error or (result.message if result else "") or NOT_REACHABLE
             turn.say(
                 "assistant",
@@ -771,14 +784,21 @@ def _run_tester(
             )
             return
         previous = read_latest_plan(turn.conn, request_id)
-        kept = [c for c in (previous.cases if previous else []) if c.source == "developer"]
+        if revision is not None:
+            # Unchanged criteria keep every case, his "Yours" too; changed and removed lose them.
+            old_cases = previous.cases if previous else []
+            kept = [c for c in old_cases if c.criterion_id not in revision.dropped]
+        else:
+            kept = [c for c in (previous.cases if previous else []) if c.source == "developer"]
         first = highest_test_number(turn.conn, request_id) + 1
+        replies = [] if no_new_cases else result.reply.cases
+        model = "" if no_new_cases else result.model
         fresh = [
             TestCase(
                 test_id=f"T-{number}", criterion_id=case.criterion_id, given=case.given,
-                expect=case.expect, source="tester",
+                expect=case.expect, source="tester", new=revision is not None,
             )
-            for number, case in enumerate(result.reply.cases, start=first)
+            for number, case in enumerate(replies, start=first)
         ]
         cases = sorted([*kept, *fresh], key=lambda c: int(c.test_id.split("-")[1]))
         plan = TestPlanVersion(
@@ -786,14 +806,14 @@ def _run_tester(
             plan_version=(previous.plan_version + 1) if previous else 1,
             approach_version=turn.state.accepted_approach_version,
             cases=cases,
-            source_of_change="tester_plan",
-            model=result.model,
+            source_of_change="revision" if revision is not None else "tester_plan",
+            model=model,
         )
         insert_test_plan(turn.conn, plan, now)
         turn.state.step = "tests"
         turn.audit(
             "llm", "test_plan_written",
-            {"plan_version": plan.plan_version, "cases": len(cases), "model": result.model},
+            {"plan_version": plan.plan_version, "cases": len(cases), "model": model},
         )
         criteria = len({case.criterion_id for case in cases})
         turn.say(
@@ -885,6 +905,9 @@ def _write_transaction(db_path: Path) -> Iterator[sqlite3.Connection]:
         ensure_rulebook_tables(conn)
         ensure_audit_table(conn)
         ensure_approach_tables(conn)
+        # Phase 8: Accept test plan may close a requirement-lane Refine and reset the workspace.
+        ensure_build_tables(conn)
+        ensure_workspace_tables(conn)
         begin_write(conn)
         yield conn
 
@@ -998,8 +1021,10 @@ def _new_version(
     call: str,
     number: int,
     decisions: list[ApproachDecision],
+    source: str | None = None,
 ) -> ApproachVersion:
-    source = {PROPOSE: "proposal", SETTLE: "settled", CHANGE: "change"}[call]
+    # Phase 8 passes "revision" or "refine"; the calls of Phase 4 keep their own names.
+    source = source or {PROPOSE: "proposal", SETTLE: "settled", CHANGE: "change"}[call]
     warnings, zones = compute_warnings(result.reply, pinned.rulebook.policy, snap.discovery)
     return ApproachVersion(
         request_id=snap.request.request_id,
