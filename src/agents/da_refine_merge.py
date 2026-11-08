@@ -70,6 +70,28 @@ def marker_text(ranges: list[LineRange]) -> str:
     return " ".join(parts) + " Do not change them unless the failure report needs it."
 
 
+def side_by_side(left: str, right: str) -> list[tuple[str, str, bool]]:
+    """Two texts as rows of (left line, right line, changed) for the Build tab. A line that exists
+    on one side only has an empty cell on the other. Built with difflib, no new library."""
+    old, new = split_lines(left), split_lines(right)
+    rows: list[tuple[str, str, bool]] = []
+    matcher = difflib.SequenceMatcher(None, old, new, autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            rows += [(line, line, False) for line in old[i1:i2]]
+            continue
+        before, after = old[i1:i2], new[j1:j2]
+        for index in range(max(len(before), len(after))):
+            rows.append(
+                (
+                    before[index] if index < len(before) else "",
+                    after[index] if index < len(after) else "",
+                    True,
+                )
+            )
+    return rows
+
+
 # --- conflicts (D-J) ---
 
 

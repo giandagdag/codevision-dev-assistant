@@ -69,10 +69,12 @@ ALLOWED_MOVES: dict[str, tuple[str, ...]] = {
     # Stop build and "unable to write tests" go back to READY_TO_BUILD; a used-up budget ends in
     # NOT_PASSING. Phase 7: a pass goes to TESTER_REVIEW first (BUILDING to READY_FOR_REVIEW is
     # gone: every pass is reviewed by the independent Tester).
+    # Phase 8: Stop build on a check run goes back to READY_FOR_REVIEW (NOT_PASSING is above).
     STATUS_BUILDING: (
         STATUS_READY_TO_BUILD,
         STATUS_TESTER_REVIEW,
         STATUS_NOT_PASSING,
+        STATUS_READY_FOR_REVIEW,
         STATUS_ESCALATION,
     ),
     # Phase 7 (spec section 3): Must fix with budget left goes back to BUILDING; a clean or

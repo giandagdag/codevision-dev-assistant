@@ -235,9 +235,16 @@ def stop_build(
         tx.close_run("", "", "Stopped by the developer.", tx.state.current_round)
         tx.say("developer", STOP_LABEL)
         tx.audit("developer", "build_stopped", {"build": tx.state.build_number})
-        tx.move_to(STATUS_READY_TO_BUILD)
-        tx.set(step="start", message="")
-        tx.say("assistant", CANCEL_MESSAGE)
+        if tx.state.return_status:
+            # Phase 8: a check run was stopped. His folder was never touched, and the request goes
+            # back to where it was, with the same buttons as before.
+            tx.move_to(tx.state.return_status)
+            tx.set(step="b_written", message="", return_status="", write_state="written")
+            tx.say("assistant", "The check was cancelled. Your folder was not changed.")
+        else:
+            tx.move_to(STATUS_READY_TO_BUILD)
+            tx.set(step="start", message="")
+            tx.say("assistant", CANCEL_MESSAGE)
     return get_state(settings, request_id)
 
 

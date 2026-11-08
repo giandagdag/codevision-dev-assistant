@@ -187,6 +187,9 @@ class BuildState(_Shape):
     write_state: WriteState = "not_written"
     # Why the build paused, or the plain message for b_unable.
     message: str = ""
+    # Phase 8: the status a check run came from (READY_FOR_REVIEW or NOT_PASSING). Stop build on
+    # a check run goes back to it. Empty for a normal build.
+    return_status: str = ""
     revision: int = Field(default=1, ge=1)
 
 

@@ -56,6 +56,7 @@ SPEC_TABLE = {
     # Phase 8, Refine (spec section 10).
     ("READY_FOR_REVIEW", "REVISION_IN_PROGRESS"),
     ("NOT_PASSING", "REVISION_IN_PROGRESS"),
+    ("BUILDING", "READY_FOR_REVIEW"),  # Stop build on a check run
     ("REVISION_IN_PROGRESS", "CLARIFICATION_IN_PROGRESS"),
     ("REVISION_IN_PROGRESS", "READY_FOR_CONFIRMATION"),
     ("REVISION_IN_PROGRESS", "APPROACH_PROPOSED"),
@@ -90,11 +91,13 @@ def test_moves_out_of_ready_to_build():
 
 
 def test_build_moves():
-    # Phase 7: every pass goes through the Tester, so BUILDING no longer reaches READY_FOR_REVIEW.
+    # Phase 7: every pass goes through the Tester. Phase 8: only Stop build on a check run goes
+    # straight back to READY_FOR_REVIEW.
     assert set(ALLOWED_MOVES["BUILDING"]) == {
         "READY_TO_BUILD",
         "TESTER_REVIEW",
         "NOT_PASSING",
+        "READY_FOR_REVIEW",
         "ESCALATION_REQUIRED",
     }
     # Only Get help and "Re-scan and build again" leave a finished build before Phase 8.
