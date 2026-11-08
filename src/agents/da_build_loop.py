@@ -40,6 +40,7 @@ from agents.da_build_flow import (
     _require_request,
     _write,
 )
+from agents.da_refine_merge import plan_merge
 from agents.da_sandbox import run_tests
 from agents.da_workspace_checks import fingerprint
 from configs.da_config import PROJECT_ROOT, Settings
@@ -68,6 +69,7 @@ from db_table_functions.db_tbl_da_build import (
 from db_table_functions.db_tbl_da_refine import (
     add_build_result,
     close_refine,
+    insert_conflict_row,
     read_latest_test_set,
     read_refine_state,
     save_refine_state,
@@ -829,7 +831,10 @@ class _Run:
                 return_status="",
             )
         else:
-            tx.set(step="b_done", current_round=rounds_used, write_state="not_written", message="")
+            found = self._find_conflicts(tx) if self.kind == "rebuild" else 0
+            # Conflicts: the build is finished but nothing is written until he has picked (R5.3).
+            step = "b_conflicts" if found else "b_done"
+            tx.set(step=step, current_round=rounds_used, write_state="not_written", message="")
         event = "build_passed" if passed else "build_not_passing"
         details = {
             "rounds": rounds_used,
@@ -846,6 +851,34 @@ class _Run:
             add_build_result(tx.conn, self.request_id, not passed, tx.now)
         if self.bug_fix or self.finding_fix is not None:
             self._close_bug_refine(tx, passed)
+
+    def _find_conflicts(self, tx: BuildTx) -> int:
+        """R5.3 steps 2 to 4: compare the Generator's result with his version of each file, save
+        every conflict (nothing is written), audit the count. Returns how many were found."""
+        distance = self.inp.policy.refine_conflict_context_lines
+        found = []
+        for item in self.inp.planned:
+            path = _clean(item.path)
+            built = self.inp.code.get(path)
+            versions = read_file_versions(tx.conn, self.request_id, path)
+            written = [v for v in versions if v.kind == "written"]
+            if built is None or not versions or not written:
+                continue  # no app-written version: he has no lines of his own to protect
+            plan = plan_merge(
+                path, written[-1].text, versions[-1].text, built.text, distance, distance
+            )
+            for conflict in plan.conflicts:
+                number = tx.state.build_number
+                insert_conflict_row(tx.conn, self.request_id, number, conflict, tx.now)
+                found.append(conflict)
+        if found:
+            tx.audit("system", "conflicts_found", {"count": len(found)})
+            tx.say(
+                "assistant",
+                f"The rebuild touches {len(found)} place(s) you edited. Nothing is written yet: "
+                "pick Keep mine or Take the AI's for each one.",
+            )
+        return len(found)
 
     def _finding_gone(self, tx: BuildTx, finding) -> bool:
         """The finding is gone when the newest review of this build no longer has it (same file,
