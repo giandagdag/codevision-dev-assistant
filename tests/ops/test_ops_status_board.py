@@ -6,6 +6,7 @@ from pathlib import Path
 
 import chief_tick as c
 import pytest
+import stall
 import status_board as sb
 import usage_guard as g
 from status_board import refresh as real_refresh  # imported before conftest turns it off
@@ -468,3 +469,63 @@ def test_the_runner_keeps_its_own_flags():
 
 def test_status_board_never_imports_chief_tick_and_has_no_real_calls_in_tests():
     assert "chief_tick" not in sys.modules["status_board"].__dict__
+
+
+# ---- Phase A fix 3: STALLED top line and the UNPUSHED warning ----
+
+
+
+
+class AheadGit(FakeGit):
+    """The normal phase 8 answers, plus `git rev-list --count` for the unpushed check."""
+
+    def __init__(self, ahead, **kw):
+        super().__init__(**kw)
+        self.ahead = ahead
+
+    def __call__(self, args):
+        if args[:2] == ["rev-list", "--count"]:
+            return f"{self.ahead}\n"
+        return super().__call__(args)
+
+
+def ahead_git(ahead):
+    base = phase8_git()
+    return AheadGit(ahead, merged=base.merged, refs=base.refs, files=base.files,
+                    subjects=base.subjects)
+
+
+def test_stalled_outranks_idle_and_ready(tmp_path):
+    for next_line in ("- Next: none", "- Next: Phase 8 build"):
+        f = tmp_path / "STATUS.md"
+        f.write_text(f"# S\n## Where we are\n{next_line}\n## Log\n", encoding="utf-8")
+        stall.save_stall(stall.NO_NEXT)
+        first = build("idle", status_file=f).splitlines()[0]
+        assert first == "## 🔴 STALLED: no valid Next line"
+
+
+def test_waiting_for_you_outranks_stalled(status_file):
+    stall.save_stall(stall.NOT_FINISHED)
+    gh = FakeGh(gian=[{"number": 5, "title": "Q", "url": "u"}])
+    assert build("idle", gh=gh, status_file=status_file).splitlines()[0].startswith(
+        "## 🔴 WAITING FOR YOU")
+
+
+def test_stalled_is_gone_when_the_note_is_gone_or_the_tick_is_not_idle(status_file):
+    stall.save_stall(stall.NO_NEXT)
+    assert "STALLED" not in build("would-start", status_file=status_file).splitlines()[0]
+    stall.clear_stall()
+    assert "STALLED" not in build("idle", status_file=status_file).splitlines()[0]
+
+
+def test_as4_unpushed_commits_show_a_warning_that_goes_when_pushed(status_file):
+    stall.remember_unpushed("auto/phase-8")
+    body = build("idle", git=ahead_git(2), status_file=status_file)
+    assert "> ⚠️ UNPUSHED: 2 commits on auto/phase-8" in body.splitlines()[:4]
+    body = build("idle", git=ahead_git(0), status_file=status_file)
+    assert "UNPUSHED" not in body
+
+
+def test_a_git_problem_in_the_warning_check_shows_no_warning(status_file):
+    stall.remember_unpushed("auto/phase-8")
+    assert "UNPUSHED" not in build("idle", status_file=status_file)  # FakeGit fails rev-list
