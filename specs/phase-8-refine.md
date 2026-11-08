@@ -1,6 +1,6 @@
 # Phase 8: Refine (3 lanes, revision mode, edit protection)
 
-Status: DRAFT v0.1 (7 Nov 2026). Written by the spec writer. The chief applies the decision rule
+Status: APPROVED v1.0 by Gian (7 Nov 2026 19:30; all D-x as chosen, D-A option 1). Written by the spec writer. The chief applies the decision rule
 (`specs/phase-a-automation.md` section 6) to D-A to D-N (section 16). The work facts (section 17)
 need Gian and get no recommendation.
 Depends on: Phase 7 (Layer C, labels, findings, Tests tab), merged into `auto/phases-7-10`.
