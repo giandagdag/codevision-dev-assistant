@@ -19,34 +19,61 @@ from agents.da_build_flow import (
     BuildTx,
     _approach_of,
     _check_revision,
+    _insert_written,
     _require_request,
     _require_step,
     _save,
     _save_prescan,
+    _turn,
     _write,
     get_state,
     planned_paths_of,
 )
-from agents.da_refine_merge import side_by_side
+from agents.da_refine_merge import build_restore_set, side_by_side
+from agents.da_workspace_checks import (
+    FactsProblem,
+    build_write_job,
+    fingerprint,
+    stop_message,
+    verify_report,
+)
+from agents.da_workspace_flow import readme_text
 from db_table_functions.da_db import open_db
 from db_table_functions.db_tbl_da_build import (
     BuildError,
     ensure_build_tables,
     insert_build_run,
     next_build_number,
+    read_build_run,
+    read_build_runs,
     read_build_state,
     read_latest_code,
 )
-from db_table_functions.db_tbl_da_refine import read_tested
-from db_table_functions.db_tbl_da_workspace import ensure_workspace_tables, read_file_versions
+from db_table_functions.db_tbl_da_refine import read_tested, set_last_tested
+from db_table_functions.db_tbl_da_workspace import (
+    ensure_workspace_tables,
+    read_file_versions,
+    read_workspace_state,
+)
 from pydantic_classes.da_build_models import BuildRun, BuildState
 from pydantic_classes.da_models import (
     STATUS_BUILDING,
     STATUS_NOT_PASSING,
     STATUS_READY_FOR_REVIEW,
 )
-from pydantic_classes.da_workspace_models import FolderFacts
+from pydantic_classes.da_workspace_models import (
+    FolderFacts,
+    WorkspaceMode,
+    WriteJob,
+    WriteReport,
+    WrittenFile,
+)
 
+RESTORE_KEY, RESTORE_LABEL = "restore", "Restore an earlier version"
+DOWNLOAD_RESCAN_LABEL = "Upload folder to re-scan"
+UPLOAD_BEFORE_DOWNLOAD_LINE = (
+    "Upload your folder before every new download, so I never overwrite your edits."
+)
 RESCAN_KEY, RESCAN_LABEL = "rescan", "Re-scan"
 CHECK_KEY, CHECK_LABEL = "check_edits", "Check my edits"
 NOT_TESTED_LINE = "Your edits are not tested yet. Press Check my edits."
@@ -225,6 +252,213 @@ def fix_myself(
         tx.set()
         _save(tx, base_revision)
     return get_state(settings, request_id)
+
+
+# --- Versions and Restore (section 9, D-L) ---
+
+
+@dataclass
+class VersionRow:
+    """One row of the Versions list: a finished build, rebuild or check run with saved code."""
+
+    build_number: int
+    kind: str
+    ended_at: datetime
+    label: str
+    files: list[str]
+    is_last_tested: bool = False
+
+
+@dataclass
+class RestorePreview:
+    """What the chat shows before a Restore: the warning (if any) and the planned files that the
+    set did not have (they stay as they are)."""
+
+    build_number: int
+    label: str
+    files: list[str]
+    warning: str = ""
+    left_out: list[str] = field(default_factory=list)
+    button_label: str = ""
+
+
+def rescan_label(mode: str) -> str:
+    """Download mode has no folder to read, so the developer uploads it (test 8-40)."""
+    return DOWNLOAD_RESCAN_LABEL if mode == "download" else RESCAN_LABEL
+
+
+def list_versions(settings, request_id: str) -> list[VersionRow]:
+    """Every closed run that saved code, oldest first. Nothing is ever deleted (decision D-H)."""
+    with open_db(settings.db_path) as conn:
+        ensure_build_tables(conn)
+        conn.execute("BEGIN")
+        tested = read_tested(conn, request_id)["last_tested_build"]
+        rows = []
+        for run in read_build_runs(conn, request_id):
+            code = read_latest_code(conn, request_id, run.build_number)
+            if run.ended_at is None or not code:
+                continue
+            rows.append(
+                VersionRow(
+                    run.build_number,
+                    run.kind,
+                    run.ended_at,
+                    run.label,
+                    list(code),
+                    is_last_tested=run.build_number == tested,
+                )
+            )
+    return rows
+
+
+def restore_preview(settings, request_id: str, build_number: int) -> RestorePreview:
+    """Read only. Names every file whose current text (his edit, after a re-scan) the restore
+    would replace, and says the edit stays saved on the server."""
+    with open_db(settings.db_path) as conn:
+        ensure_build_tables(conn)
+        ensure_workspace_tables(conn)
+        conn.execute("BEGIN")
+        state = read_build_state(conn, request_id)
+        run, items, left = _restore_items(conn, request_id, state, build_number)
+        replaced = _replaced_edits(conn, request_id, items)
+    warning = ""
+    if replaced:
+        warning = " ".join(
+            f"Your current edits in `{path}` will be replaced. "
+            "They stay saved on the server and can be restored."
+            for path in replaced
+        )
+    return RestorePreview(
+        build_number,
+        run.label,
+        [path for path, _ in items],
+        warning,
+        left,
+        button_label=f"Restore build {build_number}",
+    )
+
+
+def prepare_restore(settings, request_id: str, build_number: int, base_revision: int) -> WriteJob:
+    """Hop 1: the write job for the browser, the WHOLE set in plan order. The edit guard compares
+    with the newest fingerprints the server knows, so a Re-scan comes first (spec section 9)."""
+    with open_db(settings.db_path) as conn:
+        ensure_build_tables(conn)
+        ensure_workspace_tables(conn)
+        conn.execute("BEGIN")
+        _check_revision(conn, request_id, base_revision)
+        request = _require_request(conn, request_id)
+        state = read_build_state(conn, request_id)
+        _require_refinable(request.status, state)
+        _, items, _ = _restore_items(conn, request_id, state, build_number)
+        return _restore_job(conn, request_id, state, items)
+
+
+def save_restore(
+    settings,
+    request_id: str,
+    build_number: int,
+    report: WriteReport,
+    base_revision: int,
+    mode: WorkspaceMode = "picker",
+    now: datetime | None = None,
+) -> BuildState:
+    """Hop 2: ONE transaction saves the `restore` rows, the audit events, the chat line and the new
+    "last tested". The frozen tests and the record version are not touched. The status stays."""
+    now = now or datetime.now(UTC)
+    with _turn(settings.db_path, request_id, base_revision, now) as tx:
+        _require_refinable(tx.request.status, tx.state)
+        run, items, left = _restore_items(tx.conn, request_id, tx.state, build_number)
+        job = _restore_job(tx.conn, request_id, tx.state, items)
+        try:
+            verify_report(job, report)
+        except FactsProblem as error:
+            raise BuildError(str(error)) from error
+        if report.stopped is None and [i.path for i in report.written] != [
+            f.path for f in job.files
+        ]:
+            raise BuildError("The browser's report does not list every file. Nothing was saved.")
+        for item in report.written:
+            _insert_written(tx, item, mode, tx.state.approach_version)
+        if report.written:
+            files = {i.path: fingerprint(i.text) for i in report.written}
+            tx.audit("system", "workspace_written", {"mode": mode, "files": files})
+        if report.stopped is not None:
+            reason = {"path": report.stopped.path, "reason": report.stopped.reason}
+            tx.audit("system", "workspace_write_stopped", reason)
+            tx.say("assistant", stop_message(job, report))
+        else:
+            _finish_restore(tx, run, build_number, left)
+        tx.set()  # the revision goes up, so an old window is refused
+    return get_state(settings, request_id)
+
+
+def prepare_restore_download(
+    settings, request_id: str, build_number: int, base_revision: int, now: datetime | None = None
+) -> tuple[WriteJob, str]:
+    """Download mode: the ZIP holds the code files of the set only (test 8-40)."""
+    job = prepare_restore(settings, request_id, build_number, base_revision)
+    report = WriteReport(
+        written=[
+            WrittenFile(path=f.path, text=f.text, fingerprint=fingerprint(f.text))
+            for f in job.files
+        ]
+    )
+    save_restore(settings, request_id, build_number, report, base_revision, "download", now)
+    return job, readme_text(job)
+
+
+def _finish_restore(tx: BuildTx, run, build_number: int, left: list[str]) -> None:
+    previous = read_tested(tx.conn, tx.request.request_id)["last_tested_build"]
+    tx.say("developer", f"Restore build {build_number}")
+    tx.audit("developer", "version_restored", {"from": previous, "to": build_number})
+    set_last_tested(tx.conn, tx.request.request_id, build_number, "restore", tx.now)
+    text = (
+        f"Restored build {build_number} ({run.label or run.result_status}). "
+        f"Last tested is now build {build_number}."
+    )
+    if left:
+        text += f" Files the set did not have were left as they are: {', '.join(left)}."
+    tx.say("assistant", text)
+
+
+def _restore_items(conn: sqlite3.Connection, request_id: str, state, build_number: int):
+    """(the run, [(path, text)] in plan order, planned paths the set did not have)."""
+    if state is None:
+        raise BuildError("There is no build for this request yet.")
+    run = read_build_run(conn, request_id, build_number)
+    code = read_latest_code(conn, request_id, build_number)
+    if run is None or run.ended_at is None or not code:
+        raise BuildError(f"Build {build_number} has no saved code to restore.")
+    planned = planned_paths_of(_approach_of(conn, request_id, state))
+    write, left = build_restore_set(planned, {path: item.text for path, item in code.items()})
+    if not write:
+        raise BuildError(f"Build {build_number} has none of the planned files.")
+    return run, list(write.items()), left
+
+
+def _replaced_edits(conn: sqlite3.Connection, request_id: str, items) -> list[str]:
+    """Files whose newest known text is his (a re-scan) and differs from the set's text."""
+    found = []
+    for path, text in items:
+        versions = read_file_versions(conn, request_id, path)
+        if versions and versions[-1].kind == "scanned":
+            if versions[-1].fingerprint != fingerprint(text):
+                found.append(path)
+    return found
+
+
+def _restore_job(conn: sqlite3.Connection, request_id: str, state, items) -> WriteJob:
+    known = {}
+    for path, _ in items:
+        versions = read_file_versions(conn, request_id, path)
+        if versions:
+            known[path] = (versions[-1].fingerprint, versions[-1].line_ending)
+    workspace = read_workspace_state(conn, request_id)
+    folder = workspace.folder_name if workspace and workspace.folder_name else "your folder"
+    try:
+        return build_write_job(request_id, folder, items, known)
+    except FactsProblem as error:
+        raise BuildError(str(error)) from error
 
 
 # --- helpers ---
