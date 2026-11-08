@@ -14,13 +14,14 @@ def _make(tmp_path, log_lines=0):
     return f
 
 
-def test_repo_status_file_is_within_60_lines_and_has_the_usage_line():
-    text = (ROOT / "STATUS.md").read_text(encoding="utf-8")
+def test_status_file_shape_is_within_60_lines_and_has_the_usage_line(tmp_path):
+    # A test copy, not the real STATUS.md: the chief rewrites that file every tick.
+    f = _make(tmp_path, log_lines=40)
+    status.set_usage_line(f, 5, 39, "8 Nov 12:51 SGT", stopped=False)
+    status.add_log(f, "one more")
+    text = f.read_text(encoding="utf-8")
     assert len(text.splitlines()) <= 60
-    assert "Usage:" in text
-    for fact in ("Phases 0 to 6", "auto/phase-7", "needs-work-test", "Q7", "Q9", "Q15",
-                 "P26", "P27", "P28"):
-        assert fact in text
+    assert text.count("Usage:") == 1
 
 
 def test_log_is_trimmed_oldest_first_to_60_lines(tmp_path):

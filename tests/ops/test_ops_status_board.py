@@ -352,9 +352,15 @@ def test_a_failing_pin_is_ignored_and_a_damaged_state_file_acts_as_no_state():
     assert sb.write_issue("x\n", FakeGh(), NOW) == "created"
 
 
-def test_as15_the_board_is_still_written_when_the_plan_is_missing(status_file):
+def test_as15_the_board_is_still_written_when_the_plan_is_missing(status_file, tmp_path,
+                                                                  monkeypatch):
     gh = FakeGh()
-    result = real_refresh("idle", gh, git=phase8_git(plan=False), now=NOW, status_file=status_file)
+    empty_root = tmp_path / "copy"  # a test copy: no specs folder, so the real plan is not read
+    empty_root.mkdir()
+    real_gather = sb.gather
+    monkeypatch.setattr(sb, "gather", lambda *a, **k: real_gather(*a, **{**k, "root": empty_root}))
+    result = real_refresh("idle", gh, git=phase8_git(plan=False), now=NOW,
+                          status_file=status_file)
     assert result == "created"
     body = gh.verbs("issue", "create")[0][gh.verbs("issue", "create")[0].index("--body") + 1]
     assert "(estimate)" in body
