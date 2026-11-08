@@ -40,7 +40,7 @@ from agents.da_build_flow import (
     _require_request,
     _write,
 )
-from agents.da_refine_merge import plan_merge
+from agents.da_refine_merge import his_lines, marker_text, plan_merge
 from agents.da_sandbox import run_tests
 from agents.da_workspace_checks import fingerprint
 from configs.da_config import PROJECT_ROOT, Settings
@@ -215,6 +215,7 @@ class _Run:
         # is one pass of Layers A, B and C on his files: no Generator, no fix rounds, no budget.
         self.kind = "build"
         self.check = False
+        self.merge = False
         self.bug_fix = False
         self.finding_fix = None
         self.base_revision = 0
@@ -378,6 +379,8 @@ class _Run:
                 rules=list(rulebook.rules),
                 reviews=read_reviews(conn, self.request_id, number),
             )
+        # A check run whose files were saved by his picks (Apply my choices): test exactly them.
+        self.merge = self.check and any(f.made_by == "merge" for f in self.inp.code.values())
         self.context = agent.BuildContext(
             charter=self.inp.charter,
             record=self.inp.record,
@@ -578,6 +581,19 @@ class _Run:
                     tx.now,
                 )
 
+    def _his_lines_note(self, path: str) -> str:
+        """R5.3 step 1: on a rebuild, tell the Generator which lines he wrote (last app-written
+        version against his scanned version). Empty when he changed nothing in this file."""
+        if self.kind != "rebuild":
+            return ""
+        with open_db(self.settings.db_path) as conn:
+            conn.execute("BEGIN")
+            versions = read_file_versions(conn, self.request_id, path)
+        written = [v for v in versions if v.kind == "written"]
+        if not versions or not written:
+            return ""
+        return marker_text(his_lines(written[-1].text, versions[-1].text))
+
     def _write_file(
         self, path: str, number: int, contract: Contract, tests: str, failures: str
     ) -> tuple[str, list[LayerAProblem]]:
@@ -596,7 +612,8 @@ class _Run:
         name = path.rsplit("/", 1)[-1]
         line = self._line(f"AI writes {name}", "running")
         prompt = agent.build_code_prompt(
-            self.context, contract, path, action, number, tests, base, failures
+            self.context, contract, path, action, number, tests, base, failures,
+            self._his_lines_note(path),
         )
         result = agent.write_code(self.client("generator"), self.context, prompt, action)
         if result.kind in ("unreachable", "too_big"):
@@ -765,6 +782,13 @@ class _Run:
         """Take his current text of every planned file as this run's code, then Layers A and B."""
         self._alive()
         planned = [_clean(item.path) for item in self.inp.planned]
+        if self.merge:  # saved already by Apply my choices
+            texts = {path: self.inp.code[path].text for path in planned if path in self.inp.code}
+            self._alive()
+            layer_a = self._layer_a(texts, contract, [])
+            layer_b = self._layer_b(tests) if layer_a.ok else None
+            self._record_round(1, layer_a, layer_b, contract, tests)
+            return
         texts = {
             path: self.inp.start_texts[path] for path in planned if path in self.inp.start_texts
         }
@@ -821,7 +845,16 @@ class _Run:
         status, label = result_for(passed, label)
         tx.close_run(status, label, "", rounds_used)
         tx.move_to(status)
-        if self.check:
+        if self.merge:
+            # His merged files are not in his folder yet: the write follows, whatever the label.
+            tx.set(
+                step="b_done",
+                current_round=rounds_used,
+                write_state="not_written",
+                message="",
+                return_status="",
+            )
+        elif self.check:
             # Nothing is written after a check run: the files in his folder are the tested ones.
             tx.set(
                 step="b_written",

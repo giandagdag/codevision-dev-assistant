@@ -32,7 +32,7 @@ BuildStep = Literal[
 # Whether the code files are in the developer's folder yet.
 WriteState = Literal["not_written", "written", "stopped"]
 FileKind = Literal["contract", "test", "code"]
-MadeBy = Literal["generator", "tester", "system"]
+MadeBy = Literal["generator", "tester", "system", "merge"]  # merge: his picks (Phase 8)
 TestResultKind = Literal["pass", "fail", "error", "skipped"]
 ProgressState = Literal["pending", "running", "done", "failed"]
 ContractKind = Literal["function", "class"]

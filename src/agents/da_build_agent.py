@@ -312,8 +312,12 @@ def build_code_prompt(
     frozen_tests: str,
     current_text: str,
     failures: str = "",
+    developer_lines: str = "",
 ) -> str:
-    """One file per call: this file in full, the other files by contract line only."""
+    """One file per call: this file in full, the other files by contract line only.
+    `developer_lines` (Phase 8, R5.3): a sentence that says which lines he wrote himself."""
+    if developer_lines and action == "modify":
+        current_text = f"{current_text}\n\n{developer_lines}"
     failure_section = ""
     if failures:
         failure_section = (
