@@ -48,6 +48,45 @@ Manager (the tick then logs it as vanished). Task Scheduler: keep "do not start 
 Turns per worker are in `AGENT_MAX_TURNS` (builder 400, chief 60). Inside a worker a Bash command may
 run 15 minutes (30 at most), because the full pytest run takes about 8.5 minutes.
 
+## The "Team status" issue (Phase A fix 2)
+AS400 comparison: a job that refreshes ONE message on a shared display at every wake-up. You look;
+you do not run a report. Open GitHub on your phone and read the pinned issue **🤖 Team status**
+(label `team-status`).
+
+`ops/status_board.py` builds it from local files (STATUS.md, `ops/state/running.json`,
+`ops/state/usage.json`, git, and `gh issue list`). Plain Python, zero tokens. The tick refreshes
+it at the end of **every** wake-up (`busy`, `stopped`, `idle`, `ran`, `hooks-broken`,
+`would-start`) and after `launch` and `stop`. It only edits when the text changed, plus once an
+hour, so GitHub does not notify you for edits. If the board fails (for example `gh` is down) the
+tick carries on, and one line goes to `logs/status_board.log`.
+
+| Top line | Meaning |
+|---|---|
+| 🔴 WAITING FOR YOU | an open `needs-gian` issue, or STATUS.md `Next:` says "waiting for Gian". It outranks the rest, so during a blind guard or broken hooks it is normally red (the tick opens a `needs-gian` issue for those) |
+| ⚫ GUARD BLIND | the usage cannot be read, nothing starts |
+| 🟡 PAUSED: usage | the guard said STOP; the line shows which limit and the reset time (SGT) |
+| 🟠 HOOKS BROKEN | the safety hooks cannot start, no worker launched |
+| 🟢 WORKING | a worker is running (agent, phase, running time) |
+| ⚪ IDLE | nothing running and `Next:` is none |
+| 🔵 READY FOR NEXT STEP | work exists; the next tick starts it |
+
+**Progress bars** are 10 characters of `▓░`, rounded down. Phase progress: Spec 15%, Plan 10%,
+Build 55% (by step: highest "Phase N step K" commit over the plan's numbered steps), Code review
+15% (5% per "code review round" commit; the full 15% when the branch is pushed and the last round
+says "0 Must fix", a stand-in because the board cannot run tests), Merged 5%. Overall =
+(merged phases x 100 + current phase %) / 4. A stage that cannot be read counts as not done and the
+line says "(estimate)". The usage bars show the guard's numbers next to the stop lines (85% for 5h,
+80% weekly), or `blind`.
+
+**A stale "Updated" time means check the laptop**: the tick has stopped running (laptop off or
+asleep, Task Scheduler stopped).
+
+The issue is created on the first tick if it does not exist (found by number in
+`ops/state/status_issue.json`, then by title), pinned once, and never closed by the tick.
+Nothing from `usage_raw.json`, `.env` or worker reply files is put into it.
+
+The runner starts `claude` with `CREATE_NO_WINDOW` on Windows, so no black window appears.
+
 ## How questions reach you
 One GitHub issue per question, label `needs-gian` (or `needs-work-test` for things that need the
 work laptop). You get a phone notification and answer in a comment. The chief reads it on its next wake-up.

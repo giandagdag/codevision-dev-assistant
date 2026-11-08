@@ -22,6 +22,7 @@ from subprocess import DEVNULL
 
 import ledger
 import status
+import status_board
 import usage_guard
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -166,7 +167,25 @@ def tick(
     preflight: Callable[[], str | None] | None = None,
     alive: Callable[[int], bool] | None = None,
     killer: Callable[[int], None] | None = None,
+    board: Callable[[str], object] | None = None,
 ) -> str:
+    """One wake-up, then the Team status board (S2) whatever the result was. See `_tick`."""
+    result = _tick(reader, gh, launcher, status_file, now, preflight, alive, killer)
+    run_board(board, result)
+    return result
+
+
+def run_board(board: Callable[[str], object] | None, result: str) -> None:
+    """Refresh the Team status issue. A failure here must never change what the tick returns."""
+    if board is None:
+        return
+    try:
+        board(result)
+    except Exception:  # noqa: BLE001 - refresh logs its own failures; this is the safety net
+        pass
+
+
+def _tick(reader, gh, launcher, status_file, now, preflight, alive, killer) -> str:
     """One wake-up. Returns 'busy', 'stopped', 'idle', 'would-start', 'hooks-broken' or 'ran'.
 
     The job queue is looked at first (F4): a worker still running means 'busy' and nothing else
@@ -557,9 +576,12 @@ def worker_command(prompt: str, agent: str = "chief", model: str = "sonnet") -> 
     ]
 
 
-def real_launcher(prompt: str, agent: str = "chief") -> WorkerResult:
+def real_launcher(prompt: str, agent: str = "chief", platform: str | None = None) -> WorkerResult:
+    # S5: the runner has no console, so on Windows its `claude` child would open a black window
+    # (which could be closed by mistake). CREATE_NO_WINDOW keeps it hidden.
+    extra = {"creationflags": CREATE_NO_WINDOW} if (platform or sys.platform) == "win32" else {}
     done = subprocess.run(worker_command(prompt, agent, AGENT_MODELS[agent]), capture_output=True,
-                          text=True, env=worker_env(agent), cwd=ROOT, check=False)
+                          text=True, env=worker_env(agent), cwd=ROOT, check=False, **extra)
     return WorkerResult(done.returncode, done.stdout, stderr=done.stderr)
 
 
@@ -588,19 +610,27 @@ def main(argv: list[str] | None = None, gh: Gh | None = None) -> int:
     rw.add_argument("--prompt", required=True)
     sub.add_parser("stop", help="stop the running worker (for Gian)")
     args = parser.parse_args(argv)
+
+    def board(result: str) -> None:
+        status_board.refresh(result, gh, alive=pid_alive)
+
     try:
         if args.cmd == "tick":
             launcher = real_launcher if args.launch else None
-            print(tick(usage_guard.endpoint_reader, gh, launcher))
+            print(tick(usage_guard.endpoint_reader, gh, launcher, board=board))
         elif args.cmd == "issue":
             print(open_gian_issue(args.title, args.body, args.label, gh) or "already open")
         elif args.cmd == "launch":
-            print(start_background(args.agent, args.prompt, args.stage, args.phase,
-                                   usage_guard.endpoint_reader, gh, STATUS_FILE, time.time()))
+            result = start_background(args.agent, args.prompt, args.stage, args.phase,
+                                      usage_guard.endpoint_reader, gh, STATUS_FILE, time.time())
+            print(result)
+            run_board(board, result)
         elif args.cmd == "run-worker":
             run_worker(args.agent, args.prompt)
         elif args.cmd == "stop":
-            print(stop_worker(usage_guard.endpoint_reader, STATUS_FILE, time.time()))
+            result = stop_worker(usage_guard.endpoint_reader, STATUS_FILE, time.time())
+            print(result)
+            run_board(board, result)
         elif args.cmd == "pause":
             status.mark_paused(STATUS_FILE, args.stage, args.issue)
         else:
