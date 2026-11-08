@@ -182,13 +182,13 @@ def start_revision_approach(
 # --- helpers ---
 
 
-def _check_step(settings, request_id: str, base_revision: int, step: str) -> RefineState:
+def _check_step(settings, request_id: str, base_revision: int, *steps: str) -> RefineState:
     """Stale check and step check before any slow work. Nothing is written."""
     with open_db(settings.db_path) as conn:
         ensure_build_tables(conn)
         conn.execute("BEGIN")
         state = _load_state(conn, request_id, base_revision)
-    _require_step(state, step)
+    _require_step(state, *steps)
     return state
 
 

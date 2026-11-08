@@ -42,7 +42,7 @@ from agents.da_approach_checks import (
     limit_reason_problem,
 )
 from agents.da_llm_client import LLMClient, LLMClientError
-from agents.da_refine_hooks import finish_revision, revision_plan_of
+from agents.da_refine_hooks import approach_lane_plan_of, finish_revision, revision_plan_of
 from agents.da_tester_agent import (
     CASE_STEP,
     PLAN_STEP,
@@ -762,9 +762,12 @@ def _run_tester(
     decisions = snap.state.decisions
     client, error = _tester_client(settings, PLAN_STEP, tester)
     revision = revision_plan_of(settings.db_path, request_id)
+    # Approach lane: None = not that lane, True = same design decisions, so the plan is kept.
+    lane_keeps = approach_lane_plan_of(settings.db_path, request_id)
+    keeps_plan = lane_keeps is True
     result = None
     # A change that only removed criteria needs no new cases: the Tester is not asked.
-    no_new_cases = revision is not None and not revision.needs_cases
+    no_new_cases = keeps_plan or (revision is not None and not revision.needs_cases)
     if client is not None and not no_new_cases:
         # Requirement lane: the Tester sees only the new and changed criteria (spec section 5).
         asked = snap.record
@@ -788,6 +791,8 @@ def _run_tester(
             # Unchanged criteria keep every case, his "Yours" too; changed and removed lose them.
             old_cases = previous.cases if previous else []
             kept = [c for c in old_cases if c.criterion_id not in revision.dropped]
+        elif keeps_plan:
+            kept = list(previous.cases)  # the decisions did not change: every case stays
         else:
             kept = [c for c in (previous.cases if previous else []) if c.source == "developer"]
         first = highest_test_number(turn.conn, request_id) + 1
@@ -806,7 +811,11 @@ def _run_tester(
             plan_version=(previous.plan_version + 1) if previous else 1,
             approach_version=turn.state.accepted_approach_version,
             cases=cases,
-            source_of_change="revision" if revision is not None else "tester_plan",
+            source_of_change=(
+                "revision" if revision is not None
+                else "refine" if lane_keeps is not None
+                else "tester_plan"
+            ),
             model=model,
         )
         insert_test_plan(turn.conn, plan, now)
@@ -816,6 +825,13 @@ def _run_tester(
             {"plan_version": plan.plan_version, "cases": len(cases), "model": model},
         )
         criteria = len({case.criterion_id for case in cases})
+        if keeps_plan:
+            turn.say(
+                "assistant",
+                f"The design decisions did not change, so the {len(cases)} test cases stay as "
+                "they are. Do you accept the test plan?",
+            )
+            return
         turn.say(
             "assistant",
             f"The Tester wrote {len(cases)} test cases covering {criteria} of "

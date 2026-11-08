@@ -114,6 +114,9 @@ class ApproachReply(_Shape):
     libraries: list[Annotated[str, Field(min_length=1, max_length=LIBRARY_LIMIT)]] = Field(
         default_factory=list, max_length=LIBRARY_COUNT_LIMIT
     )
+    # Phase 8 approach lane: true when the asked change would need an acceptance criterion changed.
+    # The app then refuses the reply and points to the requirement lane.
+    changes_criteria: bool = False
 
 
 class ApproachDecision(_Shape):

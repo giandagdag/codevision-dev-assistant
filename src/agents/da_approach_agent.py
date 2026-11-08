@@ -61,7 +61,9 @@ CALL_RULES: dict[str, str] = {
     ),
     CHANGE: (
         "The developer asked for a change to the plan. Apply it. You may ask a new design "
-        "choice only if the change really needs one."
+        "choice only if the change really needs one. If the change would need an acceptance "
+        'criterion of the request to change, add "changes_criteria": true and leave the plan '
+        "as it was."
     ),
 }
 
@@ -105,6 +107,7 @@ class ScriptedApproachClient:
 
     def __init__(self, call: str, script_file: Path = FAKE_SCRIPT_FILE):
         self.model = SCRIPT_MODEL
+        self._call = call
         self._entry = json.loads(Path(script_file).read_text(encoding="utf-8"))[call]
 
     def complete(self, prompt: str, system: str | None = None) -> LLMReply:
@@ -128,7 +131,17 @@ class ScriptedApproachClient:
             for item in self._entry["reuse_decisions"]
             if item["cite"] in numbers
         ]
+        if self._call == CHANGE and _criterion_switch_on():
+            entry["changes_criteria"] = True
         return LLMReply(text=json.dumps(entry), provider="fake", model=self.model)
+
+
+def _criterion_switch_on() -> bool:
+    """Test-only switch `approach_changes_criterion` (set in da_build_agent.FAKE_SWITCHES). The
+    import is here because da_build_agent imports this file."""
+    from agents import da_build_agent
+
+    return "approach_changes_criterion" in da_build_agent.FAKE_SWITCHES
 
 
 def get_approach_client(settings: Settings, call: str) -> LLMClient:

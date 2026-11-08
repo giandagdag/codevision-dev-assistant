@@ -15,7 +15,11 @@ from pathlib import Path
 
 from agents.da_refine_checks import diff_records
 from db_table_functions.da_db import open_db
-from db_table_functions.db_tbl_da_approach import read_approach_versions
+from db_table_functions.db_tbl_da_approach import (
+    read_approach_state,
+    read_approach_versions,
+    read_latest_plan,
+)
 from db_table_functions.db_tbl_da_audit import insert_audit_event
 from db_table_functions.db_tbl_da_build import ensure_build_tables
 from db_table_functions.db_tbl_da_refine import (
@@ -35,6 +39,8 @@ STEP_REQ_FINDINGS = "req_findings"  # Discover ran on the new version; "Findings
 STEP_REQ_APPROACH = "req_approach"  # findings confirmed; the revision approach is being made
 STEP_REQ_PLAN = "req_plan"  # the revision approach is shown; accept it, then the test plan
 APPROACH_STEPS = (STEP_REQ_APPROACH, STEP_REQ_PLAN)
+# Approach lane: the new approach version is shown; accept it, then the test plan (spec section 6).
+STEP_APPROACH_PLAN = "approach_plan"
 
 DROPPED_FILES_LINE = (
     "These files are no longer in the plan. Delete them yourself if you do not need them: {paths}."
@@ -46,7 +52,8 @@ class RevisionPlan:
     """What changed in the record, in the words the test plan needs."""
 
     refine_number: int
-    diff: RecordDiff
+    # None for the approach lane: the record did not change.
+    diff: RecordDiff | None
     # Criteria that need new Tester cases (added and changed).
     needs_cases: list[str] = field(default_factory=list)
     # Criteria whose old cases are dropped (changed and removed).
@@ -74,6 +81,21 @@ def read_revision_plan(conn: sqlite3.Connection, request_id: str) -> RevisionPla
     )
 
 
+def _approach_lane_plan(conn: sqlite3.Connection, request_id: str) -> RevisionPlan | None:
+    """The approach lane at its test plan step, in the shape finish_revision needs."""
+    state = read_refine_state(conn, request_id)
+    if state is None or state.step != STEP_APPROACH_PLAN:
+        return None
+    rows = [r for r in read_refines(conn, request_id) if r.refine_number == state.refine_number]
+    if not rows:
+        return None
+    return RevisionPlan(
+        refine_number=state.refine_number,
+        diff=None,
+        old_approach_version=rows[0].approach_version_before,
+    )
+
+
 def revision_plan_of(db_path: Path, request_id: str) -> RevisionPlan | None:
     """The same, on its own read connection (for the part that runs before an AI call)."""
     with open_db(db_path) as conn:
@@ -82,24 +104,58 @@ def revision_plan_of(db_path: Path, request_id: str) -> RevisionPlan | None:
         return read_revision_plan(conn, request_id)
 
 
+def approach_lane_keeps_plan(conn: sqlite3.Connection, request_id: str) -> bool | None:
+    """None unless an approach lane waits for its test plan. Otherwise True when the design
+    decisions are the same as the ones the current test plan was written from: the Tester is
+    then not asked again and the plan is carried over to the new approach version (8-20)."""
+    state = read_refine_state(conn, request_id)
+    if state is None or state.step != STEP_APPROACH_PLAN:
+        return None
+    plan = read_latest_plan(conn, request_id)
+    approach_state = read_approach_state(conn, request_id)
+    if plan is None or approach_state is None:
+        return False
+    versions = read_approach_versions(conn, request_id)
+    written_from = next((v for v in versions if v.approach_version == plan.approach_version), None)
+    if written_from is None:
+        return False
+    return _decision_key(written_from.decisions) == _decision_key(approach_state.decisions)
+
+
+def approach_lane_plan_of(db_path: Path, request_id: str) -> bool | None:
+    """The same, on its own read connection (for the part that runs before an AI call)."""
+    with open_db(db_path) as conn:
+        ensure_build_tables(conn)
+        conn.execute("BEGIN")
+        return approach_lane_keeps_plan(conn, request_id)
+
+
+def _decision_key(decisions) -> list[tuple[str, str]]:
+    return [(item.question, item.choice) for item in decisions]
+
+
 def finish_revision(conn: sqlite3.Connection, request_id: str, now: datetime) -> None:
     """Called inside Accept test plan, in its write transaction, once the gate has passed.
 
     Closes the Refine, lists the files the new plan dropped (never deleted), and sends the
     workspace back to its first step so the folder check runs again on the new file plan.
+    Works for the requirement lane and for the approach lane.
     """
     plan = read_revision_plan(conn, request_id)
+    if plan is None:
+        plan = _approach_lane_plan(conn, request_id)
     if plan is None:
         return
     request = read_request(conn, request_id)
     approaches = read_approach_versions(conn, request_id)
     newest = approaches[-1]
     old = next((v for v in approaches if v.approach_version == plan.old_approach_version), None)
+    lane = "requirement" if plan.diff is not None else "approach"
     close_refine(
         conn,
         request_id,
         plan.refine_number,
-        result="requirement",
+        result=lane,
         record_version_after=request.version,
         approach_version_after=newest.approach_version,
         build_number=0,
@@ -122,7 +178,7 @@ def finish_revision(conn: sqlite3.Connection, request_id: str, now: datetime) ->
         )
     state = read_refine_state(conn, request_id)
     insert_audit_event(
-        conn, request_id, "system", "refine_requirement_ready", {"refine": plan.refine_number}, now
+        conn, request_id, "system", f"refine_{lane}_ready", {"refine": plan.refine_number}, now
     )
     done = {"step": "start", "chosen_lane": "", "pending_feedback": "", "pending_record": None}
     save_refine_state(conn, state.model_copy(update=done), state.revision, now)

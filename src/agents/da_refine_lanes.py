@@ -100,9 +100,17 @@ STEP_REQ_REVISE = "req_revise"  # the lane is chosen, the revision call has not 
 STEP_REQ_CHECKPOINT = "req_checkpoint"  # the diff is shown, Confirm v2 or Cancel revision
 STEP_REQ_DISCOVER = "req_discover"  # v2 is saved; Discover runs on it (step 7b)
 STEP_APPROACH = "approach_start"
+STEP_APPROACH_REFUSED = "approach_refused"  # the reply changed a criterion; switch or cancel
 STEP_BUG = "bug_start"
 # Steps where Cancel still gives everything back (nothing is saved for the new version yet).
-CANCEL_STEPS = (STEP_LANE_CHOICE, STEP_REQ_REVISE, STEP_REQ_CHECKPOINT, STEP_APPROACH, STEP_BUG)
+CANCEL_STEPS = (
+    STEP_LANE_CHOICE,
+    STEP_REQ_REVISE,
+    STEP_REQ_CHECKPOINT,
+    STEP_APPROACH,
+    STEP_APPROACH_REFUSED,
+    STEP_BUG,
+)
 
 
 @dataclass
