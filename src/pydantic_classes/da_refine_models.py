@@ -118,6 +118,17 @@ class ConflictPick(BaseModel):
 # --- saved rows (spec section 13) ---
 
 
+class PendingRepro(_Shape):
+    """A repro test that fails on today's code, waiting for his "Yes, this is the bug"."""
+
+    case_id: str
+    criterion_id: str = Field(pattern=CRITERION_ID_PATTERN)
+    given: str
+    expect: str
+    method: str
+    failure: str = ""
+
+
 class RefineState(_Shape):
     """One row per request (da_refine_state). Its own revision, for the stale check (F1)."""
 
@@ -142,6 +153,10 @@ class RefineState(_Shape):
     # Requirement lane: the proposed next record version, shown with its diff until he decides.
     pending_record: RequestRecord | None = None
     lane_unusable: bool = False
+    # Bug lane: the repro test waiting for his click, and the tries used so far (not rounds).
+    repro: PendingRepro | None = None
+    repro_tries: int = Field(default=0, ge=0)
+    repro_passed_today: int = Field(default=0, ge=0)
 
 
 class RefineRow(_Shape):

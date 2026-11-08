@@ -102,8 +102,13 @@ STEP_REQ_DISCOVER = "req_discover"  # v2 is saved; Discover runs on it (step 7b)
 STEP_APPROACH = "approach_start"
 STEP_APPROACH_REFUSED = "approach_refused"  # the reply changed a criterion; switch or cancel
 STEP_BUG = "bug_start"
+STEP_BUG_CONFIRM = "bug_confirm"  # the repro test fails today; Yes, this is the bug / No
+STEP_BUG_HELP = "bug_help"  # the tries are used up; Get help is offered (step 12)
+STEP_BUG_REBUILD = "bug_rebuild"  # the test is appended; the fix round comes next
 # Steps where Cancel still gives everything back (nothing is saved for the new version yet).
 CANCEL_STEPS = (
+    STEP_BUG_CONFIRM,
+    STEP_BUG_HELP,
     STEP_LANE_CHOICE,
     STEP_REQ_REVISE,
     STEP_REQ_CHECKPOINT,
@@ -273,6 +278,9 @@ def choose_lane(
             refine_count=state.refine_count + 1,
             chosen_lane=lane,
             from_status=request.status,
+            repro=None,
+            repro_tries=0,
+            repro_passed_today=0,
         )
         return _save(tx, base_revision)
 
@@ -407,7 +415,7 @@ def cancel(
                 record_version_after=request.version,
                 approach_version_after=0,
                 build_number=0,
-                repro_passed_today=0,
+                repro_passed_today=state.repro_passed_today,
                 now=now,
             )
             tx.move_to(state.from_status or STATUS_READY_FOR_REVIEW)
@@ -421,6 +429,9 @@ def cancel(
             chosen_lane="",
             pending_record=None,
             lane_unusable=False,
+            repro=None,
+            repro_tries=0,
+            repro_passed_today=0,
         )
         return _save(tx, base_revision)
 
