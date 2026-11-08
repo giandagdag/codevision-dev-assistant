@@ -28,6 +28,8 @@ STATUS_READY_FOR_REVIEW = "READY_FOR_REVIEW"
 STATUS_NOT_PASSING = "NOT_PASSING"
 # Phase 7 (Independent Tester), spec section 3. TESTING stays unused.
 STATUS_TESTER_REVIEW = "TESTER_REVIEW"
+# Phase 8 (Refine), spec section 10: from the lane click until the lane hands over (D-A option 1).
+STATUS_REVISION = "REVISION_IN_PROGRESS"
 
 STATUSES: tuple[str, ...] = (
     STATUS_DRAFT,
@@ -46,6 +48,7 @@ STATUSES: tuple[str, ...] = (
     STATUS_READY_FOR_REVIEW,
     STATUS_NOT_PASSING,
     STATUS_TESTER_REVIEW,
+    STATUS_REVISION,
 )
 
 # The only moves allowed: the spec 3.1 table, plus the Discover moves of Phase 3 (spec section 2).
@@ -83,9 +86,27 @@ ALLOWED_MOVES: dict[str, tuple[str, ...]] = {
     ),
     # Get help, "Re-scan and build again" after the edit guard stopped the write (B9), and
     # "Run the Tester review again" when the label is Unable to assess (Phase 7, D-D).
-    # Refine (Phase 8) adds the other ways out of these two.
-    STATUS_READY_FOR_REVIEW: (STATUS_BUILDING, STATUS_ESCALATION, STATUS_TESTER_REVIEW),
-    STATUS_NOT_PASSING: (STATUS_BUILDING, STATUS_ESCALATION),
+    # Phase 8: choosing a lane moves to REVISION_IN_PROGRESS.
+    STATUS_READY_FOR_REVIEW: (
+        STATUS_BUILDING,
+        STATUS_ESCALATION,
+        STATUS_TESTER_REVIEW,
+        STATUS_REVISION,
+    ),
+    STATUS_NOT_PASSING: (STATUS_BUILDING, STATUS_ESCALATION, STATUS_REVISION),
+    # Phase 8 (spec section 10). Requirement lane: Understand in revision mode (clarifying
+    # questions, then the checkpoint READY_FOR_CONFIRMATION), or straight to the approach.
+    # Approach lane: APPROACH_PROPOSED. Bug lane and Fix it: BUILDING. Cancel: back to where
+    # Refine started (READY_FOR_REVIEW or NOT_PASSING). Get help: ESCALATION_REQUIRED.
+    STATUS_REVISION: (
+        STATUS_CLARIFICATION,
+        STATUS_READY,
+        STATUS_APPROACH_PROPOSED,
+        STATUS_BUILDING,
+        STATUS_READY_FOR_REVIEW,
+        STATUS_NOT_PASSING,
+        STATUS_ESCALATION,
+    ),
     STATUS_ESCALATION: (),
 }
 

@@ -134,6 +134,11 @@ DEFAULT_BUILD_MAX_PARALLEL = 2
 DEFAULT_TESTER_MAX_PROMPT_CHARS = 60000
 DEFAULT_TESTER_MAX_ATTEMPTS = 2
 DEFAULT_TESTER_QUOTE_WINDOW = 2
+# Phase 8 (Refine), spec section 12. Made-up starter values; real ones are set at work.
+DEFAULT_REFINE_MAX_PER_REQUEST = 5
+DEFAULT_REFINE_LANE_MAX_ATTEMPTS = 2
+DEFAULT_REFINE_REPRO_MAX_ATTEMPTS = 2
+DEFAULT_REFINE_CONFLICT_CONTEXT_LINES = 3
 DEFAULT_BUILD_BLOCKED_IMPORTS = [
     "subprocess",
     "socket",
@@ -216,6 +221,13 @@ class Policy(_RulebookPart):
     tester_max_prompt_chars: int = Field(default=DEFAULT_TESTER_MAX_PROMPT_CHARS, ge=1000)
     tester_max_attempts: int = Field(default=DEFAULT_TESTER_MAX_ATTEMPTS, ge=1, le=5)
     tester_quote_window: int = Field(default=DEFAULT_TESTER_QUOTE_WINDOW, ge=0, le=10)
+    # Phase 8 (Refine), spec section 12. Bounds keep a typo from making a loop endless.
+    refine_max_per_request: int = Field(default=DEFAULT_REFINE_MAX_PER_REQUEST, ge=1, le=20)
+    refine_lane_max_attempts: int = Field(default=DEFAULT_REFINE_LANE_MAX_ATTEMPTS, ge=1, le=5)
+    refine_repro_max_attempts: int = Field(default=DEFAULT_REFINE_REPRO_MAX_ATTEMPTS, ge=1, le=5)
+    refine_conflict_context_lines: int = Field(
+        default=DEFAULT_REFINE_CONFLICT_CONTEXT_LINES, ge=0, le=10
+    )
 
     @field_validator("new_file_name_pattern")
     @classmethod

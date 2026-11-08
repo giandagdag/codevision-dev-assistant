@@ -367,6 +367,43 @@ def test_7_tester_numbers_outside_their_limits_are_refused(seed_rulebook, name, 
         Rulebook.model_validate(data)
 
 
+REFINE_FIELDS = {
+    "refine_max_per_request": 5,
+    "refine_lane_max_attempts": 2,
+    "refine_repro_max_attempts": 2,
+    "refine_conflict_context_lines": 3,
+}
+
+
+def test_8_39_a_rulebook_saved_before_phase_8_loads_with_the_starter_values(seed_rulebook):
+    old = seed_rulebook.model_dump(mode="json")
+    for name in REFINE_FIELDS:
+        del old["policy"][name]
+
+    loaded = Rulebook.model_validate(old)
+
+    for name, value in REFINE_FIELDS.items():
+        assert getattr(loaded.policy, name) == value
+    assert loaded.policy == seed_rulebook.policy
+
+
+@pytest.mark.parametrize(
+    ("name", "bad"),
+    [
+        ("refine_max_per_request", 0),
+        ("refine_lane_max_attempts", 6),
+        ("refine_repro_max_attempts", 0),
+        ("refine_conflict_context_lines", 11),
+    ],
+)
+def test_8_refine_numbers_outside_their_limits_are_refused(seed_rulebook, name, bad):
+    data = seed_rulebook.model_dump(mode="json")
+    data["policy"][name] = bad
+
+    with pytest.raises(ValidationError):
+        Rulebook.model_validate(data)
+
+
 def test_a_rulebook_saved_before_phase_4_loads_with_the_starter_values(seed_rulebook):
     old = seed_rulebook.model_dump(mode="json")
     for name in (
