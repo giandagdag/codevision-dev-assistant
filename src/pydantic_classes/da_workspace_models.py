@@ -17,7 +17,7 @@ from pydantic_classes.da_request_record_models import ChatMessage
 # Where the workspace is. "start" is not stored: it means no state row yet. ws_picking and
 # ws_checking are shown by the browser only (plan decision P1), so they are not saved.
 WorkspaceStep = Literal["start", "ws_blocked", "ws_ready", "ws_fallback", "escalated"]
-WorkspaceMode = Literal["picker", "download"]
+WorkspaceMode = Literal["picker", "download", "restore"]
 FileKind = Literal["baseline", "written", "scanned"]
 LineEnding = Literal["\n", "\r\n"]
 ScanOutcome = Literal["unchanged", "changed", "missing"]

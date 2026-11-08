@@ -20,6 +20,7 @@ from datetime import datetime
 
 from db_table_functions.da_db import to_db_time
 from db_table_functions.db_tbl_da_approach import ensure_approach_tables
+from db_table_functions.db_tbl_da_refine import ensure_refine_tables
 from db_table_functions.db_tbl_da_tester import ensure_tester_tables
 from db_table_functions.db_tbl_da_understand import (
     STALE_MESSAGE,
@@ -156,6 +157,17 @@ def ensure_build_tables(conn: sqlite3.Connection) -> None:
     ensure_approach_tables(conn)
     conn.executescript(_CREATE_TABLES_SQL)
     ensure_tester_tables(conn)  # Phase 7: the Tester's three tables ride along
+    ensure_refine_tables(conn)  # Phase 8: Refine's tables ride along
+    _add_kind_column(conn)
+
+
+def _add_kind_column(conn: sqlite3.Connection) -> None:
+    """Phase 8: da_build_runs gets a `kind` column. CREATE TABLE IF NOT EXISTS does not change a
+    table that already exists, so an older database gets the column here. Old rows read as
+    `build`."""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(da_build_runs)")}
+    if "kind" not in columns:
+        conn.execute("ALTER TABLE da_build_runs ADD COLUMN kind TEXT NOT NULL DEFAULT 'build'")
 
 
 # --- the working state ---
@@ -226,9 +238,15 @@ def next_build_number(conn: sqlite3.Connection, request_id: str) -> int:
 
 def insert_build_run(conn: sqlite3.Connection, run: BuildRun) -> None:
     conn.execute(
-        "INSERT INTO da_build_runs (request_id, build_number, approach_version, started_at)"
-        " VALUES (?, ?, ?, ?)",
-        (run.request_id, run.build_number, run.approach_version, to_db_time(run.started_at)),
+        "INSERT INTO da_build_runs (request_id, build_number, approach_version, started_at, kind)"
+        " VALUES (?, ?, ?, ?, ?)",
+        (
+            run.request_id,
+            run.build_number,
+            run.approach_version,
+            to_db_time(run.started_at),
+            run.kind,
+        ),
     )
 
 
@@ -419,6 +437,7 @@ def _to_run(row: sqlite3.Row) -> BuildRun:
         result_status=row["result_status"],
         label=row["label"],
         stop_reason=row["stop_reason"],
+        kind=row["kind"],
     )
 
 

@@ -25,6 +25,7 @@ BuildStep = Literal[
     "b_done",
     "b_written",
     "b_write_stopped",
+    "b_conflicts",  # Phase 8: the build is done, the write waits for his picks per conflict
     "b_unable",
     "escalated",
 ]
@@ -201,6 +202,8 @@ class BuildRun(_Shape):
     result_status: str = ""
     label: str = ""
     stop_reason: str = ""
+    # Phase 8: a build after a Refine is a rebuild; Check my edits is a check run (no Generator).
+    kind: Literal["build", "rebuild", "check"] = "build"
 
 
 class BuildFile(_Shape):
