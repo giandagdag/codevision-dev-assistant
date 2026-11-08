@@ -1,4 +1,4 @@
-"""Proves Phases 0, 1, 2A, 2C, 2D, 3 and 4 work end to end.
+"""Proves Phases 0 to 8 work end to end (items 27 and 28 are the Refine bug and requirement lanes).
 
 Run: .venv\\Scripts\\python src\\da_smoke_check.py
 """
@@ -12,6 +12,9 @@ from tempfile import TemporaryDirectory
 from agents import da_approach_flow as approach
 from agents import da_build_flow as build
 from agents import da_build_loop as build_loop
+from agents import da_refine_bug as refine_bug
+from agents import da_refine_lanes as refine_lanes
+from agents import da_refine_revision as refine_revision
 from agents import da_tester_flow as tester_flow
 from agents import da_workspace_flow as workspace
 from agents.da_discover_flow import confirm_discovery, start_discovery
@@ -404,6 +407,67 @@ def _run_build_steps(settings: Settings, request_id: str, folder: FakeBrowserFol
     print(
         f"25. {len(report.written)} code files written to the pretend folder (no tests folder); "
         f"the step is {state.step}"
+    )
+    _run_refine_bug_step(settings, request_id, folder)
+    _run_refine_requirement_step(settings, request_id)
+
+
+def _write_built_files(settings: Settings, request_id: str, folder: FakeBrowserFolder) -> None:
+    """Write the finished build to the pretend folder, the way the Build tab does."""
+    revision = build.get_revision(settings, request_id)
+    job = build.prepare_write(settings, request_id, revision)
+    state = build.save_write(settings, request_id, folder.run_job(job), revision)
+    if state.step != "b_written":
+        raise UnderstandError(f"The write ended at {state.step}.")
+
+
+def _run_refine_bug_step(settings: Settings, request_id: str, folder: FakeBrowserFolder) -> None:
+    """Item 27 (Phase 8): the bug lane. The fake Tester writes a test that fails today, the
+    developer confirms it, and a fresh fix build (build 2) passes with the test set kept."""
+    refine_rev = lambda: refine_lanes.get_refine_revision(settings, request_id)  # noqa: E731
+    state = refine_lanes.suggest(settings, request_id, "The upload is wrong", refine_rev())
+    if state.suggested_lane != "bug":
+        raise UnderstandError(f"The suggested lane was {state.suggested_lane}, not bug.")
+    refine_lanes.choose_lane(settings, request_id, "bug", refine_rev())
+    state = refine_bug.start_repro(settings, request_id, refine_rev())
+    if state.step != "bug_confirm":
+        raise UnderstandError(f"The repro test ended at {state.step}, not bug_confirm.")
+    refine_bug.confirm_repro(settings, request_id, refine_rev())
+    refine_bug.start_bug_fix(settings, request_id, refine_rev())
+    outcome = build_loop.run_build(settings, request_id, build_number=2)
+    shown = tester_flow.get_build_view(settings, request_id)
+    # The scripted fake code never really fixes the bug, so NOT_PASSING is the honest result here.
+    if outcome != "done" or shown.request_status not in ("READY_FOR_REVIEW", "NOT_PASSING"):
+        raise UnderstandError(
+            f"The fix build ended as {outcome} at {shown.state.step}, "
+            f"status {shown.request_status}."
+        )
+    _write_built_files(settings, request_id, folder)
+    print(
+        f"27. Bug lane: the repro test {state.repro.case_id} failed today, was confirmed, and "
+        f"fix build {shown.run.build_number} ended as {shown.request_status} "
+        f"({shown.tests_passing} frozen tests passing)"
+    )
+
+
+def _run_refine_requirement_step(settings: Settings, request_id: str) -> None:
+    """Item 28 (Phase 8): the requirement lane up to the new approach. The request record gets
+    v2, Discover runs on it, and a revision approach follows."""
+    refine_rev = lambda: refine_lanes.get_refine_revision(settings, request_id)  # noqa: E731
+    state = refine_lanes.suggest(settings, request_id, "Reject files over 5 MB", refine_rev())
+    if state.suggested_lane != "requirement":
+        raise UnderstandError(f"The suggested lane was {state.suggested_lane}, not requirement.")
+    refine_lanes.choose_lane(settings, request_id, "requirement", refine_rev())
+    refine_lanes.revise(settings, request_id, refine_rev())
+    refine_lanes.confirm_revision(settings, request_id, refine_rev())
+    refine_revision.run_discover(settings, request_id, refine_rev())
+    refine_revision.confirm_findings(settings, request_id, refine_rev())
+    state = refine_revision.start_revision_approach(settings, request_id, refine_rev())
+    if state.step != "req_plan":
+        raise UnderstandError(f"The revision approach ended at {state.step}, not req_plan.")
+    print(
+        "28. Requirement lane: the record became v2, Discover ran on it, and a revision "
+        f"approach is waiting for his accept (step {state.step})"
     )
 
 

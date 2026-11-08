@@ -16,8 +16,9 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from agents.da_build_agent import get_build_client
 from agents.da_build_flow import _require_request
-from agents.da_llm_client import LLMClient, LLMClientError, get_llm_client
+from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_refine_agent import (
     LANE_ROLE,
     REVISION_ROLE,
@@ -533,7 +534,9 @@ def _call(settings, role: str, client: LLMClient | None, ask):
     """Run one AI call. Returns (AIResult or None, error text). A missing setting or an AI that
     does not answer gives no raise: the flow shows the plain message instead."""
     try:
-        client = client or get_llm_client(role, settings)  # type: ignore[arg-type]
+        # get_build_client gives the scripted fake for the fake provider, so the smoke check and
+        # the screen demo get usable lane, revision and repro answers without a real AI.
+        client = client or get_build_client(settings, role)
         return ask(client), ""
     except (ConfigError, LLMClientError) as error:
         return None, str(error)

@@ -132,6 +132,15 @@ def test_8_12_the_cap_stops_a_new_refine(settings, written):
         suggest(settings, request_id, StubClient())
 
 
+def test_the_fake_provider_answers_the_lane_call_without_a_stub(settings, written):
+    """Found by the smoke check: with no client given, the fake provider must give a usable lane."""
+    request_id, _ = written
+
+    state = lanes.suggest(settings, request_id, "The upload is wrong", rev(settings, request_id))
+
+    assert state.suggested_lane == "bug" and not state.lane_unusable
+
+
 # --- 8-13, 8-14, 8-18: revision mode ---
 
 CHANGE_AND_ADD = {
