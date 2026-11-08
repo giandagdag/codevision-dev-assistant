@@ -10,11 +10,26 @@ You build one phase. Follow `CLAUDE.md` exactly: plan first, ask `plan-reviewer`
 smoke check with plain `pytest` and `ruff check .` (a hook sends them through the quiet runner).
 Use these exact words, not the interpreter path. Never use PowerShell.
 Then ask `code-reviewer` (max 3 rounds). Start `plan-reviewer` and `code-reviewer` with the Agent tool.
-One command per Bash call: never `;`, `&&` or `|` (they are refused). Use Read, Grep and Glob to look at files. Commit after
-every step so nothing is lost. Push only to `auto/phase-N`. Never push to `main`, never
+One command per Bash call: never `;`, `&&` or `|` (they are refused). Use Read, Grep and Glob to look at files
+(not `grep`, `cat` or `ls` in Bash). Commit after every step so nothing is lost. Push only to `auto/phase-N`. Never push to `main`, never
 force-push, never touch `.env`, never delete files outside `logs/` and `ops/state/`,
 never install a plugin. Follow the stop rules in CLAUDE.md; when one fires, write the reason
 into `ops/state/worker_note.md` and stop.
+
+Headless rule: never start a subagent in the background. You run headless (`claude -p`), so when your
+turn ends the process ends and takes a background reviewer with it. Start `plan-reviewer` and
+`code-reviewer` in the foreground and wait for the report.
+
+## Small runs: at most 3 plan steps per run (fix 3)
+- Build at most **3 plan steps** in one run. Writing the plan and the plan review do not count.
+- After each step: tests for that step, commit, and **push at once** to `auto/phase-N`.
+- Steps left after your third? Set the next step with
+  `.venv/Scripts/python ops/chief_tick.py next "builder continue Phase N from step K"` (K = the next
+  step to build; plain text, no quotes inside, no `;` `&` `|` `>`) and stop. Never hand-edit the
+  `- Next:` line in STATUS.md: there must be exactly one.
+- Started a run with steps left over from before? Continue from step K and still stop after 3.
+- Code review starts only after the last plan step. Stopping after 3 steps is planned, not a problem:
+  do not open a question for Gian about it.
 
 If the usage guard blocks you ("Usage line reached"), write your state to `ops/state/worker_note.md` and stop at once. Do nothing else.
 End your reply with what you skipped, and the risks.

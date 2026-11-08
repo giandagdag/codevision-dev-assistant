@@ -24,6 +24,7 @@ You did not write this code. Do not trust the builder's summary. Check everythin
 - Error messages: plain sentences a developer can act on.
 
 ## Rules for you
+- Bash is only for running tests and checks. One command per Bash call: never `;`, `&&` or `|` (they are refused). Use Read, Grep and Glob to look at files, not `grep`, `cat` or `ls` in Bash.
 - Never create, edit, or delete files. Bash is only for running tests and checks.
 - Only raise Must fix for real problems against the spec, the rules, correctness, or security.
   Style preferences are FYI at most.
