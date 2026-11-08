@@ -6,8 +6,10 @@ AS400 picture: the command-key line at the bottom of a 5250 screen. Which keys a
 the state of the job, and this file decides which ones.
 """
 
+import ast
 from dataclasses import dataclass, field
 
+from agents.da_build_checks import case_ids_from_method, find_test_methods
 from agents.da_refine_checks import (
     cap_message,
     criterion_marks,
@@ -27,10 +29,12 @@ from agents.da_refine_flow import (
 from agents.da_refine_lanes import get_refine_state
 from db_table_functions.da_db import open_db
 from db_table_functions.db_tbl_da_approach import read_approach_versions
-from db_table_functions.db_tbl_da_refine import read_all_records
+from db_table_functions.db_tbl_da_audit import list_audit_events
+from db_table_functions.db_tbl_da_refine import read_all_records, read_test_sets
 from db_table_functions.db_tbl_da_requests import get_rulebook_for_request
 from pydantic_classes.da_approach_models import ApproachVersion
-from pydantic_classes.da_refine_models import RecordDiff
+from pydantic_classes.da_build_models import BuildView, TestRow
+from pydantic_classes.da_refine_models import RecordDiff, TestSet
 from pydantic_classes.da_request_record_models import RequestRecord
 
 REFINE_PLACEHOLDER = "Tell me what to change or fix, then press Send."
@@ -86,6 +90,70 @@ def get_refine_box(settings, request_id: str, status: str, step: str, mode: str)
     return make_refine_box(
         status, step, count, cap.refine_max_per_request, mode, has_edits=bool(edits.changed)
     )
+
+
+# --- tags on the Tests tab (step 13c) ---
+
+
+def _method_docs(text: str) -> dict[str, str]:
+    """case id -> first line of the test method's docstring."""
+    docs: dict[str, str] = {}
+    try:
+        methods = find_test_methods(ast.parse(text))
+    except SyntaxError:
+        return docs
+    for name, method in methods.items():
+        ids = case_ids_from_method(name)
+        if ids:
+            docs[ids[0]] = (ast.get_docstring(method) or "").split("\n")[0]
+    return docs
+
+
+def _row_tag(row: TestRow, new_ids: set[str]) -> str:
+    if row.yours:
+        return "Yours"
+    return "New" if row.test_id in new_ids else ""
+
+
+def tag_tests(
+    build: BuildView, new_ids: set[str], yours_ids: set[str], test_sets: list[TestSet]
+) -> BuildView:
+    """Pure rule: New (requirement lane), Bug (repro test) or Yours on every test, repro and
+    own tests that live only in the appended test sets get a row too, and a line says which test
+    set version and approach version the list belongs to."""
+    rows = [row.model_copy(update={"tag": _row_tag(row, new_ids)}) for row in build.tests]
+    if not test_sets:
+        return build.model_copy(update={"tests": rows})
+    latest = test_sets[-1]
+    docs = _method_docs(latest.text)
+    results = {row.test_id: row.result for row in build.tests}
+    seen = {row.test_id for row in rows}
+    for item in test_sets:
+        for case_id in item.added_case_ids:
+            if case_id in seen:
+                continue
+            seen.add(case_id)
+            rows.append(
+                TestRow(
+                    test_id=case_id,
+                    criterion_id="",
+                    tag="Yours" if case_id in yours_ids else "Bug",
+                    description=docs.get(case_id, ""),
+                    result=results.get(case_id, ""),
+                )
+            )
+    note = f"Test set version {latest.test_set_version}, approach version {latest.approach_version}"
+    return build.model_copy(update={"tests": rows, "tests_note": note})
+
+
+def get_tagged_build(settings, request_id: str, build: BuildView, plan) -> BuildView:
+    """Reads the test sets and the audit trail, then tags. `plan` is the saved test plan or None."""
+    new_ids = {case.test_id for case in plan.cases if case.new} if plan else set()
+    with open_db(settings.db_path) as conn:
+        test_sets = read_test_sets(conn, request_id)
+    events = list_audit_events(settings.db_path, request_id) if test_sets else []
+    yours = {e.details.get("case") for e in events if e.event_type == "own_test_added"}
+    return tag_tests(build, new_ids, yours, test_sets)
 
 
 # --- version history for the Summary and Approach tabs (step 13b) ---

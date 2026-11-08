@@ -263,6 +263,8 @@ class TestRow(BaseModel):
     test_id: str
     criterion_id: str
     yours: bool = False
+    # Phase 8: "New" (requirement lane), "Bug" (repro test) or "Yours"; "" for a plain test.
+    tag: str = ""
     description: str
     # The newest result of this test: pass, fail, error, skipped, or "" when it has not run.
     result: str = ""
@@ -291,6 +293,8 @@ class BuildView(BaseModel):
     max_rounds: int = 3
     time_limit: int = 60
     tests: list[TestRow] = Field(default_factory=list)
+    # Phase 8: "Test set version 3, approach version 2" (empty before any Refine added a test).
+    tests_note: str = ""
     # True when a round ran but the tests never did, because the code checks (Layer A) failed.
     tests_not_run: bool = False
     test_code: str = ""

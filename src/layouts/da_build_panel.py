@@ -31,6 +31,7 @@ EDIT_HINT_ID = "da-build-edit-hint"
 SUMMARY_ID = "da-build-summary"
 TESTS_LIST_ID = "da-tests-list"
 TESTS_CODE_ID = "da-tests-code"
+TESTS_VERSION_ID = "da-tests-version"
 
 TESTS_NOT_RUN = "Not run: the code checks (Layer A) failed first. See the Build tab."
 TESTS_NOTE = "These tests run on the CodeVision server. They are not copied to your folder."
@@ -135,6 +136,9 @@ def tests_tab(view: BuildView | None) -> list:
             [
                 *report,
                 dmc.Text(f"{len(view.tests)} frozen tests", fw=600, size="sm"),
+                dmc.Text(view.tests_note, size="xs", c=da_styles.MUTED, id=TESTS_VERSION_ID)
+                if view.tests_note
+                else None,
                 not_run,
                 table,
                 dmc.Text(TESTS_NOTE, size="xs", c=da_styles.MUTED, id="da-tests-note"),
@@ -318,7 +322,8 @@ def _this_build(view: BuildView) -> dmc.Paper:
 
 
 def _test_row(item: TestRow) -> dmc.TableTr:
-    name = f"{item.test_id} (Yours)" if item.yours else item.test_id
+    tag = item.tag or ("Yours" if item.yours else "")
+    name = f"{item.test_id} ({tag})" if tag else item.test_id
     return dmc.TableTr(
         [
             dmc.TableTd(dmc.Text(name, size="xs", fw=600)),

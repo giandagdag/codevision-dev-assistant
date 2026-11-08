@@ -9,7 +9,8 @@ from db_table_functions.db_tbl_da_approach import read_approach_versions
 from layouts import da_build_panel as bp
 from layouts import da_refine_panels as rp
 from layouts import da_workspace_panel as panel
-from pydantic_classes.da_refine_models import RefineState
+from pydantic_classes.da_build_models import BuildState, BuildView, TestRow
+from pydantic_classes.da_refine_models import RefineState, TestSet
 from tests.da_refine_play import records_of, written_request
 from tests.da_tree import all_text, by_id, components
 
@@ -119,6 +120,50 @@ def test_13b_approach_list_shows_the_source_of_each_version(settings):
 
     text = all_text(rp.approach_version_blocks(history)[0])
     assert "source revision" in text
+
+
+def _view(tests):
+    return BuildView(
+        state=BuildState(request_id="CVDA-2026-0001"), revision=1, request_status="X", tests=tests
+    )
+
+
+def test_13c_tests_get_new_bug_and_yours_tags_and_a_version_line():
+    rows = [
+        TestRow(test_id="T-1", criterion_id="AC-1", description="old", result="pass"),
+        TestRow(test_id="T-2", criterion_id="AC-2", description="fresh"),
+        TestRow(test_id="T-3", criterion_id="AC-3", description="mine", yours=True),
+    ]
+    text = (
+        "class T:\n"
+        "    def test_T_90_AC_1(self):\n"
+        '        """The bug test."""\n'
+        "    def test_T_91_AC_1(self):\n"
+        '        """My own test."""\n'
+    )
+    sets = [
+        TestSet(
+            request_id="CVDA-2026-0001",
+            test_set_version=2,
+            approach_version=2,
+            added_case_ids=["T-90", "T-91"],
+            text=text,
+            fingerprint="x",
+        ),
+    ]
+
+    tagged = screen.tag_tests(_view(rows), {"T-2"}, {"T-91"}, sets)
+
+    tags = {row.test_id: row.tag for row in tagged.tests}
+    assert tags == {"T-1": "", "T-2": "New", "T-3": "Yours", "T-90": "Bug", "T-91": "Yours"}
+    assert tagged.tests_note == "Test set version 2, approach version 2"
+    html = all_text(bp.tests_tab(tagged))
+    assert "T-90 (Bug)" in html and "T-2 (New)" in html
+
+
+def test_13c_no_test_sets_means_no_note():
+    tagged = screen.tag_tests(_view([]), set(), set(), [])
+    assert tagged.tests_note == ""
 
 
 def test_download_mode_says_upload_folder_to_rescan():
