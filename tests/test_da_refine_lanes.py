@@ -241,6 +241,20 @@ def test_a_correction_at_the_checkpoint_runs_the_revision_again(settings, writte
     assert "Make it 10 MB" in client.prompts[0] and "Reject big files" in client.prompts[0]
 
 
+def test_a_second_correction_still_carries_the_first(settings, written):
+    request_id, _ = written
+    start_requirement_lane(settings, request_id)
+    lanes.revise(settings, request_id, rev(settings, request_id), client=StubClient(CHANGE_AND_ADD))
+    lanes.revise(
+        settings, request_id, rev(settings, request_id), "Make it 10 MB", StubClient(CHANGE_AND_ADD)
+    )
+    client = StubClient(CHANGE_AND_ADD)
+
+    lanes.revise(settings, request_id, rev(settings, request_id), "Also log it", client)
+
+    assert "Make it 10 MB" in client.prompts[0] and "Also log it" in client.prompts[0]
+
+
 def test_8_18_cancel_revision_saves_nothing_and_goes_back(settings, written):
     request_id, _ = written
     start_requirement_lane(settings, request_id)

@@ -37,8 +37,10 @@ def split_lines(text: str) -> list[str]:
 
 
 def join_lines(lines: list[str], ending_text: str) -> str:
-    """Lines back to text, in the style (line ending) of `ending_text`, with a final line break."""
-    body = "\n".join(lines) + ("\n" if lines else "")
+    """Lines back to text, in the style (line ending) of `ending_text`. A final line break is kept
+    only if his text had one (R5.2: untouched bytes stay his)."""
+    final = ending_text.endswith("\n") or ending_text == ""
+    body = "\n".join(lines) + ("\n" if lines and final else "")
     return apply_line_ending(body, line_ending_of(ending_text))
 
 

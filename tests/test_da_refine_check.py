@@ -171,6 +171,20 @@ def test_8_6_an_edit_that_breaks_a_test_ends_not_passing_with_the_report(setting
         assert read_tested(conn, request_id)["last_tested_build"] == 2
 
 
+def test_8_7_ill_fix_it_myself_changes_no_status_and_says_what_to_do(settings, written):
+    request_id, folder = written
+    folder.edit(MODIFY, "def validate(path):\n    return False\n")
+    rescan(settings, request_id, folder)
+    check_it(settings, request_id)
+
+    state = rflow.fix_myself(settings, request_id, revision(settings, request_id))
+
+    assert request_status(settings, request_id) == "NOT_PASSING"
+    assert state.step == "b_written"
+    assert chat(settings, request_id, "assistant")[-1] == rflow.FIX_MYSELF_LINE
+    assert "fix_myself" in event_types(settings, request_id)
+
+
 def test_the_check_run_uses_a_new_build_number_and_the_old_builds_stay(settings, written):
     request_id, folder = written
     edit_with_a_note(folder)

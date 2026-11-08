@@ -314,8 +314,10 @@ def revise(
         tx = RefineTx(conn, request, state, now)
         if correction:
             tx.say("developer", correction)
+            # Keep it, so a second correction still carries the first one.
+            tx.set(pending_feedback=feedback)
         if proposed is None:
-            detail = " ".join(p for p in problems if p)
+            detail = " ".join(p for p in problems if p) or "The answer was not usable."
             tx.say(
                 "assistant", f"I could not work out the change. {detail} Say it again, or cancel."
             )

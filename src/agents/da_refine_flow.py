@@ -52,7 +52,9 @@ CHECK_KEY, CHECK_LABEL = "check_edits", "Check my edits"
 NOT_TESTED_LINE = "Your edits are not tested yet. Press Check my edits."
 ONLY_PLANNED_LINE = "Only the planned files are read. Edits in other files are not picked up."
 NO_CHANGES_LINE = "I found no changes in the planned files."
-EDIT_STATUSES = (STATUS_READY_FOR_REVIEW, STATUS_NOT_PASSING)
+FIX_MYSELF_LABEL = "I'll fix it myself"
+FIX_MYSELF_LINE = "Edit the file in your folder, then press Re-scan."
+EDIT_STATUSES =(STATUS_READY_FOR_REVIEW, STATUS_NOT_PASSING)
 
 
 @dataclass
@@ -193,6 +195,29 @@ def start_check(
             message="",
             return_status=came_from,
         )
+        _save(tx, base_revision)
+    return get_state(settings, request_id)
+
+
+# --- I'll fix it myself (R3, test 8-7) ---
+
+
+def fix_myself(
+    settings, request_id: str, base_revision: int, now: datetime | None = None
+) -> BuildState:
+    """After a failed check run: he fixes the file himself. Nothing changes except a chat line and
+    an audit event; the status stays NOT_PASSING."""
+    now = now or datetime.now(UTC)
+    with _write(settings.db_path) as conn:
+        request = _require_request(conn, request_id)
+        _check_revision(conn, request_id, base_revision)
+        state = read_build_state(conn, request_id)
+        _require_refinable(request.status, state)
+        tx = BuildTx(conn, request, state, now)
+        tx.say("developer", FIX_MYSELF_LABEL)
+        tx.audit("developer", "fix_myself", {"build": state.build_number})
+        tx.say("assistant", FIX_MYSELF_LINE)
+        tx.set()
         _save(tx, base_revision)
     return get_state(settings, request_id)
 

@@ -153,6 +153,16 @@ def test_lines_the_ai_does_not_touch_stay_byte_for_byte_his():
             assert result[number - 1] == split_lines(his)[number - 1]
 
 
+def test_a_file_without_a_final_line_break_stays_without_one():
+    his = edit_line(WRITTEN, 10, "MY CHANGE").rstrip("\n")
+    ai = his.replace("line 25\n", "FAR AWAY\n")
+    plan = plan_merge("src/a.py", WRITTEN, his, ai, 1, 1)
+
+    result = merge_picks(plan, {})
+
+    assert "FAR AWAY" in result and not result.endswith("\n")
+
+
 def test_the_files_own_line_ending_is_kept():
     his = edit_line(WRITTEN, 10, "MY CHANGE").replace("\n", "\r\n")
     ai = his.replace("line 25\r\n", "FAR AWAY\r\n")
