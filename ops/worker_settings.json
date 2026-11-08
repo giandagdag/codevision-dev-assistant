@@ -29,7 +29,21 @@
       "Bash(.venv/Scripts/python:*)",
       "Bash(python -m pytest:*)",
       "Bash(python -m ruff:*)",
-      "Bash(python ops/quiet.py:*)"
+      "Bash(python ops/quiet.py:*)",
+      "Bash(grep:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(git show:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git rev-list:*)",
+      "Bash(git branch --list:*)",
+      "Bash(git branch --show-current:*)",
+      "Bash(git branch -a:*)",
+      "Bash(git ls-remote:*)",
+      "Bash(python src/da_smoke_check.py:*)",
+      "Bash(.venv/Scripts/python src/da_smoke_check.py:*)",
+      "Bash(\"$DA_PYTHON\" src/da_smoke_check.py:*)"
     ],
     "deny": [
       "Bash(git push --force:*)",

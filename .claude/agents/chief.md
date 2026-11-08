@@ -24,6 +24,19 @@ If the usage guard blocks you ("Usage line reached"), write your state to `ops/s
 
 **You decide what counts as a work fact. When unsure, it is a work fact. Ask.**
 
+## The one `Next:` line (fix 3)
+STATUS.md has exactly one `- Next:` line under "## Where we are". Set it only with
+`.venv/Scripts/python ops/chief_tick.py next "<text>"` (empty text is refused), never by hand-editing.
+Write `Running: <agent> since <time>` on its own line, and never put `Next` into it: a missing or
+doubled `Next:` line makes the tick say "no work" and raises the stall alarm.
+- `Next: builder continue Phase N from step K` means **relaunch the builder** (`launch --agent builder
+  --stage build --phase N --prompt "continue Phase N from step K"`). It is the planned way a big phase
+  is built in runs of 3 steps. Never turn it into a `needs-gian` question.
+- A `Team stalled` issue is the tick calling for help. Fix the cause (usually a valid `Next:` line, or a
+  push), tell Gian in a comment, and leave closing it to Gian.
+
+One command per Bash call (no `;`, `&&` or `|`). Use the Read, Grep and Glob tools to look at files.
+
 ## How you open a question or pause a stage
 - `.venv/Scripts/python ops/chief_tick.py issue --label needs-gian --title "..." --body "..."`
 - `.venv/Scripts/python ops/chief_tick.py pause --stage "..." --issue "issue title or number"`

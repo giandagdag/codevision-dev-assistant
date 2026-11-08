@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 from pathlib import Path
 
+import stall
 import usage_guard
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -287,6 +288,8 @@ class Inputs:
     facts: PhaseFacts | None = None
     merged_count: int = 0
     overall: int = 0
+    stall: str | None = None  # why the last idle tick found the team stalled
+    warnings: list[str] = field(default_factory=list)
 
 
 def _cut(text: str, limit: int) -> str:
@@ -311,9 +314,13 @@ def _next_is_none(text: str) -> bool:
 def top_line(i: Inputs) -> str:
     """First match wins (spec section 3)."""
     nxt = i.next_text.lower()
-    if i.needs_gian or "waiting for gian" in nxt:
-        count = f" ({len(i.needs_gian)} open)" if i.needs_gian else ""
+    # A "Team stalled" issue is the alarm itself, so it is shown as STALLED, not as a question.
+    asked = [x for x in i.needs_gian if not stall.is_stall_title(x.title)]
+    if asked or "waiting for gian" in nxt:
+        count = f" ({len(asked)} open)" if asked else ""
         return f"## 🔴 WAITING FOR YOU{count}"
+    if i.stall and i.result == "idle":
+        return f"## 🔴 STALLED: {i.stall}"
     if i.result == "stopped":
         if i.usage is None or not i.usage_fresh:
             return "## ⚫ GUARD BLIND: the usage cannot be read, nothing starts"
@@ -343,7 +350,9 @@ def _usage_row(label: str, value, stop: int, i: Inputs) -> str:
 
 
 def build_body(i: Inputs) -> str:
-    out = [top_line(i), f"Updated {_clock(i.now)}", "", "| Progress | |", "|---|---|"]
+    out = [top_line(i), f"Updated {_clock(i.now)}"]
+    out += [f"> ⚠️ {w}" for w in i.warnings]
+    out += ["", "| Progress | |", "|---|---|"]
     if i.facts is None:
         out.append(f"| Phases 7 to 10 | `{bar(100)}` 100% (all merged) |")
     else:
@@ -430,6 +439,15 @@ def _issues(gh: Gh, label: str) -> list[Issue]:
             for x in json.loads(raw) if isinstance(x, dict)]
 
 
+def _warnings(git: Git) -> list[str]:
+    """Unpushed commits left by a finished worker (fix 3, F3), counted again now."""
+    try:
+        found = stall.current_unpushed(git)
+    except Exception:  # noqa: BLE001 - unknown means no warning; the tick logs git problems
+        return []
+    return [f"UNPUSHED: {stall.commits(found[1])} on {found[0]}"] if found else []
+
+
 def gather(result: str, gh: Gh, alive=None, git: Git = run_git, now: float | None = None,
            status_file: Path | None = None, root: Path = ROOT) -> Inputs:
     now = time.time() if now is None else now
@@ -444,7 +462,8 @@ def gather(result: str, gh: Gh, alive=None, git: Git = run_git, now: float | Non
             commits.append(f"{_clock(float(stamp))[:5]} {subject}")
     return Inputs(result, now, next_text, log, read_running(alive, now), usage, fresh,
                   _issues(gh, "needs-gian"), _issues(gh, "needs-work-test"), branch, commits,
-                  facts, merged, overall)
+                  facts, merged, overall, stall.read_stall() if result == "idle" else None,
+                  _warnings(git))
 
 
 # ---- writing the issue ----
