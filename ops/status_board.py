@@ -314,8 +314,10 @@ def _next_is_none(text: str) -> bool:
 def top_line(i: Inputs) -> str:
     """First match wins (spec section 3)."""
     nxt = i.next_text.lower()
-    if i.needs_gian or "waiting for gian" in nxt:
-        count = f" ({len(i.needs_gian)} open)" if i.needs_gian else ""
+    # A "Team stalled" issue is the alarm itself, so it is shown as STALLED, not as a question.
+    asked = [x for x in i.needs_gian if not stall.is_stall_title(x.title)]
+    if asked or "waiting for gian" in nxt:
+        count = f" ({len(asked)} open)" if asked else ""
         return f"## 🔴 WAITING FOR YOU{count}"
     if i.stall and i.result == "idle":
         return f"## 🔴 STALLED: {i.stall}"

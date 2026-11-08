@@ -107,9 +107,9 @@ def merge_pr(number: int, gh: Gh = run_gh) -> None:
 # ---- the tick ----
 
 def has_work(status_text: str) -> bool:
-    """Work exists when STATUS.md has a 'Next:' line that is not 'none' and nothing is paused."""
-    next_lines = [x for x in status_text.splitlines() if x.lstrip("- ").startswith("Next:")]
-    if not next_lines:
+    """Work exists when STATUS.md has exactly one 'Next:' line and it is not 'none'."""
+    next_lines = stall.next_lines(status_text)
+    if len(next_lines) != 1:  # none, or more than one: the stall alarm (fix 3) reports it
         return False
     return not next_lines[0].lstrip("- ")[5:].strip().lower().startswith("none")
 
@@ -235,11 +235,12 @@ STALL_HELP = {
 
 def _job_finished(gh: Gh) -> bool:
     """True when the team waits for Gian on purpose or the final PR is open (not a stall)."""
-    for args in (["issue", "list", "--label", "needs-gian", "--state", "open",
-                  "--json", "title", "--limit", "100"], FINAL_PR):
-        if json.loads(gh(args) or "[]"):
-            return True
-    return False
+    asked = json.loads(gh(["issue", "list", "--label", "needs-gian", "--state", "open",
+                           "--json", "title", "--limit", "100"]) or "[]")
+    # Our own "Team stalled" issue is the alarm, not a question: it must not hide the stall.
+    if any(not stall.is_stall_title(str(x.get("title", ""))) for x in asked):
+        return True
+    return bool(json.loads(gh(FINAL_PR) or "[]"))
 
 
 def stall_alarm(status_file: Path, gh: Gh, git: stall.Git, now: float, as_of: str) -> None:
@@ -259,7 +260,7 @@ def stall_alarm(status_file: Path, gh: Gh, git: stall.Git, now: float, as_of: st
         stall.save_stall(found)
         help_text = STALL_HELP.get(found, "Push the branch (`git push`), then close this issue.")
         made = open_gian_issue(
-            f"🔴 Team stalled: {found}",
+            f"{stall.STALL_PREFIX}{found}",
             f"The team stopped and nobody was told. Reason: {found}.\n\n{help_text}\n\n"
             "The tick does not close this issue. Close it yourself once the cause is fixed.",
             "needs-gian", gh)

@@ -511,6 +511,22 @@ def test_waiting_for_you_outranks_stalled(status_file):
         "## 🔴 WAITING FOR YOU")
 
 
+def test_when_every_open_needs_gian_issue_is_a_stall_issue_the_top_line_is_stalled(status_file):
+    stall.save_stall(stall.NO_NEXT)
+    gh = FakeGh(gian=[{"number": 5, "title": "🔴 Team stalled: no valid Next line", "url": "u"}])
+    assert build("idle", gh=gh, status_file=status_file).splitlines()[0] == (
+        "## 🔴 STALLED: no valid Next line")
+
+
+def test_a_real_question_next_to_a_stall_issue_is_waiting_for_you_with_the_right_count(
+        status_file):
+    stall.save_stall(stall.NO_NEXT)
+    gh = FakeGh(gian=[{"number": 5, "title": "🔴 Team stalled: no valid Next line", "url": "u"},
+                      {"number": 6, "title": "Q: which model?", "url": "u"}])
+    assert build("idle", gh=gh, status_file=status_file).splitlines()[0] == (
+        "## 🔴 WAITING FOR YOU (1 open)")
+
+
 def test_stalled_is_gone_when_the_note_is_gone_or_the_tick_is_not_idle(status_file):
     stall.save_stall(stall.NO_NEXT)
     assert "STALLED" not in build("would-start", status_file=status_file).splitlines()[0]

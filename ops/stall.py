@@ -108,8 +108,14 @@ def clear_stall() -> None:
 
 # ---- when is the team stalled? (spec section 3) ----
 
+STALL_PREFIX = "🔴 Team stalled: "
 NO_NEXT = "no valid Next line"
 NOT_FINISHED = "nothing to do, but the job is not finished"
+
+
+def is_stall_title(title: str) -> bool:
+    """Is this issue our own stall alarm? (Matches without the emoji, in case it was garbled.)"""
+    return "Team stalled: " in title
 
 
 def next_lines(text: str) -> list[str]:

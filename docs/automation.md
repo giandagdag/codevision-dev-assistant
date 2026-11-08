@@ -105,10 +105,10 @@ A stall opens ONE `needs-gian` issue `🔴 Team stalled: <reason>` (phone notifi
 questions), one Log line, and a note the board reads. No second issue while one with that title is
 open. The tick never closes it: **you close it** once the cause is fixed. The board stops showing
 STALLED the moment the rule no longer matches. Because the issue itself is `needs-gian`, the board
-normally shows WAITING FOR YOU; STALLED shows alone only if `gh` was down. If `gh` or `git` fails
+shows STALLED (not WAITING FOR YOU) while every open `needs-gian` issue is a "Team stalled" one; any other open `needs-gian` question still makes it WAITING FOR YOU. If `gh` or `git` fails
 inside the alarm, one line goes to `logs/status_board.log` and the tick still returns `idle`.
 Expect one alarm on day one if some STATUS.md was made by hand (spec O1): that is the alarm working.
-A doubled `Next:` line raises it only when the first one says `none` (the tick reads the first line).
+Any second `- Next:` line is a stall too, whatever the first one says.
 
 **Unpushed commits.** When the tick records a finished, vanished or over-time worker, it compares
 `auto/phase-N` with `origin/auto/phase-N` (`git rev-list --count`, no fetch). More than 0 gives the Log
@@ -127,11 +127,10 @@ that line and relaunches the builder (never a `needs-gian` question). Code revie
 the last plan step. Phase 8's 15 steps become 5 runs.
 
 **Fewer denied calls.** Workers may now run read-only `grep`, `head`, `tail`, `wc`, `git show`,
-`git rev-parse`, `git rev-list`, `git branch`, `git ls-remote` and the smoke check. The deny list is
+`git rev-parse`, `git rev-list`, `git branch --list` (also `--show-current` and `-a`), `git ls-remote` and the smoke check. The deny list is
 unchanged, and the safety hook still blocks workers from editing `ops/`. Agents are told **one
 command per Bash call**: no `;`, `&&` or pipes (they are refused), and to use the Read and Grep tools
-to look at files. Note: `git branch` can still rename or force-move a branch (`-m`, `-f`); only the
-delete flags are blocked by the safety hook.
+to look at files.
 
 **Tests no longer write to the real files.** `tests/ops/conftest.py` points the ledger, worker reply
 folder, state folder, quiet logs, board log and STATUS.md at a temp folder for every ops test, and a

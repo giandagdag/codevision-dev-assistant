@@ -9,8 +9,9 @@ ALLOW, DENY = SETTINGS["permissions"]["allow"], SETTINGS["permissions"]["deny"]
 
 NEW_ALLOWED = [
     "Bash(grep:*)", "Bash(head:*)", "Bash(tail:*)", "Bash(wc:*)", "Bash(git show:*)",
-    "Bash(git rev-parse:*)", "Bash(git rev-list:*)", "Bash(git branch:*)",
-    "Bash(git ls-remote:*)", "Bash(python src/da_smoke_check.py:*)",
+    "Bash(git rev-parse:*)", "Bash(git rev-list:*)", "Bash(git branch --list:*)",
+    "Bash(git branch --show-current:*)", "Bash(git branch -a:*)", "Bash(git ls-remote:*)",
+    "Bash(python src/da_smoke_check.py:*)",
     "Bash(.venv/Scripts/python src/da_smoke_check.py:*)",
     'Bash("$DA_PYTHON" src/da_smoke_check.py:*)',
 ]
@@ -48,7 +49,7 @@ def allowed(command: str) -> bool:
             and not any(matches(p, command) for p in DENY))
 
 
-def test_as9_the_twelve_read_only_commands_are_in_the_allow_list():
+def test_as9_the_read_only_commands_are_in_the_allow_list():
     for entry in NEW_ALLOWED:
         assert entry in ALLOW
 
@@ -63,6 +64,17 @@ def test_as9_grep_is_allowed_and_a_force_push_is_still_denied():
     assert not allowed("git rm file")
     assert not allowed("gh pr merge 5")
     assert not allowed("rm -rf logs")
+
+
+def test_git_branch_can_only_list_never_move_rename_or_delete():
+    assert allowed("git branch --list")
+    assert allowed("git branch --show-current")
+    assert allowed("git branch -a")
+    for command in ("git branch -f auto/phases-7-10 abc123", "git branch -m old new",
+                    "git branch -D auto/phase-8", "git branch -d x", "git branch new-name",
+                    "git branch"):
+        assert not allowed(command), command
+    assert "Bash(git branch:*)" not in ALLOW
 
 
 def test_the_deny_list_did_not_change():

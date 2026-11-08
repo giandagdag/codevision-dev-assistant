@@ -76,14 +76,13 @@ Nothing in `src/` changes. Zero tokens: no step starts Claude. Tests use fakes o
    sizes, times) only, as the spec says. The snapshot is taken once per pytest session and compared
    by a test file named `test_ops_zz_real_logs.py` so it runs last among the ops tests.
 
-10. **Double `Next:` line (plan-reviewer, Should fix).** `has_work` reads only the first `Next:` line
-    and I do not change it (surgical). So a double `Next:` raises the alarm only when the first one
-    says `none`; if the first one is real work the tick launches the chief, who fixes the file. Step 5
-    tests use that case (first line `none`) so the tick is really `idle`.
-11. **`git branch:*` (plan-reviewer, Should fix).** The hook blocks only `-D`, `-d`, `--delete`;
-    `git branch -f` or `-m` would still pass. The spec lists the entry (D-C, Gian's choice) and keeps
-    the deny list unchanged, so I build it as written and flag it for Gian in the PR as an open
-    question (narrowing to `--list`, `--show-current`, `-a` is a one-line follow-up).
+10. **Double `Next:` line. DECIDED (Gian, 8 Nov): any second `- Next:` line is a stall.** `has_work`
+    now says no work unless there is exactly one `Next:` line, so the tick is `idle` and the alarm fires.
+11. **`git branch`. DECIDED (Gian, 8 Nov): narrowed** to `--list`, `--show-current` and `-a`, so
+    `-f`, `-m`, `-D` and a bare `git branch <name>` are not allowed. Deny list unchanged.
+12. **Stall issues on the board and in case 2. DECIDED (Gian, 8 Nov):** when every open `needs-gian`
+    issue is a "Team stalled" one, the top line is STALLED, not WAITING FOR YOU, and such an issue
+    does not count as "waiting for Gian on purpose" in case 2 (so the stall keeps showing).
 
 ## Steps (each: tests for that step, ruff, commit, push)
 

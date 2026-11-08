@@ -155,11 +155,17 @@ def test_as1_no_next_line_opens_one_needs_gian_issue_and_one_log_line(tmp_path):
     assert stall.read_stall() == stall.NO_NEXT
 
 
-def test_two_next_lines_are_a_stall_when_the_first_says_none(tmp_path):
-    # has_work reads only the first Next line, so the tick is idle only when that one is none.
-    f, gh = idle_status(tmp_path, "- Next: none\n- Next: builder go"), FakeGh()
-    assert tick(f, gh, FakeGit()) == "idle"
+@pytest.mark.parametrize("first", ["- Next: none", "- Next: builder continue Phase 8 from step 10"])
+def test_any_second_next_line_is_a_stall_whatever_the_first_says(tmp_path, first):
+    f, gh = idle_status(tmp_path, first + "\n- Next: builder go"), FakeGh()
+    assert tick(f, gh, FakeGit()) == "idle"  # not "would-start": two Next lines are no work
     assert gh.created()[0][gh.created()[0].index("--title") + 1] == TITLE_NO_NEXT
+    assert not c.has_work(f.read_text(encoding="utf-8"))
+
+
+def test_one_next_line_with_work_is_still_work(tmp_path):
+    f = idle_status(tmp_path, "- Next: builder go")
+    assert c.has_work(f.read_text(encoding="utf-8"))
 
 
 def test_as2_the_same_open_issue_means_no_second_issue_and_no_second_log_line(tmp_path):
@@ -173,6 +179,16 @@ def test_as3_next_none_with_an_open_needs_gian_issue_is_not_a_stall(tmp_path):
     f, gh = idle_status(tmp_path), FakeGh(open_titles=["Q: which model?"])
     assert tick(f, gh, FakeGit()) == "idle"
     assert gh.created() == [] and stall.read_stall() is None
+
+
+def test_our_own_stall_issue_does_not_hide_a_case_2_stall(tmp_path):
+    f, gh = idle_status(tmp_path), FakeGh(open_titles=[TITLE_NOT_DONE])
+    tick(f, gh, FakeGit())
+    assert stall.read_stall() == stall.NOT_FINISHED  # the only open needs-gian issue is ours
+    assert gh.created() == []  # and no second one is opened
+    gh2 = FakeGh(open_titles=[TITLE_NOT_DONE, "Q: which model?"])
+    tick(f, gh2, FakeGit())
+    assert stall.read_stall() is None  # a real question is open: waiting on purpose
 
 
 def test_next_none_with_the_final_pr_open_is_finished_not_stalled(tmp_path):
