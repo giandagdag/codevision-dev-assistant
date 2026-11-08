@@ -160,25 +160,8 @@ def confirm_repro(
         build = read_build_state(conn, request_id)
         if repro is None or build is None:
             raise RefineError("There is no test to confirm.")
-        base = _base_test_text(conn, request_id, build.approach_version)
-        try:
-            text = append_test_method(base, repro.method)
-        except MergeError as error:
-            raise RefineError(str(error)) from error
         request = _request_of(conn, request_id)
-        version = next_test_set_version(conn, request_id)
-        insert_test_set(
-            conn,
-            TestSet(
-                request_id=request_id,
-                test_set_version=version,
-                approach_version=build.approach_version,
-                added_case_ids=[repro.case_id],
-                text=text,
-                fingerprint=fingerprint(text),
-            ),
-            now,
-        )
+        version = append_repro(conn, request_id, build.approach_version, repro, now)
         tx = RefineTx(conn, request, state, now)
         tx.say("developer", YES_LABEL)
         tx.audit(
@@ -189,6 +172,32 @@ def confirm_repro(
         tx.say("assistant", f"The test is saved as test set version {version}. I will fix it.")
         tx.set(step=STEP_BUG_REBUILD)
         return _save(tx, base_revision)
+
+
+def append_repro(
+    conn: sqlite3.Connection, request_id: str, approach_version: int, repro: PendingRepro, now
+) -> int:
+    """Append the confirmed method to the frozen test set as a new version; the earlier methods stay
+    byte for byte the same. Returns the new test set version."""
+    base = _base_test_text(conn, request_id, approach_version)
+    try:
+        text = append_test_method(base, repro.method)
+    except MergeError as error:
+        raise RefineError(str(error)) from error
+    version = next_test_set_version(conn, request_id)
+    insert_test_set(
+        conn,
+        TestSet(
+            request_id=request_id,
+            test_set_version=version,
+            approach_version=approach_version,
+            added_case_ids=[repro.case_id],
+            text=text,
+            fingerprint=fingerprint(text),
+        ),
+        now,
+    )
+    return version
 
 
 def reject_repro(
@@ -261,13 +270,15 @@ class _Work:
         self.__dict__.update(values)
 
 
-def _read_work(settings, request_id: str, base_revision: int) -> _Work:
+def _read_work(
+    settings, request_id: str, base_revision: int, steps=(STEP_BUG,), criterion: str = ""
+) -> _Work:
     with open_db(settings.db_path) as conn:
         ensure_build_tables(conn)
         ensure_workspace_tables(conn)
         conn.execute("BEGIN")
         state = _load_state(conn, request_id, base_revision)
-        _require_step(state, STEP_BUG)
+        _require_step(state, *steps)
         request = _request_of(conn, request_id)
         rulebook = get_rulebook_for_request(settings.db_path, request_id).rulebook
         context = _context(conn, request, rulebook)
@@ -291,7 +302,7 @@ def _read_work(settings, request_id: str, base_revision: int) -> _Work:
         code=code,
         base_tests=base,
         case_id=_next_case_id([c.test_id for c in context.cases] + used),
-        criterion_id=_criterion_of(state, context),
+        criterion_id=criterion or _criterion_of(state, context),
         policy=rulebook.policy,
         max_tries=rulebook.policy.refine_repro_max_attempts,
         request_id=request_id,

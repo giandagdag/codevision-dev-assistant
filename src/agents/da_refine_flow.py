@@ -157,18 +157,23 @@ def get_edit_view(settings, request_id: str) -> EditView:
 
 
 def start_check(
-    settings, request_id: str, base_revision: int, now: datetime | None = None
+    settings,
+    request_id: str,
+    base_revision: int,
+    now: datetime | None = None,
+    after_new_test: bool = False,
 ) -> BuildState:
     """Check my edits: a check run on his versions of the planned files. READY_FOR_REVIEW or
     NOT_PASSING goes to BUILDING with build kind `check` and a new build number. No Generator
-    call, no fix rounds, no budget used. The loop is run by the caller (the runner)."""
+    call, no fix rounds, no budget used. The loop is run by the caller (the runner).
+    `after_new_test`: the run is for his new test case, so no edit is needed first."""
     now = now or datetime.now(UTC)
     with _write(settings.db_path) as conn:
         request = _require_request(conn, request_id)
         _check_revision(conn, request_id, base_revision)
         state = read_build_state(conn, request_id)
         _require_refinable(request.status, state)
-        if not changed_paths(conn, request_id, state):
+        if not after_new_test and not changed_paths(conn, request_id, state):
             raise BuildError("Nothing has changed since the last test. Edit a file, then Re-scan.")
         number = next_build_number(conn, request_id)
         tx = BuildTx(conn, request, state, now)

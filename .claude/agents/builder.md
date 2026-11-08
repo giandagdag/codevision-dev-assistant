@@ -18,3 +18,6 @@ into `ops/state/worker_note.md` and stop.
 
 If the usage guard blocks you ("Usage line reached"), write your state to `ops/state/worker_note.md` and stop at once. Do nothing else.
 End your reply with what you skipped, and the risks.
+
+## Headless rule (added 8 Nov)
+You run headless: ending your turn ends your process. Never start a subagent in the background. Run plan-reviewer and code-reviewer in the foreground and act on their report in the same turn.
