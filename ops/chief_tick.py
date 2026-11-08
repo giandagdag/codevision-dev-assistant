@@ -21,6 +21,7 @@ from pathlib import Path
 from subprocess import DEVNULL
 
 import ledger
+import stall
 import status
 import status_board
 import usage_guard
@@ -168,9 +169,15 @@ def tick(
     alive: Callable[[int], bool] | None = None,
     killer: Callable[[int], None] | None = None,
     board: Callable[[str], object] | None = None,
+    git: stall.Git | None = None,
 ) -> str:
-    """One wake-up, then the Team status board (S2) whatever the result was. See `_tick`."""
-    result = _tick(reader, gh, launcher, status_file, now, preflight, alive, killer)
+    """One wake-up, then the Team status board (S2) whatever the result was. See `_tick`.
+
+    `git=None` switches the stall alarm and the unpushed check off (fix 3); `main` passes real git.
+    """
+    result = _tick(reader, gh, launcher, status_file, now, preflight, alive, killer, git)
+    if git is not None and result != "idle":
+        stall.clear_stall()  # a worker is running or work was found: not stalled any more
     run_board(board, result)
     return result
 
@@ -185,7 +192,7 @@ def run_board(board: Callable[[str], object] | None, result: str) -> None:
         pass
 
 
-def _tick(reader, gh, launcher, status_file, now, preflight, alive, killer) -> str:
+def _tick(reader, gh, launcher, status_file, now, preflight, alive, killer, git=None) -> str:
     """One wake-up. Returns 'busy', 'stopped', 'idle', 'would-start', 'hooks-broken' or 'ran'.
 
     The job queue is looked at first (F4): a worker still running means 'busy' and nothing else
@@ -193,7 +200,7 @@ def _tick(reader, gh, launcher, status_file, now, preflight, alive, killer) -> s
     tick goes on, so the chief wakes up and acts on the result.
     """
     now = time.time() if now is None else now
-    if check_queue(reader, status_file, now, alive, killer) == "busy":
+    if check_queue(reader, status_file, now, alive, killer, git) == "busy":
         return "busy"
     usage = usage_guard.get_usage(reader, now=now)
     decision = usage_guard.decide(usage)
@@ -204,12 +211,62 @@ def _tick(reader, gh, launcher, status_file, now, preflight, alive, killer) -> s
     status.set_usage_line(status_file, usage.five_hour, usage.weekly, as_of, stopped=False)
     status.set_line(status_file, "Stopped:", "no")
     if not has_work(status_file.read_text(encoding="utf-8")):
+        if git is not None:
+            stall_alarm(status_file, gh, git, now, as_of)
         return "idle"
     if launcher is None:
         status.add_log(status_file, f"{as_of}: work found, not launched (no --launch)")
         return "would-start"
     return launch_worker("chief", "Read STATUS.md and do the next step as the chief.", "chief",
                          "", reader, gh, launcher, status_file, now, preflight)
+
+
+# ---- the stall alarm (Phase A fix 3, F1) ----
+
+FINAL_PR = ["pr", "list", "--base", "main", "--head", MERGE_BASE, "--state", "open",
+            "--json", "number", "--limit", "5"]
+STALL_HELP = {
+    stall.NO_NEXT: "STATUS.md must have exactly one `- Next:` line. Set it with "
+                   "`chief_tick.py next \"...\"`.",
+    stall.NOT_FINISHED: "STATUS.md says `Next: none`, no `needs-gian` issue is open and the "
+                        "final PR (auto/phases-7-10 into main) is not open. Decide the next step.",
+}
+
+
+def _job_finished(gh: Gh) -> bool:
+    """True when the team waits for Gian on purpose or the final PR is open (not a stall)."""
+    for args in (["issue", "list", "--label", "needs-gian", "--state", "open",
+                  "--json", "title", "--limit", "100"], FINAL_PR):
+        if json.loads(gh(args) or "[]"):
+            return True
+    return False
+
+
+def stall_alarm(status_file: Path, gh: Gh, git: stall.Git, now: float, as_of: str) -> None:
+    """Called on an idle tick. A stall opens ONE `needs-gian` issue, one Log line and a note
+    for the board. A failing `gh` or `git` is logged once and changes nothing else (AS-10)."""
+    try:
+        unpushed = stall.current_unpushed(git)
+    except Exception as problem:  # noqa: BLE001 - "unknown" is not a stall
+        status_board.log_failure(problem, now)
+        unpushed = None
+    try:
+        text = status_file.read_text(encoding="utf-8")
+        found = stall.reason(text, lambda: _job_finished(gh), unpushed)
+        if found is None:
+            stall.clear_stall()
+            return
+        stall.save_stall(found)
+        help_text = STALL_HELP.get(found, "Push the branch (`git push`), then close this issue.")
+        made = open_gian_issue(
+            f"🔴 Team stalled: {found}",
+            f"The team stopped and nobody was told. Reason: {found}.\n\n{help_text}\n\n"
+            "The tick does not close this issue. Close it yourself once the cause is fixed.",
+            "needs-gian", gh)
+        if made:  # only the first time: no Log line every 30 minutes
+            status.add_log(status_file, f"{as_of}: STALLED: {found} -> {made}")
+    except Exception as problem:  # noqa: BLE001 - the tick must still return idle
+        status_board.log_failure(problem, now)
 
 
 def worker_log_dir() -> Path:
@@ -506,7 +563,7 @@ def _record_without_result(running: dict, text: str, outcome: str, reader, statu
             outcome, now, {})
 
 
-def check_queue(reader, status_file, now, alive=None, killer=None) -> str | None:
+def check_queue(reader, status_file, now, alive=None, killer=None, git=None) -> str | None:
     """F4 to F6: look at the running worker. Returns 'busy' (touch nothing) or None.
 
     None means there is nothing to wait for any more: a finished, vanished or over-time worker
@@ -526,6 +583,7 @@ def check_queue(reader, status_file, now, alive=None, killer=None) -> str | None
                       running.get("five_hour_before"), running.get("weekly_before"),
                       _read_after(reader), done.get("finished", now), status_file,
                       done.get("reply_file", ""))
+        check_unpushed(running, git, status_file, now)
         return None
     age, pid = now - float(running.get("started") or 0), running.get("pid")
     limit = MAX_WORKER_HOURS * 3600
@@ -540,7 +598,30 @@ def check_queue(reader, status_file, now, alive=None, killer=None) -> str | None
         _forget_notes()
         _record_without_result(running, "ended without a result (vanished)", "vanished",
                                reader, status_file, now)
+    check_unpushed(running, git, status_file, now)
     return None
+
+
+def check_unpushed(running: dict, git, status_file: Path, now: float) -> None:
+    """F3: did the worker that just ended leave commits on `auto/phase-N` that origin lacks?
+
+    Adds the Log line `UNPUSHED: <n> commits on <branch>` and remembers the branch for the board
+    and the stall alarm. A git problem is logged once and means "unknown".
+    """
+    branch = stall.branch_for(running.get("phase"))
+    if git is None or branch is None:
+        return
+    try:
+        count = stall.unpushed_count(branch, git)
+    except Exception as problem:  # noqa: BLE001 - never stop the tick
+        status_board.log_failure(problem, now)
+        return
+    if count <= 0:
+        stall.forget_unpushed()
+        return
+    stall.remember_unpushed(branch)
+    status.add_log(status_file,
+                   f"{usage_guard.format_sgt(now)}: UNPUSHED: {stall.commits(count)} on {branch}")
 
 
 def stop_worker(reader, status_file, now, alive=None, killer=None) -> str:
@@ -619,7 +700,8 @@ def main(argv: list[str] | None = None, gh: Gh | None = None) -> int:
     try:
         if args.cmd == "tick":
             launcher = real_launcher if args.launch else None
-            print(tick(usage_guard.endpoint_reader, gh, launcher, board=board))
+            print(tick(usage_guard.endpoint_reader, gh, launcher, board=board,
+                       git=status_board.run_git))
         elif args.cmd == "issue":
             print(open_gian_issue(args.title, args.body, args.label, gh) or "already open")
         elif args.cmd == "launch":
