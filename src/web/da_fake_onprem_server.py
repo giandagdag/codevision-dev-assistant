@@ -35,6 +35,12 @@ from agents.da_build_agent import (  # noqa: E402
     scripted_build_reply,
 )
 from agents.da_discover_agent import TASK_MARKER, ScriptedDiscoverClient  # noqa: E402
+from agents.da_refine_agent import (  # noqa: E402
+    LANE_MARKER,
+    OWN_TEST_MARKER,
+    REPRO_MARKER,
+    REVISION_MARKER,
+)
 from agents.da_tester_agent import (  # noqa: E402
     CASE_MARKER,
     CASE_STEP,
@@ -95,7 +101,17 @@ _APPROACH_CALLS = {marker: call for call, marker in TASK_MARKERS.items()}
 # so a build through the onprem connector follows the same path as the fake one.
 _BUILD_LINES = tuple(
     re.compile(rf"^{re.escape(marker)}$", re.MULTILINE)
-    for marker in (CONTRACT_MARKER, TESTS_MARKER, CODE_MARKER, REVIEW_MARKER)
+    for marker in (
+        CONTRACT_MARKER,
+        TESTS_MARKER,
+        CODE_MARKER,
+        REVIEW_MARKER,
+        # Phase 8: the Refine calls are answered by the same scripted code.
+        LANE_MARKER,
+        REVISION_MARKER,
+        REPRO_MARKER,
+        OWN_TEST_MARKER,
+    )
 )
 
 

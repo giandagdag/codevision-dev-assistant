@@ -139,6 +139,11 @@ def scripted_build_reply(prompt: str, switches: frozenset[str] | None = None) ->
 
     if is_review_prompt(prompt):
         return scripted_review_reply(prompt, switches)
+    # Phase 8: the lane, revision and repro-test calls of Refine (same reason for the import).
+    from agents.da_refine_agent import is_refine_prompt, scripted_refine_reply
+
+    if is_refine_prompt(prompt):
+        return scripted_refine_reply(prompt, switches)
     raise LLMClientError("The scripted build client was given a prompt it does not know.")
 
 

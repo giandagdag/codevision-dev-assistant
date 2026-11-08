@@ -169,6 +169,21 @@ def test_a_vague_then_a_repeat_and_the_limit_of_12_are_refused():
     assert "repeats AC-1" in apply_revision(v1, same, [v1])[1][0]
 
 
+def test_criteria_the_revision_does_not_touch_are_not_judged_again():
+    # Confirmed records can hold criteria that today's checks would not like (older rules).
+    old = record()
+    vague = old.acceptance_criteria[0].model_copy(update={"then": "it works"})
+    old = old.model_copy(update={"acceptance_criteria": [vague, *old.acceptance_criteria[1:]]})
+    reply = RevisionReply(
+        criteria_ops=[CriterionOp(op="change", id="AC-2", then="a message says the file is bad")]
+    )
+
+    v2, problems = apply_revision(old, reply, [old])
+
+    assert problems == []
+    assert v2.acceptance_criteria[0].then == "it works"
+
+
 def test_a_field_update_may_only_name_a_record_field_with_the_right_type():
     v1 = record()
     reply = RevisionReply(field_updates={"decisions": "x", "in_scope": "not a list"})

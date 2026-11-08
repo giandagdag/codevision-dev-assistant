@@ -90,7 +90,7 @@ def apply_revision(
             problems.append(problem)
         elif op.op == "add":
             number += 1
-    problems += _criteria_problems(criteria)
+    problems += _criteria_problems(criteria, record.acceptance_criteria)
     if problems:
         return None, problems
     data = record.model_dump()
@@ -145,8 +145,13 @@ def _apply_op(criteria: list[AcceptanceCriterion], op: CriterionOp, number: int)
     return ""
 
 
-def _criteria_problems(criteria: list[AcceptanceCriterion]) -> list[str]:
-    """The Phase 2D checks: at most 12, an observable 'then', no repeats."""
+def _criteria_problems(
+    criteria: list[AcceptanceCriterion], original: list[AcceptanceCriterion]
+) -> list[str]:
+    """The Phase 2D checks: at most 12, an observable 'then', no repeats. Criteria the revision
+    did not add or change were checked when they were confirmed and are not judged again."""
+    before = {item.id: item for item in original}
+    touched = {item.id for item in criteria if before.get(item.id) != item}
     problems = []
     if len(criteria) > LIST_LENGTH_LIMIT:
         problems.append(
@@ -154,13 +159,14 @@ def _criteria_problems(criteria: list[AcceptanceCriterion]) -> list[str]:
         )
     seen: dict[tuple[str, str, str], str] = {}
     for item in criteria:
-        if is_vague_then(item.then):
+        if item.id in touched and is_vague_then(item.then):
             problems.append(
                 f"{item.id}: the 'then' part must say something a person or a test can see."
             )
         key = _duplicate_key(item)
         if key in seen:
-            problems.append(f"{item.id} repeats {seen[key]}: same given, when and then.")
+            if item.id in touched or seen[key] in touched:
+                problems.append(f"{item.id} repeats {seen[key]}: same given, when and then.")
         else:
             seen[key] = item.id
     return problems
