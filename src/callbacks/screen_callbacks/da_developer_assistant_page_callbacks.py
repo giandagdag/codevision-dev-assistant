@@ -25,7 +25,7 @@ from agents.da_discover_flow import (
     get_discovery_view,
     start_discovery,
 )
-from agents.da_refine_screen import get_refine_box
+from agents.da_refine_screen import get_history, get_refine_box
 from agents.da_understand_flow import (
     FORM_OPTIONAL_BOX,
     FormError,
@@ -205,8 +205,9 @@ def show_page(search: str | None, refresh: int | None):
                     if build is not None
                     else None
                 )
+                history = get_history(settings, request_id) if build is not None else None
                 return render_approach_workspace(
-                    view, discovery, approach, workspace, build, refine
+                    view, discovery, approach, workspace, build, refine, history
                 )
             if status == STATUS_DISCOVERY_CONFIRMED:
                 approach = approach_flow.get_approach_view(settings, request_id)

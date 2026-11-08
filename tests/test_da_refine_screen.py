@@ -4,10 +4,13 @@ import pytest
 
 from agents import da_refine_screen as screen
 from callbacks.screen_callbacks import da_developer_assistant_page_callbacks as cb
+from db_table_functions.da_db import open_db
+from db_table_functions.db_tbl_da_approach import read_approach_versions
 from layouts import da_build_panel as bp
+from layouts import da_refine_panels as rp
 from layouts import da_workspace_panel as panel
 from pydantic_classes.da_refine_models import RefineState
-from tests.da_refine_play import written_request
+from tests.da_refine_play import records_of, written_request
 from tests.da_tree import all_text, by_id, components
 
 pytestmark = pytest.mark.usefixtures("published_rulebook")
@@ -75,6 +78,47 @@ def test_8_12_cap_closes_the_box_but_rescan_and_check_stay(settings, monkeypatch
     assert "Re-scan" in button_labels(tree)
     capped = screen.make_refine_box("READY_FOR_REVIEW", "b_written", 5, 5, has_edits=True)
     assert ("check_edits", "Check my edits") in capped.buttons
+
+
+def _two_versions(settings, request_id):
+    first = records_of(settings, request_id)[-1]
+    second = first.model_copy(update={"version": first.version + 1, "title": "A new title"})
+    return first, second
+
+
+def test_13b_one_record_version_shows_no_record_history_but_lists_approaches(settings):
+    request_id, _ = written_request(settings)
+
+    tree = draw(request_id)
+
+    assert by_id(tree, rp.HISTORY_ID) is None
+    assert "source proposal" in all_text(by_id(tree, rp.APPROACH_LIST_ID))
+
+
+def test_13b_history_lists_each_diff_and_marks_criteria(settings):
+    request_id, _ = written_request(settings)
+    first, second = _two_versions(settings, request_id)
+
+    history = screen.make_history([first, second], [])
+
+    assert len(history.diffs) == 1
+    assert history.diffs[0].fields[0].field == "title"
+    text = all_text(rp.version_history_blocks(history)[0])
+    assert "v1 to v2" in text
+    assert "A new title" in text
+
+
+def test_13b_approach_list_shows_the_source_of_each_version(settings):
+    request_id, _ = written_request(settings)
+    assert rp.approach_version_blocks(screen.VersionHistory()) == []
+    with open_db(settings.db_path) as conn:
+        one = read_approach_versions(conn, request_id)
+    two = [one[-1], one[-1].model_copy(update={"approach_version": 2, "source": "revision"})]
+
+    history = screen.make_history([], two)
+
+    text = all_text(rp.approach_version_blocks(history)[0])
+    assert "source revision" in text
 
 
 def test_download_mode_says_upload_folder_to_rescan():

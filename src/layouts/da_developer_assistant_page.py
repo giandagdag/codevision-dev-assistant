@@ -17,7 +17,7 @@ from agents.da_discover_flow import (
     HINT_QUESTION,
     outcome_status,
 )
-from agents.da_refine_screen import RefineBox
+from agents.da_refine_screen import RefineBox, VersionHistory
 from agents.da_understand_checks import MAX_MESSAGE_LENGTH
 from agents.da_understand_flow import (
     ALWAYS_VISIBLE,
@@ -29,6 +29,7 @@ from agents.da_understand_flow import (
 )
 from layouts.da_approach_panel import approach_panel
 from layouts.da_build_panel import build_tab, poll_interval, tests_tab
+from layouts.da_refine_panels import approach_version_blocks, version_history_blocks
 from layouts.da_workspace_panel import (
     RECONNECT_KEY,
     USE_KEY,
@@ -489,6 +490,7 @@ def render_approach_workspace(
     workspace: WorkspaceView | None = None,
     build: BuildView | None = None,
     refine: RefineBox | None = None,
+    history: VersionHistory | None = None,
 ) -> list:
     """The workspace from APPROACH_PROPOSED on: Approach is step 3 and its tab opens first.
 
@@ -518,12 +520,12 @@ def render_approach_workspace(
             demo_mode=view.demo_mode,
             messages=[parts.chat_bubble(message) for message in view.messages],
             composer=_approach_composer(view, workspace, build if building else None, refine),
-            panel=_summary_panel(understand),
+            panel=[*_summary_panel(understand), *version_history_blocks(history)],
             state=state,
             step=BUILD_STEP if building else APPROACH_STEP,
             discovery=_discovery_panel(discovery),
             busy_text=WS_BUSY_TEXT,
-            approach=approach_panel(view, workspace.check),
+            approach=[*approach_panel(view, workspace.check), *approach_version_blocks(history)],
             chip=workspace_chip(workspace),
             build=build_content,
             stores=workspace_stores(workspace, build),

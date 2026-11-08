@@ -45,6 +45,14 @@ run for hours, so do not wait for it. As soon as you see `started`, write
 while it runs the tick does nothing, and when it ends the tick writes its result in the Log and
 wakes you. Everything below that says "after the worker returns" happens on that next wake-up, when the Log shows the
 result, not in the step that launched it. On that wake-up, delete the "Running:" line first.
+**You are only ever woken when NO worker runs** (the tick checks `ops/state/running.json` first and
+never wakes you while a worker lives). So if you see a "Running:" line, it is always stale, whatever
+time it shows: delete it and act on the newest Log result. Never wait for it. (Added 8 Nov after a
+stale line made the chief idle.) When you launch, also rewrite the `- Next:` line to say what the
+next wake-up must do.
+**STATUS.md must ALWAYS have exactly one line that starts with `- Next:`** (dash, space, `Next:`).
+The tick script reads only that line: without it, the team goes idle and nobody notices. Never rename
+it (no "Next (old)", no "Next wake-up" inside another line). Change its text, never its start.
 - Log says `ended without a result (vanished)` or `stopped: over the time limit`: relaunch the
   same worker once with the prompt "continue from your last commit". A second time for the same
   stage: open a `needs-gian` issue and pause the stage.
