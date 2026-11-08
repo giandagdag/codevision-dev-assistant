@@ -76,9 +76,18 @@ Nothing in `src/` changes. Zero tokens: no step starts Claude. Tests use fakes o
    sizes, times) only, as the spec says. The snapshot is taken once per pytest session and compared
    by a test file named `test_ops_zz_real_logs.py` so it runs last among the ops tests.
 
+10. **Double `Next:` line (plan-reviewer, Should fix).** `has_work` reads only the first `Next:` line
+    and I do not change it (surgical). So a double `Next:` raises the alarm only when the first one
+    says `none`; if the first one is real work the tick launches the chief, who fixes the file. Step 5
+    tests use that case (first line `none`) so the tick is really `idle`.
+11. **`git branch:*` (plan-reviewer, Should fix).** The hook blocks only `-D`, `-d`, `--delete`;
+    `git branch -f` or `-m` would still pass. The spec lists the entry (D-C, Gian's choice) and keeps
+    the deny list unchanged, so I build it as written and flag it for Gian in the PR as an open
+    question (narrowing to `--list`, `--show-current`, `-a` is a one-line follow-up).
+
 ## Steps (each: tests for that step, ruff, commit, push)
 
-0. **Done:** plan written, CLAUDE.md "Current phase" updated, plan-reviewer asked.
+0. **Done:** plan written, CLAUDE.md "Current phase" updated, plan-reviewer: APPROVE (0 Must fix).
 1. **F6 test isolation (first, so later tests never pollute real files).** In
    `tests/ops/conftest.py` add ONE autouse fixture that sets `DA_LEDGER_FILE`, `DA_WORKER_LOG_DIR`,
    `DA_STATE_DIR`, `DA_LOG_DIR` (quiet), `DA_STATUS_BOARD_LOG`, and points `chief_tick.STATUS_FILE`
@@ -87,7 +96,7 @@ Nothing in `src/` changes. Zero tokens: no step starts Claude. Tests use fakes o
    `DA_STATE_DIR`); the central fixture fixes it with no edit to that test. Add the session
    snapshot fixture and `tests/ops/test_ops_zz_real_logs.py` (AS-8), with a test that proves the
    snapshot function notices a changed file in a temp folder.
-   *Check:* delete `logs/`, run `pytest tests/ops`, `logs/` is not created; the guard test passes.
+   *Check:* run `pytest tests/ops` and confirm no new files appear under `logs/`; the guard test passes.
 2. **F2 `status.set_next` and the `next` command.** Tests: replaces the line and its continuation;
    removes a second `Next:`; adds it under `## Where we are`; creates the heading when missing;
    empty and blank text refused, file unchanged (AS-6); a 60 line STATUS.md stays at 60 or less
