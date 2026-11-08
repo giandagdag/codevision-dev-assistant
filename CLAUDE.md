@@ -45,9 +45,9 @@ Stop, push the work so far to the phase branch, and tell Gian what you need when
   you did not see.
 
 ## Current phase
-Phase A fix 2 (the "Team status" issue): `specs/phase-a-fix-2.md` v1.1, plan `specs/phase-a-fix-2-plan.md`, branch `phase-a-fix-2`. PR into `auto/phases-7-10`. Gian merges it.
+Phase A fix 3 (the "no more silent stalls" fix): `specs/phase-a-fix-3.md` v1.0, plan `specs/phase-a-fix-3-plan.md`, branch `phase-a-fix-3`. PR into `auto/phases-7-10`. Gian merges it. Build in the cloud only.
 Then back to Phase 8: Refine, run by the agent team (`docs/automation.md`). Branch `auto/phase-8`, merged into `auto/phases-7-10`.
-(Phases 0 to 6 and Phase A are merged into `main`; Phase 7 and Phase A fix 1 are in `auto/phases-7-10`; their specs stay in `specs/`.)
+(Phases 0 to 6 and Phase A are merged into `main`; Phase 7 and Phase A fixes 1 and 2 are in `auto/phases-7-10`; their specs stay in `specs/`.)
 
 Phases 4 onwards were redesigned on 31 Oct 2026 (LLM writes 100% of the code, built-in testing,
 laptop workspace). Source of truth: `specs/redesign-2026-10-31.md`.
