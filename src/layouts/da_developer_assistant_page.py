@@ -555,7 +555,9 @@ def render_approach_workspace(
             approach=[*approach_panel(view, workspace.check), *approach_version_blocks(history)],
             chip=workspace_chip(workspace),
             build=build_content,
-            stores=workspace_stores(workspace, build),
+            stores=workspace_stores(
+                workspace, build, refine.restore_build if refine is not None else 0
+            ),
             tests=tests_tab(build) if building else None,
             poll=poll_interval(build) if building else None,
             open_tab="build" if building else None,

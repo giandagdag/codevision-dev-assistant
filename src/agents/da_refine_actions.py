@@ -213,6 +213,7 @@ def _restore_buttons(settings, request_id: str, state, box: RefineBox):
         return [*listed, cancel], []
     if pick > 0:
         box.note = f"Restore build {pick}: read the chat, then press the button."
+        box.restore_build = pick
         return [cancel], [("restore_go", f"Restore build {pick}")]
     # Always offered (spec row 8-1); with no earlier build the click says so.
     return [(rflow.RESTORE_KEY, rflow.RESTORE_LABEL)], []

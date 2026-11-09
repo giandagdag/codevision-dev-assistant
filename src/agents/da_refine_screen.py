@@ -69,6 +69,8 @@ class RefineBox:
     send_label: str = "Send"
     refine_revision: int = 0
     lane: bool = False
+    # The build the browser button "Restore build N" would put back (0 = none chosen yet).
+    restore_build: int = 0
 
 
 def make_refine_box(
