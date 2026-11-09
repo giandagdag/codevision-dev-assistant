@@ -44,6 +44,7 @@ def split_segments(command: str) -> list[str] | None:
     inside single quotes nothing is special; inside double quotes a backslash hides the next
     character; outside quotes a backslash and the next character are one unit (so an escaped quote
     opens nothing, and an escaped backslash leaves the quote after it free to open).
+    A backslash before a newline outside quotes joins the lines (no split), as in bash.
     Returns None for an unclosed quote: fail closed, the caller refuses.
     A `;` that bash would treat as plain text (after a backslash) still splits: that only ever
     makes the hook stricter.
@@ -60,6 +61,9 @@ def split_segments(command: str) -> list[str] | None:
                 ch = command[i]
             elif ch == '"':
                 quote = ""
+        elif ch == "\\" and command[i + 1:i + 2] == "\n":
+            i += 2  # a line continuation: bash joins the two lines, so the hook must too
+            continue
         elif ch == "\\" and i + 1 < len(command) and command[i + 1] not in ";|&\n":
             # Outside quotes a backslash and the next character are ONE unit, as in bash:
             # `\\'` is a backslash and then a quote that OPENS; `\'` is a plain quote.

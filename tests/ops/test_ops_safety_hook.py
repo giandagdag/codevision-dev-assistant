@@ -257,3 +257,27 @@ def test_as8_escaped_backslash_then_quote_opens_a_quote_like_bash():
 
 def test_as8_a_backslash_at_the_very_end_is_read_without_error():
     assert s.split_segments("echo ok " + chr(92)) == ["echo ok " + chr(92)]  # hides nothing
+
+
+@pytest.mark.parametrize("command", [
+    "git push " + chr(92) + "\n --force origin x",
+    "git push origin " + chr(92) + "\nmain",
+    "git push origin x " + chr(92) + "\n+main",
+    "git push " + chr(92) + "\n--delete origin x",
+    "git push origin ma" + chr(92) + "\nin",
+])
+def test_as8_a_line_continuation_cannot_hide_a_force_or_a_protected_branch(command):
+    assert s.check(bash(command)) is not None
+
+
+def test_as8_backslash_newline_joins_the_lines_but_a_plain_newline_still_splits():
+    b = chr(92)
+    assert s.split_segments(f"git push {b}\n --force") == ["git push  --force"]
+    assert s.split_segments("echo a\necho b") == ["echo a", "echo b"]
+    assert s.split_segments(f'echo "a{b}\nb"') == [f'echo "a{b}\nb"']
+
+
+def test_as8_an_escaped_backslash_before_a_newline_is_still_a_real_split():
+    b = chr(92)
+    assert s.split_segments(f"git push origin x{b}{b}\n--force") == [
+        f"git push origin x{b}{b}", "--force"]
