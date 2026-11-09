@@ -226,10 +226,11 @@ def test_as8_an_unclosed_quote_or_an_escaped_quote_cannot_hide_a_command(command
     assert s.check(bash(command)) is not None
 
 
-def test_as8_an_escaped_semicolon_outside_quotes_still_splits_stricter_than_bash():
+def test_as8_an_escaped_semicolon_outside_quotes_is_plain_text_like_bash():
     backslash = chr(92)
-    assert s.split_segments(f"echo a{backslash};git push --force") == [
-        f"echo a{backslash}", "git push --force"]
+    assert s.split_segments(f"echo a{backslash};b") == [f"echo a{backslash};b"]
+    assert s.split_segments(f"echo a{backslash}{backslash};git push") == [
+        f"echo a{backslash}{backslash}", "git push"]  # an escaped backslash: the ; is real
 
 
 def test_as8_split_segments_keeps_quoted_text_whole():
@@ -333,3 +334,49 @@ def test_windows_path_with_a_dangerous_second_command_is_still_blocked():
 def test_a_plain_and_a_quoted_windows_path_are_allowed():
     assert s.check(bash(f"dir C:{BS}dev{BS}x")) is None
     assert s.check(bash(f'dir "C:{BS}dev{BS}x"')) is None
+
+
+# ---- Gian's table (9 Nov): where bash ends each command, and what the hook says ----
+# (command, segments bash makes or None when the hook refuses before splitting, refused?)
+# Backslashes are written with chr(92) so the text stays readable.
+
+_B = chr(92)
+TABLE = [
+    ("gh issue view 33 --json comments --jq '.comments|last|.body'", 1, False),
+    (f'grep "a{_B}|b" file.txt', 1, False),
+    ('echo "a;b"', 1, False),
+    (f"echo a{_B};b", 1, False),
+    ('echo "it\'s"', 1, False),
+    ("echo 'x' ; git push --force", 2, True),
+    ('echo "x" && git push --force', 2, True),
+    ('echo "x" || git push --force', 2, True),
+    ("echo x & git push --force", 2, True),
+    ("echo x \n git push --force", 2, True),
+    ("echo $(git push --force)", None, True),
+    ("echo `git push --force`", None, True),
+    ("echo 'unclosed", None, True),
+    ("echo x #; git push --force", None, True),      # bash: a comment; the hook fails closed
+    ("cat <<EOF", None, True),                      # the hook fails closed on a heredoc
+]
+
+
+@pytest.mark.parametrize(("command", "segments", "refused"), TABLE)
+def test_table_segments_match_bash_and_the_verdict_is_as_expected(command, segments, refused):
+    found = s.split_segments(command)
+    if segments is not None:
+        assert found is not None and len(found) == segments
+    assert (s.check(bash(command)) is not None) is refused
+
+
+@pytest.mark.parametrize("command", [
+    f"type {chr(34)}C:{_B}dev{_B}x{chr(34)}",
+    f"dir {chr(34)}C:{_B}dev{_B}x{_B}{chr(34)}",        # a quoted path ending in a backslash
+])
+def test_table_windows_paths_are_allowed_or_refused_never_a_crash(command):
+    result = s.check(bash(command))
+    assert result is None or isinstance(result, str)
+
+
+def test_table_double_operators_are_one_separator_each():
+    for op in ("&&", "||", "|&", ";", "|", "&"):
+        assert s.split_segments(f"a {op} b") == ["a ", " b"], op

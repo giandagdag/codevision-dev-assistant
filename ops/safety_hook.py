@@ -47,9 +47,9 @@ def split_segments(command: str) -> list[str] | None:
     A backslash before a newline outside quotes joins the lines (no split), as in bash.
     Returns None for an unclosed quote: fail closed, the caller refuses.
     A `#` that starts a word (a comment) or a `<<` (a heredoc) outside quotes returns None too: a
-    stray quote inside one could hide the next line from us. A `;` that bash would treat as plain
-    text (after a backslash) still splits, which is stricter. A `;` inside quotes no longer
-    splits (bash agrees); the old regex split there, which is why unclosed quotes are refused.
+    stray quote inside one could hide the next line from us. A `;` `|` or `&` after a backslash, or
+    inside quotes, does not split (bash agrees; the old regex split there, which is why unclosed
+    quotes are refused).
     """
     segments, current, quote, i = [], [], "", 0
     while i < len(command):
@@ -66,9 +66,9 @@ def split_segments(command: str) -> list[str] | None:
         elif ch == "\\" and command[i + 1:i + 2] == "\n":
             i += 2  # a line continuation: bash joins the two lines, so the hook must too
             continue
-        elif ch == "\\" and i + 1 < len(command) and command[i + 1] not in ";|&\n":
+        elif ch == "\\" and i + 1 < len(command):
             # Outside quotes a backslash and the next character are ONE unit, as in bash:
-            # `\\'` is a backslash and then a quote that OPENS; `\'` is a plain quote.
+            # `\\'` is a backslash and then a quote that OPENS; `\'` and `\;` are plain text.
             current.append(ch)
             i += 1
             ch = command[i]
@@ -81,7 +81,8 @@ def split_segments(command: str) -> list[str] | None:
         elif ch in ";|&\n":
             segments.append("".join(current))
             current = []
-            i += 1
+            # `&&`, `||` and `|&` are ONE operator in bash, so they end one command, not two
+            i += 2 if command[i:i + 2] in ("&&", "||", "|&") else 1
             continue
         current.append(ch)
         i += 1
