@@ -116,6 +116,74 @@ run, edit guard). Spec section 13 assumed a build `kind` column; it does not exi
 - Q-b: lane call uses the Tester role client (WF-3 is a work fact).
 - Q-c: a "check" build stores its kind in a new guarded column, not a new table.
 
+## Step 16: wire the Refine callbacks (added 9 Nov, Gian answered issue #33 with option 1)
+Why: steps 13a to 13d only drew the Refine parts; no click did anything. Rule R12 holds: callbacks
+stay thin, every check stays in the engine functions already built (steps 5 to 12).
+- 16a. `agents/da_refine_actions.py` (no Dash). (1) `get_refine_bar(settings, request_id)`: for the
+  open lane step (`RefineState.step`) returns the note line, the buttons as (key, label) and whether
+  the text box is open. (2) `perform_refine(settings, key, request_id, refine_revision, text, arg)`:
+  one dict key to engine call, returns a `Job` name (`"build"` when the caller must start the build
+  runner, else `""`). Tests: a table of every step to its buttons; each key calls the right engine
+  function; a stale refine revision is refused; Send at `b_written` calls `suggest`; the build job is
+  returned for check, Fix it, bug fix, Apply (Keep mine) and Add-test-confirm.
+- 16a table (the single list; one test asserts every key here is handled by `perform_refine`, and
+  that every engine function named exists). Key, label, engine call, job:
+  | Step (where) | Buttons (key) | Engine call | Job |
+  |---|---|---|---|
+  | `b_written`, Refine box | Send | `lanes.suggest` | |
+  | `b_written` | Check my edits `check` | `flow.start_check` | build |
+  | `b_written` | Restore `restore` | `flow.restore_preview` (shows warning, Restore build N / Cancel) | |
+  | restore preview | Restore build N `restore_go`, Cancel `restore_cancel` | browser hop 1 `prepare_restore`, hop 2 `save_restore` (16c); Cancel clears the preview | |
+  | `b_written`, download mode | Upload folder to re-scan; restore ZIP | `rescan`; `prepare_restore_download` (16c) | |
+  | NOT_PASSING after check | Fix my edit `fix_edit`, My edit is right `edit_right`, I'll fix it myself `fix_myself` | NEW small engine fns in 16a: `fix_edit` = suggest(source `failed_check`) then bug lane at the rebuild step with the failing tests as repro; `edit_right` = suggest(source `failed_check`, pre-filled text) then requirement lane; `flow.fix_myself` | fix_edit: build |
+  | `lane_choice` | Requirement change / Approach change / Bug `lane_*`, Cancel `cancel` | `lanes.choose_lane`, `lanes.cancel` | |
+  | `req_revise` | (runs by itself on entry) Try again `revise` | `lanes.revise` | |
+  | `req_checkpoint` | Confirm v2 `confirm_v2`, Cancel revision `cancel`, Send = Correct something | `lanes.confirm_revision`, `lanes.cancel`, `lanes.revise(correction)` | |
+  | `req_discover` | Try again `discover` | `revision.run_discover` | |
+  | `req_findings` | Findings look right `findings_ok` | `revision.confirm_findings` | |
+  | `req_approach` | Try again `rev_approach` | `revision.start_revision_approach` | |
+  | `req_plan`, `approach_plan` | Phase 4 buttons (Accept approach, Change something, Accept test plan, Get help) | existing `_approach_action` path, reused | |
+  | `approach_start` | Send of the feedback is already saved; Try again `approach_change` | `approach.start_approach_change` | |
+  | `approach_refused` | Switch to requirement change `switch`, Cancel | `approach.switch_to_requirement`, `lanes.cancel` | |
+  | `bug_start` | Send (description) | `bug.start_repro` | |
+  | `bug_confirm` | Yes, this is the bug `repro_yes`, No, describe again `repro_no`, Cancel | `bug.confirm_repro`, `bug.reject_repro`, `lanes.cancel` | |
+  | `bug_help` | Get help, No, describe again, Cancel | `help.request_help`, `bug.reject_repro`, `lanes.cancel` | |
+  | `bug_rebuild` | Start the fix | `bug.start_bug_fix` | build |
+  | `own_confirm` | Add this test `own_add`, Drop this test `own_drop` | `owntest.confirm_own_test` then `flow.start_check(after_new_test)`; `owntest.drop_own_test` | build |
+  | `own_fails` | Yes, fix it `own_bug`, Drop this test | `owntest.treat_as_bug` then `bug.start_bug_fix`; `owntest.drop_own_test` | build |
+  | Tests tab | Add a test case (criterion + text) | `owntest.add_test_case` | |
+  | Tests tab | Fix it on a Should fix | `fixit.fix_it` | build |
+  | `b_conflicts` | Keep mine / Take the AI's (per conflict), Apply my choices | `picks.pick`, `picks.apply_choices` | build if any Keep mine |
+  | any open lane step | Get help | `help.request_help` | |
+  The two NEW functions `fix_edit` and `edit_right` are NOT yet in the engine (only the source
+  value `failed_check` exists); each gets its own tests (8-8, 8-6 area) before wiring.
+- 16a end-to-end test (answers plan review Must fix 2): through the callback functions, a
+  requirement lane (Send, lane pick, Confirm v2, Findings look right, Accept approach, Accept test
+  plan, workspace check, Build, READY_FOR_REVIEW) and a bug lane, with the fake provider. The
+  existing Phase 4/5/6 buttons are reused unchanged while status is REVISION_IN_PROGRESS; `refine_revision`
+  is read fresh from `lanes.get_refine_revision` on every draw and sent in the page state.
+- Who starts the runner: the Refine callback calls `build_runner.submit_build` when `perform_refine`
+  returns job `build` (the same call `_build_action` makes). A test sends two clicks in a row: the
+  second is refused as stale (F2).
+- 16b. Layout and callbacks. Page state gets `refine_revision` and `refine: True`. A new button
+  pattern id `REFINE_TYPE` draws the lane bar in the composer while status is REVISION. Callbacks in
+  `callbacks/screen_callbacks/da_refine_callbacks.py`, registered from the page register function:
+  Send at `b_written` (Refine), lane/step buttons, conflict picks (existing `CONFLICT_PICK_TYPE`),
+  Fix it (Tests tab), Add a test case, Get help. Poll keeps running while a build job runs.
+  Tests call the functions directly, as the Phase 7 callback tests do. One more test lists the
+  registered callback inputs and checks every Refine button id the layout draws is among them.
+- 16c. Browser buttons Re-scan and Restore (hop 1 / hop 2) use the same bridge pattern as the
+  Phase 5/6 write buttons, including download mode (8-40). Checked by tests on the script text and
+  the bridge routes; the real clicks are checked by 8-42 (16d). The final report says whether 8-42
+  ran or was skipped; a skip means the buttons are NOT verified, and Gian's home check on
+  127.0.0.1:8050 is the proof.
+- 16d. Enable 8-42 (Playwright, skipped only if no browser is installed). Fix the 2 round-1 Should
+  fix items: smoke items 27 and 28 must end READY_FOR_REVIEW (item 28 does the rebuild), and the
+  "Known gap" note leaves `docs/refine-work-test.md` (a test checks it is gone; the smoke check
+  asserts and prints the final status of items 27 and 28). Step 15 is superseded by 16e.
+- 16e. Full run, code review rounds 2 and 3, PR into `auto/phases-7-10`.
+Stop rule: if 16c cannot be done without a library or a decision, stop and write it to the worker note.
+
 ## Out of scope
 As spec section 15. Admin screens, Handoff, Enhance, deleting files, Git, tests in the workspace.
 WF-1 to WF-5: no work, parked as `needs-work-test` / `needs-gian`.
