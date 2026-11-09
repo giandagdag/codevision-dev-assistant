@@ -545,3 +545,34 @@ def test_as4_unpushed_commits_show_a_warning_that_goes_when_pushed(status_file):
 def test_a_git_problem_in_the_warning_check_shows_no_warning(status_file):
     stall.remember_unpushed("auto/phase-8")
     assert "UNPUSHED" not in build("idle", status_file=status_file)  # FakeGit fails rev-list
+
+
+# ---- Phase A fix 4 (G8, AS-9): sub-steps show in the text, the bar counts whole steps ----
+
+def test_as9_step_labels_keep_their_letters_and_parts():
+    subjects = ["Phase 8 step 13d: x", "Phase 8 step 13c: y", "Phase 8 step 9b-3: z",
+                "Phase 7 step 14: no"]
+    assert sb.highest_step_label(subjects, 8) == "13d"
+    assert sb.highest_step_label(["Phase 8 step 9b-3: a", "Phase 8 step 9b: b"], 8) == "9b-3"
+    assert sb.highest_step_label(["Phase 8 step 9: a"], 8) == "9"
+    assert sb.highest_step_label([], 8) == ""
+
+
+def test_as9_the_text_says_step_13d_and_the_bar_counts_step_13():
+    base = dict(spec_approved=True, plan_exists=True, plan_approved=True, steps_total=15)
+    with_label = sb.phase_progress(sb.PhaseFacts(8, step_done=13, step_label="13d", **base))
+    plain = sb.phase_progress(sb.PhaseFacts(8, step_done=13, **base))
+    assert with_label.stage == "Build, step 13d of 15" and plain.stage == "Build, step 13 of 15"
+    assert with_label.percent == plain.percent
+
+
+def test_as9_a_label_from_another_number_is_not_shown():
+    facts = sb.PhaseFacts(8, spec_approved=True, plan_exists=True, plan_approved=True,
+                          steps_total=6, step_done=9, step_label="9b")  # done is capped at 6
+    assert sb.phase_progress(facts).stage != "Build, step 9b of 6"
+
+
+def test_as9_a_label_whose_number_only_starts_like_the_step_is_not_shown():
+    facts = sb.PhaseFacts(8, spec_approved=True, plan_exists=True, plan_approved=True,
+                          steps_total=1, step_done=13, step_label="13d")
+    assert sb.phase_progress(facts).stage != "Build, step 13d of 1"

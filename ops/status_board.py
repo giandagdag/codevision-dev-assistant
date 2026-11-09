@@ -68,6 +68,7 @@ class PhaseFacts:
     plan_approved: bool = False
     steps_total: int = 0
     step_done: int = 0
+    step_label: str = ""  # the newest step as written in the commit, for example '13d' or '9b-3'
     review_rounds: int = 0
     last_review_clean: bool = False
     pushed: bool = False
@@ -110,7 +111,11 @@ def phase_progress(f: PhaseFacts) -> Progress:
     elif not plan_done:
         stage = "Plan"
     elif not build_done:
-        stage = (f"Build, step {done_steps} of {f.steps_total}" if f.steps_total else "Build")
+        # The bar counts whole steps; the text shows the sub-step (13d) while it is in that step.
+        number = re.match(r"\d+", f.step_label)
+        label = f.step_label if number and int(number.group()) == done_steps else ""
+        stage = (f"Build, step {label or done_steps} of {f.steps_total}" if f.steps_total
+                 else "Build")
     elif review < SHARE_REVIEW:
         stage = "Code review"
     else:
@@ -151,6 +156,19 @@ def highest_step(subjects: list[str], phase: int) -> int:
     found = [int(m.group(1)) for s in subjects
              if (m := re.match(rf"\s*Phase {phase} step (\d+)", s, flags=re.IGNORECASE))]
     return max(found, default=0)
+
+
+def highest_step_label(subjects: list[str], phase: int) -> str:
+    """The label of the newest step in commit subjects: 'Phase 8 step 13d: x' gives '13d',
+    'Phase 8 step 9b-3: x' gives '9b-3'. Highest number first, then letters, then the part."""
+    found = []
+    for s in subjects:
+        m = re.match(rf"\s*Phase {phase} step (\d+)([a-z]*)(?:-(\d+))?(?!\w)", s,
+                     flags=re.IGNORECASE)
+        if m:
+            found.append(((int(m.group(1)), m.group(2).lower(), int(m.group(3) or 0)),
+                          m.group(0).split("step ", 1)[1].lower()))
+    return max(found, default=((0, "", 0), ""))[1]
 
 
 def is_approved(text: str) -> bool:
@@ -222,6 +240,7 @@ def phase_facts(phase: int, git: Git, root: Path = ROOT) -> PhaseFacts:
     f.plan_approved = f.plan_exists and any(
         re.search(r"plan-reviewer approved", s, flags=re.IGNORECASE) for s in subjects)
     f.step_done = highest_step(subjects, phase)
+    f.step_label = highest_step_label(subjects, phase)
     rounds = [s for s in subjects if re.search(r"code review round", s, flags=re.IGNORECASE)]
     f.review_rounds = len(rounds)
     f.last_review_clean = bool(rounds) and bool(re.search(r"0 must fix", rounds[0], re.IGNORECASE))

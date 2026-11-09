@@ -171,7 +171,8 @@ def test_set_running_adds_one_line_under_stopped_and_replaces_it(tmp_path):
 
 def test_set_running_replaces_the_dash_form_and_clear_removes_it(tmp_path):
     f = tmp_path / "STATUS.md"
-    f.write_text("# S\n## Where we are\n- Running: builder since 07 Nov\n- Next: go\n", encoding="utf-8")
+    f.write_text("# S\n## Where we are\n- Running: builder since 07 Nov\n- Next: go\n",
+                 encoding="utf-8")
     status.set_running(f, "chief", "10:21 SGT")
     assert f.read_text(encoding="utf-8").count("Running:") == 1
     assert status.clear_running(f) is True

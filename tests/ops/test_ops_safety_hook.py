@@ -189,3 +189,49 @@ def test_every_pytest_form_a_worker_may_use_on_windows_and_linux_is_allowed():
                     "python -m pytest -q", "python -m ruff check .",
                     "python ops/quiet.py pytest", '"$DA_PYTHON" ops/quiet.py pytest'):
         assert any(command.startswith(prefix) for prefix in allow), command
+
+
+# ---- Phase A fix 4 (G6, AS-8): the splitter reads quotes the way bash does ----
+
+@pytest.mark.parametrize("command", [
+    "gh issue view 33 --json comments --jq '.comments|last|.body'",
+    "gh issue view 33 --json comments --jq \".comments|last|.body\"",
+    "gh issue view 33 --json comments --jq '.comments\\|last\\|.body'",
+    "git commit -m \"fix a; b | c && d\"",
+    "echo 'a; b'",
+    "echo \"it's fine; really\"",
+])
+def test_as8_a_separator_inside_quotes_does_not_split(command):
+    assert s.check(bash(command)) is None
+
+
+@pytest.mark.parametrize("command", [
+    "echo 'x' ; git push --force",
+    "echo \"x\" && git push origin main",
+    "echo 'x' | git push -f",
+    "echo ok\ngit push --force",
+    "echo 'a;b' ; rm src/da_config.py",
+    "echo hi & git reset --hard",
+])
+def test_as8_a_separator_outside_quotes_still_splits(command):
+    assert s.check(bash(command)) is not None
+
+
+@pytest.mark.parametrize("command", [
+    "echo 'unclosed", "echo \"unclosed", "git commit -m 'a; git push --force",
+    "echo \\\"; rm src/x.py; echo \\\"",       # escaped quotes hide nothing: rm is still seen
+    "echo \\'; git push --force; echo \\'",
+])
+def test_as8_an_unclosed_quote_or_an_escaped_quote_cannot_hide_a_command(command):
+    assert s.check(bash(command)) is not None
+
+
+def test_as8_an_escaped_semicolon_outside_quotes_still_splits_stricter_than_bash():
+    backslash = chr(92)
+    assert s.split_segments(f"echo a{backslash};git push --force") == [
+        f"echo a{backslash}", "git push --force"]
+
+
+def test_as8_split_segments_keeps_quoted_text_whole():
+    assert s.split_segments("a 'b;c' ; d \"e|f\"") == ["a 'b;c' ", " d \"e|f\""]
+    assert s.split_segments("echo 'x") is None

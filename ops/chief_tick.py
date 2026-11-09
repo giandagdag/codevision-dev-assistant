@@ -194,7 +194,8 @@ def run_board(board: Callable[[str], object] | None, result: str) -> None:
 
 
 def _tick(reader, gh, launcher, status_file, now, preflight, alive, killer, git=None) -> str:
-    """One wake-up. Returns 'busy', 'stopped', 'idle', 'waiting', 'would-start', 'hooks-broken' or 'ran'.
+    """One wake-up. Returns 'busy', 'stopped', 'idle', 'waiting', 'would-start', 'hooks-broken'
+    or 'ran'.
 
     The job queue is looked at first (F4): a worker still running means 'busy' and nothing else
     happens (zero tokens). A finished, vanished or over-time worker is recorded, then the normal
@@ -311,8 +312,8 @@ def count_chief_run(moved: bool, gh: Gh, status_file: Path, now: float) -> None:
             return
         made = open_gian_issue(
             f"{stall.STALL_PREFIX}{NO_PROGRESS}",
-            f"The chief was woken {count} times in a row and did nothing: it started no worker, did "
-            "not change the `Next:` line and did not open or close an issue.\n\nRead the last "
+            f"The chief was woken {count} times in a row and did nothing: it started no worker, "
+            "did not change the `Next:` line and did not open or close an issue.\n\nRead the last "
             "chief replies in `logs/workers/`, fix the cause, then close this issue yourself.",
             "needs-gian", gh)
         if made:
@@ -332,7 +333,8 @@ def heal_running_line(status_file: Path, now: float) -> None:
     if running_path().exists():
         return
     if status.clear_running(status_file):
-        status.add_log(status_file, f"{usage_guard.format_sgt(now)}: Running line removed: no worker")
+        status.add_log(status_file,
+                       f"{usage_guard.format_sgt(now)}: Running line removed: no worker")
 
 
 # ---- the stall alarm (Phase A fix 3, F1) ----
