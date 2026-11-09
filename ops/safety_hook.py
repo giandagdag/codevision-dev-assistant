@@ -43,7 +43,8 @@ def split_segments(command: str) -> list[str] | None:
     Follows bash's own quote rules, so the hook and the shell agree on where a command ends:
     inside single quotes nothing is special; inside double quotes a backslash hides the next
     character; outside quotes a backslash and the next character are one unit (so an escaped quote
-    opens nothing, and an escaped backslash leaves the quote after it free to open). Returns None for an unclosed quote: fail closed, the caller refuses.
+    opens nothing, and an escaped backslash leaves the quote after it free to open).
+    Returns None for an unclosed quote: fail closed, the caller refuses.
     A `;` that bash would treat as plain text (after a backslash) still splits: that only ever
     makes the hook stricter.
     """
