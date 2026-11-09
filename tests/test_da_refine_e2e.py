@@ -92,6 +92,11 @@ def test_8_42_his_edit_survives_a_bug_lane_rebuild_in_a_real_browser(make_live_p
     button(page, "Bug").click()
     button(page, "Yes, this is the bug").click(timeout=BUILD_WAIT_MS)
     wait_for_text(page, "Running on the server", BUILD_WAIT_MS)
+    # His note sits next to the line the fix changes, so the app stops and asks (edit protection).
+    # He picks Keep mine, then Apply my choices; only then is the code written.
+    wait_for_text(page, "The rebuild touches 1 place(s) you edited", BUILD_WAIT_MS)
+    button(page, "Keep mine").click()
+    button(page, "Apply my choices").click()
     button(page, "Re-scan").wait_for(timeout=BUILD_WAIT_MS)  # b_written again: the code is written
 
     # 4. His edited line is still in the file, and Dash raised no missing-button error.
