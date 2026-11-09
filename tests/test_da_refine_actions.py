@@ -78,7 +78,10 @@ def test_text_box_opens_only_for_a_correction_and_the_bug_description():
 
 
 def test_every_key_a_bar_draws_is_handled_and_browser_keys_are_not():
-    drawn = {key for step in EXPECTED for key in EXPECTED[step]} | {"help"}
+    # Keys come from the module's own tables, so a new button without a handler fails here.
+    drawn = {key for _, buttons, _, _ in actions.LANE_STEPS.values() for key, _ in buttons}
+    drawn |= set(actions.LABELS) - set(actions.BROWSER_KEYS)
+    drawn |= {key for step in EXPECTED for key in EXPECTED[step]} | {"help"}
     drawn |= {f"lane_{lane}" for lane in lanes.LANE_LABELS}
     drawn |= {"check_edits", "restore", "restore_cancel", "restore_pick", "fix_edit",
               "edit_right", "fix_myself", "apply", "send", "fixit", "add_case"}

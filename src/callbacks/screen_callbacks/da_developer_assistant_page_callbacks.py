@@ -383,6 +383,8 @@ def perform_finding_action(settings: Settings, index: str, reasons: dict, state,
             raise PreventUpdate
         reason = reasons.get(finding_id) or ""
         if action == "fixit":
+            if state.get("refine_revision") is None:
+                raise PreventUpdate  # no Refine state on the page: nothing to compare with
             # Phase 8: Fix it starts a fix build; the runner is started like for any build.
             return (refresh or 0) + 1, run_refine(settings, "fixit", state, arg=finding_id)
         if action == "accept":
