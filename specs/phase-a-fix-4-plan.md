@@ -90,3 +90,15 @@ Nothing in `src/` changes. `auto/phase-8` is not touched. Tests use fakes only (
 
 `python -m pytest tests/ops` (all green), `ruff check .`, smoke check, and `git diff --stat` shows only
 `ops/`, `tests/ops/`, `docs/automation.md`, `.claude/agents/`, `specs/`, `CLAUDE.md`.
+
+## Plan review result (1 round): 0 Must fix, approved. Should fix items settled
+
+- **Waiting wording.** AS-5 says an open non-stall `needs-gian` issue plus no new answer gives `waiting`;
+  G3 says "if Next says the team waits". Settled in the safer middle: `waiting` needs an open non-stall issue
+  AND a Next line that says it waits (`waiting for gian`, or `wait` with `gian`, or `wait` with `#N` of an open
+  issue). `chief.md` tells the chief to write `waiting for Gian` in Next when it parks on an issue. Tests cover both.
+  Gian: if you want AS-5 literally (any open issue means skip the chief), it is a one-line change.
+- **Answer before `has_work`.** The answer check runs before `has_work`, so an answer wakes the chief even with `Next: none` (test).
+- **Answer-woken runs** count in the no-progress alarm like any chief run (test).
+- **Step 0** (branch and "Current phase") is done: commit d1ed52f.
+- Extra tests: `\;` outside quotes, `"a;b"` inside double quotes, `Running:` ignored by `has_work`, no double ANSWER log on a dry run.
