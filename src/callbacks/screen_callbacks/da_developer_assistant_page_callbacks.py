@@ -25,9 +25,9 @@ from agents.da_discover_flow import (
     get_discovery_view,
     start_discovery,
 )
+from agents.da_refine_actions import get_refine_bar
 from agents.da_refine_screen import (
     get_history,
-    get_refine_box,
     get_refine_build_panel,
     get_tagged_build,
 )
@@ -42,6 +42,7 @@ from agents.da_understand_flow import (
     submit_answer,
     submit_form,
 )
+from callbacks.screen_callbacks.da_refine_callbacks import register_da_refine_callbacks, run_refine
 from callbacks.screen_callbacks.da_workspace_callbacks import register_da_workspace_callbacks
 from configs.da_config import ConfigError, Settings, load_settings
 from db_table_functions.da_db import DatabaseBusyError
@@ -204,17 +205,7 @@ def show_page(search: str | None, refresh: int | None):
                 build = tester_flow.get_build_view(settings, request_id) if has_build else None
                 if build is not None:
                     build = get_tagged_build(settings, request_id, build, approach.plan)
-                refine = (
-                    get_refine_box(
-                        settings,
-                        request_id,
-                        status,
-                        build.state.step,
-                        build.mode,
-                    )
-                    if build is not None
-                    else None
-                )
+                refine = get_refine_bar(settings, request_id) if build is not None else None
                 history = get_history(settings, request_id) if build is not None else None
                 panel = (
                     get_refine_build_panel(settings, request_id, build)
@@ -224,10 +215,12 @@ def show_page(search: str | None, refresh: int | None):
                 return render_approach_workspace(
                     view, discovery, approach, workspace, build, refine, history, panel
                 )
+            # A requirement lane runs Discover again; the Refine bar replaces its buttons.
+            lane_bar = get_refine_bar(settings, request_id)
             if status == STATUS_DISCOVERY_CONFIRMED:
                 approach = approach_flow.get_approach_view(settings, request_id)
-                return render_discover_workspace(view, discovery, approach)
-            return render_discover_workspace(view, discovery)
+                return render_discover_workspace(view, discovery, approach, lane_bar)
+            return render_discover_workspace(view, discovery, None, lane_bar)
         except (UnderstandError, DatabaseBusyError) as error:
             return render_message_page(str(error))
     if params.get("new"):
@@ -260,7 +253,10 @@ def perform_action(settings: Settings, trigger, text, state, refresh):
         if trigger == SEND_ID and request_id is None:
             view = create_understand_request(settings, text or "")
             return no_update, f"?request={view.request.request_id}", ""
-        if state.get("build") and trigger != SKIP_ID:
+        if state.get("refine") and trigger == SEND_ID:
+            # Phase 8: Send is Refine's (the Refine box, a correction, the bug description).
+            message = run_refine(settings, "send", state, text or "")
+        elif state.get("build") and trigger != SKIP_ID:
             _build_action(settings, trigger, request_id, revision)
         elif state.get("workspace") and trigger != SKIP_ID:
             _workspace_action(settings, trigger, request_id, revision)
@@ -383,9 +379,12 @@ def perform_finding_action(settings: Settings, index: str, reasons: dict, state,
     action, _, finding_id = index.partition(":")
     request_id, revision = state.get("request_id"), state.get("revision")
     try:
-        if not state.get("build") or action not in ("accept", "reopen", "dispute"):
+        if not state.get("build") or action not in ("accept", "reopen", "dispute", "fixit"):
             raise PreventUpdate
         reason = reasons.get(finding_id) or ""
+        if action == "fixit":
+            # Phase 8: Fix it starts a fix build; the runner is started like for any build.
+            return (refresh or 0) + 1, run_refine(settings, "fixit", state, arg=finding_id)
         if action == "accept":
             tester_flow.accept_finding(settings, request_id, revision, finding_id, reason)
         elif action == "reopen":
@@ -579,3 +578,4 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
     )(handle_finding)
 
     register_da_workspace_callbacks(app, lambda: get_settings())
+    register_da_refine_callbacks(app, lambda: get_settings())

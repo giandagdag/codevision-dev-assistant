@@ -32,6 +32,10 @@ SUMMARY_ID = "da-build-summary"
 TESTS_LIST_ID = "da-tests-list"
 TESTS_CODE_ID = "da-tests-code"
 TESTS_VERSION_ID = "da-tests-version"
+ADD_CASE_ID = "da-add-case"
+ADD_CASE_TYPE = "da-add-case-go"  # the button
+ADD_CASE_FIELD_TYPE = "da-add-case-field"  # the criterion picker and the text box
+ADD_CASE_LABEL = "Add a test case"
 
 TESTS_NOT_RUN = "Not run: the code checks (Layer A) failed first. See the Build tab."
 TESTS_NOTE = "These tests run on the CodeVision server. They are not copied to your folder."
@@ -96,12 +100,14 @@ def tests_tab(view: BuildView | None) -> list:
                 id=TESTS_LIST_ID,
             )
         ]
-    report = tester_report(
-        view.tester,
+    can_act = (
         view.state.step in ACT_STEPS
         and view.request_status in ACT_STATUSES
-        and bool(view.tester and view.tester.layer_c_ran),
+        and bool(view.tester and view.tester.layer_c_ran)
     )
+    # Fix it and Add a test case work on the code in his folder: only at b_written (Phase 8).
+    at_written = view.state.step == "b_written" and view.request_status in ACT_STATUSES
+    report = tester_report(view.tester, can_act, can_act and at_written)
     rows = [_test_row(item) for item in view.tests]
     not_run = (
         dmc.Text(TESTS_NOT_RUN, size="sm", c="orange", id="da-tests-not-run")
@@ -144,10 +150,45 @@ def tests_tab(view: BuildView | None) -> list:
                 table,
                 dmc.Text(TESTS_NOTE, size="xs", c=da_styles.MUTED, id="da-tests-note"),
                 code,
+                add_case_form(view) if at_written else None,
             ],
             gap="sm",
         )
     ]
+
+
+def add_case_form(view: BuildView) -> dmc.Stack:
+    """Add a test case (spec section 11): pick a criterion, type the case in plain words. The
+    ids are pattern ids, so the page has none of them on other screens."""
+    criteria = sorted({row.criterion_id for row in view.tests})
+    return dmc.Stack(
+        [
+            dmc.Text(ADD_CASE_LABEL, fw=600, size="sm"),
+            dmc.Select(
+                id={"type": ADD_CASE_FIELD_TYPE, "index": "criterion"},
+                data=criteria,
+                value=criteria[0] if criteria else None,
+                placeholder="Pick the acceptance criterion",
+                allowDeselect=False,
+            ),
+            dmc.Textarea(
+                id={"type": ADD_CASE_FIELD_TYPE, "index": "text"},
+                placeholder="Describe the case in plain words",
+                autosize=True,
+                minRows=2,
+                maxRows=5,
+                inputProps={"maxLength": 4000},
+            ),
+            dmc.Button(
+                ADD_CASE_LABEL,
+                id={"type": ADD_CASE_TYPE, "index": "go"},
+                size="compact-xs",
+                variant="default",
+            ),
+        ],
+        gap="xs",
+        id=ADD_CASE_ID,
+    )
 
 
 # --- pieces ---

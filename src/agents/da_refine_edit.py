@@ -147,6 +147,8 @@ def open_restore(
     settings, request_id: str, base_revision: int, now: datetime | None = None
 ) -> RefineState:
     """Restore an earlier version: open the list of builds he can go back to."""
+    if not [v for v in list_versions(settings, request_id) if not v.is_last_tested]:
+        raise RefineError("There is no earlier version to restore yet.")
     return _set_restore(settings, request_id, base_revision, -1, "", now)
 
 

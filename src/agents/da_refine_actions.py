@@ -214,7 +214,8 @@ def _restore_buttons(settings, request_id: str, state, box: RefineBox):
     if pick > 0:
         box.note = f"Restore build {pick}: read the chat, then press the button."
         return [cancel], [("restore_go", f"Restore build {pick}")]
-    return ([(rflow.RESTORE_KEY, rflow.RESTORE_LABEL)] if others else []), []
+    # Always offered (spec row 8-1); with no earlier build the click says so.
+    return [(rflow.RESTORE_KEY, rflow.RESTORE_LABEL)], []
 
 
 def _lane_choice_bar(state, rev: int) -> RefineBox:
