@@ -149,6 +149,19 @@
     "refine_lane_max_attempts": 2,
     "refine_repro_max_attempts": 2,
     "refine_conflict_context_lines": 3,
+    "enhance_name_top_k": 5,
+    "enhance_meaning_top_k": 3,
+    "enhance_find_max_rounds": 3,
+    "enhance_max_keep_items": 8,
+    "safety_net_max_tests": 20,
+    "safety_net_max_attempts": 2,
+    "safety_net_max_corrections": 2,
+    "impact_max_callers": 30,
+    "capabilities": [
+      {"name": "Limits", "description": "Customer limit set-up, expiry and reporting.", "named_senior": "Limits capability lead", "path_patterns": ["*limits*"]},
+      {"name": "Reports", "description": "Printed and on-screen management reports.", "named_senior": "Reports capability lead", "path_patterns": ["*report*"]},
+      {"name": "Uploads", "description": "File upload and import screens.", "named_senior": "Uploads capability lead", "path_patterns": ["*upload*"]}
+    ],
     "flag_review_zones": [
       {"name": "Security", "description": "Encryption, key handling, and permission checks.", "examples": ["Encrypting a customer field", "Checking a user's role"], "path_patterns": ["*security*", "*crypto*", "*permission*"]},
       {"name": "Login", "description": "Sign-in, sessions, and passwords.", "examples": ["Login page", "Session timeout handling"], "path_patterns": ["*login*", "*session*", "*password*"]}

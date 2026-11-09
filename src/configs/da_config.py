@@ -28,6 +28,11 @@ DEFAULT_SEARCH_PROVIDER = "fake"
 DEFAULT_SEARCH_TOP_K = 5
 DEFAULT_DISCOVERY_MAX_ROUNDS = 3
 
+# Enhance (Phase 9, spec 13). "bitbucket" is a placeholder until the work adapter exists (WF-1).
+ALLOWED_MAIN_SOURCES = ("fake", "bitbucket")
+DEFAULT_MAIN_SOURCE = "fake"
+DEFAULT_FAKE_MAIN_DIR = "src/data/da_fake_main"
+
 
 class ConfigError(Exception):
     """A setup problem the developer can fix. The message says how."""
@@ -66,6 +71,9 @@ class Settings:
     # Phase 6: the CodeVision folder (the one that holds src/) the sandbox copies from (D-A).
     # None = not set; with the fake provider the made-up test folder is used instead.
     sandbox_source_dir: Path | None = None
+    # Phase 9: where the server reads a file as it is on Bitbucket main (home: a fake folder).
+    main_source: str = DEFAULT_MAIN_SOURCE
+    fake_main_dir: Path = PROJECT_ROOT / DEFAULT_FAKE_MAIN_DIR
 
 
 def load_settings(
@@ -121,6 +129,9 @@ def load_settings(
         claude_tester_model=read("DA_CLAUDE_TESTER_MODEL"),
         onprem_tester_model=read("DA_ONPREM_TESTER_MODEL"),
         sandbox_source_dir=_parse_folder(read("DA_SANDBOX_SOURCE_DIR")),
+        main_source=_parse_main_source(read("DA_MAIN_SOURCE")),
+        fake_main_dir=_parse_folder(read("DA_FAKE_MAIN_DIR"))
+        or PROJECT_ROOT / DEFAULT_FAKE_MAIN_DIR,
     )
 
 
@@ -177,6 +188,16 @@ def _parse_search_provider(raw: str) -> str:
             f"Use one of: {', '.join(ALLOWED_SEARCH_PROVIDERS)}. Set it in your .env file."
         )
     return provider
+
+
+def _parse_main_source(raw: str) -> str:
+    source = (raw or DEFAULT_MAIN_SOURCE).lower()
+    if source not in ALLOWED_MAIN_SOURCES:
+        raise ConfigError(
+            f"DA_MAIN_SOURCE is '{source}', which is not allowed. "
+            f"Use one of: {', '.join(ALLOWED_MAIN_SOURCES)}. Set it in your .env file."
+        )
+    return source
 
 
 def _parse_whole_number(name: str, raw: str, default: int, low: int, high: int) -> int:
