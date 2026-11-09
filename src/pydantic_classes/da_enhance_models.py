@@ -130,6 +130,15 @@ class ImpactRow(_Shape):
     zone: str = ""
 
 
+class ImpactResult(_Shape):
+    """What impact found. `available` False = the reference copy could not be read."""
+
+    available: bool = True
+    rows: list[ImpactRow] = Field(default_factory=list)
+    # How many more callers were found beyond the cap ("and N more").
+    more: int = Field(default=0, ge=0)
+
+
 # --- stored state (section 14) ---
 
 
