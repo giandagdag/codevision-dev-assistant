@@ -21,7 +21,11 @@ from db_table_functions.db_tbl_da_approach import (
     read_latest_plan,
 )
 from db_table_functions.db_tbl_da_audit import insert_audit_event
-from db_table_functions.db_tbl_da_build import ensure_build_tables
+from db_table_functions.db_tbl_da_build import (
+    ensure_build_tables,
+    read_build_state,
+    save_build_state,
+)
 from db_table_functions.db_tbl_da_refine import (
     close_refine,
     read_all_records,
@@ -176,6 +180,13 @@ def finish_revision(conn: sqlite3.Connection, request_id: str, now: datetime) ->
         save_workspace_state(
             conn, workspace.model_copy(update={"step": "start"}), workspace.revision, now
         )
+    # The earlier build is finished and written. A new approach version needs a new build (spec
+    # section 5, step 10), and Build only starts from the step `start`. The build number goes on
+    # counting, and every earlier build stays in the Versions list.
+    build = read_build_state(conn, request_id)
+    if build is not None and build.step == "b_written":
+        fresh = {"step": "start", "write_state": "not_written", "message": "", "return_status": ""}
+        save_build_state(conn, build.model_copy(update=fresh), build.revision, now)
     state = read_refine_state(conn, request_id)
     insert_audit_event(
         conn, request_id, "system", f"refine_{lane}_ready", {"refine": plan.refine_number}, now

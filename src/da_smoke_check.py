@@ -32,6 +32,7 @@ from da_llm_ping import ping
 from da_load_starter_rulebook import load_starter_rulebook
 from db_table_functions.da_db import DatabaseBusyError, open_db
 from db_table_functions.db_tbl_da_audit import add_audit_event, list_audit_events
+from db_table_functions.db_tbl_da_build import read_rounds
 from db_table_functions.db_tbl_da_requests import create_request, get_rulebook_for_request
 from db_table_functions.db_tbl_da_rulebook import (
     SEED_RULEBOOK_FILE,
@@ -409,7 +410,7 @@ def _run_build_steps(settings: Settings, request_id: str, folder: FakeBrowserFol
         f"the step is {state.step}"
     )
     _run_refine_bug_step(settings, request_id, folder)
-    _run_refine_requirement_step(settings, request_id)
+    _run_refine_requirement_step(settings, request_id, folder)
 
 
 def _write_built_files(settings: Settings, request_id: str, folder: FakeBrowserFolder) -> None:
@@ -450,9 +451,12 @@ def _run_refine_bug_step(settings: Settings, request_id: str, folder: FakeBrowse
     )
 
 
-def _run_refine_requirement_step(settings: Settings, request_id: str) -> None:
-    """Item 28 (Phase 8): the requirement lane up to the new approach. The request record gets
-    v2, Discover runs on it, and a revision approach follows."""
+def _run_refine_requirement_step(
+    settings: Settings, request_id: str, folder: FakeBrowserFolder
+) -> None:
+    """Item 28 (Phase 8): the requirement lane, all the way to a new build. The request record gets
+    v2, Discover runs on it, a revision approach and test plan follow, then the folder check and
+    the rebuild end at READY_FOR_REVIEW."""
     refine_rev = lambda: refine_lanes.get_refine_revision(settings, request_id)  # noqa: E731
     state = refine_lanes.suggest(settings, request_id, "Reject files over 5 MB", refine_rev())
     if state.suggested_lane != "requirement":
@@ -465,13 +469,64 @@ def _run_refine_requirement_step(settings: Settings, request_id: str) -> None:
     state = refine_revision.start_revision_approach(settings, request_id, refine_rev())
     if state.step != "req_plan":
         raise UnderstandError(f"The revision approach ended at {state.step}, not req_plan.")
-    # Still to do (worker note): accept the approach, write and accept the revision test plan, run
-    # the workspace check again and rebuild. The scripted fake Tester cannot write a revision test
-    # plan yet ("Tester reply ... 10 problems"), so the lane stops here.
+    # From here the Phase 4 steps run as they are: accept the approach, accept the revision test
+    # plan (the Tester writes cases for the new and changed criteria only), the folder check on
+    # the new file plan, and the rebuild.
+    view = approach.get_approach_view(settings, request_id)
+    if view.step == "choices":
+        option = view.buttons[0][1]
+        view = approach.choose_design_option(settings, request_id, option, view.revision)
+    view = approach.accept_approach(settings, request_id, view.revision)
+    view = approach.accept_test_plan(settings, request_id, view.revision)
+    if view.request.status != STATUS_READY_TO_BUILD:
+        raise UnderstandError(f"The revision ended at {view.request.status}, not READY_TO_BUILD.")
+    shown = _rebuild_after_revision(settings, request_id, folder)
+    if shown.state.step != "b_done" or shown.request_status != "READY_FOR_REVIEW":
+        raise UnderstandError(
+            f"The rebuild ended at {shown.state.step}, status {shown.request_status}: "
+            f"{shown.banner_text} {_why_a_build_failed(settings, request_id)}"
+        )
     print(
-        "28. Requirement lane: the record became v2, Discover ran on it, and a revision "
-        f"approach is waiting for his accept (step {state.step})"
+        "28. Requirement lane: the record became v2, Discover ran on it, the revision approach "
+        f"and test plan were accepted, and build {shown.run.build_number} ended as "
+        f"{shown.request_status} ({shown.label})"
     )
+
+
+def _why_a_build_failed(settings: Settings, request_id: str) -> str:
+    """The failed tests and code problems of the newest build, for the smoke check's message."""
+    number = build.get_state(settings, request_id).build_number
+    notes = []
+    with open_db(settings.db_path) as conn:
+        for item in read_rounds(conn, request_id, number):
+            report = item.failure_report
+            if report is not None:
+                notes.append(
+                    f"round {item.round}: tests {[i.test_id for i in report.items]}, "
+                    f"code problems {[(p.path, p.text) for p in report.layer_a]}"
+                )
+    return "; ".join(notes)
+
+
+def _rebuild_after_revision(settings: Settings, request_id: str, folder: FakeBrowserFolder):
+    """The folder check on the new file plan, then the build (the same two steps as items 22-24)."""
+    view = workspace.get_workspace_view(settings, request_id)
+    facts = folder.facts(view.planned_paths, view.markers, request_id, view.max_file_kb)
+    judgement = workspace.judge_facts(settings, request_id, facts, view.revision)
+    if judgement.job is None:
+        blocker = judgement.view.check.blockers[0]
+        raise UnderstandError(f"The folder check after the revision was blocked: {blocker.text}")
+    report = folder.run_job(judgement.job)
+    view = workspace.save_check(settings, request_id, facts, report, view.revision)
+    if view.step != "ws_ready":
+        raise UnderstandError(f"The workspace ended at {view.step} after the revision.")
+    facts = folder.facts(view.planned_paths, view.markers, request_id, view.max_file_kb)
+    build.start_build(settings, request_id, build.get_revision(settings, request_id), facts=facts)
+    outcome = build_loop.run_build(settings, request_id)
+    shown = tester_flow.get_build_view(settings, request_id)
+    if outcome != "done":
+        raise UnderstandError(f"The rebuild ended as {outcome} at {shown.state.step}.")
+    return shown
 
 
 def _check_tester_review(settings: Settings, request_id: str, shown) -> None:

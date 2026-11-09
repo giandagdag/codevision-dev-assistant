@@ -52,9 +52,3 @@ them without your pick.
 
 Rounds and tries are limited (rulebook policy: `refine_repro_max_attempts`, the Refine cap). Reaching
 a cap stops the text box but **Re-scan** and **Check my edits** keep working.
-
-## Known gap (home build)
-
-The Refine buttons are drawn on the page, but their click callbacks are not wired yet, so the
-steps above are checked at work only after those callbacks exist. The engine itself is covered by
-the tests and the smoke check.

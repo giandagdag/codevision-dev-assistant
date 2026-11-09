@@ -98,6 +98,10 @@ class ApproachResult:
         return self.reply is not None
 
 
+# The first words of the record diff the requirement lane sends (da_refine_revision.diff_text).
+REVISION_MARKER = "The request changed from version"
+
+
 class ScriptedApproachClient:
     """The fake provider for the Generator: a scripted reply for its call (spec 11).
 
@@ -131,6 +135,15 @@ class ScriptedApproachClient:
             for item in self._entry["reuse_decisions"]
             if item["cite"] in numbers
         ]
+        if self._call == CHANGE and REVISION_MARKER in prompt:
+            # A requirement revision after a build: the files the first build created are in his
+            # folder now, so a real Generator plans them as `modify` (a `create` would be B4).
+            entry["files"] = [
+                {**item, "action": "modify"}
+                if item["action"] == "create" and item["path"] in prompt
+                else item
+                for item in entry["files"]
+            ]
         if self._call == CHANGE and _criterion_switch_on():
             entry["changes_criteria"] = True
         return LLMReply(text=json.dumps(entry), provider="fake", model=self.model)
