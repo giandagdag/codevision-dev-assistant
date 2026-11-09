@@ -86,6 +86,38 @@ def _insert_in_section(lines: list[str], new: str) -> list[str]:
     return lines[:end] + [new] + lines[end:]
 
 
+def _is_running(line: str) -> bool:
+    return line.lstrip("- ").startswith("Running:")
+
+
+def set_running(path: Path, agent: str, since: str) -> None:
+    """Phase A fix 4 (G1): the tick writes the one `Running:` line, from the real start time.
+
+    Replaces an existing line (with or without a leading "- "); a new one goes under `Stopped:`.
+    """
+    new = f"Running: {agent} since {since}"
+    lines = _read(path)
+    for i, line in enumerate(lines):
+        if _is_running(line):
+            lines[i] = new
+            break
+    else:
+        at = next((i + 1 for i, x in enumerate(lines) if x.startswith("Stopped:")),
+                  1 if lines else 0)
+        lines.insert(at, new)
+    _write(path, lines)
+
+
+def clear_running(path: Path) -> bool:
+    """Delete the `Running:` line. True when there was one."""
+    lines = _read(path)
+    kept = [x for x in lines if not _is_running(x)]
+    if len(kept) == len(lines):
+        return False
+    _write(path, kept)
+    return True
+
+
 def set_usage_line(path: Path, five_hour, weekly, as_of: str, stopped: bool) -> None:
     """The line the chief updates on every run (Gian, 6 Nov)."""
     text = (

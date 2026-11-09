@@ -202,6 +202,7 @@ def _tick(reader, gh, launcher, status_file, now, preflight, alive, killer, git=
     now = time.time() if now is None else now
     if check_queue(reader, status_file, now, alive, killer, git) == "busy":
         return "busy"
+    heal_running_line(status_file, now)
     usage = usage_guard.get_usage(reader, now=now)
     decision = usage_guard.decide(usage)
     as_of = usage_guard.format_sgt(now)
@@ -219,6 +220,19 @@ def _tick(reader, gh, launcher, status_file, now, preflight, alive, killer, git=
         return "would-start"
     return launch_worker("chief", "Read STATUS.md and do the next step as the chief.", "chief",
                          "", reader, gh, launcher, status_file, now, preflight)
+
+
+def sgt_clock(epoch: float) -> str:
+    """'10:21 SGT' from an epoch time."""
+    return " ".join(usage_guard.format_sgt(epoch).split()[-2:])
+
+
+def heal_running_line(status_file: Path, now: float) -> None:
+    """G1: no running.json but a `Running:` line means the line is wrong. Delete it, say so once."""
+    if running_path().exists():
+        return
+    if status.clear_running(status_file):
+        status.add_log(status_file, f"{usage_guard.format_sgt(now)}: Running line removed: no worker")
 
 
 # ---- the stall alarm (Phase A fix 3, F1) ----
@@ -534,6 +548,7 @@ def start_background(agent, prompt, stage, phase, reader, gh, status_file, now,
         stop_tree(note["pid"])
         running_path().unlink(missing_ok=True)
         raise
+    status.set_running(status_file, agent, sgt_clock(note["started"]))  # G1: the tick owns it
     return f"started {agent}"
 
 
@@ -577,6 +592,7 @@ def check_queue(reader, status_file, now, alive=None, killer=None, git=None) -> 
     running, done = _read_note(running_path()) or {}, _read_note(done_path())
     if done is not None:
         _forget_notes()  # first, so a second call can never record the same worker twice
+        status.clear_running(status_file)
         result = WorkerResult(done.get("exit_code", -1), done.get("stdout", ""),
                               done.get("crash", ""), done.get("stderr", ""))
         record_result(running.get("agent") or done.get("agent", "worker"),
@@ -590,6 +606,7 @@ def check_queue(reader, status_file, now, alive=None, killer=None, git=None) -> 
     limit = MAX_WORKER_HOURS * 3600
     if age <= limit and ((pid and alive(pid)) or (pid is None and age < LAUNCH_GRACE_SECONDS)):
         return "busy"
+    status.clear_running(status_file)
     if age > limit and pid and alive(pid):
         killer(pid)
         _forget_notes()
@@ -636,6 +653,7 @@ def stop_worker(reader, status_file, now, alive=None, killer=None) -> str:
     alive = alive or pid_alive
     pid = running.get("pid")
     _forget_notes()
+    status.clear_running(status_file)
     if pid and alive(pid):  # a dead pid may now belong to a stranger: never kill it
         killer(pid)
         _record_without_result(running, "stopped: by hand", "stopped: by hand",
