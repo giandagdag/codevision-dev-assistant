@@ -110,7 +110,7 @@ def test_chief_sets_next_only_with_the_command_and_keeps_running_on_its_own_line
     _, text = front("chief")
     assert "exactly one `- Next:` line" in text and "chief_tick.py next" in text
     assert "never by hand-editing" in text
-    assert "on its own line" in text and "never put `Next` into it" in text
+    assert "Never write, edit or trust a `Running:` line" in text and "never put `Next`" in text
 
 
 @pytest.mark.parametrize("name", ["builder", "chief", "code-reviewer", "plan-reviewer"])
@@ -128,3 +128,28 @@ def test_docs_explain_fix_3():
                  "at most 3 plan steps", "one\ncommand per Bash call", "you close it",
                  "test_ops_zz_real_logs.py", "spec O1"):
         assert need in DOCS, need
+
+
+# ---- Phase A fix 4 (G7, G9) ----
+
+@pytest.mark.parametrize("name", ["builder", "chief", "code-reviewer"])
+def test_g7_one_refusal_is_not_bash_is_off(name):
+    _, text = front(name)
+    assert "refuses only that command" in text
+    assert "three different allowed commands in a row" in text
+    assert ".venv/Scripts/python" in text
+
+
+def test_g1_chief_never_owns_the_running_line_and_uses_the_answer_command():
+    _, text = front("chief")
+    assert "Only the tick owns it" in text
+    assert "chief_tick.py answer N" in text and "waiting for Gian, see #N" in text
+    assert "write\n\"Running:" not in text
+
+
+def test_docs_explain_fix_4():
+    for need in ("The chief never sits still by mistake", "Running line removed: no worker",
+                 "ANSWER #N", "Only comments by the repo owner", "chief_tick.py answer N",
+                 "chief made no progress twice", "Waiting costs nothing", "quotes",
+                 "three different allowed commands", "step 13d of 15", "Live from Phase 9"):
+        assert need in " ".join(DOCS.split()), need
