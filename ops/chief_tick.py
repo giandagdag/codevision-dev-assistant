@@ -258,8 +258,7 @@ def waiting_for_gian(text: str, gh: Gh, now: float) -> bool:
     except Exception as problem:  # noqa: BLE001 - unknown means "not waiting"
         status_board.log_failure(problem, now)
         return False
-    return bool(open_ones) and ("waiting for gian" in nxt or "gian" in nxt
-                                or any(f"#{n}" in nxt for n, _title in open_ones))
+    return bool(open_ones) and ("gian" in nxt or any(f"#{n}" in nxt for n, _title in open_ones))
 
 
 def _wake_for_answer(answer, reader, gh, launcher, status_file, now, preflight, as_of) -> str:

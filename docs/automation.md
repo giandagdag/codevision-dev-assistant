@@ -155,7 +155,7 @@ comments` and parses them in Python. Only comments by the repo owner (`gh repo v
 count; a comment by anyone else is ignored. A new owner comment (or an edited one, once) is written as
 the Log line `ANSWER #N (HH:MM SGT): <first 300 characters>`, and the chief is woken with the prompt
 `Gian answered #N: "<full text>". Act on it, then close #N with a short comment.` The last answer
-handled per issue is kept in `ops/state/answers.json`. This works even when `Next: none`. If the repo
+handled per issue is kept in `ops/state/answers.json`. This works even when `Next: none`: an answer wakes the chief before the tick asks whether there is work. If the repo
 ever moves to an organisation, the owner is the organisation, no comment counts, and nothing is acted
 on (it fails safe).
 

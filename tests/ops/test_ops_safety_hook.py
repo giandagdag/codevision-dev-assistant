@@ -235,3 +235,25 @@ def test_as8_an_escaped_semicolon_outside_quotes_still_splits_stricter_than_bash
 def test_as8_split_segments_keeps_quoted_text_whole():
     assert s.split_segments("a 'b;c' ; d \"e|f\"") == ["a 'b;c' ", " d \"e|f\""]
     assert s.split_segments("echo 'x") is None
+
+
+@pytest.mark.parametrize("command", [
+    # Round 1 code review: an escaped backslash must leave the next quote free to OPEN.
+    chr(92) * 2 + "' a '; git push --force; echo " + chr(92) + "'" + chr(92) + "'",
+    "echo " + chr(92) * 2 + "' a '; git push --force; echo " + chr(92) + "'" + chr(92) + "'",
+    "echo " + chr(92) * 2 + '" a "; git push --force; echo ' + chr(92) + '"' + chr(92) + '"',
+    "echo " + chr(92) * 2 + "' a '; rm src/x.py; echo '",
+    "echo a' ; git push --force ; echo 'b'",    # quote opened mid-word swallows nothing wrongly
+])
+def test_as8_escaped_backslashes_cannot_hide_a_command(command):
+    assert s.check(bash(command)) is not None
+
+
+def test_as8_escaped_backslash_then_quote_opens_a_quote_like_bash():
+    b = chr(92)
+    assert s.split_segments(f"echo {b}{b}'a;b'") == [f"echo {b}{b}'a;b'"]
+    assert s.split_segments(f"echo {b}'a;b") == [f"echo {b}'a", "b"]
+
+
+def test_as8_a_backslash_at_the_very_end_is_read_without_error():
+    assert s.split_segments("echo ok " + chr(92)) == ["echo ok " + chr(92)]  # hides nothing
