@@ -47,7 +47,8 @@ def test_unknown_keys_are_ignored_and_commas_are_safe(tmp_path):
     assert "nope" not in f.read_text(encoding="utf-8")
 
 
-def test_the_default_path_is_under_logs_which_git_ignores():
+def test_the_default_path_is_under_logs_which_git_ignores(monkeypatch):
+    monkeypatch.delenv("DA_LEDGER_FILE")  # the shared fixture sets it; this test wants the default
     assert ledger.ledger_path().parts[-2:] == ("logs", "usage-ledger.csv")
 
 

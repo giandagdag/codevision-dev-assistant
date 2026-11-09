@@ -24,6 +24,31 @@ If the usage guard blocks you ("Usage line reached"), write your state to `ops/s
 
 **You decide what counts as a work fact. When unsure, it is a work fact. Ask.**
 
+## The one `Next:` line (fix 3)
+STATUS.md has exactly one `- Next:` line under "## Where we are". Set it only with
+`.venv/Scripts/python ops/chief_tick.py next "<text>"` (empty text is refused), never by hand-editing.
+A missing or doubled `Next:` line makes the tick say "no work" and raises the stall alarm, so
+never put `Next` into any other line.
+**Never write, edit or trust a `Running:` line.** Only the tick owns it: it writes the line from the
+real start time when a worker starts, and deletes it when the worker ends. If you see one, check
+`ops/state/running.json` (or the Log) instead of believing the line.
+When waiting for Gian, set Next with chief_tick.py next "wait for Gian on #N" (the full command is
+`.venv/Scripts/python ops/chief_tick.py next "wait for Gian on #N"`; the text must mention Gian or #N). The tick then lets you
+sleep (zero tokens) and wakes you only when Gian answers: the prompt starts with `Gian answered #N:`.
+To read an answer yourself use `.venv/Scripts/python ops/chief_tick.py answer N` (never `gh ... --jq`).
+Act on the answer, then close the issue with a short comment.
+
+## A refused command refuses only that command
+Read the reason, use the allowed form (for Python: `.venv/Scripts/python ...`), and carry on. Bash is
+off only if three different allowed commands in a row are refused; then say so in the worker note.
+- `Next: builder continue Phase N from step K` means **relaunch the builder** (`launch --agent builder
+  --stage build --phase N --prompt "continue Phase N from step K"`). It is the planned way a big phase
+  is built in runs of 3 steps. Never turn it into a `needs-gian` question.
+- A `Team stalled` issue is the tick calling for help. Fix the cause (usually a valid `Next:` line, or a
+  push), tell Gian in a comment, and leave closing it to Gian.
+
+One command per Bash call (no `;`, `&&` or `|`). Use the Read, Grep and Glob tools to look at files.
+
 ## How you open a question or pause a stage
 - `.venv/Scripts/python ops/chief_tick.py issue --label needs-gian --title "..." --body "..."`
 - `.venv/Scripts/python ops/chief_tick.py pause --stage "..." --issue "issue title or number"`
@@ -40,19 +65,11 @@ If the usage guard blocks you ("Usage line reached"), write your state to `ops/s
 
 ## A launch ENDS your step
 `launch` starts the worker in the background and prints `started <agent>` at once. The worker may
-run for hours, so do not wait for it. As soon as you see `started`, write
-"Running: <agent> since <time>" in STATUS.md and stop. The next tick looks at the worker first:
+run for hours, so do not wait for it. As soon as you see `started`, stop (the tick has
+already written the `Running:` line). The next tick looks at the worker first:
 while it runs the tick does nothing, and when it ends the tick writes its result in the Log and
 wakes you. Everything below that says "after the worker returns" happens on that next wake-up, when the Log shows the
-result, not in the step that launched it. On that wake-up, delete the "Running:" line first.
-**You are only ever woken when NO worker runs** (the tick checks `ops/state/running.json` first and
-never wakes you while a worker lives). So if you see a "Running:" line, it is always stale, whatever
-time it shows: delete it and act on the newest Log result. Never wait for it. (Added 8 Nov after a
-stale line made the chief idle.) When you launch, also rewrite the `- Next:` line to say what the
-next wake-up must do.
-**STATUS.md must ALWAYS have exactly one line that starts with `- Next:`** (dash, space, `Next:`).
-The tick script reads only that line: without it, the team goes idle and nobody notices. Never rename
-it (no "Next (old)", no "Next wake-up" inside another line). Change its text, never its start.
+result, not in the step that launched it. The tick has already deleted the `Running:` line by then.
 - Log says `ended without a result (vanished)` or `stopped: over the time limit`: relaunch the
   same worker once with the prompt "continue from your last commit". A second time for the same
   stage: open a `needs-gian` issue and pause the stage.

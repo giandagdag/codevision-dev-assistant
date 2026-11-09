@@ -10,7 +10,7 @@ AS400 comparison: a job schedule entry wakes a small job every 30 minutes. It ch
 | Quiet runner | `ops/quiet.py`, `ops/quiet_hook.py` | Short summary of pytest, ruff, git status/diff/log. Full output in `logs/quiet/` |
 | Safety hook | `ops/safety_hook.py` | No push to `main`, no force push, no `.env`, no deleting outside `logs/` and `ops/state/` |
 | Chief and team | `.claude/agents/chief.md` and others, `ops/chief_tick.py` | The decision rule and the wake-up job |
-| Memory | `STATUS.md` | The chief's whole memory (max 60 lines, has a `Usage:` line) |
+| Memory | `STATUS.md` | The chief's whole memory (max 60 lines, has a `Usage:` line, exactly one `- Next:` line) |
 | Ledger | `logs/usage-ledger.csv` | One line per worker run (stays on the laptop) |
 
 All three hooks only act inside workers (`DA_WORKER=1`). Your own sessions are never blocked.
@@ -86,6 +86,104 @@ The issue is created on the first tick if it does not exist (found by number in
 Nothing from `usage_raw.json`, `.env` or worker reply files is put into it.
 
 The runner starts `claude` with `CREATE_NO_WINDOW` on Windows, so no black window appears.
+
+## No more silent stalls (Phase A fix 3)
+AS400 comparison: a job waiting on a message (MSGW) looks the same as a quiet job until someone
+runs WRKACTJOB. Fix 3 is the alarm that rings, so "stuck" no longer looks like "nothing to do".
+Plain Python, zero tokens: it never starts Claude. Live on the laptop once `auto/phases-7-10` with
+fix 3 is pulled there (Phase 9 starts from it).
+
+**The stall alarm** (`ops/stall.py`, run by `ops/chief_tick.py` on a tick that ends `idle`). The team
+is stalled, first match wins, when:
+1. STATUS.md has no `- Next:` line, or more than one: "no valid Next line".
+2. `Next: none`, no open `needs-gian` issue, and the final PR (`auto/phases-7-10` into `main`) is not
+   open: "nothing to do, but the job is not finished".
+3. A finished worker left commits that `origin` lacks: "unpushed commits on auto/phase-N". This one
+   is checked even while a `needs-gian` issue is open.
+
+A stall opens ONE `needs-gian` issue `🔴 Team stalled: <reason>` (phone notification, same channel as
+questions), one Log line, and a note the board reads. No second issue while one with that title is
+open. The tick never closes it: **you close it** once the cause is fixed. The board stops showing
+STALLED the moment the rule no longer matches. Because the issue itself is `needs-gian`, the board
+shows STALLED (not WAITING FOR YOU) while every open `needs-gian` issue is a "Team stalled" one; any other open `needs-gian` question still makes it WAITING FOR YOU. If `gh` or `git` fails
+inside the alarm, one line goes to `logs/status_board.log` and the tick still returns `idle`.
+Expect one alarm on day one if some STATUS.md was made by hand (spec O1): that is the alarm working.
+Any second `- Next:` line is a stall too, whatever the first one says.
+
+**Unpushed commits.** When the tick records a finished, vanished or over-time worker, it compares
+`auto/phase-N` with `origin/auto/phase-N` (`git rev-list --count`, no fetch). More than 0 gives the Log
+line `UNPUSHED: 2 commits on auto/phase-8` and a board warning line, re-counted each tick, so it goes
+away after a push.
+
+**One `Next:` line.** STATUS.md has exactly one `- Next:` line under "## Where we are". Set it with
+`.venv\Scripts\python ops\chief_tick.py next "builder continue Phase 8 from step 10"` (empty text is
+refused; keep the text plain: no quotes inside and no `;` `&` `|` `>`, the safety hook cannot read
+them). It replaces the line and its indented continuation lines, never appends, so STATUS.md stays at
+60 lines or fewer. The chief and builder use this command and never hand-edit the line.
+
+**Builder runs are small.** The builder builds at most 3 plan steps per run, tests, commits and
+pushes after each, then runs `next "builder continue Phase N from step K"` and stops. The chief sees
+that line and relaunches the builder (never a `needs-gian` question). Code review starts only after
+the last plan step. Phase 8's 15 steps become 5 runs.
+
+**Fewer denied calls.** Workers may now run read-only `grep`, `head`, `tail`, `wc`, `git show`,
+`git rev-parse`, `git rev-list`, `git branch --list` (also `--show-current` and `-a`), `git ls-remote` and the smoke check. The deny list is
+unchanged, and the safety hook still blocks workers from editing `ops/`. Agents are told **one
+command per Bash call**: no `;`, `&&` or pipes (they are refused), and to use the Read and Grep tools
+to look at files.
+
+**Tests no longer write to the real files.** `tests/ops/conftest.py` points the ledger, worker reply
+folder, state folder, quiet logs, board log and STATUS.md at a temp folder for every ops test, and a
+last test (`test_ops_zz_real_logs.py`) checks that the real `logs/usage-ledger.csv` and `logs/workers/`
+did not change. The 5 junk rows already in the laptop ledger are not touched; remove them by hand.
+
+## The chief never sits still by mistake (Phase A fix 4)
+AS400 comparison: the job scheduler owns the "job active" flag itself, reads the reply queue itself,
+and rings an alarm when a job keeps running but never moves. Plain Python, zero tokens unless the
+chief is really woken. Live from Phase 9, together with fix 3 (it is merged into `auto/phases-7-10`
+only; Phase 8 runs without it).
+
+**The tick owns the `Running:` line.** `chief_tick.py launch` writes `Running: <agent> since 10:21 SGT`
+from the real start time in `ops/state/running.json`, and the tick deletes it when it records the
+result (finished, vanished, over time, stopped by hand). If a `Running:` line exists but
+`running.json` does not, the tick deletes the line and adds the Log line `Running line removed: no
+worker`. Nobody else writes, edits or trusts that line, the chief included.
+
+**How your answers reach the chief.** On each tick (after the usage guard says GO) the tick reads the
+comments of every open `needs-gian` issue, except `Team stalled` ones, with `gh issue view N --json
+comments` and parses them in Python. Only comments by the repo owner (`gh repo view --json owner`)
+count; a comment by anyone else is ignored. A new owner comment (or an edited one, once) is written as
+the Log line `ANSWER #N (HH:MM SGT): <first 300 characters>`, and the chief is woken with the prompt
+`Gian answered #N: "<full text>". Act on it, then close #N with a short comment.` The last answer
+handled per issue is kept in `ops/state/answers.json`. This works even when `Next: none`: an answer wakes the chief before the tick asks whether there is work. If the repo
+ever moves to an organisation, the owner is the organisation, no comment counts, and nothing is acted
+on (it fails safe).
+
+**Waiting costs nothing.** When `Next:` says the chief waits for Gian (`wait for Gian on #33`, set with `chief_tick.py next`; the text must mention Gian or the issue number)
+and a non-stall `needs-gian` issue is open, and there is no new answer, the tick returns `waiting` and
+does not start Claude. The board shows WAITING FOR YOU as before. A `Team stalled` issue alone is not
+"waiting for Gian".
+
+**`chief_tick.py answer N`** prints the newest owner comment on issue N, or `no answer yet`. Use it
+instead of `gh ... --jq`.
+
+**The "chief did nothing" alarm.** After each chief run made by the tick, it checks: did the chief
+start a worker, change the `Next:` line, or open or close an issue? If none, `ops/state/idle_runs.json`
+goes up by 1, otherwise back to 0. At 2 in a row the tick opens `🔴 Team stalled: chief made no
+progress twice` (one issue, one Log line; you close it). Waiting for Gian never counts. If `gh` cannot
+list the issues the run counts as progress, so a broken `gh` never raises a false alarm.
+
+**The safety hook reads quotes.** `;`, `|`, `&` and line breaks inside single or double quotes no longer
+split a command, so `gh issue view 33 --json comments --jq '.comments|last|.body'` is allowed. It
+follows bash's own quote rules (an escaped quote opens nothing), and an unclosed quote is still
+refused. A `#` comment or a `<<` heredoc outside quotes is refused too (a stray quote inside one could hide the next line). `echo 'x' ; git push --force` is still refused.
+
+**One refusal is not "Bash is off".** The builder, chief and code-reviewer are told: a refused command
+refuses only that command; read the reason, use the allowed form and carry on. Bash is off only after
+three different allowed commands in a row are refused.
+
+**The board shows sub-steps.** Commits named `Phase 8 step 13d: ...` show as `Build, step 13d of 15`;
+the bar still counts whole steps (13d is inside step 13).
 
 ## How questions reach you
 One GitHub issue per question, label `needs-gian` (or `needs-work-test` for things that need the

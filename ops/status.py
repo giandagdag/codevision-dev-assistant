@@ -42,6 +42,82 @@ def set_line(path: Path, prefix: str, text: str) -> None:
     _write(path, lines)
 
 
+def _is_next(line: str) -> bool:
+    return line.lstrip("- ").startswith("Next:")
+
+
+def set_next(path: Path, text: str) -> None:
+    """Make the file hold exactly one `- Next:` line, with this text (Phase A fix 3, F2).
+
+    Replaces the first one together with its indented continuation lines, deletes any other
+    `Next:` lines, and adds the line at the end of "## Where we are" when there is none. Empty
+    text is refused, so a typo can never blank the chief's next step.
+    """
+    text = " ".join(text.split())
+    if not text:
+        raise ValueError("the next step cannot be empty")
+    new = f"- Next: {text}"
+    lines, out, placed, skipping = _read(path), [], False, False
+    for line in lines:
+        if skipping and line.startswith("  ") and line.strip():
+            continue  # a continuation of a Next line that is being replaced or removed
+        skipping = _is_next(line)
+        if skipping:
+            if not placed:
+                out.append(new)
+                placed = True
+            continue
+        out.append(line)
+    if not placed:
+        out = _insert_in_section(out, new)
+    _write(path, out)
+
+
+def _insert_in_section(lines: list[str], new: str) -> list[str]:
+    """Put `new` at the end of "## Where we are" (the heading is added if it is missing)."""
+    heading = "## Where we are"
+    if heading not in lines:
+        at = lines.index(LOG_HEADING) if LOG_HEADING in lines else len(lines)
+        return lines[:at] + [heading, new, ""] + lines[at:]
+    start = lines.index(heading) + 1
+    end = next((i for i in range(start, len(lines)) if lines[i].startswith("## ")), len(lines))
+    while end > start and not lines[end - 1].strip():
+        end -= 1  # keep the blank line that separates the sections
+    return lines[:end] + [new] + lines[end:]
+
+
+def _is_running(line: str) -> bool:
+    return line.lstrip("- ").startswith("Running:")
+
+
+def set_running(path: Path, agent: str, since: str) -> None:
+    """Phase A fix 4 (G1): the tick writes the one `Running:` line, from the real start time.
+
+    Replaces an existing line (with or without a leading "- "); a new one goes under `Stopped:`.
+    """
+    new = f"Running: {agent} since {since}"
+    lines = _read(path)
+    for i, line in enumerate(lines):
+        if _is_running(line):
+            lines[i] = new
+            break
+    else:
+        at = next((i + 1 for i, x in enumerate(lines) if x.startswith("Stopped:")),
+                  1 if lines else 0)
+        lines.insert(at, new)
+    _write(path, lines)
+
+
+def clear_running(path: Path) -> bool:
+    """Delete the `Running:` line. True when there was one."""
+    lines = _read(path)
+    kept = [x for x in lines if not _is_running(x)]
+    if len(kept) == len(lines):
+        return False
+    _write(path, kept)
+    return True
+
+
 def set_usage_line(path: Path, five_hour, weekly, as_of: str, stopped: bool) -> None:
     """The line the chief updates on every run (Gian, 6 Nov)."""
     text = (

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import chief_tick as c
 import pytest
+import stall
 import status_board as sb
 import usage_guard as g
 from status_board import refresh as real_refresh  # imported before conftest turns it off
@@ -474,3 +475,110 @@ def test_the_runner_keeps_its_own_flags():
 
 def test_status_board_never_imports_chief_tick_and_has_no_real_calls_in_tests():
     assert "chief_tick" not in sys.modules["status_board"].__dict__
+
+
+# ---- Phase A fix 3: STALLED top line and the UNPUSHED warning ----
+
+
+
+
+class AheadGit(FakeGit):
+    """The normal phase 8 answers, plus `git rev-list --count` for the unpushed check."""
+
+    def __init__(self, ahead, **kw):
+        super().__init__(**kw)
+        self.ahead = ahead
+
+    def __call__(self, args):
+        if args[:2] == ["rev-list", "--count"]:
+            return f"{self.ahead}\n"
+        return super().__call__(args)
+
+
+def ahead_git(ahead):
+    base = phase8_git()
+    return AheadGit(ahead, merged=base.merged, refs=base.refs, files=base.files,
+                    subjects=base.subjects)
+
+
+def test_stalled_outranks_idle_and_ready(tmp_path):
+    for next_line in ("- Next: none", "- Next: Phase 8 build"):
+        f = tmp_path / "STATUS.md"
+        f.write_text(f"# S\n## Where we are\n{next_line}\n## Log\n", encoding="utf-8")
+        stall.save_stall(stall.NO_NEXT)
+        first = build("idle", status_file=f).splitlines()[0]
+        assert first == "## 🔴 STALLED: no valid Next line"
+
+
+def test_waiting_for_you_outranks_stalled(status_file):
+    stall.save_stall(stall.NOT_FINISHED)
+    gh = FakeGh(gian=[{"number": 5, "title": "Q", "url": "u"}])
+    assert build("idle", gh=gh, status_file=status_file).splitlines()[0].startswith(
+        "## 🔴 WAITING FOR YOU")
+
+
+def test_when_every_open_needs_gian_issue_is_a_stall_issue_the_top_line_is_stalled(status_file):
+    stall.save_stall(stall.NO_NEXT)
+    gh = FakeGh(gian=[{"number": 5, "title": "🔴 Team stalled: no valid Next line", "url": "u"}])
+    assert build("idle", gh=gh, status_file=status_file).splitlines()[0] == (
+        "## 🔴 STALLED: no valid Next line")
+
+
+def test_a_real_question_next_to_a_stall_issue_is_waiting_for_you_with_the_right_count(
+        status_file):
+    stall.save_stall(stall.NO_NEXT)
+    gh = FakeGh(gian=[{"number": 5, "title": "🔴 Team stalled: no valid Next line", "url": "u"},
+                      {"number": 6, "title": "Q: which model?", "url": "u"}])
+    assert build("idle", gh=gh, status_file=status_file).splitlines()[0] == (
+        "## 🔴 WAITING FOR YOU (1 open)")
+
+
+def test_stalled_is_gone_when_the_note_is_gone_or_the_tick_is_not_idle(status_file):
+    stall.save_stall(stall.NO_NEXT)
+    assert "STALLED" not in build("would-start", status_file=status_file).splitlines()[0]
+    stall.clear_stall()
+    assert "STALLED" not in build("idle", status_file=status_file).splitlines()[0]
+
+
+def test_as4_unpushed_commits_show_a_warning_that_goes_when_pushed(status_file):
+    stall.remember_unpushed("auto/phase-8")
+    body = build("idle", git=ahead_git(2), status_file=status_file)
+    assert "> ⚠️ UNPUSHED: 2 commits on auto/phase-8" in body.splitlines()[:4]
+    body = build("idle", git=ahead_git(0), status_file=status_file)
+    assert "UNPUSHED" not in body
+
+
+def test_a_git_problem_in_the_warning_check_shows_no_warning(status_file):
+    stall.remember_unpushed("auto/phase-8")
+    assert "UNPUSHED" not in build("idle", status_file=status_file)  # FakeGit fails rev-list
+
+
+# ---- Phase A fix 4 (G8, AS-9): sub-steps show in the text, the bar counts whole steps ----
+
+def test_as9_step_labels_keep_their_letters_and_parts():
+    subjects = ["Phase 8 step 13d: x", "Phase 8 step 13c: y", "Phase 8 step 9b-3: z",
+                "Phase 7 step 14: no"]
+    assert sb.highest_step_label(subjects, 8) == "13d"
+    assert sb.highest_step_label(["Phase 8 step 9b-3: a", "Phase 8 step 9b: b"], 8) == "9b-3"
+    assert sb.highest_step_label(["Phase 8 step 9: a"], 8) == "9"
+    assert sb.highest_step_label([], 8) == ""
+
+
+def test_as9_the_text_says_step_13d_and_the_bar_counts_step_13():
+    base = dict(spec_approved=True, plan_exists=True, plan_approved=True, steps_total=15)
+    with_label = sb.phase_progress(sb.PhaseFacts(8, step_done=13, step_label="13d", **base))
+    plain = sb.phase_progress(sb.PhaseFacts(8, step_done=13, **base))
+    assert with_label.stage == "Build, step 13d of 15" and plain.stage == "Build, step 13 of 15"
+    assert with_label.percent == plain.percent
+
+
+def test_as9_a_label_from_another_number_is_not_shown():
+    facts = sb.PhaseFacts(8, spec_approved=True, plan_exists=True, plan_approved=True,
+                          steps_total=6, step_done=9, step_label="9b")  # done is capped at 6
+    assert sb.phase_progress(facts).stage != "Build, step 9b of 6"
+
+
+def test_as9_a_label_whose_number_only_starts_like_the_step_is_not_shown():
+    facts = sb.PhaseFacts(8, spec_approved=True, plan_exists=True, plan_approved=True,
+                          steps_total=1, step_done=13, step_label="13d")
+    assert sb.phase_progress(facts).stage != "Build, step 13d of 1"
