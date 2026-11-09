@@ -143,7 +143,7 @@ def test_g7_one_refusal_is_not_bash_is_off(name):
 def test_g1_chief_never_owns_the_running_line_and_uses_the_answer_command():
     _, text = front("chief")
     assert "Only the tick owns it" in text
-    assert "chief_tick.py answer N" in text and "waiting for Gian, see #N" in text
+    assert "chief_tick.py answer N" in text and "wait for Gian on #N" in text
     assert "write\n\"Running:" not in text
 
 
@@ -153,3 +153,9 @@ def test_docs_explain_fix_4():
                  "chief made no progress twice", "Waiting costs nothing", "quotes",
                  "three different allowed commands", "step 13d of 15", "Live from Phase 9"):
         assert need in " ".join(DOCS.split()), need
+
+
+def test_chief_is_told_the_exact_next_command_for_waiting_on_gian():
+    _, text = front("chief")
+    assert 'chief_tick.py next "wait for Gian on #N"' in text
+    assert "the text must mention Gian or #N" in text

@@ -159,7 +159,7 @@ handled per issue is kept in `ops/state/answers.json`. This works even when `Nex
 ever moves to an organisation, the owner is the organisation, no comment counts, and nothing is acted
 on (it fails safe).
 
-**Waiting costs nothing.** When `Next:` says the chief waits for Gian (`waiting for Gian, see #33`)
+**Waiting costs nothing.** When `Next:` says the chief waits for Gian (`wait for Gian on #33`, set with `chief_tick.py next`; the text must mention Gian or the issue number)
 and a non-stall `needs-gian` issue is open, and there is no new answer, the tick returns `waiting` and
 does not start Claude. The board shows WAITING FOR YOU as before. A `Team stalled` issue alone is not
 "waiting for Gian".

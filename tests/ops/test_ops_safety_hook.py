@@ -300,3 +300,36 @@ def test_as8_a_comment_or_heredoc_cannot_hide_the_next_line(command):
 ])
 def test_as8_a_hash_inside_quotes_or_a_word_is_fine(command):
     assert s.check(bash(command)) is None
+
+
+# ---- Windows-style paths (Gian, 9 Nov): refusing is fine, crashing is not ----
+
+BS = chr(92)
+WINDOWS_PATHS = [
+    f"dir C:{BS}dev{BS}x",
+    f'dir "C:{BS}dev{BS}x"',
+    f'dir "C:{BS}dev{BS}x{BS}"',                  # a quoted path ending in a backslash
+    f"dir 'C:{BS}dev{BS}x{BS}'",
+    f"dir C:{BS}dev{BS}x{BS}",
+    f'git -C "C:{BS}dev{BS}x" status',
+    f'type "C:{BS}dev{BS}x{BS}" ; git push --force',
+    f"cd C:{BS}dev{BS}x{BS} && git push origin main",
+]
+
+
+@pytest.mark.parametrize("command", WINDOWS_PATHS)
+def test_windows_paths_never_crash_the_hook(command, capsys):
+    result = s.check(bash(command))
+    assert result is None or isinstance(result, str)
+    payload = io.StringIO(json.dumps(bash(command)))
+    assert s.main(payload) in (0, 2)  # allowed or blocked, never an uncaught error
+
+
+def test_windows_path_with_a_dangerous_second_command_is_still_blocked():
+    assert s.check(bash(f"cd C:{BS}dev{BS}x{BS} && git push origin main")) is not None
+    assert s.check(bash(f'type "C:{BS}dev{BS}x{BS}" ; git push --force')) is not None
+
+
+def test_a_plain_and_a_quoted_windows_path_are_allowed():
+    assert s.check(bash(f"dir C:{BS}dev{BS}x")) is None
+    assert s.check(bash(f'dir "C:{BS}dev{BS}x"')) is None

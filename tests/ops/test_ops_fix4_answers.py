@@ -244,3 +244,9 @@ def test_as7_a_run_woken_by_an_answer_counts_like_any_other(status_file):
     gh.comments[33] = [said(OWNER, "b", "c2")]
     tick(status_file, gh, Chief())
     assert gh.stall_issues() == [STALL_NO_PROGRESS]
+
+
+def test_the_wording_the_chief_is_told_to_use_is_recognised_as_waiting(status_file):
+    status_file.write_text(log_text(status_file).replace(
+        "waiting for Gian, see #33", "wait for Gian on #33"))
+    assert tick(status_file, FakeGh(), Chief()) == "waiting"

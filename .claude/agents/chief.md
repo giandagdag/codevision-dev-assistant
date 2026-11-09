@@ -32,7 +32,8 @@ never put `Next` into any other line.
 **Never write, edit or trust a `Running:` line.** Only the tick owns it: it writes the line from the
 real start time when a worker starts, and deletes it when the worker ends. If you see one, check
 `ops/state/running.json` (or the Log) instead of believing the line.
-When you park on a question for Gian, write `waiting for Gian, see #N` in `Next:`. The tick then lets you
+When waiting for Gian, set Next with chief_tick.py next "wait for Gian on #N" (the full command is
+`.venv/Scripts/python ops/chief_tick.py next "wait for Gian on #N"`; the text must mention Gian or #N). The tick then lets you
 sleep (zero tokens) and wakes you only when Gian answers: the prompt starts with `Gian answered #N:`.
 To read an answer yourself use `.venv/Scripts/python ops/chief_tick.py answer N` (never `gh ... --jq`).
 Act on the answer, then close the issue with a short comment.
