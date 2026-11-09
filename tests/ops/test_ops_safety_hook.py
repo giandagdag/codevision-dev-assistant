@@ -281,3 +281,22 @@ def test_as8_an_escaped_backslash_before_a_newline_is_still_a_real_split():
     b = chr(92)
     assert s.split_segments(f"git push origin x{b}{b}\n--force") == [
         f"git push origin x{b}{b}", "--force"]
+
+
+@pytest.mark.parametrize("command", [
+    'echo hi # "\ngit push origin main\n# "',
+    "echo hi # '\ngit push origin main\n# '",
+    "#\ngit push origin main",
+    "cat <<EOF\nx\"\nEOF\ngit push origin main\n# \"",
+    "echo ok ; # a comment",
+])
+def test_as8_a_comment_or_heredoc_cannot_hide_the_next_line(command):
+    assert s.check(bash(command)) is not None
+
+
+@pytest.mark.parametrize("command", [
+    "git commit -m \"fix #3\"", "echo 'a # b'", "git push origin feature#2",
+    "gh issue view 33 --json comments",
+])
+def test_as8_a_hash_inside_quotes_or_a_word_is_fine(command):
+    assert s.check(bash(command)) is None

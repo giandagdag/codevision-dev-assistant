@@ -46,8 +46,10 @@ def split_segments(command: str) -> list[str] | None:
     opens nothing, and an escaped backslash leaves the quote after it free to open).
     A backslash before a newline outside quotes joins the lines (no split), as in bash.
     Returns None for an unclosed quote: fail closed, the caller refuses.
-    A `;` that bash would treat as plain text (after a backslash) still splits: that only ever
-    makes the hook stricter.
+    A `#` that starts a word (a comment) or a `<<` (a heredoc) outside quotes returns None too: a
+    stray quote inside one could hide the next line from us. A `;` that bash would treat as plain
+    text (after a backslash) still splits, which is stricter. A `;` inside quotes no longer
+    splits (bash agrees); the old regex split there, which is why unclosed quotes are refused.
     """
     segments, current, quote, i = [], [], "", 0
     while i < len(command):
@@ -72,6 +74,10 @@ def split_segments(command: str) -> list[str] | None:
             ch = command[i]
         elif ch in "'\"":
             quote = ch
+        elif (ch == "#" and (not current or current[-1] in " \t")) or command[i:i + 2] == "<<":
+            # A comment or a heredoc can hold a stray quote that bash ignores but we would not
+            # (it would hide the next line). Workers do not need either, so fail closed.
+            return None
         elif ch in ";|&\n":
             segments.append("".join(current))
             current = []

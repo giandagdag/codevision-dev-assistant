@@ -176,7 +176,7 @@ list the issues the run counts as progress, so a broken `gh` never raises a fals
 **The safety hook reads quotes.** `;`, `|`, `&` and line breaks inside single or double quotes no longer
 split a command, so `gh issue view 33 --json comments --jq '.comments|last|.body'` is allowed. It
 follows bash's own quote rules (an escaped quote opens nothing), and an unclosed quote is still
-refused. `echo 'x' ; git push --force` is still refused.
+refused. A `#` comment or a `<<` heredoc outside quotes is refused too (a stray quote inside one could hide the next line). `echo 'x' ; git push --force` is still refused.
 
 **One refusal is not "Bash is off".** The builder, chief and code-reviewer are told: a refused command
 refuses only that command; read the reason, use the allowed form and carry on. Bash is off only after
