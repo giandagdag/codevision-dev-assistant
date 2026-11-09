@@ -204,6 +204,14 @@ def test_fix_it_calls_the_refine_action_with_the_finding_id(settings, monkeypatc
     assert result == (5, "") and calls == [("fixit", "F-1")]
 
 
+def test_fix_it_does_nothing_when_the_page_has_no_refine_state(settings, monkeypatch):
+    monkeypatch.setattr(cb, "run_refine", lambda *a, **k: pytest.fail("must not be called"))
+    state = {"request_id": "CVDA-2026-0001", "revision": 3, "build": True}
+
+    with pytest.raises(cb.PreventUpdate):
+        cb.perform_finding_action(settings, "fixit:F-1", {}, state, 4)
+
+
 def test_a_conflict_pick_passes_the_place_and_the_choice_with_the_build_revision(
     settings, monkeypatch
 ):
