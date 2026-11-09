@@ -222,6 +222,7 @@ def suggest(
             lane_unusable=suggestion is None,
             from_status=from_status,
             pending_record=None,
+            restore_pick=0,  # an open Restore list is closed when a lane starts
         )
         return _save(tx, base_revision)
 

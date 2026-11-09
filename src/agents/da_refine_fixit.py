@@ -74,6 +74,7 @@ def fix_it(
             chosen_lane="bug",
             from_status=request.status,
             fix_finding=finding,
+            restore_pick=0,
             repro=None,
             repro_tries=0,
             repro_passed_today=0,

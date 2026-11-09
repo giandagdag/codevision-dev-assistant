@@ -164,6 +164,9 @@ class RefineState(_Shape):
     repro_passed_today: int = Field(default=0, ge=0)
     # Fix it: the Should fix finding being fixed (its text goes to the Generator in round 1).
     fix_finding: Finding | None = None
+    # Restore: 0 nothing open, -1 the list of earlier builds is open, N the build chosen (its
+    # warning is in the chat; Restore build N or Cancel waits). Cleared by Cancel or by the restore.
+    restore_pick: int = 0
 
 
 class RefineRow(_Shape):

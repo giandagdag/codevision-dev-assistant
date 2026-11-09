@@ -63,6 +63,12 @@ class RefineBox:
     browser_buttons: list[tuple[str, str]] = field(default_factory=list)
     buttons: list[tuple[str, str]] = field(default_factory=list)
     hint: str = ""
+    # Step 16: the line above the buttons, the Send button's wording, the Refine revision the page
+    # sends back, and `lane` (a lane step is open: the Refine buttons replace the Build ones).
+    note: str = ""
+    send_label: str = "Send"
+    refine_revision: int = 0
+    lane: bool = False
 
 
 def make_refine_box(
