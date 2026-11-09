@@ -436,8 +436,8 @@ def _run_refine_bug_step(settings: Settings, request_id: str, folder: FakeBrowse
     refine_bug.start_bug_fix(settings, request_id, refine_rev())
     outcome = build_loop.run_build(settings, request_id, build_number=2)
     shown = tester_flow.get_build_view(settings, request_id)
-    # The scripted fake code never really fixes the bug, so NOT_PASSING is the honest result here.
-    if outcome != "done" or shown.request_status not in ("READY_FOR_REVIEW", "NOT_PASSING"):
+    # The scripted fix round adds .csv to the validator, so the repro test passes: READY_FOR_REVIEW.
+    if outcome != "done" or shown.request_status != "READY_FOR_REVIEW":
         raise UnderstandError(
             f"The fix build ended as {outcome} at {shown.state.step}, "
             f"status {shown.request_status}."
@@ -465,6 +465,9 @@ def _run_refine_requirement_step(settings: Settings, request_id: str) -> None:
     state = refine_revision.start_revision_approach(settings, request_id, refine_rev())
     if state.step != "req_plan":
         raise UnderstandError(f"The revision approach ended at {state.step}, not req_plan.")
+    # Still to do (worker note): accept the approach, write and accept the revision test plan, run
+    # the workspace check again and rebuild. The scripted fake Tester cannot write a revision test
+    # plan yet ("Tester reply ... 10 problems"), so the lane stops here.
     print(
         "28. Requirement lane: the record became v2, Discover ran on it, and a revision "
         f"approach is waiting for his accept (step {state.step})"

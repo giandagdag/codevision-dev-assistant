@@ -241,7 +241,8 @@ def test_the_scripted_repro_reply_is_one_named_method_for_the_next_case(context,
     reply = result.value
     assert reply.criterion_id == "AC-2"
     assert "def test_t10_ac2_shows_bug(self):" in reply.method
-    assert "assertFalse" in reply.method
+    # Fails today; the scripted fix round adds .csv.
+    assert 'assertTrue(validate("book.csv"))' in reply.method
 
 
 def test_8_23_the_passes_today_switch_gives_a_test_that_passes_on_the_fake_code(

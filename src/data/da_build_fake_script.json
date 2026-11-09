@@ -42,6 +42,12 @@
    "replace": "return str(path).lower().endswith((\".pdf\", \".docx\", \".xlsx\"))"
   }
  },
+ "fix_edits": {
+  "src/agents/upload_validator.py": {
+   "find": "(\".pdf\", \".docx\", \".xlsx\"))",
+   "replace": "(\".pdf\", \".docx\", \".xlsx\", \".csv\"))"
+  }
+ },
  "modify_edits": {
   "src/agents/excel_processor.py": {
    "first": {

@@ -405,12 +405,13 @@ def _scripted_repro(prompt: str, switches: frozenset[str]) -> str:
     case_id = (_CASE_ID.findall(prompt) or ["T-90"])[0]
     criterion = (_CRITERION_LINE.findall(prompt) or ["AC-1"])[0]
     name = f"test_{case_id.lower().replace('-', '')}_{criterion.lower().replace('-', '')}_shows_bug"
-    # The fake code's validate() returns True for book.xlsx. A test that expects the opposite
-    # fails today (the bug is shown); with the switch it passes today (it does not show the bug).
+    # The fake validate() does not accept .csv files yet, so a test that expects it fails today (the
+    # bug is shown) and the scripted fix round (see da_build_fake_script.json, "fix_edits") makes
+    # it pass. With the switch the test passes today (it does not show the bug).
     check = (
         'self.assertTrue(validate("book.xlsx"))'
         if "repro_passes_today" in switches
-        else 'self.assertFalse(validate("book.xlsx"))'
+        else 'self.assertTrue(validate("book.csv"))'
     )
     return (
         f"CASE\ncriterion: {criterion}\n"

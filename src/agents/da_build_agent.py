@@ -205,6 +205,10 @@ def _scripted_code(prompt: str, script: dict, switches: frozenset[str]) -> str:
     find, replace = edit["find"], edit["replace"]
     if "bad_edit" in switches:
         find = "this text is not in the file"
+    elif fixing and "book.csv" in prompt and path in script.get("fix_edits", {}):
+        # Phase 8: the failure report is the scripted bug-lane repro test; this is its fix.
+        edit = script["fix_edits"][path]
+        find, replace = edit["find"], edit["replace"]
     elif fixing:
         find = replace  # the edit is already in the current text; send a harmless no-op
     return f"<<<<<<< FIND\n{find}\n=======\n{replace}\n>>>>>>> REPLACE\n"
