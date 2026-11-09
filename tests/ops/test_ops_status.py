@@ -155,3 +155,34 @@ def test_as6_the_next_command_refuses_empty_text(tmp_path, capsys):
     assert chief_tick.main(["next", ""]) == 1
     assert "Refused" in capsys.readouterr().err
     assert chief_tick.STATUS_FILE.read_text(encoding="utf-8") == before
+
+
+# ---- Phase A fix 4 (G1): the tick owns the Running line ----
+
+def test_set_running_adds_one_line_under_stopped_and_replaces_it(tmp_path):
+    f = tmp_path / "STATUS.md"
+    f.write_text("# S\nUsage: x\nStopped: no\n\n## Where we are\n- Next: go\n", encoding="utf-8")
+    status.set_running(f, "chief", "10:21 SGT")
+    status.set_running(f, "builder", "11:00 SGT")
+    lines = f.read_text(encoding="utf-8").splitlines()
+    assert lines[3] == "Running: builder since 11:00 SGT"
+    assert sum(x.startswith("Running:") for x in lines) == 1
+
+
+def test_set_running_replaces_the_dash_form_and_clear_removes_it(tmp_path):
+    f = tmp_path / "STATUS.md"
+    f.write_text("# S\n## Where we are\n- Running: builder since 07 Nov\n- Next: go\n",
+                 encoding="utf-8")
+    status.set_running(f, "chief", "10:21 SGT")
+    assert f.read_text(encoding="utf-8").count("Running:") == 1
+    assert status.clear_running(f) is True
+    assert "Running:" not in f.read_text(encoding="utf-8")
+    assert status.clear_running(f) is False
+
+
+def test_running_line_never_pushes_status_past_60_lines(tmp_path):
+    f = tmp_path / "STATUS.md"
+    body = ["# S", "Stopped: no", "## Log"] + [f"- log {i}" for i in range(57)]
+    f.write_text("\n".join(body) + "\n", encoding="utf-8")
+    status.set_running(f, "chief", "10:21 SGT")
+    assert len(f.read_text(encoding="utf-8").splitlines()) <= 60

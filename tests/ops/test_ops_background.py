@@ -369,8 +369,9 @@ def test_af8_worker_settings_have_the_two_bash_time_outs():
 
 def test_af9_chief_rulebook_says_a_launch_ends_the_step():
     text = (ROOT / ".claude" / "agents" / "chief.md").read_text(encoding="utf-8")
-    assert 'delete the "Running:" line' in text and "ENDS your step" in text
-    assert "Running: <agent> since <time>" in text
+    # Fix 4 (G1): the tick, not the chief, writes and deletes the Running line.
+    assert "already deleted the `Running:` line" in text and "ENDS your step" in text
+    assert "Only the tick owns it" in text
     assert "vanished" in text and "over the time limit" in text
     assert "continue from your last commit" in text and "second time" in text
     assert "run-worker" not in text  # only `launch` starts the runner

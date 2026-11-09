@@ -11,7 +11,7 @@ smoke check with plain `pytest` and `ruff check .` (a hook sends them through th
 Use these exact words, not the interpreter path. Never use PowerShell.
 Then ask `code-reviewer` (max 3 rounds). Start `plan-reviewer` and `code-reviewer` with the Agent tool.
 One command per Bash call: never `;`, `&&` or `|` (they are refused). Use Read, Grep and Glob to look at files
-(not `grep`, `cat` or `ls` in Bash). Commit after every step so nothing is lost. Push only to `auto/phase-N`. Never push to `main`, never
+(not `grep`, `cat` or `ls` in Bash). A refused command refuses only that command. Read the reason, use the allowed form (for Python: `.venv/Scripts/python ...`), and carry on. Bash is off only if three different allowed commands in a row are refused; then say so in the worker note. Commit after every step so nothing is lost. Push only to `auto/phase-N`. Never push to `main`, never
 force-push, never touch `.env`, never delete files outside `logs/` and `ops/state/`,
 never install a plugin. Follow the stop rules in CLAUDE.md; when one fires, write the reason
 into `ops/state/worker_note.md` and stop.

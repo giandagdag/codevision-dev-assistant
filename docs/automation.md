@@ -137,6 +137,54 @@ folder, state folder, quiet logs, board log and STATUS.md at a temp folder for e
 last test (`test_ops_zz_real_logs.py`) checks that the real `logs/usage-ledger.csv` and `logs/workers/`
 did not change. The 5 junk rows already in the laptop ledger are not touched; remove them by hand.
 
+## The chief never sits still by mistake (Phase A fix 4)
+AS400 comparison: the job scheduler owns the "job active" flag itself, reads the reply queue itself,
+and rings an alarm when a job keeps running but never moves. Plain Python, zero tokens unless the
+chief is really woken. Live from Phase 9, together with fix 3 (it is merged into `auto/phases-7-10`
+only; Phase 8 runs without it).
+
+**The tick owns the `Running:` line.** `chief_tick.py launch` writes `Running: <agent> since 10:21 SGT`
+from the real start time in `ops/state/running.json`, and the tick deletes it when it records the
+result (finished, vanished, over time, stopped by hand). If a `Running:` line exists but
+`running.json` does not, the tick deletes the line and adds the Log line `Running line removed: no
+worker`. Nobody else writes, edits or trusts that line, the chief included.
+
+**How your answers reach the chief.** On each tick (after the usage guard says GO) the tick reads the
+comments of every open `needs-gian` issue, except `Team stalled` ones, with `gh issue view N --json
+comments` and parses them in Python. Only comments by the repo owner (`gh repo view --json owner`)
+count; a comment by anyone else is ignored. A new owner comment (or an edited one, once) is written as
+the Log line `ANSWER #N (HH:MM SGT): <first 300 characters>`, and the chief is woken with the prompt
+`Gian answered #N: "<full text>". Act on it, then close #N with a short comment.` The last answer
+handled per issue is kept in `ops/state/answers.json`. This works even when `Next: none`: an answer wakes the chief before the tick asks whether there is work. If the repo
+ever moves to an organisation, the owner is the organisation, no comment counts, and nothing is acted
+on (it fails safe).
+
+**Waiting costs nothing.** When `Next:` says the chief waits for Gian (`wait for Gian on #33`, set with `chief_tick.py next`; the text must mention Gian or the issue number)
+and a non-stall `needs-gian` issue is open, and there is no new answer, the tick returns `waiting` and
+does not start Claude. The board shows WAITING FOR YOU as before. A `Team stalled` issue alone is not
+"waiting for Gian".
+
+**`chief_tick.py answer N`** prints the newest owner comment on issue N, or `no answer yet`. Use it
+instead of `gh ... --jq`.
+
+**The "chief did nothing" alarm.** After each chief run made by the tick, it checks: did the chief
+start a worker, change the `Next:` line, or open or close an issue? If none, `ops/state/idle_runs.json`
+goes up by 1, otherwise back to 0. At 2 in a row the tick opens `🔴 Team stalled: chief made no
+progress twice` (one issue, one Log line; you close it). Waiting for Gian never counts. If `gh` cannot
+list the issues the run counts as progress, so a broken `gh` never raises a false alarm.
+
+**The safety hook reads quotes.** `;`, `|`, `&` and line breaks inside single or double quotes no longer
+split a command, so `gh issue view 33 --json comments --jq '.comments|last|.body'` is allowed. It
+follows bash's own quote rules (an escaped quote opens nothing), and an unclosed quote is still
+refused. A `#` comment or a `<<` heredoc outside quotes is refused too (a stray quote inside one could hide the next line). `echo 'x' ; git push --force` is still refused.
+
+**One refusal is not "Bash is off".** The builder, chief and code-reviewer are told: a refused command
+refuses only that command; read the reason, use the allowed form and carry on. Bash is off only after
+three different allowed commands in a row are refused.
+
+**The board shows sub-steps.** Commits named `Phase 8 step 13d: ...` show as `Build, step 13d of 15`;
+the bar still counts whole steps (13d is inside step 13).
+
 ## How questions reach you
 One GitHub issue per question, label `needs-gian` (or `needs-work-test` for things that need the
 work laptop). You get a phone notification and answer in a comment. The chief reads it on its next wake-up.

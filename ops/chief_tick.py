@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from subprocess import DEVNULL
 
+import answers
 import ledger
 import stall
 import status
@@ -193,7 +194,8 @@ def run_board(board: Callable[[str], object] | None, result: str) -> None:
 
 
 def _tick(reader, gh, launcher, status_file, now, preflight, alive, killer, git=None) -> str:
-    """One wake-up. Returns 'busy', 'stopped', 'idle', 'would-start', 'hooks-broken' or 'ran'.
+    """One wake-up. Returns 'busy', 'stopped', 'idle', 'waiting', 'would-start', 'hooks-broken'
+    or 'ran'.
 
     The job queue is looked at first (F4): a worker still running means 'busy' and nothing else
     happens (zero tokens). A finished, vanished or over-time worker is recorded, then the normal
@@ -202,6 +204,7 @@ def _tick(reader, gh, launcher, status_file, now, preflight, alive, killer, git=
     now = time.time() if now is None else now
     if check_queue(reader, status_file, now, alive, killer, git) == "busy":
         return "busy"
+    heal_running_line(status_file, now)
     usage = usage_guard.get_usage(reader, now=now)
     decision = usage_guard.decide(usage)
     as_of = usage_guard.format_sgt(now)
@@ -210,15 +213,127 @@ def _tick(reader, gh, launcher, status_file, now, preflight, alive, killer, git=
         return "stopped"
     status.set_usage_line(status_file, usage.five_hour, usage.weekly, as_of, stopped=False)
     status.set_line(status_file, "Stopped:", "no")
-    if not has_work(status_file.read_text(encoding="utf-8")):
-        if git is not None:
+    watching = git is not None  # fix 3 and 4 watchers: off in old tests, on in `main`
+    answer = new_answer(gh, now) if watching else None  # before has_work: it wakes `Next: none` too
+    if answer:
+        return _wake_for_answer(answer, reader, gh, launcher, status_file, now, preflight, as_of)
+    text = status_file.read_text(encoding="utf-8")
+    if watching and waiting_for_gian(text, gh, now):
+        return "waiting"  # G3: zero tokens while Gian sleeps
+    if not has_work(text):
+        if watching:
             stall_alarm(status_file, gh, git, now, as_of)
         return "idle"
     if launcher is None:
         status.add_log(status_file, f"{as_of}: work found, not launched (no --launch)")
         return "would-start"
-    return launch_worker("chief", "Read STATUS.md and do the next step as the chief.", "chief",
-                         "", reader, gh, launcher, status_file, now, preflight)
+    return chief_run("Read STATUS.md and do the next step as the chief.", reader, gh, launcher,
+                     status_file, now, preflight, watching)
+
+
+# ---- Gian's answers, waiting, and the no-progress alarm (Phase A fix 4, G2, G3, G5) ----
+
+NO_PROGRESS = "chief made no progress twice"
+NO_PROGRESS_LIMIT = 2
+
+
+def new_answer(gh: Gh, now: float):
+    """G2: (issue, text, key) of a new comment by the repo owner, or None. A `gh` problem is
+    logged once (board log) and means "no new answer" (AS-10)."""
+    try:
+        return answers.find_new_answer(gh)
+    except Exception as problem:  # noqa: BLE001 - the tick must still return
+        status_board.log_failure(problem, now)
+        return None
+
+
+def waiting_for_gian(text: str, gh: Gh, now: float) -> bool:
+    """G3: Next says the team waits for Gian AND a real question (not our stall alarm) is open."""
+    found = stall.next_lines(text)
+    nxt = found[0].lower() if len(found) == 1 else ""
+    if "wait" not in nxt:
+        return False
+    try:
+        open_ones = answers.open_questions(gh)
+    except Exception as problem:  # noqa: BLE001 - unknown means "not waiting"
+        status_board.log_failure(problem, now)
+        return False
+    return bool(open_ones) and ("gian" in nxt or any(f"#{n}" in nxt for n, _title in open_ones))
+
+
+def _wake_for_answer(answer, reader, gh, launcher, status_file, now, preflight, as_of) -> str:
+    number, reply, key = answer
+    if launcher is None:
+        status.add_log(status_file, f"{as_of}: answer #{number} found, not launched (no --launch)")
+        return "would-start"
+    prompt = (f'Gian answered #{number}: "{reply}". Act on it, then close #{number} '
+              "with a short comment.")
+    result = chief_run(prompt, reader, gh, launcher, status_file, now, preflight, True)
+    if result == "ran":  # only now is the answer "handled"; a refused start retries next tick
+        status.add_log(status_file, f"{as_of}: ANSWER #{number} ({sgt_clock(now)}): "
+                                    f"{' '.join(reply.split())[:300]}")
+        answers.remember(number, key)
+    return result
+
+
+def _marks(status_file: Path, gh: Gh):
+    """What G5 compares before and after a chief run: the Next line and the open issues
+    (None for the issues when `gh` could not say)."""
+    try:
+        issues = answers.open_issue_numbers(gh)
+    except Exception:  # noqa: BLE001 - unknown
+        issues = None
+    return stall.next_lines(status_file.read_text(encoding="utf-8")), issues
+
+
+def chief_run(prompt, reader, gh, launcher, status_file, now, preflight, watching) -> str:
+    """Run the chief in the foreground. With the watchers on, count runs that moved nothing (G5)."""
+    before = _marks(status_file, gh) if watching else None
+    result = launch_worker("chief", prompt, "chief", "", reader, gh, launcher, status_file, now,
+                           preflight)
+    if watching and result == "ran":
+        after = _marks(status_file, gh)
+        moved = (running_path().exists() or done_path().exists() or before[0] != after[0]
+                 or before[1] is None or after[1] is None or before[1] != after[1])
+        count_chief_run(moved, gh, status_file, now)
+    return result
+
+
+def count_chief_run(moved: bool, gh: Gh, status_file: Path, now: float) -> None:
+    """G5: progress resets the count; otherwise add 1. At 2 in a row, one `Team stalled` issue."""
+    try:
+        if moved:
+            answers.set_idle_runs(0)
+            return
+        count = answers.idle_runs() + 1
+        answers.set_idle_runs(count)
+        if count < NO_PROGRESS_LIMIT:
+            return
+        made = open_gian_issue(
+            f"{stall.STALL_PREFIX}{NO_PROGRESS}",
+            f"The chief was woken {count} times in a row and did nothing: it started no worker, "
+            "did not change the `Next:` line and did not open or close an issue.\n\nRead the last "
+            "chief replies in `logs/workers/`, fix the cause, then close this issue yourself.",
+            "needs-gian", gh)
+        if made:
+            status.add_log(status_file,
+                           f"{usage_guard.format_sgt(now)}: STALLED: {NO_PROGRESS} -> {made}")
+    except Exception as problem:  # noqa: BLE001 - never stop the tick
+        status_board.log_failure(problem, now)
+
+
+def sgt_clock(epoch: float) -> str:
+    """'10:21 SGT' from an epoch time."""
+    return " ".join(usage_guard.format_sgt(epoch).split()[-2:])
+
+
+def heal_running_line(status_file: Path, now: float) -> None:
+    """G1: no running.json but a `Running:` line means the line is wrong. Delete it, say so once."""
+    if running_path().exists():
+        return
+    if status.clear_running(status_file):
+        status.add_log(status_file,
+                       f"{usage_guard.format_sgt(now)}: Running line removed: no worker")
 
 
 # ---- the stall alarm (Phase A fix 3, F1) ----
@@ -534,6 +649,7 @@ def start_background(agent, prompt, stage, phase, reader, gh, status_file, now,
         stop_tree(note["pid"])
         running_path().unlink(missing_ok=True)
         raise
+    status.set_running(status_file, agent, sgt_clock(note["started"]))  # G1: the tick owns it
     return f"started {agent}"
 
 
@@ -577,6 +693,7 @@ def check_queue(reader, status_file, now, alive=None, killer=None, git=None) -> 
     running, done = _read_note(running_path()) or {}, _read_note(done_path())
     if done is not None:
         _forget_notes()  # first, so a second call can never record the same worker twice
+        status.clear_running(status_file)
         result = WorkerResult(done.get("exit_code", -1), done.get("stdout", ""),
                               done.get("crash", ""), done.get("stderr", ""))
         record_result(running.get("agent") or done.get("agent", "worker"),
@@ -590,6 +707,7 @@ def check_queue(reader, status_file, now, alive=None, killer=None, git=None) -> 
     limit = MAX_WORKER_HOURS * 3600
     if age <= limit and ((pid and alive(pid)) or (pid is None and age < LAUNCH_GRACE_SECONDS)):
         return "busy"
+    status.clear_running(status_file)
     if age > limit and pid and alive(pid):
         killer(pid)
         _forget_notes()
@@ -636,6 +754,7 @@ def stop_worker(reader, status_file, now, alive=None, killer=None) -> str:
     alive = alive or pid_alive
     pid = running.get("pid")
     _forget_notes()
+    status.clear_running(status_file)
     if pid and alive(pid):  # a dead pid may now belong to a stranger: never kill it
         killer(pid)
         _record_without_result(running, "stopped: by hand", "stopped: by hand",
@@ -691,6 +810,8 @@ def main(argv: list[str] | None = None, gh: Gh | None = None) -> int:
     rw.add_argument("--agent", required=True, choices=sorted(AGENT_MODELS))
     rw.add_argument("--prompt", required=True)
     sub.add_parser("stop", help="stop the running worker (for Gian)")
+    an = sub.add_parser("answer", help="print the newest comment by the repo owner on an issue")
+    an.add_argument("number", type=int)
     nx = sub.add_parser("next", help="set the one 'Next:' line in STATUS.md")
     nx.add_argument("text")
     args = parser.parse_args(argv)
@@ -716,6 +837,9 @@ def main(argv: list[str] | None = None, gh: Gh | None = None) -> int:
             result = stop_worker(usage_guard.endpoint_reader, STATUS_FILE, time.time())
             print(result)
             run_board(board, result)
+        elif args.cmd == "answer":
+            found = answers.newest_owner_comment(gh, args.number, answers.owner(gh))
+            print(found[1] if found else answers.NO_ANSWER)
         elif args.cmd == "next":
             status.set_next(STATUS_FILE, args.text)
             print(f"Next: {' '.join(args.text.split())}")
