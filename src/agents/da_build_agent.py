@@ -139,6 +139,11 @@ def scripted_build_reply(prompt: str, switches: frozenset[str] | None = None) ->
 
     if is_review_prompt(prompt):
         return scripted_review_reply(prompt, switches)
+    # Phase 8: the lane, revision and repro-test calls of Refine (same reason for the import).
+    from agents.da_refine_agent import is_refine_prompt, scripted_refine_reply
+
+    if is_refine_prompt(prompt):
+        return scripted_refine_reply(prompt, switches)
     raise LLMClientError("The scripted build client was given a prompt it does not know.")
 
 
@@ -185,6 +190,14 @@ def _scripted_tests(prompt: str, switches: frozenset[str]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _present_prefix(text: str, wanted: str) -> str:
+    """The longest start of `wanted` (at least 12 characters) that `text` still holds."""
+    for end in range(len(wanted), 11, -1):
+        if wanted[:end] in text:
+            return wanted[:end]
+    return wanted
+
+
 def _scripted_code(prompt: str, script: dict, switches: frozenset[str]) -> str:
     path = _FILE_LINE.search(prompt).group(1).strip()
     fixing = FAILURE_HEADING in prompt
@@ -200,8 +213,16 @@ def _scripted_code(prompt: str, script: dict, switches: frozenset[str]) -> str:
     find, replace = edit["find"], edit["replace"]
     if "bad_edit" in switches:
         find = "this text is not in the file"
+    elif fixing and "book.csv" in prompt and path in script.get("fix_edits", {}):
+        # Phase 8: the failure report is the scripted bug-lane repro test; this is its fix.
+        edit = script["fix_edits"][path]
+        find, replace = edit["find"], edit["replace"]
     elif fixing:
         find = replace  # the edit is already in the current text; send a harmless no-op
+    elif find not in prompt:
+        # A rebuild after an earlier build or a bug fix changed this file already (Phase 8): the
+        # old text is gone. Send a harmless no-op on the part of the new text that is still there.
+        find = replace = _present_prefix(prompt, replace)
     return f"<<<<<<< FIND\n{find}\n=======\n{replace}\n>>>>>>> REPLACE\n"
 
 
@@ -307,8 +328,12 @@ def build_code_prompt(
     frozen_tests: str,
     current_text: str,
     failures: str = "",
+    developer_lines: str = "",
 ) -> str:
-    """One file per call: this file in full, the other files by contract line only."""
+    """One file per call: this file in full, the other files by contract line only.
+    `developer_lines` (Phase 8, R5.3): a sentence that says which lines he wrote himself."""
+    if developer_lines and action == "modify":
+        current_text = f"{current_text}\n\n{developer_lines}"
     failure_section = ""
     if failures:
         failure_section = (

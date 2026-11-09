@@ -34,7 +34,7 @@ def test_fake_provider_prints_the_build_items_24_and_25(make_settings, capsys):
     exit_code = run_smoke_check(make_settings())
 
     output = capsys.readouterr().out
-    assert exit_code == 0
+    assert exit_code == 0, output
     assert "24. CVDA-" in output and "reached READY_FOR_REVIEW (Ready with warnings)" in output
     assert "in 3 rounds" in output and "frozen tests passing" in output
     assert "25. 2 code files written to the pretend folder (no tests folder)" in output

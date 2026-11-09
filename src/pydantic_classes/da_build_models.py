@@ -25,13 +25,14 @@ BuildStep = Literal[
     "b_done",
     "b_written",
     "b_write_stopped",
+    "b_conflicts",  # Phase 8: the build is done, the write waits for his picks per conflict
     "b_unable",
     "escalated",
 ]
 # Whether the code files are in the developer's folder yet.
 WriteState = Literal["not_written", "written", "stopped"]
 FileKind = Literal["contract", "test", "code"]
-MadeBy = Literal["generator", "tester", "system"]
+MadeBy = Literal["generator", "tester", "system", "merge"]  # merge: his picks (Phase 8)
 TestResultKind = Literal["pass", "fail", "error", "skipped"]
 ProgressState = Literal["pending", "running", "done", "failed"]
 ContractKind = Literal["function", "class"]
@@ -186,6 +187,9 @@ class BuildState(_Shape):
     write_state: WriteState = "not_written"
     # Why the build paused, or the plain message for b_unable.
     message: str = ""
+    # Phase 8: the status a check run came from (READY_FOR_REVIEW or NOT_PASSING). Stop build on
+    # a check run goes back to it. Empty for a normal build.
+    return_status: str = ""
     revision: int = Field(default=1, ge=1)
 
 
@@ -201,6 +205,8 @@ class BuildRun(_Shape):
     result_status: str = ""
     label: str = ""
     stop_reason: str = ""
+    # Phase 8: a build after a Refine is a rebuild; Check my edits is a check run (no Generator).
+    kind: Literal["build", "rebuild", "check"] = "build"
 
 
 class BuildFile(_Shape):
@@ -257,6 +263,8 @@ class TestRow(BaseModel):
     test_id: str
     criterion_id: str
     yours: bool = False
+    # Phase 8: "New" (requirement lane), "Bug" (repro test) or "Yours"; "" for a plain test.
+    tag: str = ""
     description: str
     # The newest result of this test: pass, fail, error, skipped, or "" when it has not run.
     result: str = ""
@@ -285,6 +293,8 @@ class BuildView(BaseModel):
     max_rounds: int = 3
     time_limit: int = 60
     tests: list[TestRow] = Field(default_factory=list)
+    # Phase 8: "Test set version 3, approach version 2" (empty before any Refine added a test).
+    tests_note: str = ""
     # True when a round ran but the tests never did, because the code checks (Layer A) failed.
     tests_not_run: bool = False
     test_code: str = ""

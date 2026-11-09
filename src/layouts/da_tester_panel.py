@@ -26,7 +26,7 @@ DROPPED_ID = "da-tester-dropped"
 EARLIER_ID = "da-tester-earlier"
 
 REPORT_NOTE = "This report stays in the app. Nothing from it is written to your folder."
-FIX_IT_TEXT = "Fix it (Coming in Phase 8)"
+FIX_IT_TEXT = "Fix it"
 LABEL_COLOURS = {
     "Ready for your review": "green",
     "Ready with warnings": "yellow",
@@ -82,8 +82,9 @@ def tester_lines(view) -> list[str]:
     return lines
 
 
-def tester_report(report: TesterView | None, can_act: bool) -> list:
-    """The report blocks for the top of the Tests tab. Empty before any review."""
+def tester_report(report: TesterView | None, can_act: bool, can_fix: bool = False) -> list:
+    """The report blocks for the top of the Tests tab. Empty before any review. `can_fix`: Fix it
+    is live (Phase 8: only at `b_written`, when the code is in his folder)."""
     if report is None or report.review is None:
         return []
     review = report.review
@@ -108,7 +109,7 @@ def tester_report(report: TesterView | None, can_act: bool) -> list:
         )
     blocks.append(_checks_table(report))
     if report.rows:
-        blocks.append(_findings_table(report.rows, can_act))
+        blocks.append(_findings_table(report.rows, can_act, can_fix))
     for warning in review.zone_warnings:
         blocks.append(dmc.Text(warning, size="sm", c="orange"))
     blocks += _dropped(report)
@@ -146,14 +147,14 @@ def _checks_table(report: TesterView) -> dmc.Table:
     return dmc.Table([head, dmc.TableTbody(body)], id=CHECKS_ID, withTableBorder=True)
 
 
-def _findings_table(rows: list[FindingRow], can_act: bool) -> dmc.Table:
+def _findings_table(rows: list[FindingRow], can_act: bool, can_fix: bool) -> dmc.Table:
     heads = ("ID", "Severity", "Check", "Where", "Cites", "Message", "Action")
     head = dmc.TableThead(dmc.TableTr([dmc.TableTh(t) for t in heads]))
-    body = [_finding_row(row, can_act) for row in rows]
+    body = [_finding_row(row, can_act, can_fix) for row in rows]
     return dmc.Table([head, dmc.TableTbody(body)], id=FINDINGS_ID, withTableBorder=True)
 
 
-def _finding_row(row: FindingRow, can_act: bool) -> dmc.TableTr:
+def _finding_row(row: FindingRow, can_act: bool, can_fix: bool) -> dmc.TableTr:
     item = row.finding
     where = f"{item.file}:{item.line}" if item.file else "-"
     message = [dmc.Text(item.message, size="xs")]
@@ -169,12 +170,12 @@ def _finding_row(row: FindingRow, can_act: bool) -> dmc.TableTr:
             dmc.TableTd(dmc.Text(where, size="xs", ff="monospace")),
             dmc.TableTd(dmc.Text(item.cites or "-", size="xs")),
             dmc.TableTd(dmc.Stack(message, gap=2)),
-            dmc.TableTd(_actions(row, can_act)),
+            dmc.TableTd(_actions(row, can_act, can_fix)),
         ]
     )
 
 
-def _actions(row: FindingRow, can_act: bool):
+def _actions(row: FindingRow, can_act: bool, can_fix: bool):
     item = row.finding
     if item.severity == "fyi":
         return dmc.Text("-", size="xs")
@@ -193,7 +194,7 @@ def _actions(row: FindingRow, can_act: bool):
     return dmc.Stack(
         [
             _with_reason(item.finding_id, "accept", "Accept, with reason", can_act),
-            dmc.Button(FIX_IT_TEXT, size="compact-xs", variant="default", disabled=True),
+            _button(f"fixit:{item.finding_id}", FIX_IT_TEXT, can_fix, variant="default"),
         ],
         gap=4,
     )
@@ -217,11 +218,12 @@ def _with_reason(finding_id: str, action: str, label: str, can_act: bool) -> dmc
     )
 
 
-def _button(index: str, label: str, can_act: bool) -> dmc.Button:
+def _button(index: str, label: str, can_act: bool, variant: str = "filled") -> dmc.Button:
     return dmc.Button(
         label,
         id={"type": FINDING_ACT_TYPE, "index": index},
         size="compact-xs",
+        variant=variant,
         disabled=not can_act,
     )
 

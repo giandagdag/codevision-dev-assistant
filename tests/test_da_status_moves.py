@@ -53,14 +53,25 @@ SPEC_TABLE = {
     ("TESTER_REVIEW", "READY_TO_BUILD"),
     ("TESTER_REVIEW", "ESCALATION_REQUIRED"),
     ("READY_FOR_REVIEW", "TESTER_REVIEW"),
+    # Phase 8, Refine (spec section 10).
+    ("READY_FOR_REVIEW", "REVISION_IN_PROGRESS"),
+    ("NOT_PASSING", "REVISION_IN_PROGRESS"),
+    ("BUILDING", "READY_FOR_REVIEW"),  # Stop build on a check run
+    ("REVISION_IN_PROGRESS", "CLARIFICATION_IN_PROGRESS"),
+    ("REVISION_IN_PROGRESS", "READY_FOR_CONFIRMATION"),
+    ("REVISION_IN_PROGRESS", "APPROACH_PROPOSED"),
+    ("REVISION_IN_PROGRESS", "BUILDING"),
+    ("REVISION_IN_PROGRESS", "READY_FOR_REVIEW"),
+    ("REVISION_IN_PROGRESS", "NOT_PASSING"),
+    ("REVISION_IN_PROGRESS", "ESCALATION_REQUIRED"),
 }
 
-# Every real move: 16 x 16 statuses minus the 16 "same status" pairs.
+# Every real move: 17 x 17 statuses minus the 17 "same status" pairs.
 REAL_MOVES = list(permutations(STATUSES, 2))
 
 
-def test_there_are_240_real_moves():
-    assert len(REAL_MOVES) == 240
+def test_there_are_272_real_moves():
+    assert len(REAL_MOVES) == 272
 
 
 def test_confirmed_for_discovery_moves_only_to_searching():
@@ -80,20 +91,40 @@ def test_moves_out_of_ready_to_build():
 
 
 def test_build_moves():
-    # Phase 7: every pass goes through the Tester, so BUILDING no longer reaches READY_FOR_REVIEW.
+    # Phase 7: every pass goes through the Tester. Phase 8: only Stop build on a check run goes
+    # straight back to READY_FOR_REVIEW.
     assert set(ALLOWED_MOVES["BUILDING"]) == {
         "READY_TO_BUILD",
         "TESTER_REVIEW",
         "NOT_PASSING",
+        "READY_FOR_REVIEW",
         "ESCALATION_REQUIRED",
     }
     # Only Get help and "Re-scan and build again" leave a finished build before Phase 8.
-    assert set(ALLOWED_MOVES["NOT_PASSING"]) == {"BUILDING", "ESCALATION_REQUIRED"}
+    # Phase 8 adds REVISION_IN_PROGRESS (a lane is chosen) to both finished statuses.
+    assert set(ALLOWED_MOVES["NOT_PASSING"]) == {
+        "BUILDING",
+        "ESCALATION_REQUIRED",
+        "REVISION_IN_PROGRESS",
+    }
     # READY_FOR_REVIEW also has "Run the Tester review again" (Phase 7, D-D).
     assert set(ALLOWED_MOVES["READY_FOR_REVIEW"]) == {
         "BUILDING",
         "ESCALATION_REQUIRED",
         "TESTER_REVIEW",
+        "REVISION_IN_PROGRESS",
+    }
+
+
+def test_8_revision_moves():
+    assert set(ALLOWED_MOVES["REVISION_IN_PROGRESS"]) == {
+        "CLARIFICATION_IN_PROGRESS",
+        "READY_FOR_CONFIRMATION",
+        "APPROACH_PROPOSED",
+        "BUILDING",
+        "READY_FOR_REVIEW",
+        "NOT_PASSING",
+        "ESCALATION_REQUIRED",
     }
 
 

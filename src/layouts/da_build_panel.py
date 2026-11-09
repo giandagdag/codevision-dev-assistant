@@ -27,9 +27,15 @@ LAYERS_ID = "da-build-layers"
 FAILURES_ID = "da-build-failures"
 FILES_ID = "da-build-files"
 TURN_ID = "da-build-turn"
+EDIT_HINT_ID = "da-build-edit-hint"
 SUMMARY_ID = "da-build-summary"
 TESTS_LIST_ID = "da-tests-list"
 TESTS_CODE_ID = "da-tests-code"
+TESTS_VERSION_ID = "da-tests-version"
+ADD_CASE_ID = "da-add-case"
+ADD_CASE_TYPE = "da-add-case-go"  # the button
+ADD_CASE_FIELD_TYPE = "da-add-case-field"  # the criterion picker and the text box
+ADD_CASE_LABEL = "Add a test case"
 
 TESTS_NOT_RUN = "Not run: the code checks (Layer A) failed first. See the Build tab."
 TESTS_NOTE = "These tests run on the CodeVision server. They are not copied to your folder."
@@ -59,8 +65,9 @@ def poll_interval(view: BuildView) -> dcc.Interval:
     return dcc.Interval(id=POLL_ID, interval=POLL_MS, disabled=not view.polling)
 
 
-def build_tab(view: BuildView) -> list:
-    """The Build tab for a build that has started (any step after `start`)."""
+def build_tab(view: BuildView, edit_hint: str = "", refine_blocks: list | None = None) -> list:
+    """The Build tab for a build that has started (any step after `start`). `edit_hint` is the
+    Refine line "Edit anything, then click Re-scan." (empty when Refine is not offered)."""
     blocks: list = []
     if view.banner_text:
         blocks.append(_banner(view))
@@ -74,6 +81,9 @@ def build_tab(view: BuildView) -> list:
         blocks.append(_files(view))
     if view.state.step == "b_written":
         blocks.append(_your_turn())
+    if edit_hint:
+        blocks.append(dmc.Text(edit_hint, size="sm", fw=600, id=EDIT_HINT_ID))
+    blocks.extend(refine_blocks or [])
     if view.run is not None and view.run.ended_at is not None:
         blocks.append(_this_build(view))
     return [dmc.Stack(blocks, gap="sm")]
@@ -90,12 +100,14 @@ def tests_tab(view: BuildView | None) -> list:
                 id=TESTS_LIST_ID,
             )
         ]
-    report = tester_report(
-        view.tester,
+    can_act = (
         view.state.step in ACT_STEPS
         and view.request_status in ACT_STATUSES
-        and bool(view.tester and view.tester.layer_c_ran),
+        and bool(view.tester and view.tester.layer_c_ran)
     )
+    # Fix it and Add a test case work on the code in his folder: only at b_written (Phase 8).
+    at_written = view.state.step == "b_written" and view.request_status in ACT_STATUSES
+    report = tester_report(view.tester, can_act, can_act and at_written)
     rows = [_test_row(item) for item in view.tests]
     not_run = (
         dmc.Text(TESTS_NOT_RUN, size="sm", c="orange", id="da-tests-not-run")
@@ -131,14 +143,52 @@ def tests_tab(view: BuildView | None) -> list:
             [
                 *report,
                 dmc.Text(f"{len(view.tests)} frozen tests", fw=600, size="sm"),
+                dmc.Text(view.tests_note, size="xs", c=da_styles.MUTED, id=TESTS_VERSION_ID)
+                if view.tests_note
+                else None,
                 not_run,
                 table,
                 dmc.Text(TESTS_NOTE, size="xs", c=da_styles.MUTED, id="da-tests-note"),
                 code,
+                add_case_form(view) if at_written else None,
             ],
             gap="sm",
         )
     ]
+
+
+def add_case_form(view: BuildView) -> dmc.Stack:
+    """Add a test case (spec section 11): pick a criterion, type the case in plain words. The
+    ids are pattern ids, so the page has none of them on other screens."""
+    criteria = sorted({row.criterion_id for row in view.tests})
+    return dmc.Stack(
+        [
+            dmc.Text(ADD_CASE_LABEL, fw=600, size="sm"),
+            dmc.Select(
+                id={"type": ADD_CASE_FIELD_TYPE, "index": "criterion"},
+                data=criteria,
+                value=criteria[0] if criteria else None,
+                placeholder="Pick the acceptance criterion",
+                allowDeselect=False,
+            ),
+            dmc.Textarea(
+                id={"type": ADD_CASE_FIELD_TYPE, "index": "text"},
+                placeholder="Describe the case in plain words",
+                autosize=True,
+                minRows=2,
+                maxRows=5,
+                inputProps={"maxLength": 4000},
+            ),
+            dmc.Button(
+                ADD_CASE_LABEL,
+                id={"type": ADD_CASE_TYPE, "index": "go"},
+                size="compact-xs",
+                variant="default",
+            ),
+        ],
+        gap="xs",
+        id=ADD_CASE_ID,
+    )
 
 
 # --- pieces ---
@@ -314,7 +364,8 @@ def _this_build(view: BuildView) -> dmc.Paper:
 
 
 def _test_row(item: TestRow) -> dmc.TableTr:
-    name = f"{item.test_id} (Yours)" if item.yours else item.test_id
+    tag = item.tag or ("Yours" if item.yours else "")
+    name = f"{item.test_id} ({tag})" if tag else item.test_id
     return dmc.TableTr(
         [
             dmc.TableTd(dmc.Text(name, size="xs", fw=600)),

@@ -548,6 +548,30 @@ folder" re-scan result. The ZIP and the upload hold and send code files only. A 
 with the **same name** as the linked one is no longer silently accepted: pick it with **Change**
 to link it on purpose (P26).
 
+## How Phase 8 works
+
+Phase 8 is **Refine**. AS400 picture: changing a program after its first compile, where your own
+local fixes must survive. It starts at `b_written` (READY_FOR_REVIEW or NOT_PASSING). Spec
+`specs/phase-8-refine.md`, plan `specs/phase-8-plan.md`.
+
+- **Three lanes.** You type feedback; one AI call suggests a lane; you always pick.
+  **Bug**: the Tester writes one test that must fail on today's code, you confirm it, it is appended
+  as a new test set version (earlier tests untouched), and a fresh fix build writes only the traced
+  file. **Requirement**: the record gets v2 (same CVDA number), Discover and Approach run again,
+  only new and changed criteria get new test cases. **Approach**: a changed design, record untouched.
+- **Edit protection.** **Re-scan** finds files you changed (side by side). **Check my edits** runs
+  the frozen tests on your version. A rebuild is a patch: where the AI and you changed the same
+  method you pick **Keep mine** or **Take the AI's**. Nothing of yours is overwritten without a pick.
+  **Restore** brings back an older build (it warns about edits it would replace).
+- **Versions.** Summary shows record versions with diffs, Approach lists its versions with their
+  source, Tests marks cases New, Bug or Yours, Build lists builds ("Refine 2: bug").
+- **Get help** is offered in every lane step. A stale window is refused on every action.
+- **Smoke check.** Items 27 (bug lane to a fix build) and 28 (requirement lane to a revision
+  approach) run with the fake provider. With the scripted fake code the fix build ends
+  **Not passing** (10 of 11 tests): the script does not really fix the bug. That is expected.
+- **Known gap.** The Refine box is drawn, but its click callbacks are not wired yet, so the browser
+  test 8-42 (`tests/test_da_refine_e2e.py`) is written and skipped. Work test: `docs/refine-work-test.md`.
+
 ## Notes for the move to CodeVision
 
 - **The audit-table triggers are SQLite-only.** The append-only guarantee comes from two SQLite

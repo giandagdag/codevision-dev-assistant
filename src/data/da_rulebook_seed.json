@@ -145,6 +145,10 @@
     "tester_max_prompt_chars": 60000,
     "tester_max_attempts": 2,
     "tester_quote_window": 2,
+    "refine_max_per_request": 5,
+    "refine_lane_max_attempts": 2,
+    "refine_repro_max_attempts": 2,
+    "refine_conflict_context_lines": 3,
     "flag_review_zones": [
       {"name": "Security", "description": "Encryption, key handling, and permission checks.", "examples": ["Encrypting a customer field", "Checking a user's role"], "path_patterns": ["*security*", "*crypto*", "*permission*"]},
       {"name": "Login", "description": "Sign-in, sessions, and passwords.", "examples": ["Login page", "Session timeout handling"], "path_patterns": ["*login*", "*session*", "*password*"]}

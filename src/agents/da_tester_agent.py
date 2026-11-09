@@ -8,6 +8,7 @@ test script from the signed-off requirement, not from the programmer's source.
 """
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -80,10 +81,33 @@ class ScriptedTesterClient:
 
     def __init__(self, step: str, script_file: Path = FAKE_SCRIPT_FILE):
         self.model = SCRIPT_MODEL
+        self._step = step
         self._entry = json.loads(Path(script_file).read_text(encoding="utf-8"))[step]
 
     def complete(self, prompt: str, system: str | None = None) -> LLMReply:
-        return LLMReply(text=json.dumps(self._entry), provider="fake", model=self.model)
+        entry = _fit_plan_to_prompt(self._entry, prompt) if self._step == PLAN_STEP else self._entry
+        return LLMReply(text=json.dumps(entry), provider="fake", model=self.model)
+
+
+def _fit_plan_to_prompt(entry: dict, prompt: str) -> dict:
+    """A revision asks the Tester about the new and changed criteria only (Phase 8 spec section 5),
+    so the scripted plan keeps the cases of the criteria in the prompt and gets one plain case for
+    a criterion the script does not know (a criterion the revision added)."""
+    wanted = list(dict.fromkeys(re.findall(r'"id":\s*"(AC-\d+)"', prompt)))
+    if not wanted:
+        return entry
+    cases = [case for case in entry["cases"] if case["criterion_id"] in wanted]
+    known = {case["criterion_id"] for case in entry["cases"]}
+    cases += [
+        {
+            "criterion_id": criterion,
+            "given": "A file that breaks the new rule of this request",
+            "expect": "The file is rejected with a clear error message",
+        }
+        for criterion in wanted
+        if criterion not in known
+    ]
+    return {**entry, "cases": cases}
 
 
 def get_tester_client(settings: Settings, step: str) -> LLMClient:

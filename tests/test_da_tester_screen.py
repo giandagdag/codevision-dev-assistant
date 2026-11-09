@@ -88,8 +88,9 @@ def test_7_22_a_should_fix_has_accept_and_a_greyed_fix_it(settings, request_id):
 
     assert any(key.startswith("accept:") for key in act_buttons(tree))
     fix_it = [b for b in components(tree, "Button") if all_text(b) == tp.FIX_IT_TEXT]
+    # Phase 8 made Fix it real, but only once the code is in his folder (b_written); a build
+    # that is only done (b_done) still shows it greyed.
     assert len(fix_it) == 1 and fix_it[0].disabled is True
-    assert "Coming in Phase 8" in tp.FIX_IT_TEXT
 
 
 def test_7_20_a_must_fix_has_dispute_and_no_accept(settings, request_id, monkeypatch):

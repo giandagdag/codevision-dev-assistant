@@ -43,9 +43,9 @@ MAX_CHANGES = 3
 
 FileAction = Literal["create", "modify"]
 ReuseChoice = Literal["reuse", "extend", "ignore"]
-ApproachSource = Literal["proposal", "settled", "change"]
+ApproachSource = Literal["proposal", "settled", "change", "revision", "refine"]
 CaseSource = Literal["tester", "developer"]
-PlanChangeSource = Literal["tester_plan", "developer_case"]
+PlanChangeSource = Literal["tester_plan", "developer_case", "revision", "refine"]
 
 # Where the Approach conversation is. "start" is not stored: it means no state row yet.
 ApproachStep = Literal[
@@ -114,6 +114,9 @@ class ApproachReply(_Shape):
     libraries: list[Annotated[str, Field(min_length=1, max_length=LIBRARY_LIMIT)]] = Field(
         default_factory=list, max_length=LIBRARY_COUNT_LIMIT
     )
+    # Phase 8 approach lane: true when the asked change would need an acceptance criterion changed.
+    # The app then refuses the reply and points to the requirement lane.
+    changes_criteria: bool = False
 
 
 class ApproachDecision(_Shape):
@@ -177,6 +180,8 @@ class TestCase(_Shape):
     given: str
     expect: str
     source: CaseSource
+    # Phase 8: written by the Tester for a new or changed criterion in the requirement lane.
+    new: bool = False
 
 
 class TestPlanVersion(_Shape):

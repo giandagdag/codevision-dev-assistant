@@ -40,6 +40,7 @@ from agents.da_build_flow import (
     _require_request,
     _write,
 )
+from agents.da_refine_merge import his_lines, marker_text, plan_merge
 from agents.da_sandbox import run_tests
 from agents.da_workspace_checks import fingerprint
 from configs.da_config import PROJECT_ROOT, Settings
@@ -57,12 +58,22 @@ from db_table_functions.db_tbl_da_build import (
     ensure_build_tables,
     insert_build_file,
     insert_round,
+    read_build_run,
     read_build_state,
     read_frozen_files,
     read_latest_code,
     read_progress,
     read_rounds,
     save_build_state,
+)
+from db_table_functions.db_tbl_da_refine import (
+    add_build_result,
+    close_refine,
+    insert_conflict_row,
+    read_latest_test_set,
+    read_refine_state,
+    save_refine_state,
+    set_last_tested,
 )
 from db_table_functions.db_tbl_da_requests import get_rulebook_for_request
 from db_table_functions.db_tbl_da_tester import insert_review, next_review_number, read_reviews
@@ -94,6 +105,7 @@ from pydantic_classes.da_models import (
     STATUS_TESTER_REVIEW,
     Request,
 )
+from pydantic_classes.da_refine_models import STEP_BUG_FIXING, STEP_FINDING_FIXING
 from pydantic_classes.da_request_record_models import RequestRecord
 from pydantic_classes.da_rulebook_models import Charter, Policy, Rule
 from pydantic_classes.da_tester_models import Finding, ReviewRecord
@@ -148,6 +160,8 @@ class _Inputs:
     next_line: int
     rules: list[Rule]
     reviews: list[ReviewRecord]
+    # Phase 8: the newest frozen test set version (the bug lane appends to it); "" when none.
+    test_set_text: str = ""
     planned: list[PlannedFile] = field(init=False)
 
     def __post_init__(self) -> None:
@@ -197,6 +211,13 @@ class _Run:
         self.now_fn = now_fn or (lambda: datetime.now(UTC))
         self.expected_build: int | None = None
         self.rerun = False
+        # Phase 8: the kind of this build (build, rebuild or check). A check run (Check my edits)
+        # is one pass of Layers A, B and C on his files: no Generator, no fix rounds, no budget.
+        self.kind = "build"
+        self.check = False
+        self.merge = False
+        self.bug_fix = False
+        self.finding_fix = None
         self.base_revision = 0
         self.inp: _Inputs
         self.reference: Path
@@ -209,6 +230,8 @@ class _Run:
         try:
             self._load()
             self._check_environment()
+            if self.check:
+                return self._check_run()
             contract, tests = self._frozen()
             return self._rounds(contract, tests)
         except _Cancelled:
@@ -232,7 +255,7 @@ class _Run:
             raise BuildError("This build changed. Reload the page and try again.") from None
         except _Paused as paused:
             raise BuildError(f"{paused.message} Nothing was changed.") from None
-        except (BuildError, StaleRevisionError):
+        except BuildError, StaleRevisionError:
             raise
         except Exception:  # noqa: BLE001 - the page must show a plain message, not a trace
             logger.exception("The Tester re-run stopped on an unexpected error.")
@@ -306,6 +329,9 @@ class _Run:
                 raise _Cancelled
             if self.rerun and state.revision != self.base_revision:
                 raise StaleRevisionError(STALE_MESSAGE)
+            run_row = read_build_run(conn, self.request_id, state.build_number)
+            self.kind = run_row.kind if run_row else "build"
+            self.check = self.kind == "check"
             approach_state = read_approach_state(conn, self.request_id)
             versions = {
                 v.approach_version: v for v in read_approach_versions(conn, self.request_id)
@@ -323,7 +349,21 @@ class _Run:
                     # is treated like an old one, so his edits are patched, never overwritten.
                     starts[_clean(item.path)] = versions_of[-1].text
             progress = read_progress(conn, self.request_id, number)
+            latest_set = read_latest_test_set(conn, self.request_id, state.approach_version)
+            refine = read_refine_state(conn, self.request_id)
+            # The bug lane's fix build: a rebuild started from "Yes, this is the bug".
+            self.bug_fix = (
+                self.kind == "rebuild" and refine is not None and refine.step == STEP_BUG_FIXING
+            )
+            # Fix it on a Should fix: the finding is the only input of round 1.
+            self.finding_fix = (
+                refine.fix_finding
+                if self.kind == "rebuild" and refine is not None
+                and refine.step == STEP_FINDING_FIXING
+                else None
+            )
             self.inp = _Inputs(
+                test_set_text=latest_set.text if latest_set else "",
                 request=request,
                 state=state,
                 charter=rulebook.charter,
@@ -339,6 +379,8 @@ class _Run:
                 rules=list(rulebook.rules),
                 reviews=read_reviews(conn, self.request_id, number),
             )
+        # A check run whose files were saved by his picks (Apply my choices): test exactly them.
+        self.merge = self.check and any(f.made_by == "merge" for f in self.inp.code.values())
         self.context = agent.BuildContext(
             charter=self.inp.charter,
             record=self.inp.record,
@@ -366,7 +408,8 @@ class _Run:
         contract = Contract.model_validate_json(self.inp.frozen["contract"].text)
         if "test" not in self.inp.frozen:
             self._write_tests(contract)
-        return contract, self.inp.frozen["test"].text
+        # The frozen file is never changed; test set versions only add methods to it.
+        return contract, self.inp.test_set_text or self.inp.frozen["test"].text
 
     def _write_contract(self) -> None:
         self._alive()
@@ -462,7 +505,12 @@ class _Run:
 
     def _one_round(self, number: int, contract: Contract, tests: str) -> bool:
         limit = self.inp.policy.build_max_rounds
-        to_write, failures = self._fix_input(number)
+        if number == 1 and self.bug_fix:
+            to_write, failures = self._trace_bug(contract, tests)
+        elif number == 1 and self.finding_fix is not None:
+            to_write, failures = self._finding_input()
+        else:
+            to_write, failures = self._fix_input(number)
         with self._turn() as tx:
             tx.set(step="b_running", current_round=len(self.inp.rounds))
             self._note(tx, f"Round {number} of {limit}", "done")
@@ -477,6 +525,74 @@ class _Run:
             return self._record_round(number, layer_a, None, contract, tests)
         layer_b = self._layer_b(tests)
         return self._record_round(number, layer_a, layer_b, contract, tests)
+
+    def _trace_bug(self, contract: Contract, tests: str) -> tuple[list[str], str]:
+        """Round 1 of a bug fix (spec section 7): run the new test set on his files as they are,
+        and send ONLY the traced files to the Generator, with the failure. Every other planned
+        file is kept as his text, so the sandbox still sees it. No round is used by this run."""
+        planned = [_clean(item.path) for item in self.inp.planned]
+        starts = {p: self.inp.start_texts[p] for p in planned if p in self.inp.start_texts}
+        result = run_tests(
+            self.reference,
+            starts,
+            self.test_id,
+            tests,
+            exclude=self.inp.policy.build_sandbox_exclude,
+            timeout_seconds=self.inp.policy.build_test_timeout_seconds,
+        )
+        if not result.ran:
+            raise _Paused("interrupted", result.error)
+        empty = LayerAResult()
+        traced = choose_files_to_fix(empty, result, planned, contract, tests)
+        report = build_failure_report(empty, result, self.inp.cases, tests, traced)
+        self._keep_untraced(starts, traced)
+        return traced, report_for_generator(report)
+
+    def _finding_input(self) -> tuple[list[str], str]:
+        """Round 1 of Fix it (spec section 7): only the cited file goes to the Generator, with the
+        finding as a Must fix line. Every other planned file stays as his text."""
+        planned = [_clean(item.path) for item in self.inp.planned]
+        starts = {p: self.inp.start_texts[p] for p in planned if p in self.inp.start_texts}
+        finding = self.finding_fix
+        cited = _clean(finding.file)
+        traced = [cited] if cited in planned else planned
+        self._keep_untraced(starts, traced)
+        as_must = finding.model_copy(update={"severity": "must_fix"})
+        return traced, tester.report_for_generator([as_must])
+
+    def _keep_untraced(self, starts: dict[str, str], traced: list[str]) -> None:
+        """His text of each file the Generator will not touch becomes part of this build's code."""
+        with self._turn() as tx:
+            for path, text in starts.items():
+                if path in traced or path in self.inp.code:
+                    continue
+                self.inp.code[path] = insert_build_file(
+                    tx.conn,
+                    BuildFile(
+                        request_id=self.request_id,
+                        build_number=tx.state.build_number,
+                        round=1,
+                        path=path,
+                        kind="code",
+                        text=text,
+                        fingerprint=fingerprint(text),
+                        made_by="system",
+                    ),
+                    tx.now,
+                )
+
+    def _his_lines_note(self, path: str) -> str:
+        """R5.3 step 1: on a rebuild, tell the Generator which lines he wrote (last app-written
+        version against his scanned version). Empty when he changed nothing in this file."""
+        if self.kind != "rebuild":
+            return ""
+        with open_db(self.settings.db_path) as conn:
+            conn.execute("BEGIN")
+            versions = read_file_versions(conn, self.request_id, path)
+        written = [v for v in versions if v.kind == "written"]
+        if not versions or not written:
+            return ""
+        return marker_text(his_lines(written[-1].text, versions[-1].text))
 
     def _write_file(
         self, path: str, number: int, contract: Contract, tests: str, failures: str
@@ -496,7 +612,8 @@ class _Run:
         name = path.rsplit("/", 1)[-1]
         line = self._line(f"AI writes {name}", "running")
         prompt = agent.build_code_prompt(
-            self.context, contract, path, action, number, tests, base, failures
+            self.context, contract, path, action, number, tests, base, failures,
+            self._his_lines_note(path),
         )
         result = agent.write_code(self.client("generator"), self.context, prompt, action)
         if result.kind in ("unreachable", "too_big"):
@@ -636,7 +753,7 @@ class _Run:
                 )
             if not passed:
                 tx.audit("system", "round_failed", {"round": number, "files_to_fix": fix})
-                if number < limit:
+                if number < limit and not self.check:
                     tx.set(step="b_round_failed", current_round=number)
                     tx.say(
                         "assistant",
@@ -644,6 +761,74 @@ class _Run:
                     )
         self.inp.rounds.append(record)
         return passed
+
+    # --- a check run: Check my edits (Phase 8 spec section 3) ---
+
+    def _check_run(self) -> str:
+        """One pass of Layers A, B and C on the files as they are in his folder. No Generator call,
+        no fix round, nothing counted against the budget, nothing written (they are already his).
+        A pause in Layer C resumes here: the saved round is not run again."""
+        contract, tests = self._frozen()
+        if not self.inp.rounds:
+            self._check_round(contract, tests)
+        last = self.inp.rounds[-1]
+        if not _round_passed(last):
+            return self._finish_check_failed(last)
+        if self._review_of(last.round) is None:
+            self._layer_c(last)
+        return "done"
+
+    def _check_round(self, contract: Contract, tests: str) -> None:
+        """Take his current text of every planned file as this run's code, then Layers A and B."""
+        self._alive()
+        planned = [_clean(item.path) for item in self.inp.planned]
+        if self.merge:  # saved already by Apply my choices
+            texts = {path: self.inp.code[path].text for path in planned if path in self.inp.code}
+            self._alive()
+            layer_a = self._layer_a(texts, contract, [])
+            layer_b = self._layer_b(tests) if layer_a.ok else None
+            self._record_round(1, layer_a, layer_b, contract, tests)
+            return
+        texts = {
+            path: self.inp.start_texts[path] for path in planned if path in self.inp.start_texts
+        }
+        with self._turn() as tx:
+            tx.set(step="b_running", current_round=0)
+            self._note(tx, f"Checking your {len(texts)} edited file(s)", "done")
+            for path, text in texts.items():
+                saved = insert_build_file(
+                    tx.conn,
+                    BuildFile(
+                        request_id=self.request_id,
+                        build_number=tx.state.build_number,
+                        round=1,
+                        path=path,
+                        kind="code",
+                        text=text,
+                        fingerprint=fingerprint(text),
+                        made_by="system",
+                    ),
+                    tx.now,
+                )
+                self.inp.code[path] = saved
+        layer_a = self._layer_a(texts, contract, [])
+        layer_b = self._layer_b(tests) if layer_a.ok else None
+        self._record_round(1, layer_a, layer_b, contract, tests)
+
+    def _finish_check_failed(self, last: RoundRecord) -> str:
+        """Layer A or B failed: Not passing, with the failure report. No Generator, no fix round."""
+        if last.layer_b is not None:
+            what = f"{last.layer_b.failed} test(s)"
+            text = f"Your edit breaks {what}. Result: {LABEL_NOT_PASSING}."
+        else:
+            problems = len(last.layer_a.problems)
+            text = (
+                f"Your edit did not pass the code checks ({problems} problem(s)), "
+                f"so the tests did not run. Result: {LABEL_NOT_PASSING}."
+            )
+        with self._turn() as tx:
+            self._close(tx, False, 0, LABEL_NOT_PASSING, text)
+        return "done"
 
     # --- the end (spec section 8) ---
 
@@ -660,18 +845,128 @@ class _Run:
         status, label = result_for(passed, label)
         tx.close_run(status, label, "", rounds_used)
         tx.move_to(status)
-        tx.set(step="b_done", current_round=rounds_used, write_state="not_written", message="")
+        if self.merge:
+            # His merged files are not in his folder yet: the write follows, whatever the label.
+            tx.set(
+                step="b_done",
+                current_round=rounds_used,
+                write_state="not_written",
+                message="",
+                return_status="",
+            )
+        elif self.check:
+            # Nothing is written after a check run: the files in his folder are the tested ones.
+            tx.set(
+                step="b_written",
+                current_round=rounds_used,
+                write_state="written",
+                message="",
+                return_status="",
+            )
+        else:
+            found = self._find_conflicts(tx) if self.kind == "rebuild" else 0
+            # Conflicts: the build is finished but nothing is written until he has picked (R5.3).
+            step = "b_conflicts" if found else "b_done"
+            tx.set(step=step, current_round=rounds_used, write_state="not_written", message="")
         event = "build_passed" if passed else "build_not_passing"
-        tx.audit(
-            "system",
-            event,
-            {
-                "rounds": rounds_used,
-                "label": label,
-                "zones_touched": self.inp.approach.zones_touched,
-            },
-        )
+        details = {
+            "rounds": rounds_used,
+            "label": label,
+            "zones_touched": self.inp.approach.zones_touched,
+        }
+        if self.kind != "build":
+            details["kind"] = self.kind
+        tx.audit("system", event, details)
         tx.say("assistant", text)
+        # "Last tested" for Phase 10, and the NOT_PASSING-in-a-row count of rebuilds (F4).
+        set_last_tested(tx.conn, self.request_id, tx.state.build_number, self.kind, tx.now)
+        if self.kind == "rebuild":
+            add_build_result(tx.conn, self.request_id, not passed, tx.now)
+        if self.bug_fix or self.finding_fix is not None:
+            self._close_bug_refine(tx, passed)
+
+    def _find_conflicts(self, tx: BuildTx) -> int:
+        """R5.3 steps 2 to 4: compare the Generator's result with his version of each file, save
+        every conflict (nothing is written), audit the count. Returns how many were found."""
+        distance = self.inp.policy.refine_conflict_context_lines
+        found = []
+        for item in self.inp.planned:
+            path = _clean(item.path)
+            built = self.inp.code.get(path)
+            versions = read_file_versions(tx.conn, self.request_id, path)
+            written = [v for v in versions if v.kind == "written"]
+            if built is None or not versions or not written:
+                continue  # no app-written version: he has no lines of his own to protect
+            plan = plan_merge(
+                path, written[-1].text, versions[-1].text, built.text, distance, distance
+            )
+            for conflict in plan.conflicts:
+                number = tx.state.build_number
+                insert_conflict_row(tx.conn, self.request_id, number, conflict, tx.now)
+                found.append(conflict)
+        if found:
+            tx.audit("system", "conflicts_found", {"count": len(found)})
+            tx.say(
+                "assistant",
+                f"The rebuild touches {len(found)} place(s) you edited. Nothing is written yet: "
+                "pick Keep mine or Take the AI's for each one.",
+            )
+        return len(found)
+
+    def _finding_gone(self, tx: BuildTx, finding) -> bool:
+        """The finding is gone when the newest review of this build no longer has it (same file,
+        same check, same quoted line)."""
+        reviews = read_reviews(tx.conn, self.request_id, tx.state.build_number)
+        if not reviews:
+            return False
+        same = [
+            f for f in reviews[-1].findings
+            if f.kept and f.file == finding.file and f.check == finding.check
+            and f.quote == finding.quote
+        ]
+        return not same
+
+    def _close_bug_refine(self, tx: BuildTx, passed: bool) -> None:
+        """The bug lane and Fix it end with their fix build: the Refine row is closed and the Refine
+        screen is free again (same write transaction as the build's own end, rule F1)."""
+        state = read_refine_state(tx.conn, self.request_id)
+        if state is None or state.step not in (STEP_BUG_FIXING, STEP_FINDING_FIXING):
+            return
+        result = "fixed" if passed else "not_passing"
+        if state.fix_finding is not None:
+            gone = self._finding_gone(tx, state.fix_finding)
+            result = "fixed" if gone else "not_fixed"
+            tx.audit(
+                "system",
+                "finding_fixed" if gone else "finding_not_fixed",
+                {"finding": state.fix_finding.finding_id, "build": tx.state.build_number},
+            )
+        close_refine(
+            tx.conn,
+            self.request_id,
+            state.refine_number,
+            result=result,
+            record_version_after=tx.request.version,
+            approach_version_after=tx.state.approach_version,
+            build_number=tx.state.build_number,
+            repro_passed_today=state.repro_passed_today,
+            now=tx.now,
+        )
+        idle = state.model_copy(
+            update={
+                "step": "start",
+                "pending_feedback": "",
+                "suggested_lane": "",
+                "suggested_reason": "",
+                "suggested_criterion": "",
+                "chosen_lane": "",
+                "repro": None,
+                "fix_finding": None,
+                "repro_tries": 0,
+                "repro_passed_today": 0,
+            }
+        )
+        save_refine_state(tx.conn, idle, state.revision, tx.now)
 
     @property
     def _cases(self) -> int:
@@ -739,7 +1034,7 @@ class _Run:
             policy=self.inp.policy,
             layer_b=last.layer_b,
             code={path: item.text for path, item in self.inp.code.items()},
-            start_texts=self.inp.start_texts,
+            start_texts=self._review_start_texts,
             planned_paths=[_clean(item.path) for item in self.inp.planned],
             round=last.round,
         )
@@ -752,8 +1047,14 @@ class _Run:
         return (
             tester.check_criteria_have_tests(self.inp.record, test_text)
             + tester.check_tests_pass(self.inp.record, last.layer_b)
-            + tester.check_files_match_plan(planned, code, self.inp.start_texts)
+            + tester.check_files_match_plan(planned, code, self._review_start_texts)
         )
+
+    @property
+    def _review_start_texts(self) -> dict[str, str]:
+        """What the files were before this run. A check run reviews his files as a whole: there is
+        no "before", so nothing is compared (a file is never "not changed")."""
+        return {} if self.check else self.inp.start_texts
 
     def _save_review(
         self,
@@ -778,9 +1079,7 @@ class _Run:
                 request_id=self.request_id,
                 build_number=tx.state.build_number,
                 round=last.round,
-                review_number=next_review_number(
-                    tx.conn, self.request_id, tx.state.build_number
-                ),
+                review_number=next_review_number(tx.conn, self.request_id, tx.state.build_number),
                 model=outcome.model,
                 calls=outcome.calls,
                 prompt_chars=outcome.prompt_chars,
@@ -801,6 +1100,12 @@ class _Run:
                 criterion = next(f for f in findings if f.check == 1)
                 text = f"Criterion {criterion.cites} has no test. Change the approach or get help."
                 self._close(tx, False, used, LABEL_NOT_PASSING, text)
+            elif self.check and must:
+                text = (
+                    f"The Tester found {len(must)} Must fix in your files. "
+                    f"Result: {LABEL_NOT_PASSING}."
+                )
+                self._close(tx, False, 0, LABEL_NOT_PASSING, text)
             elif must and used >= limit:
                 text = (
                     f"I used all {used} rounds and the Tester's Must fix is still open. "
@@ -810,6 +1115,10 @@ class _Run:
             elif must:
                 self._start_fix_round(tx, last.round, findings)
                 return False
+            elif self.check:
+                text = _passed_text(last.round, label, _counts(saved), zones, self._cases)
+                text = text.replace(" Writing your code files now.", " Nothing was written.")
+                self._close(tx, True, 0, label, text)
             else:
                 text = _passed_text(last.round, label, _counts(saved), zones, self._cases)
                 self._close(tx, True, used, label, text)
@@ -953,9 +1262,7 @@ class _Run:
             )
         return number
 
-    def _note(
-        self, tx: BuildTx, text: str, state: ProgressState, line: int | None = None
-    ) -> int:
+    def _note(self, tx: BuildTx, text: str, state: ProgressState, line: int | None = None) -> int:
         """Add a progress line, or a new row for an existing line number (its newest row wins).
         Returns the line number."""
         if line is None:

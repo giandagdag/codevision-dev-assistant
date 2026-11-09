@@ -19,8 +19,10 @@ from pydantic import ValidationError
 
 from agents import da_build_flow as build_flow
 from agents import da_build_runner as build_runner
+from agents import da_refine_flow as refine_flow
 from agents import da_workspace_flow as flow
 from db_table_functions.da_db import DatabaseBusyError
+from db_table_functions.db_tbl_da_build import BuildError
 from db_table_functions.db_tbl_da_understand import UnderstandError
 from layouts.da_developer_assistant_page import BUSY_ID, MESSAGE_ID, REFRESH_ID
 from layouts.da_workspace_panel import (
@@ -130,6 +132,9 @@ def _dispatch(settings, event: dict, request_id: str, revision: int, refresh: in
             "nonce": event["nonce"],
         }
         return again, None, pack, ""
+    refined = _dispatch_refine(settings, event, request_id, again, ctx or {})
+    if refined is not None:
+        return refined
     if kind == "facts":
         facts = FolderFacts.model_validate(event["facts"])
         judgement = flow.judge_facts(settings, request_id, facts, revision)
@@ -165,6 +170,38 @@ def _dispatch(settings, event: dict, request_id: str, revision: int, refresh: in
     return again, None, no_update, ""
 
 
+def _dispatch_refine(settings, event: dict, request_id: str, again: int, ctx: dict):
+    """The Phase 8 browser buttons (step 16c), or None when the event is not one of them.
+
+    At `b_written` Re-scan (and the folder upload in download mode) is the Refine re-scan: it
+    saves his edits as `scanned` rows with the BUILD revision. Restore build N runs the server's
+    write job through the same hops as the build's own write; in download mode the ZIP holds the
+    set. The build to put back is the one the page drew (`ctx["restore_build"]`), never one the
+    browser names."""
+    kind = event.get("kind")
+    build_revision = ctx.get("build_revision", 0)
+    if kind in ("scan_facts", "upload_facts") and ctx.get("build_step") == "b_written":
+        facts = FolderFacts.model_validate(event["facts"])
+        refine_flow.rescan(settings, request_id, facts, build_revision)
+        return again, None, no_update, ""
+    if kind not in ("restore_write", "restore_download"):
+        return None
+    number = ctx.get("restore_build", 0)
+    if not number:
+        raise BuildError("Pick the build to restore first.")
+    if kind == "restore_write":
+        job = refine_flow.prepare_restore(settings, request_id, number, build_revision)
+        return no_update, job.model_dump(mode="json") | {"nonce": event["nonce"]}, no_update, ""
+    job, readme = refine_flow.prepare_restore_download(settings, request_id, number, build_revision)
+    pack = {
+        "files": [{"path": item.path, "text": item.text} for item in job.files],
+        "readme_name": flow.README_NAME,
+        "readme": readme,
+        "nonce": event["nonce"],
+    }
+    return again, None, pack, ""
+
+
 def finish_workspace_write(settings, report, event, ctx, refresh):
     """Hop 4. The browser ran the job. ONE write. Returns (refresh, message)."""
     if not report or not event or not ctx:
@@ -172,6 +209,8 @@ def finish_workspace_write(settings, report, event, ctx, refresh):
     try:
         if event.get("kind") == "build_write":
             return _finish_build_write(settings, report, ctx, refresh)
+        if event.get("kind") == "restore_write":
+            return _finish_restore_write(settings, report, ctx, refresh)
         facts = FolderFacts.model_validate(event["facts"])
         written = WriteReport.model_validate({k: v for k, v in report.items() if k != "nonce"})
         flow.save_check(settings, ctx["request_id"], facts, written, ctx["ws_revision"])
@@ -179,6 +218,23 @@ def finish_workspace_write(settings, report, event, ctx, refresh):
         return no_update, UNEXPECTED
     except SHOWN_ERRORS as error:
         return no_update, str(error)
+    return (refresh or 0) + 1, ""
+
+
+def _finish_restore_write(settings, report, ctx, refresh):
+    """Hop 4 of Restore build N: ONE transaction saves the restore (or the stop)."""
+    if report.get("not_connected"):
+        return no_update, NOT_CONNECTED
+    ignore = ("nonce", "not_connected")
+    written = WriteReport.model_validate({k: v for k, v in report.items() if k not in ignore})
+    refine_flow.save_restore(
+        settings,
+        ctx["request_id"],
+        ctx.get("restore_build", 0),
+        written,
+        ctx["build_revision"],
+        ctx.get("mode") or "picker",
+    )
     return (refresh or 0) + 1, ""
 
 

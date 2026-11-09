@@ -17,6 +17,7 @@ from agents.da_discover_flow import (
     HINT_QUESTION,
     outcome_status,
 )
+from agents.da_refine_screen import RefineBox, RefineBuildPanel, VersionHistory
 from agents.da_understand_checks import MAX_MESSAGE_LENGTH
 from agents.da_understand_flow import (
     ALWAYS_VISIBLE,
@@ -28,6 +29,11 @@ from agents.da_understand_flow import (
 )
 from layouts.da_approach_panel import approach_panel
 from layouts.da_build_panel import build_tab, poll_interval, tests_tab
+from layouts.da_refine_panels import (
+    approach_version_blocks,
+    refine_build_blocks,
+    version_history_blocks,
+)
 from layouts.da_workspace_panel import (
     RECONNECT_KEY,
     USE_KEY,
@@ -68,6 +74,10 @@ SEND_ID = "da-send"
 SKIP_ID = "da-skip"
 MESSAGE_ID = "da-message"
 CHOICE_TYPE = "da-choice"
+REFINE_TYPE = "da-refine"  # Phase 8 step 16: the Refine buttons, the id index is the action key
+REFINE_MAIN_KEYS = (
+    "confirm_v2", "findings_ok", "repro_yes", "own_add", "bug_fix", "apply", "check_edits",
+)
 KEYS_ID = "da-keys-ready"  # target of the Enter-to-send script; holds nothing
 BUSY_ID = "da-busy"  # the "searching" line, shown only while a Discover action runs
 # The 4-box form (Phase 6 fixes). Pattern ids, so the page can have none of them (all other
@@ -452,7 +462,10 @@ def _lock():
 
 
 def render_discover_workspace(
-    understand: UnderstandView, view: DiscoveryView, approach: ApproachView | None = None
+    understand: UnderstandView,
+    view: DiscoveryView,
+    approach: ApproachView | None = None,
+    refine: RefineBox | None = None,
 ) -> list:
     """The workspace once the request is confirmed: Discover is step 2, the chat carries on, and
     the Discovery tab opens as soon as there is a round to show. Once Discover is confirmed, the
@@ -465,13 +478,21 @@ def render_discover_workspace(
     if confirmed:
         # Once Discover is confirmed the buttons belong to Approach, with its own revision.
         state = {"request_id": request_id, "revision": approach.revision, "approach": True}
+    in_lane = refine is not None and refine.offered
+    if in_lane:
+        # A requirement lane runs Discover again: its buttons are Refine's (step 16).
+        state["refine"], state["refine_revision"] = True, refine.refine_revision
+    if in_lane:
+        composer = _discover_composer(view, refine)
+    else:
+        composer = _approach_composer(approach) if confirmed else _discover_composer(view)
     return _workspace(
         title=view.request.title,
         request_id=view.request.request_id,
         status=view.request.status,
         demo_mode=view.demo_mode,
         messages=[parts.chat_bubble(message) for message in view.messages],
-        composer=_approach_composer(approach) if confirmed else _discover_composer(view),
+        composer=composer,
         panel=_summary_panel(understand),
         state=state,
         step=DISCOVER_STEP,
@@ -487,6 +508,9 @@ def render_approach_workspace(
     view: ApproachView,
     workspace: WorkspaceView | None = None,
     build: BuildView | None = None,
+    refine: RefineBox | None = None,
+    history: VersionHistory | None = None,
+    refine_panel: RefineBuildPanel | None = None,
 ) -> list:
     """The workspace from APPROACH_PROPOSED on: Approach is step 3 and its tab opens first.
 
@@ -505,8 +529,15 @@ def render_approach_workspace(
         }
         if building:
             state["build"] = True
+        if refine is not None and refine.offered:
+            # Send and the Refine buttons are Refine's now; they carry the Refine revision.
+            state["refine"], state["refine_revision"] = True, refine.refine_revision
         if building:
-            build_content = build_tab(build)
+            build_content = build_tab(
+                build,
+                refine.hint if refine and refine.offered else "",
+                refine_build_blocks(refine_panel),
+            )
         else:
             build_content = build_panel(workspace) if workspace.step == "ws_ready" else None
         return _workspace(
@@ -515,16 +546,18 @@ def render_approach_workspace(
             status=view.request.status,
             demo_mode=view.demo_mode,
             messages=[parts.chat_bubble(message) for message in view.messages],
-            composer=_approach_composer(view, workspace, build if building else None),
-            panel=_summary_panel(understand),
+            composer=_approach_composer(view, workspace, build if building else None, refine),
+            panel=[*_summary_panel(understand), *version_history_blocks(history)],
             state=state,
             step=BUILD_STEP if building else APPROACH_STEP,
             discovery=_discovery_panel(discovery),
             busy_text=WS_BUSY_TEXT,
-            approach=approach_panel(view, workspace.check),
+            approach=[*approach_panel(view, workspace.check), *approach_version_blocks(history)],
             chip=workspace_chip(workspace),
             build=build_content,
-            stores=workspace_stores(workspace, build),
+            stores=workspace_stores(
+                workspace, build, refine.restore_build if refine is not None else 0
+            ),
             tests=tests_tab(build) if building else None,
             poll=poll_interval(build) if building else None,
             open_tab="build" if building else None,
@@ -556,12 +589,18 @@ def _approach_composer(
     view: ApproachView | None,
     workspace: WorkspaceView | None = None,
     build: BuildView | None = None,
+    refine: RefineBox | None = None,
 ) -> dmc.Box:
     """The bottom of the chat in Approach: the buttons of the step, and a text box that opens
-    only at the steps that take typed text (rule G1)."""
+    only at the steps that take typed text (rule G1). The Refine box (Phase 8) opens the text
+    box at `b_written`, or closes it with the cap message."""
     buttons = view.buttons if view else []
     prompt = view.text_prompt if view else ""
     text_open = bool(prompt)
+    send_label = view.send_label if view else "Send"
+    if refine is not None and refine.offered:
+        prompt, text_open = refine.placeholder, refine.text_open
+        send_label = refine.send_label
     controls = dmc.Box(
         [
             dmc.Textarea(
@@ -579,7 +618,7 @@ def _approach_composer(
                 [
                     dmc.Button("Skip", id=SKIP_ID, style={"display": "none"}),
                     dmc.Button(
-                        view.send_label if view else "Send",
+                        send_label,
                         id=SEND_ID,
                         disabled=not text_open,
                         leftSection=DashIconify(icon="tabler:send", width=16),
@@ -592,7 +631,7 @@ def _approach_composer(
         style=da_styles.COMPOSER if text_open else {**da_styles.COMPOSER, "opacity": 0.6},
     )
     if build is not None and not (view is not None and view.step == "escalated"):
-        return dmc.Box([_build_bar(build, workspace), controls])
+        return dmc.Box([_build_bar(build, workspace, refine), controls])
     if view is not None and view.request.status == STATUS_READY_TO_BUILD:
         done = dmc.Box(
             [
@@ -629,21 +668,30 @@ def _hidden_reconnect(workspace: WorkspaceView | None):
     return button
 
 
-def _build_bar(build: BuildView, workspace: WorkspaceView | None = None) -> dmc.Box:
+def _build_bar(
+    build: BuildView, workspace: WorkspaceView | None = None, refine: RefineBox | None = None
+) -> dmc.Box:
     """The buttons under the chat once a build has started (spec section 1). Browser-run ones
-    (Re-scan and build again) start JavaScript; server-run ones use the normal choice path."""
+    (Re-scan and build again) start JavaScript; server-run ones use the normal choice path.
+    At `b_written` the Refine buttons (Re-scan, Check my edits, Restore) are added."""
+    offered = bool(refine and refine.offered)
+    extra_browser = refine.browser_buttons if offered else []
+    # While a Refine lane is open its buttons replace the Build ones (the build is finished).
+    lane = offered and refine.lane
     shown = [
         parts.choice_button(label, ws_button_id(key, "bar"), parts.PRIMARY)
-        for key, label in build.browser_buttons
+        for key, label in [*([] if lane else build.browser_buttons), *extra_browser]
     ]
+    # Position in this list is the button id (P19) for the Build buttons.
     shown += [
         parts.choice_button(
             label,
             {"type": CHOICE_TYPE, "index": number},
             parts.SECONDARY if key == "help" else parts.NORMAL,
         )
-        for number, (key, label) in enumerate(build.buttons)
+        for number, (key, label) in enumerate([] if lane else build.buttons)
     ]
+    shown += refine_buttons(refine) if offered else []
     reconnect = _hidden_reconnect(workspace)
     if reconnect is not None:
         shown.append(reconnect)
@@ -657,7 +705,7 @@ def _build_bar(build: BuildView, workspace: WorkspaceView | None = None) -> dmc.
         mb="xs",
         id="da-build-chat-status",
     )
-    note = BUILD_NOTES.get(build.state.step, "")
+    note = (refine.note if offered and refine.note else "") or BUILD_NOTES.get(build.state.step, "")
     return dmc.Box(
         [
             status,
@@ -667,6 +715,23 @@ def _build_bar(build: BuildView, workspace: WorkspaceView | None = None) -> dmc.
         style=da_styles.CHOICES_BAR,
         pb="xs",
     )
+
+
+def refine_buttons(refine: RefineBox) -> list:
+    """The server-run Refine buttons. The id holds the key (ASCII, never the label), so a click
+    names its own action; the engine refuses an unknown key or an old window (step 16)."""
+    return [
+        parts.choice_button(
+            label,
+            {"type": REFINE_TYPE, "index": key},
+            parts.PRIMARY
+            if key in REFINE_MAIN_KEYS
+            else parts.SECONDARY
+            if key == "help"
+            else parts.NORMAL,
+        )
+        for key, label in refine.buttons
+    ]
 
 
 def _workspace_buttons(workspace: WorkspaceView) -> dmc.Box:
@@ -802,11 +867,12 @@ def discover_buttons(view: DiscoveryView) -> list[tuple[str, str]]:
     return []
 
 
-def _discover_composer(view: DiscoveryView) -> dmc.Box:
+def _discover_composer(view: DiscoveryView, refine: RefineBox | None = None) -> dmc.Box:
     """The bottom of the chat in Discover. The text box, Send and Skip always exist (the
-    callbacks name them). Send is the hint button while a hint can be given."""
+    callbacks name them). Send is the hint button while a hint can be given. In a Refine
+    lane the Refine buttons replace the Discover ones and no hint is given."""
     status = view.request.status
-    can_hint = view.can_hint
+    can_hint = view.can_hint and refine is None
     controls = dmc.Box(
         [
             dmc.Textarea(
@@ -837,6 +903,16 @@ def _discover_composer(view: DiscoveryView) -> dmc.Box:
         style=da_styles.COMPOSER if can_hint else {"display": "none"},
     )
     buttons = discover_buttons(view)
+    if refine is not None:
+        shown = refine_buttons(refine)
+        bar = dmc.Box(
+            [
+                dmc.Group([_lock(), dmc.Text(refine.note, size="xs", fw=600)]),
+                dmc.Group(shown, mt="xs", mb="xs"),
+            ],
+            style=da_styles.CHOICES_BAR,
+        )
+        return dmc.Box([bar, controls])
     if status in (STATUS_CONFIRMED, STATUS_SEARCHING):
         note = (
             f"Discovery did not start. Press {buttons[0][1]} to search approved sources"

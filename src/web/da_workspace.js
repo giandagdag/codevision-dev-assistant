@@ -293,6 +293,11 @@
       return { ...found, kind: key === "build" ? "build_facts" : "rebuild_facts" };
     }
     if (key === "build_download") { return { kind: "build_download" }; }
+    // Phase 8 Restore build N: the server holds the build number (ctx.restore_build). Nothing is
+    // read from the folder; the edit guard of the write job protects his files.
+    if (key === "restore_go") {
+      return { kind: ctx.mode === "download" ? "restore_download" : "restore_write" };
+    }
     if (key === "download") { return { kind: "download" }; }
     if (key === "upload") { return upload(ctx); }
     return { kind: "cancelled" };

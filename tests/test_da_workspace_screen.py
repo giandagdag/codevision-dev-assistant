@@ -399,11 +399,12 @@ def test_register_attaches_the_workspace_hops():
     # after draw, action, enter-to-send, the build poll, the form, the finding buttons (Phase 7)
     hops = app._callback_list[6:]
 
-    assert len(hops) == 8
+    # 8 workspace hops, then the 3 Refine callbacks of Phase 8 step 16 (buttons, picks, add case)
+    assert len(hops) == 8 + 3
     click_hop = hops[0]
     assert click_hop["prevent_initial_call"] is True
     assert click_hop["clientside_function"]["function_name"]
-    outputs = [h["output"] for h in hops]
+    outputs = [h["output"] for h in hops[:8]]
     assert "da-ws-event.data" in outputs[0] and "da-ws-report.data" in outputs[2]
     assert any("use_remembered" in str(out) for out in outputs)
     assert hops[1]["running"]["running"] == {"da-busy.style": {"display": "block"}}
