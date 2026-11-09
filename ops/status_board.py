@@ -556,9 +556,12 @@ def log_failure(problem: Exception, now: float) -> None:
     try:
         path = log_path()
         path.parent.mkdir(parents=True, exist_ok=True)
+        line = f"{usage_guard.format_sgt(now)}: {type(problem).__name__}: {str(problem)[:200]}\n"
+        old = path.read_text(encoding="utf-8").splitlines()[-1:] if path.exists() else []
+        if old == [line.rstrip("\n")]:
+            return  # the same failure in the same minute (one tick, several gh calls): log once
         with path.open("a", encoding="utf-8") as handle:
-            handle.write(f"{usage_guard.format_sgt(now)}: {type(problem).__name__}: "
-                         f"{str(problem)[:200]}\n")
+            handle.write(line)
     except OSError:
         pass  # the board must never break the tick
 
