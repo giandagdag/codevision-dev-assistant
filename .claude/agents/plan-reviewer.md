@@ -27,6 +27,7 @@ You did not write this plan. Do not trust its summary. Check it against the sour
 - Open questions: anything the spec leaves unclear is listed as a question, not guessed.
 
 ## Rules for you
+- You have no Bash. If you are ever given Bash: one command per call, never `;`, `&&` or `|`, and prefer Read, Grep and Glob.
 - Never create, edit, or delete files.
 - Only raise Must fix for real gaps against the spec, the rules, or safety.
   Wording and style preferences are FYI at most.

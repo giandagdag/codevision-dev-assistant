@@ -189,3 +189,194 @@ def test_every_pytest_form_a_worker_may_use_on_windows_and_linux_is_allowed():
                     "python -m pytest -q", "python -m ruff check .",
                     "python ops/quiet.py pytest", '"$DA_PYTHON" ops/quiet.py pytest'):
         assert any(command.startswith(prefix) for prefix in allow), command
+
+
+# ---- Phase A fix 4 (G6, AS-8): the splitter reads quotes the way bash does ----
+
+@pytest.mark.parametrize("command", [
+    "gh issue view 33 --json comments --jq '.comments|last|.body'",
+    "gh issue view 33 --json comments --jq \".comments|last|.body\"",
+    "gh issue view 33 --json comments --jq '.comments\\|last\\|.body'",
+    "git commit -m \"fix a; b | c && d\"",
+    "echo 'a; b'",
+    "echo \"it's fine; really\"",
+])
+def test_as8_a_separator_inside_quotes_does_not_split(command):
+    assert s.check(bash(command)) is None
+
+
+@pytest.mark.parametrize("command", [
+    "echo 'x' ; git push --force",
+    "echo \"x\" && git push origin main",
+    "echo 'x' | git push -f",
+    "echo ok\ngit push --force",
+    "echo 'a;b' ; rm src/da_config.py",
+    "echo hi & git reset --hard",
+])
+def test_as8_a_separator_outside_quotes_still_splits(command):
+    assert s.check(bash(command)) is not None
+
+
+@pytest.mark.parametrize("command", [
+    "echo 'unclosed", "echo \"unclosed", "git commit -m 'a; git push --force",
+    "echo \\\"; rm src/x.py; echo \\\"",       # escaped quotes hide nothing: rm is still seen
+    "echo \\'; git push --force; echo \\'",
+])
+def test_as8_an_unclosed_quote_or_an_escaped_quote_cannot_hide_a_command(command):
+    assert s.check(bash(command)) is not None
+
+
+def test_as8_an_escaped_semicolon_outside_quotes_is_plain_text_like_bash():
+    backslash = chr(92)
+    assert s.split_segments(f"echo a{backslash};b") == [f"echo a{backslash};b"]
+    assert s.split_segments(f"echo a{backslash}{backslash};git push") == [
+        f"echo a{backslash}{backslash}", "git push"]  # an escaped backslash: the ; is real
+
+
+def test_as8_split_segments_keeps_quoted_text_whole():
+    assert s.split_segments("a 'b;c' ; d \"e|f\"") == ["a 'b;c' ", " d \"e|f\""]
+    assert s.split_segments("echo 'x") is None
+
+
+@pytest.mark.parametrize("command", [
+    # Round 1 code review: an escaped backslash must leave the next quote free to OPEN.
+    chr(92) * 2 + "' a '; git push --force; echo " + chr(92) + "'" + chr(92) + "'",
+    "echo " + chr(92) * 2 + "' a '; git push --force; echo " + chr(92) + "'" + chr(92) + "'",
+    "echo " + chr(92) * 2 + '" a "; git push --force; echo ' + chr(92) + '"' + chr(92) + '"',
+    "echo " + chr(92) * 2 + "' a '; rm src/x.py; echo '",
+    "echo a' ; git push --force ; echo 'b'",    # quote opened mid-word swallows nothing wrongly
+])
+def test_as8_escaped_backslashes_cannot_hide_a_command(command):
+    assert s.check(bash(command)) is not None
+
+
+def test_as8_escaped_backslash_then_quote_opens_a_quote_like_bash():
+    b = chr(92)
+    assert s.split_segments(f"echo {b}{b}'a;b'") == [f"echo {b}{b}'a;b'"]
+    assert s.split_segments(f"echo {b}'a;b") == [f"echo {b}'a", "b"]
+
+
+def test_as8_a_backslash_at_the_very_end_is_read_without_error():
+    assert s.split_segments("echo ok " + chr(92)) == ["echo ok " + chr(92)]  # hides nothing
+
+
+@pytest.mark.parametrize("command", [
+    "git push " + chr(92) + "\n --force origin x",
+    "git push origin " + chr(92) + "\nmain",
+    "git push origin x " + chr(92) + "\n+main",
+    "git push " + chr(92) + "\n--delete origin x",
+    "git push origin ma" + chr(92) + "\nin",
+])
+def test_as8_a_line_continuation_cannot_hide_a_force_or_a_protected_branch(command):
+    assert s.check(bash(command)) is not None
+
+
+def test_as8_backslash_newline_joins_the_lines_but_a_plain_newline_still_splits():
+    b = chr(92)
+    assert s.split_segments(f"git push {b}\n --force") == ["git push  --force"]
+    assert s.split_segments("echo a\necho b") == ["echo a", "echo b"]
+    assert s.split_segments(f'echo "a{b}\nb"') == [f'echo "a{b}\nb"']
+
+
+def test_as8_an_escaped_backslash_before_a_newline_is_still_a_real_split():
+    b = chr(92)
+    assert s.split_segments(f"git push origin x{b}{b}\n--force") == [
+        f"git push origin x{b}{b}", "--force"]
+
+
+@pytest.mark.parametrize("command", [
+    'echo hi # "\ngit push origin main\n# "',
+    "echo hi # '\ngit push origin main\n# '",
+    "#\ngit push origin main",
+    "cat <<EOF\nx\"\nEOF\ngit push origin main\n# \"",
+    "echo ok ; # a comment",
+])
+def test_as8_a_comment_or_heredoc_cannot_hide_the_next_line(command):
+    assert s.check(bash(command)) is not None
+
+
+@pytest.mark.parametrize("command", [
+    "git commit -m \"fix #3\"", "echo 'a # b'", "git push origin feature#2",
+    "gh issue view 33 --json comments",
+])
+def test_as8_a_hash_inside_quotes_or_a_word_is_fine(command):
+    assert s.check(bash(command)) is None
+
+
+# ---- Windows-style paths (Gian, 9 Nov): refusing is fine, crashing is not ----
+
+BS = chr(92)
+WINDOWS_PATHS = [
+    f"dir C:{BS}dev{BS}x",
+    f'dir "C:{BS}dev{BS}x"',
+    f'dir "C:{BS}dev{BS}x{BS}"',                  # a quoted path ending in a backslash
+    f"dir 'C:{BS}dev{BS}x{BS}'",
+    f"dir C:{BS}dev{BS}x{BS}",
+    f'git -C "C:{BS}dev{BS}x" status',
+    f'type "C:{BS}dev{BS}x{BS}" ; git push --force',
+    f"cd C:{BS}dev{BS}x{BS} && git push origin main",
+]
+
+
+@pytest.mark.parametrize("command", WINDOWS_PATHS)
+def test_windows_paths_never_crash_the_hook(command, capsys):
+    result = s.check(bash(command))
+    assert result is None or isinstance(result, str)
+    payload = io.StringIO(json.dumps(bash(command)))
+    assert s.main(payload) in (0, 2)  # allowed or blocked, never an uncaught error
+
+
+def test_windows_path_with_a_dangerous_second_command_is_still_blocked():
+    assert s.check(bash(f"cd C:{BS}dev{BS}x{BS} && git push origin main")) is not None
+    assert s.check(bash(f'type "C:{BS}dev{BS}x{BS}" ; git push --force')) is not None
+
+
+def test_a_plain_and_a_quoted_windows_path_are_allowed():
+    assert s.check(bash(f"dir C:{BS}dev{BS}x")) is None
+    assert s.check(bash(f'dir "C:{BS}dev{BS}x"')) is None
+
+
+# ---- Gian's table (9 Nov): where bash ends each command, and what the hook says ----
+# (command, segments bash makes or None when the hook refuses before splitting, refused?)
+# Backslashes are written with chr(92) so the text stays readable.
+
+_B = chr(92)
+TABLE = [
+    ("gh issue view 33 --json comments --jq '.comments|last|.body'", 1, False),
+    (f'grep "a{_B}|b" file.txt', 1, False),
+    ('echo "a;b"', 1, False),
+    (f"echo a{_B};b", 1, False),
+    ('echo "it\'s"', 1, False),
+    ("echo 'x' ; git push --force", 2, True),
+    ('echo "x" && git push --force', 2, True),
+    ('echo "x" || git push --force', 2, True),
+    ("echo x & git push --force", 2, True),
+    ("echo x \n git push --force", 2, True),
+    ("echo $(git push --force)", None, True),
+    ("echo `git push --force`", None, True),
+    ("echo 'unclosed", None, True),
+    ("echo x #; git push --force", None, True),      # bash: a comment; the hook fails closed
+    ("cat <<EOF", None, True),                      # the hook fails closed on a heredoc
+]
+
+
+@pytest.mark.parametrize(("command", "segments", "refused"), TABLE)
+def test_table_segments_match_bash_and_the_verdict_is_as_expected(command, segments, refused):
+    found = s.split_segments(command)
+    if segments is not None:
+        assert found is not None and len(found) == segments
+    assert (s.check(bash(command)) is not None) is refused
+
+
+@pytest.mark.parametrize("command", [
+    f"type {chr(34)}C:{_B}dev{_B}x{chr(34)}",
+    f"dir {chr(34)}C:{_B}dev{_B}x{_B}{chr(34)}",        # a quoted path ending in a backslash
+])
+def test_table_windows_paths_are_allowed_or_refused_never_a_crash(command):
+    result = s.check(bash(command))
+    assert result is None or isinstance(result, str)
+
+
+def test_table_double_operators_are_one_separator_each():
+    for op in ("&&", "||", "|&", ";", "|", "&"):
+        assert s.split_segments(f"a {op} b") == ["a ", " b"], op

@@ -33,9 +33,63 @@ SHELLS = {"bash", "sh", "zsh", "dash", "eval", "exec", "xargs"}
 GH_OK = {"issue": None, "pr": {"create", "view", "checks", "list", "diff", "status"}}
 REMOTE_CHANGES = {"add", "set-url", "remove", "rm"}
 GIT_VALUE_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}
-SEGMENT_SPLIT = re.compile(r"&&|\|\||[;|&\n]")
 ALLOWED_VARS = ("$DA_PYTHON", "${DA_PYTHON}", "$CLAUDE_PROJECT_DIR", "${CLAUDE_PROJECT_DIR}")
 ENV_SEARCH = re.compile(r"(^|[/\\*\s])\.env")
+
+
+def split_segments(command: str) -> list[str] | None:
+    """Split a command at `&&`, `||`, `;`, `|`, `&` and newlines that sit OUTSIDE quotes (G6).
+
+    Follows bash's own quote rules, so the hook and the shell agree on where a command ends:
+    inside single quotes nothing is special; inside double quotes a backslash hides the next
+    character; outside quotes a backslash and the next character are one unit (so an escaped quote
+    opens nothing, and an escaped backslash leaves the quote after it free to open).
+    A backslash before a newline outside quotes joins the lines (no split), as in bash.
+    Returns None for an unclosed quote: fail closed, the caller refuses.
+    A `#` that starts a word (a comment) or a `<<` (a heredoc) outside quotes returns None too: a
+    stray quote inside one could hide the next line from us. A `;` `|` or `&` after a backslash, or
+    inside quotes, does not split (bash agrees; the old regex split there, which is why unclosed
+    quotes are refused).
+    """
+    segments, current, quote, i = [], [], "", 0
+    while i < len(command):
+        ch = command[i]
+        if quote == "'":
+            quote = "" if ch == "'" else quote
+        elif quote == '"':
+            if ch == "\\" and i + 1 < len(command):
+                current.append(ch)
+                i += 1
+                ch = command[i]
+            elif ch == '"':
+                quote = ""
+        elif ch == "\\" and command[i + 1:i + 2] == "\n":
+            i += 2  # a line continuation: bash joins the two lines, so the hook must too
+            continue
+        elif ch == "\\" and i + 1 < len(command):
+            # Outside quotes a backslash and the next character are ONE unit, as in bash:
+            # `\\'` is a backslash and then a quote that OPENS; `\'` and `\;` are plain text.
+            current.append(ch)
+            i += 1
+            ch = command[i]
+        elif ch in "'\"":
+            quote = ch
+        elif (ch == "#" and (not current or current[-1] in " \t")) or command[i:i + 2] == "<<":
+            # A comment or a heredoc can hold a stray quote that bash ignores but we would not
+            # (it would hide the next line). Workers do not need either, so fail closed.
+            return None
+        elif ch in ";|&\n":
+            segments.append("".join(current))
+            current = []
+            # `&&`, `||` and `|&` are ONE operator in bash, so they end one command, not two
+            i += 2 if command[i:i + 2] in ("&&", "||", "|&") else 1
+            continue
+        current.append(ch)
+        i += 1
+    if quote:
+        return None
+    segments.append("".join(current))
+    return segments
 
 
 def _inside(path: Path, base: Path) -> bool:
@@ -201,7 +255,10 @@ def command_problem(command: str, cwd: Path) -> str | None:
     if re.search(r"rmtree|os\.remove|os\.unlink|\.unlink\(|os\.system|subprocess|popen",
                  command):
         return "deleting or running programs from inline code is not allowed"
-    for segment in SEGMENT_SPLIT.split(command):
+    segments = split_segments(command)
+    if segments is None:
+        return "this command could not be read safely"
+    for segment in segments:
         try:
             words = shlex.split(segment.replace("\\", "/"))
         except ValueError:
