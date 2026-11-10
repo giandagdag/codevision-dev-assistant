@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from agents.da_enhance_flow import maybe_offer_switch
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_understand_agent import InterpretResult, get_understand_client, interpret
 from agents.da_understand_checks import (
@@ -306,6 +307,9 @@ def submit_form(
         _apply_result(turn, result, answered=tuple(number for number, _ in FORM_BOXES))
         turn.session.optional_done = True
         _advance(turn)
+    # Phase 9 (D-N): if the description names a program that already exists, offer to switch to
+    # Enhance or fix. Plain code only; it never changes the form's result.
+    maybe_offer_switch(settings, request_id, now=now)
     return get_understand_view(settings, request_id)
 
 

@@ -142,12 +142,27 @@ class ImpactResult(_Shape):
 # --- stored state (section 14) ---
 
 
+class TargetChoice(_Shape):
+    """A confirmed program (spec section 4, step 9) with its capability and named senior."""
+
+    path: str = Field(min_length=1)
+    how_found: HowFound
+    capability: str = ""
+    named_senior: str = ""
+    # False when the developer picked the capability himself (Unassigned queue, D-J).
+    capability_confirmed: bool = True
+
+
 class EnhanceState(_Shape):
     request_id: str = Field(pattern=REQUEST_ID_PATTERN)
     kind: RequestKind = "enhance"
     step: EnhanceStep = "e_find"
     find_rounds_used: int = Field(default=0, ge=0)
     corrections_used: int = Field(default=0, ge=0)
+    # Set by "Confirm" at e_pick; empty until then.
+    targets: list[TargetChoice] = Field(default_factory=list)
+    # "This is a fix" pre-fills "What should change?" with this text (D-M).
+    change_prefill: str = ""
     # Own revision: goes up by 1 with every save (stale-save protection, F1).
     revision: int = Field(default=1, ge=1)
 
