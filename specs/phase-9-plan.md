@@ -120,6 +120,13 @@ Steps may be split (a, b) when a step grows past what one commit can test; the s
 - Step 8 adds a test that the safety-net call and the criterion calls are built from separate inputs.
 - Q-c is settled: pre-Understand status is `STATUS_DRAFT` (`ALLOWED_MOVES` allows DRAFT to CLARIFICATION);
   step 1 adds a check that the `e_*` steps work with it.
+- Step 13 done (cd52d73). Step 14a done (b46a156): `frozen_set_with_net`, `scoped_view` in
+  `da_enhance_build_checks.py`; the build loop freezes the net as test set version 1, shows the scoped
+  view, runs A8 in `_write_file` and A9 in `_layer_a`. New split **14c** (after 14b): scripted fake
+  build replies for the made-up target (contract, criterion tests, edit blocks, plus switches
+  `edit_outside_scope` and `signature_change`) so a full enhance build runs end to end with the fake
+  provider. Without 14c the loop wiring of 14a is covered only by pure tests, and the smoke check
+  (step 17) cannot build a card 2 request.
 - Q-a: the spec header edit is Gian's (the builder does not change an approved spec).
 
 ## Open questions (decided in the plan, Gian can change)
