@@ -91,6 +91,10 @@ FORM_BUSY_TEXT = "⏳ Reading your answers…"
 FORM_COMPOSER_TEXT = "Fill in the form above, then press Submit"
 
 ENHANCE_CARD_ID = "da-enhance-card"
+SWITCH_ID = "da-switch-enhance"  # card 1 offer: "Switch to Enhance or fix"
+DECLINE_ID = "da-switch-decline"  # card 1 offer: "No, this is new"
+SWITCH_LABEL = "Switch to Enhance or fix"
+DECLINE_LABEL = "No, this is new"
 ENHANCE_CARD_TITLE = "Change an existing program"
 ENHANCE_CARD_TEXT = (
     "Name the program. I'll protect what works today and change only what you agree."
@@ -281,14 +285,26 @@ def render_message_page(text: str) -> list:
 # --- Workspace ---
 
 
-def render_workspace(view: UnderstandView) -> list:
+def _switch_offer_buttons() -> dmc.Group:
+    return dmc.Group(
+        [
+            dmc.Button(SWITCH_LABEL, id=SWITCH_ID),
+            dmc.Button(DECLINE_LABEL, id=DECLINE_ID, variant="default"),
+        ],
+        p="md",
+    )
+
+
+def render_workspace(view: UnderstandView, switch_offer: bool = False) -> list:
+    """`switch_offer`: the Enhance switch offer waits for an answer (Phase 9, D-N)."""
     return _workspace(
         title=view.request.title,
         request_id=view.request.request_id,
         status=view.request.status,
         demo_mode=view.demo_mode,
         messages=[parts.chat_bubble(message) for message in view.messages]
-        + ([_form()] if view.input_mode == "form" else []),
+        + ([_form()] if view.input_mode == "form" else [])
+        + ([_switch_offer_buttons()] if switch_offer else []),
         composer=_composer(
             view.input_mode,
             view.choices,

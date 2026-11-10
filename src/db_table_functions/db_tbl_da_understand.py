@@ -138,6 +138,12 @@ def save_session(
     return session.model_copy(update={"revision": base_revision + 1})
 
 
+def delete_session(conn: sqlite3.Connection, request_id: str) -> None:
+    """Drop the working state only (chat and audit stay). Used when card 1's request becomes an
+    Enhance request: the Enhance flow makes a fresh session at start_understand."""
+    conn.execute("DELETE FROM da_understand_sessions WHERE request_id = ?", (request_id,))
+
+
 def read_session(conn: sqlite3.Connection, request_id: str) -> UnderstandSession | None:
     row = conn.execute(
         "SELECT session, revision FROM da_understand_sessions WHERE request_id = ?",

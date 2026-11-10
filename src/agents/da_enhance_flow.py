@@ -80,6 +80,7 @@ from db_table_functions.db_tbl_da_understand import (
     STALE_MESSAGE,
     StaleRevisionError,
     add_message,
+    delete_session,
     ensure_understand_tables,
     get_session,
     insert_session,
@@ -667,6 +668,8 @@ def switch_to_enhance(
     with _write_transaction(settings.db_path) as conn:
         tx = _Tx(conn, request_id, now)
         tx.audit("developer", SWITCHED_EVENT, {"path": path})
+        # Card 1's session would make start_understand refuse ("already started").
+        delete_session(conn, request_id)
         insert_candidates(conn, request_id, 1, [offered], now)
         tx.say("assistant", _found_message([offered]))
         state = EnhanceState(request_id=request_id, step="e_pick", find_rounds_used=1)
@@ -823,14 +826,21 @@ def _offer_history(settings: Settings, request_id: str) -> list[str]:
             if e.event_type in wanted]
 
 
+def has_open_offer(settings: Settings, request_id: str) -> bool:
+    """True while a switch offer waits for "Switch to Enhance or fix" or "No, this is new"."""
+    return _offer_history(settings, request_id) == [OFFER_EVENT]
+
+
 def _open_offer(settings: Settings, request_id: str, base_revision: int) -> str:
     """The path that was offered and not yet answered; refuses a stale window or a closed offer."""
     session = get_session(settings.db_path, request_id)
-    if session is None:
-        raise EnhanceError(f"Request {request_id} does not exist.")
-    if session.revision != base_revision:
-        raise StaleRevisionError(STALE_MESSAGE)
     history = _offer_history(settings, request_id)
+    # After "Switch" the card 1 session is gone on purpose; that is an answered offer, not a
+    # missing request.
+    if session is None and not history:
+        raise EnhanceError(f"Request {request_id} does not exist.")
+    if session is not None and session.revision != base_revision:
+        raise StaleRevisionError(STALE_MESSAGE)
     if history != [OFFER_EVENT]:
         raise EnhanceError("There is no switch offer to answer on this request.")
     events = [e for e in list_audit_events(settings.db_path, request_id)

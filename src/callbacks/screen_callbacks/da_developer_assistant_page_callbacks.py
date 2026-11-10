@@ -60,6 +60,7 @@ from layouts.da_developer_assistant_page import (
     BUSY_ID,
     CHOICE_TYPE,
     CONFIRM_KEY,
+    DECLINE_ID,
     ENHANCE_CARD_ID,
     ESCALATE_KEY,
     FORM_BOX_TYPE,
@@ -74,6 +75,7 @@ from layouts.da_developer_assistant_page import (
     SKIP_ID,
     START_KEY,
     STATE_ID,
+    SWITCH_ID,
     TEXT_ID,
     approach_buttons,
     discover_buttons,
@@ -210,7 +212,9 @@ def show_page(search: str | None, refresh: int | None):
                 return render_enhance_workspace(enhance)
             view = get_understand_view(settings, request_id)
             if view.request.status in UNDERSTAND_STATUSES:
-                return render_workspace(view)
+                return render_workspace(
+                    view, switch_offer=enhance_flow.has_open_offer(settings, request_id)
+                )
             discovery = get_discovery_view(settings, request_id)
             status = view.request.status
             if status in APPROACH_STATUSES or (
@@ -262,6 +266,28 @@ def start_enhance(clicks):
     except DatabaseBusyError:
         raise PreventUpdate from None
     return f"?request={view.request_id}"
+
+
+def answer_switch_offer(switch_clicks, decline_clicks, state, refresh):
+    """Card 1: "Switch to Enhance or fix" or "No, this is new" (Phase 9, D-N)."""
+    trigger = ctx.triggered_id
+    if trigger not in (SWITCH_ID, DECLINE_ID) or not ctx.triggered[0]["value"]:
+        raise PreventUpdate
+    return perform_switch_answer(get_settings(), trigger, state, refresh)
+
+
+def perform_switch_answer(settings: Settings, trigger, state, refresh):
+    """Call the engine for the answer; a problem is shown under the chat, nothing is written."""
+    state = state or {}
+    request_id, revision = state.get("request_id"), state.get("revision")
+    try:
+        if trigger == SWITCH_ID:
+            enhance_flow.switch_to_enhance(settings, request_id, revision)
+        else:
+            enhance_flow.decline_switch(settings, request_id, revision)
+    except SHOWN_ERRORS as error:
+        return no_update, str(error)
+    return (refresh or 0) + 1, ""
 
 
 def handle_action(send_clicks, choice_clicks, skip_clicks, text, state, refresh):
@@ -651,3 +677,14 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
 
     register_da_workspace_callbacks(app, lambda: get_settings())
     register_da_refine_callbacks(app, lambda: get_settings())
+
+    # Card 1 switch offer (Phase 9 step 18a). Registered last so the order tests above still hold.
+    app.callback(
+        Output(REFRESH_ID, "data", allow_duplicate=True),
+        Output(MESSAGE_ID, "children", allow_duplicate=True),
+        Input(SWITCH_ID, "n_clicks"),
+        Input(DECLINE_ID, "n_clicks"),
+        State(STATE_ID, "data"),
+        State(REFRESH_ID, "data"),
+        prevent_initial_call=True,
+    )(answer_switch_offer)
