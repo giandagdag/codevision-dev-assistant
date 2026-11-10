@@ -13,7 +13,13 @@ from pydantic_classes.da_enhance_models import (
     Candidate,
     EnhanceState,
     FreshnessResult,
+    ImpactResult,
+    ImpactRow,
+    NotCovered,
     PathFreshness,
+    SafetyCase,
+    SafetyNet,
+    SafetyNetRow,
 )
 from pydantic_classes.da_request_record_models import MustNotChange, RequestRecord
 from tests.da_tree import all_text, by_id
@@ -133,6 +139,75 @@ def test_a_new_program_request_has_no_enhancement_block():
     record = RequestRecord(request_id="CVDA-2026-0001", rulebook_version=1)
     assert panel.enhancement_summary(record) == []
     assert panel.enhancement_summary(None) == []
+
+
+def net_row(accepted=False):
+    net = SafetyNet(
+        cases=[
+            SafetyCase(
+                id="S-1", today_behaviour="Rows are sorted by expiry date.", function="show"
+            ),
+            SafetyCase(
+                id="S-2", today_behaviour="Dates show as numbers.", function="format_expiry",
+                expected_to_change="AC-1",
+            ),
+        ],
+        not_covered=[NotCovered(item="NC-2", reason="No case could be proven.")],
+    )
+    return SafetyNetRow(
+        request_id="CVDA-2026-0001", net_version=1, record_version=1, net=net, accepted=accepted
+    )
+
+
+def test_9_34_the_safety_net_tab_shows_banner_marks_and_not_covered():
+    text = all_text(panel.safety_net_tab(net_row()))
+
+    assert "2 tests capture today's behaviour. All 2 pass on the unchanged code." in text
+    assert "S-1" in text and "Must still pass" in text
+    assert "Expected to change (AC-1)" in text
+    assert "Not covered by the safety net, check manually" in text and "NC-2" in text
+
+
+def test_9_34_no_net_yet_and_an_empty_net_say_so():
+    assert "No safety net yet" in all_text(panel.safety_net_tab(None))
+    empty = net_row().model_copy(update={"net": SafetyNet()})
+    assert "no test could be made to pass" in all_text(panel.safety_net_tab(empty))
+
+
+def test_9_36_the_test_plan_shows_only_an_accepted_net_read_only():
+    assert panel.test_plan_net_section(None) == []
+    assert panel.test_plan_net_section(net_row(accepted=False)) == []
+
+    text = all_text(panel.test_plan_net_section(net_row(accepted=True)))
+
+    assert "Accepted in the safety net" in text and "S-2: Dates show as numbers." in text
+
+
+def test_9_23_the_impact_card_lists_callers_the_cap_and_the_limits_line():
+    impact = ImpactResult(
+        rows=[
+            ImpactRow(
+                caller_path="src/agents/report_screen.py", caller_function="show", line=5,
+                function_in_scope="format_expiry", kind="direct", capability="Reports",
+            )
+        ],
+        more=4,
+    )
+
+    text = all_text(panel.impact_card(impact))
+
+    assert "report_screen.py:5 show" in text and "Direct" in text and "Reports" in text
+    assert "4 more" in text and "not by running it" in text
+
+
+def test_9_26_the_impact_card_says_when_it_could_not_be_checked_or_has_not_run():
+    assert "could not be checked" in all_text(panel.impact_card(ImpactResult(available=False)))
+    assert "Appears after Discover" in all_text(panel.impact_card(None))
+
+
+def test_the_header_pill_shows_the_step_label_or_the_normal_status():
+    assert panel.pill_text("DISCOVERY_CONFIRMED", "s_review") == "SAFETY NET READY"
+    assert panel.pill_text("APPROACH_PROPOSED", "s_accepted") == "APPROACH_PROPOSED"
 
 
 def test_later_steps_use_the_understand_screen(settings):

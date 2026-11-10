@@ -9,9 +9,16 @@ the display file for the "find the member" screen; it only says where each field
 import dash_mantine_components as dmc
 
 from agents.da_enhance_flow import EnhanceView
+from agents.da_impact import LIMITS_LINE, summary_line
 from agents.da_main_source import stale_message
 from layouts import da_developer_assistant_page as page
-from pydantic_classes.da_enhance_models import Candidate
+from pydantic_classes.da_enhance_models import (
+    Candidate,
+    ImpactResult,
+    SafetyCase,
+    SafetyNetRow,
+    step_label,
+)
 from pydantic_classes.da_request_record_models import RequestRecord
 from styles import da_styles
 from web import da_web_components as parts
@@ -99,6 +106,100 @@ def freshness_banner(view: EnhanceView):
         variant="light",
         id="da-freshness-banner",
     )
+
+
+IMPACT_KIND = {"direct": "Direct", "possible": "Possible", "imports_only": "Imports only"}
+MUST_STILL_PASS = "Must still pass"
+NET_EMPTY_IMPACT = "Appears after Discover has run."
+NET_EMPTY = "No safety net yet. It is written after Discover is confirmed."
+NOT_COVERED_TITLE = "Not covered by the safety net, check manually"
+ACCEPTED_TITLE = "Accepted in the safety net"
+
+
+def impact_card(impact: ImpactResult | None):
+    """Who calls the functions in scope (spec section 7). None = Discover has not run yet."""
+    if impact is None:
+        return parts.panel_section("Impact", [dmc.Text(NET_EMPTY_IMPACT, c=da_styles.MUTED)])
+    body: list = [dmc.Text(summary_line(impact), size="sm")]
+    if impact.rows:
+        head = dmc.TableThead(
+            dmc.TableTr(
+                [dmc.TableTh(n) for n in ("Caller", "Calls", "How sure", "Capability", "Zone")]
+            )
+        )
+        rows = [
+            dmc.TableTr(
+                [
+                    dmc.TableTd(dmc.Code(f"{r.caller_path}:{r.line} {r.caller_function}")),
+                    dmc.TableTd(r.function_in_scope),
+                    dmc.TableTd(IMPACT_KIND[r.kind]),
+                    dmc.TableTd(r.capability or "-"),
+                    dmc.TableTd(r.zone or "-"),
+                ]
+            )
+            for r in impact.rows
+        ]
+        body.append(dmc.Table([head, dmc.TableTbody(rows)], highlightOnHover=True))
+        body.append(dmc.Text(f"{impact.more} more not shown.", size="xs") if impact.more else None)
+    body.append(dmc.Text(LIMITS_LINE, size="xs", c=da_styles.MUTED, mt=6))
+    return parts.panel_section("Impact", body)
+
+
+def after_mark(case: SafetyCase) -> str:
+    """The "After the change" column: "Must still pass" or "Expected to change (AC-1)"."""
+    if case.expected_to_change:
+        return f"Expected to change ({case.expected_to_change})"
+    return MUST_STILL_PASS
+
+
+def safety_net_tab(row: SafetyNetRow | None) -> list:
+    """The Safety net tab (spec section 8, step 6): banner, table, and the not-covered card."""
+    if row is None:
+        return [dmc.Text(NET_EMPTY, c=da_styles.MUTED, size="sm")]
+    net = row.net
+    count = len(net.cases)
+    banner = (
+        f"Safety net: {count} tests capture today's behaviour. "
+        f"All {count} pass on the unchanged code."
+        if count
+        else "Safety net: no test could be made to pass on today's code."
+    )
+    sections: list = [dmc.Alert(banner, color="green" if count else "orange", variant="light")]
+    if count:
+        head = dmc.TableThead(
+            dmc.TableTr([dmc.TableTh(n) for n in ("Test", "Today's behaviour", "After the change")])
+        )
+        rows = [
+            dmc.TableTr(
+                [
+                    dmc.TableTd(dmc.Badge(case.id, variant="light", style=page.ID_BADGE_STYLE)),
+                    dmc.TableTd(case.today_behaviour),
+                    dmc.TableTd(after_mark(case)),
+                ]
+            )
+            for case in net.cases
+        ]
+        sections.append(dmc.Table([head, dmc.TableTbody(rows)], highlightOnHover=True))
+    if net.not_covered:
+        lines = [dmc.Text(f"{item.item}: {item.reason}", size="sm") for item in net.not_covered]
+        sections.append(parts.panel_section(NOT_COVERED_TITLE, lines))
+    return sections
+
+
+def test_plan_net_section(row: SafetyNetRow | None) -> list:
+    """The test plan shows the accepted net in its own read-only section (spec section 9)."""
+    if row is None or not row.accepted:
+        return []
+    lines = [
+        dmc.Text(f"{case.id}: {case.today_behaviour} ({after_mark(case)})", size="sm")
+        for case in row.net.cases
+    ]
+    return [parts.panel_section(ACCEPTED_TITLE, lines or [dmc.Text("No tests.", size="sm")])]
+
+
+def pill_text(status: str, step: str) -> str:
+    """The header pill: the Phase 9 step label when it has one, otherwise the normal status."""
+    return step_label(step) or status
 
 
 def enhancement_summary(record: RequestRecord | None) -> list:
