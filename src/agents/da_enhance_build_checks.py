@@ -9,12 +9,82 @@ not in this change, so the list must stay the same.
 import ast
 
 from agents.da_approach_checks import normalise_path
+from agents.da_build_checks import find_test_methods
 from agents.da_code_splitter import MODULE_SYMBOL, CodePiece, split_python_file
 from agents.da_impact import locked_signatures
-from agents.da_safety_net_checks import case_id_of_method
+from agents.da_safety_net_checks import case_id_of_method, must_pass_methods, split_by_expected
 from agents.da_workspace_checks import normalise
 from pydantic_classes.da_build_models import FileEdit, LayerAProblem, LayerBResult
 from pydantic_classes.da_enhance_models import ImpactRow, SafetyNet
+
+# --- what the Generator sees of a target file (spec section 10, step 2) ---
+
+
+def scoped_view(path: str, text: str, in_scope: list[str]) -> str:
+    """The in-scope functions word for word with their line numbers, the file's import lines, and
+    the names and arguments of the other functions (no bodies). The Generator edits with FIND and
+    REPLACE blocks, so each body is copied exactly as it is in the file."""
+    text = normalise(text)
+    lines = text.split("\n")
+    pieces = in_scope_pieces(path, text, in_scope)
+    # A class in scope brings its methods along: show only the outermost pieces.
+    outer = [
+        p for p in pieces
+        if not any(
+            o is not p and o.line_start <= p.line_start and p.line_end <= o.line_end
+            for o in pieces
+        )
+    ]
+    shown = {p.symbol for p in pieces}
+    parts = ["## Import lines of this file", "\n".join(_import_lines(text)) or "(none)", ""]
+    parts.append("## Functions in scope (the only code you may change)")
+    for piece in sorted(outer, key=lambda p: p.line_start):
+        body = "\n".join(lines[piece.line_start - 1 : piece.line_end])
+        parts += [f"### {piece.symbol} (lines {piece.line_start} to {piece.line_end})", body, ""]
+    parts.append("## Other functions (names and arguments only, do not change)")
+    others = [
+        f"def {symbol}({', '.join(args)})"
+        for symbol, args in signatures(text).items()
+        if symbol not in shown
+    ]
+    parts.append("\n".join(others) or "(none)")
+    return "\n".join(parts)
+
+
+def _import_lines(text: str) -> list[str]:
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    return [
+        ast.get_source_segment(text, node) or ""
+        for node in tree.body
+        if isinstance(node, ast.Import | ast.ImportFrom)
+    ]
+
+
+# --- the frozen test set with the safety net (spec section 10, step 1) ---
+
+
+def frozen_set_with_net(criterion_text: str, net: SafetyNet) -> tuple[str, list[str], list[str]]:
+    """(the frozen test text, the net methods that run in Layer B, the expected-to-change methods
+    that are kept but not run there). The criterion tests come first and are not touched; the
+    must-still-pass half of the net follows byte for byte as it was accepted."""
+    must_text, _expected_text = split_by_expected(net)
+    expected = {case.id for case in net.cases if case.expected_to_change is not None}
+    names = [n for n in _net_method_names(net) if case_id_of_method(n) in expected]
+    text = criterion_text
+    if must_text:
+        text = criterion_text.rstrip("\n") + "\n\n\n" + must_text
+    return text, must_pass_methods(net), names
+
+
+def _net_method_names(net: SafetyNet) -> list[str]:
+    try:
+        return list(find_test_methods(ast.parse(net.test_code)))
+    except SyntaxError:
+        return []
+
 
 # --- A8: scope (spec section 10, step 3) ---
 
