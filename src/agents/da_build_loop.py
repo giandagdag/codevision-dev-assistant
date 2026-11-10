@@ -1077,7 +1077,9 @@ class _Run:
         data = self._review_input(last)
         self._run_expected_tests()
         plain = self._plain_findings(last)
-        check_one_failed = any(f.check == 1 for f in plain)
+        # Only a Must fix of check 1 ends the build; the Phase 9 FYI lines (an NC item listed as
+        # not covered, a test that still shows the old result) never change the label.
+        check_one_failed = any(f.check == 1 and f.severity == "must_fix" for f in plain)
         started = self.now_fn()
         client = self.client("tester")
         outcome = tester_agent.ReviewOutcome(model=getattr(client, "model", ""))
@@ -1239,7 +1241,9 @@ class _Run:
             if self.rerun:
                 self._finish_rerun(tx, saved, label, bool(must) or check_one_failed)
             elif check_one_failed:
-                criterion = next(f for f in findings if f.check == 1)
+                criterion = next(
+                    f for f in findings if f.check == 1 and f.severity == "must_fix"
+                )
                 text = f"Criterion {criterion.cites} has no test. Change the approach or get help."
                 self._close(tx, False, used, LABEL_NOT_PASSING, text)
             elif self.check and must:
