@@ -21,6 +21,7 @@ from agents.da_build_agent import AIResult, get_build_client
 from agents.da_enhance_agent import TODAY_ROLE, draft_today
 from agents.da_enhance_checks import (
     NO_CANDIDATES_TEXT,
+    available_symbols,
     find_round_allowed,
     meaning_candidates,
     merge_candidates,
@@ -29,6 +30,7 @@ from agents.da_enhance_checks import (
     target_problems,
     with_catalog,
 )
+from agents.da_impact import find_impact
 from agents.da_llm_client import LLMClient
 from agents.da_main_source import (
     check_freshness,
@@ -92,6 +94,7 @@ from pydantic_classes.da_enhance_models import (
     Candidate,
     EnhanceState,
     FreshnessResult,
+    ImpactResult,
     TargetChoice,
     TodayDraft,
     step_label,
@@ -391,6 +394,32 @@ def _enhance_record(
         freshness=RecordFreshness(
             result=summary, override=freshness.override if freshness else ""
         ),
+    )
+
+
+# --- impact for a Discover round (spec section 7) ---
+
+
+def impact_for_record(settings: Settings, record: RequestRecord) -> ImpactResult | None:
+    """Who calls the functions in scope. None for a new-program request. Plain code, no AI, no lock:
+    it reads the server's reference copy (never his folder, R1) and the saved baselines. A missing
+    reference copy gives "could not be checked", and the request goes on."""
+    if record.kind == "new":
+        return None
+    from agents.da_build_loop import resolve_reference_dir  # late: that module is large
+
+    policy = get_rulebook_for_request(settings.db_path, record.request_id)
+    rules = policy.rulebook.policy
+    texts = baseline_texts(settings, record.request_id)
+    scope_by_target: dict[str, list[str]] = {}
+    for path, text in texts.items():
+        symbols = set(available_symbols(path, text))
+        wanted = [name for name in record.functions_in_scope if name in symbols]
+        if wanted:
+            scope_by_target[path] = wanted
+    return find_impact(
+        resolve_reference_dir(settings), scope_by_target, rules.capabilities,
+        rules.flag_review_zones, rules.impact_max_callers,
     )
 
 

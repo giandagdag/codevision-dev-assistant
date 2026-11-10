@@ -289,6 +289,15 @@ def compute_warnings(
                 f"Touches {zone.name}. A named senior becomes a required reviewer at the "
                 "pull request."
             )
+    # Phase 9 (spec section 7): a caller found by impact inside a zone adds that zone, warning only.
+    impact_rows = discovery.impact.rows if discovery.impact else []
+    for name in dict.fromkeys(row.zone for row in impact_rows if row.zone):
+        if name not in zones:
+            zones.append(name)
+            warnings.append(
+                f"Touches {name}: a caller is in this zone. A named senior becomes a required "
+                "reviewer at the pull request."
+            )
     return warnings, zones
 
 
