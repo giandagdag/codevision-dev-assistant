@@ -69,13 +69,13 @@ def blind():
 
 # ---- AC-1 ----
 
-def test_weekly_80_starts_no_worker_and_status_says_stopped(status_file):
+def test_weekly_95_starts_no_worker_and_status_says_stopped(status_file):
     gh = FakeGh()
-    result = c.tick(lambda: usage(weekly=83), gh, no_launch, status_file, NOW)
+    result = c.tick(lambda: usage(weekly=96), gh, no_launch, status_file, NOW)
     text = status_file.read_text(encoding="utf-8")
     assert result == "stopped"
-    assert "Stopped: weekly 83%, resets " in text and "SGT" in text
-    assert "Usage: 5h 10% / weekly 83%" in text and "stopped yes" in text
+    assert "Stopped: weekly 96%, resets " in text and "SGT" in text
+    assert "Usage: 5h 10% / weekly 96%" in text and "stopped yes" in text
     assert gh.created() == []  # not blind, so no issue
 
 
@@ -346,7 +346,47 @@ def test_launch_starts_one_named_worker_and_writes_a_ledger_line(status_file, is
                           lambda: usage(), FakeGh(), launcher, status_file, NOW, ok_hooks)
     assert out == "ran" and seen == ["spec-writer"]
     row = (isolated / "ledger.csv").read_text(encoding="utf-8").splitlines()[1]
-    assert ",7,spec,opus," in row
+    assert ",7,spec,fable," in row  # NOW is in 2027, after the fix 5 Fable switch
+
+
+# ---- Phase A fix 5: Fable for the judging agents from Thu 12 Nov 19:00 SGT ----
+
+def test_fix5_fable_starts_at_the_thursday_reset_for_the_judging_agents_only():
+    before, after = c.FABLE_FROM - 1, c.FABLE_FROM
+    assert c.FABLE_FROM == 1794481200.0  # 12 Nov 2026 19:00 SGT = 11:00 UTC
+    for agent in c.AGENT_MODELS:
+        assert c.model_for(agent, before) == c.AGENT_MODELS[agent]
+    for agent in ("spec-writer", "plan-reviewer", "code-reviewer"):
+        assert c.model_for(agent, after) == "fable"
+    for agent in ("chief", "builder", "status-digest"):
+        assert c.model_for(agent, after) == c.AGENT_MODELS[agent]
+
+
+def test_fix5_the_builder_forces_fable_on_its_reviewers_only_after_the_switch():
+    early = c.worker_env("builder", {}, "linux", lambda p: False, now=c.FABLE_FROM - 1)
+    assert "CLAUDE_CODE_SUBAGENT_MODEL" not in early
+    late = c.worker_env("builder", {}, "linux", lambda p: False, now=c.FABLE_FROM)
+    assert late["CLAUDE_CODE_SUBAGENT_MODEL"] == "fable"
+    assert late["CLAUDE_CODE_SUBAGENT_MODEL_FORCE"] == "1"
+    chief = c.worker_env("chief", {}, "linux", lambda p: False, now=c.FABLE_FROM)
+    assert "CLAUDE_CODE_SUBAGENT_MODEL" not in chief
+
+
+def test_fix5_real_launcher_passes_the_dated_model(monkeypatch):
+    seen = {}
+
+    def fake_run(cmd, **kwargs):
+        seen["cmd"] = cmd
+
+        class Done:
+            returncode, stdout, stderr = 0, "{}", ""
+
+        return Done()
+
+    monkeypatch.setattr(c.subprocess, "run", fake_run)
+    monkeypatch.setattr(c.time, "time", lambda: c.FABLE_FROM + 60)
+    c.real_launcher("hi", "code-reviewer")
+    assert seen["cmd"][seen["cmd"].index("--model") + 1] == "fable"
 
 
 def test_launch_refuses_unknown_agents_stopped_guard_and_broken_hooks(status_file, isolated):
@@ -356,7 +396,7 @@ def test_launch_refuses_unknown_agents_stopped_guard_and_broken_hooks(status_fil
                                NOW, hooks)
     with pytest.raises(ValueError):
         go("not-an-agent")
-    assert go("builder", reader=lambda: usage(weekly=90)) == "stopped"
+    assert go("builder", reader=lambda: usage(weekly=96)) == "stopped"
     assert go("builder", reader=blind) == "stopped"
     assert go("builder", hooks=lambda: "broken") == "hooks-broken"
     assert not (isolated / "ledger.csv").exists()

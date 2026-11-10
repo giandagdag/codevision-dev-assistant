@@ -33,10 +33,10 @@ def blind_reader():
 
 # ---- decide (AC-1, AC-3) ----
 
-def test_weekly_79_is_go_and_80_is_stop():
-    assert g.decide(usage(weekly=79)).go
-    d = g.decide(usage(weekly=80))
-    assert not d.go and d.reason.startswith("weekly 80%, resets ")
+def test_weekly_94_is_go_and_95_is_stop():  # fix 5: the line moved from 80 to 95
+    assert g.decide(usage(weekly=94)).go
+    d = g.decide(usage(weekly=95))
+    assert not d.go and d.reason.startswith("weekly 95%, resets ")
 
 
 def test_five_hour_84_is_go_and_85_is_stop():
@@ -46,9 +46,9 @@ def test_five_hour_84_is_go_and_85_is_stop():
 
 
 def test_stopped_line_matches_ac1_and_shows_singapore_time():
-    d = g.decide(usage(weekly=83))
+    d = g.decide(usage(weekly=96))
     line = g.stopped_line(d)
-    assert line.startswith("Stopped: weekly 83%, resets ")
+    assert line.startswith("Stopped: weekly 96%, resets ")
     assert line.endswith(" SGT")
     # NOW + 86400 s is 2027-01-16 08:00 UTC = 16:00 SGT
     assert "16:00 SGT" in line
@@ -458,3 +458,109 @@ def test_the_edges_0_and_100_are_valid(creds, monkeypatch, edge):
     fake_urlopen(monkeypatch, {"five_hour": {"utilization": edge},
                                "seven_day": {"utilization": edge}})
     assert g.endpoint_reader().weekly == float(edge)
+
+
+# ---- usage credits (Phase A fix 5) ----
+
+def credits(weekly=96.0, five=10.0, on=True, used=0.0, limit=50.0):
+    return g.Usage(five, weekly, NOW + 3600, NOW + 86400, NOW, on, used, limit)
+
+
+def extra(**changes):
+    base = {"is_enabled": True, "monthly_limit": 5000, "used_credits": 0.0,
+            "currency": "USD", "decimal_places": 2, "disabled_reason": None,
+            "user_disabled": False, "spend_limit_reached": False}
+    base.update(changes)
+    return {"five_hour": {"utilization": 2.0, "resets_at": "2026-11-10T07:19:59+00:00"},
+            "seven_day": {"utilization": 96.0, "resets_at": "2026-11-12T10:59:59+00:00"},
+            "extra_usage": base}
+
+
+def test_past_the_weekly_line_credits_under_the_cap_are_go():
+    d = g.decide(credits(used=12.5))
+    assert d.go and d.reason == "on usage credits: weekly 96%, $12.50 of $50 spent"
+
+
+def test_credits_off_or_at_a_cap_are_stop_with_the_weekly_reason():
+    for u in (credits(on=False), credits(used=50.0), credits(used=20.0, limit=20.0)):
+        d = g.decide(u)
+        assert not d.go and d.reason.startswith("weekly 96%, resets ")
+
+
+def test_credits_do_not_override_the_five_hour_line():
+    d = g.decide(credits(five=85))
+    assert not d.go and d.reason.startswith("5-hour 85%")
+
+
+def test_below_the_weekly_line_credits_change_nothing():
+    assert g.decide(credits(weekly=50)).reason == "within the usage lines"
+
+
+def test_parse_reads_credits_in_cents():
+    u = g.parse_usage_response(extra(used_credits=1234), NOW)
+    assert (u.credits_on, u.credits_used, u.credits_limit) == (True, 12.34, 50.0)
+    assert g.decide(u).go
+
+
+def test_parse_real_10_nov_reply_out_of_credits_is_stop():
+    body = extra(is_enabled=False, disabled_reason="out_of_credits")
+    u = g.parse_usage_response(body, NOW)
+    assert u.credits_on is False and not g.decide(u).go
+
+
+@pytest.mark.parametrize("change", [
+    {"spend_limit_reached": True}, {"user_disabled": True}, {"is_enabled": "yes"},
+    {"currency": "SGD"}, {"decimal_places": "2"}, {"used_credits": "1"},
+    {"used_credits": float("nan")}, {"used_credits": -5}, {"monthly_limit": True},
+    {"used_credits": None}, {"decimal_places": None}, {"currency": None},
+    {"used_credits": 10 ** 400}, {"monthly_limit": 10 ** 400},
+])
+def test_odd_credit_parts_mean_no_credits_never_blind(change):
+    u = g.parse_usage_response(extra(**change), NOW)
+    assert u.weekly == 96.0 and not g.decide(u).go
+
+
+def test_no_extra_usage_part_means_no_credits():
+    body = extra()
+    body.pop("extra_usage")
+    assert g.parse_usage_response(body, NOW).credits_on is False
+    body["extra_usage"] = "on"
+    assert g.parse_usage_response(body, NOW).credits_on is False
+
+
+def test_state_file_keeps_the_credit_fields_and_old_files_still_load(isolated_state):
+    g.write_state(credits(used=3.0))
+    assert g.read_state().credits_used == 3.0 and g.read_state().credits_on is True
+    old = {"five_hour": 1, "weekly": 2, "five_hour_resets_at": None,
+           "weekly_resets_at": None, "read_at": NOW}
+    (isolated_state / "usage.json").write_text(json.dumps(old))
+    assert g.read_state().credits_on is False
+
+
+@pytest.mark.parametrize("bad", [{"credits_on": 1}, {"credits_used": float("inf")},
+                                 {"credits_limit": -1.0}, {"credits_used": True}])
+def test_bad_credit_fields_cannot_be_built(bad):
+    args = {"five_hour": 1.0, "weekly": 99.0, "five_hour_resets_at": None,
+            "weekly_resets_at": None, "read_at": NOW, **bad}
+    with pytest.raises(ValueError):
+        g.Usage(**args)
+
+
+@pytest.mark.parametrize("key", ["used_credits", "decimal_places", "currency"])
+def test_review_fix_a_missing_spend_unit_or_currency_means_no_credits(key):
+    body = extra()
+    body["extra_usage"].pop(key)
+    u = g.parse_usage_response(body, NOW)
+    assert u.credits_on is False and not g.decide(u).go
+
+
+def test_review_fix_a_huge_number_never_crashes(isolated_state):
+    body = extra()
+    body["seven_day"]["utilization"] = 10 ** 400
+    with pytest.raises(g.GuardBlind):
+        g.parse_usage_response(body, NOW)
+    isolated_state.mkdir(parents=True)
+    huge = {"five_hour": 1, "weekly": 2, "five_hour_resets_at": None, "weekly_resets_at": None,
+            "read_at": NOW, "credits_on": True, "credits_used": 10 ** 400}
+    (isolated_state / "usage.json").write_text(json.dumps(huge))
+    assert g.read_state() is None

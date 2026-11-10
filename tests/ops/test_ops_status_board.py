@@ -252,7 +252,7 @@ def test_as14_usage_bars_show_the_percent_and_the_stop_lines(status_file):
     write_usage(five=34, weekly=34)
     body = build(status_file=status_file)
     assert "| Usage 5h | `▓▓▓░░░░░░░` 34% of the 85% stop line |" in body
-    assert "| Usage weekly | `▓▓▓░░░░░░░` 34% of the 80% stop line |" in body
+    assert "| Usage weekly | `▓▓▓░░░░░░░` 34% of the 95% stop line |" in body
 
 
 def test_the_body_shows_progress_commits_and_cut_log_lines(tmp_path):
@@ -414,7 +414,7 @@ def test_as10_the_board_is_refreshed_after_every_tick_result(tmp_path, case):
     if case == "busy":
         write_running()
         kwargs["alive"] = lambda pid: True
-    reader = (lambda: _usage(weekly=90)) if case == "stopped" else (lambda: _usage())
+    reader = (lambda: _usage(weekly=96)) if case == "stopped" else (lambda: _usage())
     if case == "hooks-broken":
         kwargs["launcher"] = lambda p, a: c.WorkerResult(0, "{}")
         kwargs["preflight"] = lambda: "bad"
@@ -582,3 +582,10 @@ def test_as9_a_label_whose_number_only_starts_like_the_step_is_not_shown():
     facts = sb.PhaseFacts(8, spec_approved=True, plan_exists=True, plan_approved=True,
                           steps_total=1, step_done=13, step_label="13d")
     assert sb.phase_progress(facts).stage != "Build, step 13d of 1"
+
+
+def test_fix5_the_board_shows_the_usage_credits_row():
+    u = g.Usage(1.0, 96.0, None, None, 0.0, True, 7.5, 50.0)
+    assert sb._credits_row(u) == "| Usage credits | on, $7.50 spent this month (team cap $50) |"
+    off = g.Usage(1.0, 20.0, None, None, 0.0)
+    assert sb._credits_row(off).startswith("| Usage credits | off, $0.00")
