@@ -190,12 +190,13 @@ AS400 comparison: a second data area that is only read once the first one says "
 
 **Weekly line 95%.** Gian moved it from 80% on 10 Nov. Below 95% nothing changed.
 
-**Past 95%: only on usage credits.** The guard reads the `extra_usage` part of the same reply.
+**Past either line (95% weekly or 85% 5-hour): only on usage credits.** The guard reads the `extra_usage` part of the same reply.
 It says GO only when all of these hold, otherwise STOP with the normal weekly reason:
 - credits are switched on and spendable (`is_enabled` true, no `disabled_reason`, spend limit not
   reached, not switched off by you). A $0 balance shows as `out_of_credits`: buy credits first.
 - less than `TEAM_CREDIT_CAP` ($50) spent this month, and under the account's monthly limit.
-- the 5-hour line (85%) still stops the team, credits or not: a brake on spending.
+- fix 5b (10 Nov 23:39): credits also pay past the 5-hour line (85%), so the team builds
+  overnight. A reading from 100% to 200% counts as 100% (full); above 200% is "guard blind".
 Amounts come in cents (`monthly_limit` 5000 = $50 on 10 Nov). Anything odd in that part means
 "no credits", never "guard blind". The $50 is the account's spend, so your own chats count too.
 

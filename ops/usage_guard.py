@@ -40,6 +40,7 @@ from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 WEEKLY_STOP = 95  # Gian, 10 Nov (was 80): stop at 95% of the weekly limit, unless credits allow
+OVER_LIMIT_MAX = 200  # fix 5b: a reading up to 200% counts as 100%; above that is "guard blind"
 TEAM_CREDIT_CAP = 50.0  # Gian, 10 Nov: the team may spend at most this many dollars of credits
 FIVE_HOUR_STOP = 85  # and at 85% of the 5-hour limit
 MAX_AGE_SECONDS = 180  # older than this, the hook re-reads the usage itself (X17)
@@ -116,7 +117,15 @@ def format_sgt(epoch: float | None) -> str:
 def decide(usage: Usage | None) -> Decision:
     if usage is None:
         return Decision(False, "guard blind: the usage could not be read")
-    if usage.weekly >= WEEKLY_STOP and not usage.credits_left():
+    over_week = usage.weekly >= WEEKLY_STOP
+    over_five = usage.five_hour >= FIVE_HOUR_STOP
+    if (over_week or over_five) and usage.credits_left():
+        # Fix 5b (Gian, 10 Nov 23:39): credits pay past BOTH lines, so the team builds overnight.
+        # The dollar caps are the brake now.
+        return Decision(True, f"on usage credits: weekly {usage.weekly:g}%, 5-hour "
+                              f"{usage.five_hour:g}%, ${usage.credits_used:.2f} of "
+                              f"${TEAM_CREDIT_CAP:.0f} spent")
+    if over_week:
         return Decision(
             False,
             f"weekly {usage.weekly:g}%, resets {format_sgt(usage.weekly_resets_at)}",
@@ -128,9 +137,6 @@ def decide(usage: Usage | None) -> Decision:
             f"5-hour {usage.five_hour:g}%, resets {format_sgt(usage.five_hour_resets_at)}",
             usage.five_hour_resets_at,
         )
-    if usage.weekly >= WEEKLY_STOP:
-        return Decision(True, f"on usage credits: weekly {usage.weekly:g}%, "
-                              f"${usage.credits_used:.2f} of ${TEAM_CREDIT_CAP:.0f} spent")
     return Decision(True, "within the usage lines")
 
 
@@ -186,6 +192,8 @@ def _window(body: dict, name: str) -> tuple[float, float | None]:
         raise KeyError("percentage")
     if isinstance(percent, bool) or not isinstance(percent, int | float):
         raise ValueError("a percentage must be a plain number")  # missing, text, true/false
+    if 100 < percent <= OVER_LIMIT_MAX:
+        percent = 100  # fix 5b: past a plan limit (on credits) is "full", not "blind"
     return float(percent), _epoch(window.get("resets_at"))
 
 
