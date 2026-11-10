@@ -25,6 +25,7 @@ from agents.da_discover_flow import (
     get_discovery_view,
     start_discovery,
 )
+from agents.da_enhance_flow import get_enhance_view, start_enhance_request
 from agents.da_refine_actions import get_refine_bar
 from agents.da_refine_screen import (
     get_history,
@@ -57,6 +58,7 @@ from layouts.da_developer_assistant_page import (
     BUSY_ID,
     CHOICE_TYPE,
     CONFIRM_KEY,
+    ENHANCE_CARD_ID,
     ESCALATE_KEY,
     FORM_BOX_TYPE,
     FORM_ERROR_TYPE,
@@ -80,6 +82,7 @@ from layouts.da_developer_assistant_page import (
     render_new_workspace,
     render_workspace,
 )
+from layouts.da_enhance_panel import render_enhance_workspace
 from layouts.da_tester_panel import FINDING_ACT_TYPE, FINDING_REASON_TYPE
 from pydantic_classes.da_models import (
     STATUS_APPROACH_PROPOSED,
@@ -120,6 +123,8 @@ APPROACH_STATUSES = (
     STATUS_NOT_PASSING,
     STATUS_REVISION,  # Phase 8: a Refine lane is open; the pill shows REVISION IN PROGRESS
 )
+# Phase 9: the Enhance steps drawn by the Find screen (e_fresh and later use the Understand screen).
+ENHANCE_FIND_STEPS = ("e_find", "e_pick", "e_stale")
 # The statuses where the request has a workspace and a build to draw.
 WORKSPACE_STATUSES = (
     STATUS_READY_TO_BUILD,
@@ -186,6 +191,10 @@ def show_page(search: str | None, refresh: int | None):
     if params.get("request"):
         try:
             request_id = params["request"][0]
+            # Phase 9: an Enhance request is drawn by its own screen while it finds the program.
+            enhance = get_enhance_view(settings, request_id)
+            if enhance is not None and enhance.step in ENHANCE_FIND_STEPS:
+                return render_enhance_workspace(enhance)
             view = get_understand_view(settings, request_id)
             if view.request.status in UNDERSTAND_STATUSES:
                 return render_workspace(view)
@@ -229,6 +238,17 @@ def show_page(search: str | None, refresh: int | None):
         return render_home(list_my_requests(settings))
     except DatabaseBusyError as error:
         return render_message_page(str(error))
+
+
+def start_enhance(clicks):
+    """Home card 2: create an Enhance request and open it (Phase 9)."""
+    if not clicks:
+        raise PreventUpdate  # the card is new on every redraw of Home; only a real click counts
+    try:
+        view = start_enhance_request(get_settings())
+    except DatabaseBusyError:
+        raise PreventUpdate from None
+    return f"?request={view.request_id}"
 
 
 def handle_action(send_clicks, choice_clicks, skip_clicks, text, state, refresh):
@@ -531,6 +551,12 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
         ],
         prevent_initial_call=True,
     )(handle_action)
+
+    app.callback(
+        Output(LOCATION_ID, "search", allow_duplicate=True),
+        Input(ENHANCE_CARD_ID, "n_clicks"),
+        prevent_initial_call=True,
+    )(start_enhance)
 
     # Runs after every redraw; the script installs its listener only the first time.
     app.clientside_callback(

@@ -6,7 +6,7 @@ the display file (DDS) of a 5250 program: it says where each field goes, not wha
 """
 
 import dash_mantine_components as dmc
-from dash import dcc
+from dash import dcc, html
 from dash_iconify import DashIconify
 
 from agents.da_discover_flow import (
@@ -90,6 +90,11 @@ FORM_OPTIONAL_HINT = "This box may stay empty."
 FORM_BUSY_TEXT = "⏳ Reading your answers…"
 FORM_COMPOSER_TEXT = "Fill in the form above, then press Submit"
 
+ENHANCE_CARD_ID = "da-enhance-card"
+ENHANCE_CARD_TITLE = "Change an existing program"
+ENHANCE_CARD_TEXT = (
+    "Name the program. I'll protect what works today and change only what you agree."
+)
 CODE_BANNER = "No code is written yet"
 CODE_WRITTEN_BANNER = "Code is written to your folder"
 DEMO_BANNER = "Demo mode: replies are scripted"
@@ -190,6 +195,7 @@ def render_home(requests: list[Request]) -> list:
                     id="da-start-card",
                     style={"textDecoration": "none"},
                 ),
+                enhance_card(),
                 _entry_card(
                     "tabler:shield-check",
                     "Review my code",
@@ -197,7 +203,7 @@ def render_home(requests: list[Request]) -> list:
                     disabled=True,
                 ),
             ],
-            cols=2,
+            cols=3,
             mb="lg",
         ),
         dmc.Paper(
@@ -210,6 +216,16 @@ def render_home(requests: list[Request]) -> list:
             p="md",
         ),
     ]
+
+
+def enhance_card() -> html.Div:
+    """Home card 2 (Phase 9). A click starts an Enhance request; the callback creates it."""
+    return html.Div(
+        _entry_card("tabler:file-search", ENHANCE_CARD_TITLE, ENHANCE_CARD_TEXT),
+        id=ENHANCE_CARD_ID,
+        n_clicks=0,
+        style={"cursor": "pointer"},
+    )
 
 
 def _entry_card(icon: str, title: str, text: str, disabled: bool = False) -> dmc.Paper:
