@@ -165,6 +165,8 @@ class EnhanceView:
     # banner shows ("check_again", "intentional", "unchecked").
     freshness: FreshnessResult | None = None
     stale_options: list[str] = field(default_factory=list)
+    # True once the Understand session exists: from then on the Understand screen draws the request.
+    understand_started: bool = False
 
 
 @dataclass
@@ -718,6 +720,7 @@ def _view(settings: Settings, request_id: str) -> EnhanceView:
         messages=list_messages(settings.db_path, request_id),
         freshness=latest.result if latest else None,
         stale_options=stale_options(latest.result) if stale else [],
+        understand_started=get_session(settings.db_path, request_id) is not None,
     )
 
 

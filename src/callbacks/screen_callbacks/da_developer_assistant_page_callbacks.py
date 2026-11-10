@@ -16,6 +16,8 @@ from dash.exceptions import PreventUpdate
 from agents import da_approach_flow as approach_flow
 from agents import da_build_flow as build_flow
 from agents import da_build_runner as build_runner
+from agents import da_enhance_flow as enhance_flow
+from agents import da_enhance_help as enhance_help
 from agents import da_tester_flow as tester_flow
 from agents import da_workspace_flow as workspace_flow
 from agents.da_discover_flow import (
@@ -82,7 +84,15 @@ from layouts.da_developer_assistant_page import (
     render_new_workspace,
     render_workspace,
 )
-from layouts.da_enhance_panel import render_enhance_workspace
+from layouts.da_enhance_panel import (
+    KEY_FIX,
+    KEY_HELP,
+    KEY_PICK,
+    KEY_UNDERSTAND,
+    PICK_SEPARATOR,
+    enhance_buttons,
+    render_enhance_workspace,
+)
 from layouts.da_tester_panel import FINDING_ACT_TYPE, FINDING_REASON_TYPE
 from pydantic_classes.da_models import (
     STATUS_APPROACH_PROPOSED,
@@ -193,7 +203,10 @@ def show_page(search: str | None, refresh: int | None):
             request_id = params["request"][0]
             # Phase 9: an Enhance request is drawn by its own screen while it finds the program.
             enhance = get_enhance_view(settings, request_id)
-            if enhance is not None and enhance.step in ENHANCE_FIND_STEPS:
+            if enhance is not None and (
+                enhance.step in ENHANCE_FIND_STEPS
+                or (enhance.step == "e_fresh" and not enhance.understand_started)
+            ):
                 return render_enhance_workspace(enhance)
             view = get_understand_view(settings, request_id)
             if view.request.status in UNDERSTAND_STATUSES:
@@ -276,6 +289,8 @@ def perform_action(settings: Settings, trigger, text, state, refresh):
         if state.get("refine") and trigger == SEND_ID:
             # Phase 8: Send is Refine's (the Refine box, a correction, the bug description).
             message = run_refine(settings, "send", state, text or "")
+        elif state.get("enhance") and trigger != SKIP_ID:
+            _enhance_action(settings, trigger, request_id, revision, text)
         elif state.get("build") and trigger != SKIP_ID:
             _build_action(settings, trigger, request_id, revision)
         elif state.get("workspace") and trigger != SKIP_ID:
@@ -304,6 +319,35 @@ def perform_action(settings: Settings, trigger, text, state, refresh):
         # Nothing was written. The text stays in the box so the developer can fix it.
         return no_update, no_update, str(error)
     return (refresh or 0) + 1, no_update, message
+
+
+def _enhance_action(settings: Settings, trigger, request_id: str, revision: int, text) -> None:
+    """The one Enhance engine function a click stands for (Phase 9, step 16c). Send is a search.
+    A button is looked up again from the saved request: an old window, or an index with no
+    button behind it, gets the stale-window message. Every check lives in the engine."""
+    if trigger == SEND_ID:
+        enhance_flow.find_program(settings, request_id, text or "", revision)
+        return
+    if not _is_choice(trigger):
+        raise PreventUpdate
+    view = enhance_flow.get_enhance_view(settings, request_id)
+    buttons = enhance_buttons(view) if view is not None else []
+    index = trigger["index"]
+    if view is None or view.revision != revision or not 0 <= index < len(buttons):
+        raise StaleRevisionError(STALE_MESSAGE)
+    key = buttons[index][0]
+    if key == KEY_FIX:
+        enhance_flow.mark_as_fix(settings, request_id, revision)
+    elif key == KEY_HELP:
+        enhance_help.request_help(settings, request_id, revision)
+    elif key == KEY_UNDERSTAND:
+        enhance_flow.start_understand(settings, request_id, revision)
+    elif key.startswith(KEY_PICK + PICK_SEPARATOR):
+        _, path, capability = key.split(PICK_SEPARATOR, 2)
+        picks = {path: capability} if capability else {}
+        enhance_flow.confirm_targets(settings, request_id, [path], picks, revision)
+    else:
+        raise PreventUpdate
 
 
 def _start_by_itself(step) -> str:

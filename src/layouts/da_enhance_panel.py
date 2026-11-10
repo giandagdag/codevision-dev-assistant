@@ -7,11 +7,15 @@ the display file for the "find the member" screen; it only says where each field
 """
 
 import dash_mantine_components as dmc
+from dash import dcc
 
-from agents.da_enhance_flow import EnhanceView
+from agents.da_approach_flow import HELP_BUTTON
+from agents.da_enhance_flow import OVERRIDE_LABELS, EnhanceView
+from agents.da_enhance_help import HELP_STATUS
 from agents.da_impact import LIMITS_LINE, summary_line
 from agents.da_main_source import stale_message
 from layouts import da_developer_assistant_page as page
+from layouts.da_workspace_panel import WS_CTX_ID, ws_button_id
 from pydantic_classes.da_enhance_models import (
     Candidate,
     ImpactResult,
@@ -39,11 +43,123 @@ def render_enhance_workspace(view: EnhanceView, record: RequestRecord | None = N
         status=view.label or "DRAFT",
         demo_mode=False,
         messages=[parts.chat_bubble(message) for message in view.messages],
-        composer=page._composer("text", [], False, ""),
+        composer=enhance_composer(view),
         panel=[*find_panel(view), *enhancement_summary(record)],
         state={"request_id": view.request_id, "revision": view.revision, "enhance": view.step},
         step=FIND_STEP,
+        stores=[dcc.Store(id=WS_CTX_ID, data=enhance_context(view))],
     )
+
+
+# --- the buttons of each step (16c) ---
+# Server-run buttons are (key, label) pairs; the callback looks the key up again from the saved
+# request, so an old window or an index with no button behind it is refused (rule R7).
+# Browser-run buttons read the target in his folder first (the server never sees his folder).
+
+KEY_FIX = "fix"
+KEY_UNDERSTAND = "understand"
+KEY_HELP = "help"
+KEY_PICK = "pick"
+PICK_SEPARATOR = "|"
+UNDERSTAND_LABEL = "Describe the change"
+FIX_LABEL = "This is a fix"
+BROWSER_PREFIX = "enhance_"
+CHECK_KEY = BROWSER_PREFIX + "check"
+BROWSER_LABELS = {
+    CHECK_KEY: "Check against main",
+    BROWSER_PREFIX + "check_again": "I've updated, check again",
+    BROWSER_PREFIX + "intentional": OVERRIDE_LABELS["intentional"],
+    BROWSER_PREFIX + "unchecked": OVERRIDE_LABELS["unchecked"],
+}
+DEFAULT_MAX_FILE_KB = 512
+
+
+def pick_key(path: str, capability: str) -> str:
+    return PICK_SEPARATOR.join((KEY_PICK, path, capability))
+
+
+def enhance_buttons(view: EnhanceView) -> list[tuple[str, str]]:
+    """The server-run buttons of the step, in the order they are drawn."""
+    buttons: list[tuple[str, str]] = []
+    if view.step == "e_pick" and not view.targets:
+        for item in view.candidates:
+            if item.capability:
+                buttons.append((pick_key(item.path, ""), f"Yes, that's it: {item.path}"))
+                continue
+            # Not in the catalog: he must pick a capability, one button each (spec section 4).
+            for name in view.capability_names:
+                buttons.append((pick_key(item.path, name), f"{item.path}: it belongs to {name}"))
+        if view.kind != "fix":
+            buttons.append((KEY_FIX, FIX_LABEL))
+    if view.step == "e_fresh" and not view.understand_started:
+        buttons.append((KEY_UNDERSTAND, UNDERSTAND_LABEL))
+    if view.step in HELP_STATUS:
+        buttons.append((KEY_HELP, HELP_BUTTON))
+    return buttons
+
+
+def browser_buttons(view: EnhanceView) -> list[tuple[str, str]]:
+    """The buttons that read his folder first: the freshness check and the stale choices."""
+    if view.step == "e_pick" and view.targets:
+        return [(CHECK_KEY, BROWSER_LABELS[CHECK_KEY])]
+    if view.step == "e_stale":
+        return [
+            (BROWSER_PREFIX + option, BROWSER_LABELS[BROWSER_PREFIX + option])
+            for option in view.stale_options
+        ]
+    return []
+
+
+def enhance_composer(view: EnhanceView):
+    """Text to search at e_find and e_pick; locked choices at the other steps."""
+    buttons = enhance_buttons(view)
+    if view.step in ("e_find", "e_pick"):
+        composer = page._composer(
+            "choices" if buttons else "text",
+            [label for _key, label in buttons],
+            False,
+            "",
+            send_label="Search",
+            typing_prompt="Name the program or describe it, then press Search"
+            if buttons
+            else "",
+        )
+    else:
+        composer = page._composer(
+            "choices", [label for _key, label in buttons], False, ""
+        )
+    browser = browser_buttons(view)
+    if not browser:
+        return composer
+    bar = dmc.Group(
+        [
+            parts.choice_button(label, ws_button_id(key, "bar"), parts.PRIMARY)
+            for key, label in browser
+        ],
+        mt="xs",
+        mb="xs",
+    )
+    return dmc.Box([bar, composer])
+
+
+def enhance_context(view: EnhanceView) -> dict:
+    """What the browser script needs: the confirmed targets (the only files it may read, 9-48)
+    and the revision of this step. No marker folders: Enhance does not judge his folder."""
+    return {
+        "request_id": view.request_id,
+        "ws_revision": view.revision,
+        "enhance_revision": view.revision,
+        "planned_paths": [target.path for target in view.targets],
+        "markers": [],
+        "max_file_kb": DEFAULT_MAX_FILE_KB,
+        "step": view.step,
+        "mode": "picker",
+        "folder_name": "",
+        "build_revision": 0,
+        "build_step": "start",
+        "auto_write": False,
+        "restore_build": 0,
+    }
 
 
 def find_panel(view: EnhanceView) -> list:

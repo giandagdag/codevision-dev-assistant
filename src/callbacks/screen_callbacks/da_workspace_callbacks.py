@@ -19,6 +19,7 @@ from pydantic import ValidationError
 
 from agents import da_build_flow as build_flow
 from agents import da_build_runner as build_runner
+from agents import da_enhance_flow as enhance_flow
 from agents import da_refine_flow as refine_flow
 from agents import da_workspace_flow as flow
 from db_table_functions.da_db import DatabaseBusyError
@@ -43,6 +44,7 @@ from pydantic_classes.da_workspace_models import FolderFacts, WriteReport
 from web.da_workspace_bridge import clientside_function
 
 SHOWN_ERRORS = (UnderstandError, DatabaseBusyError)
+ENHANCE_PREFIX = "enhance_"  # the event kinds of the Phase 9 freshness buttons
 UNEXPECTED = "The browser sent something unexpected. Nothing was saved. Please try again."
 NOT_CONNECTED = "Your folder is not connected right now. Press Reconnect, then the write runs."
 
@@ -110,6 +112,8 @@ def _dispatch(settings, event: dict, request_id: str, revision: int, refresh: in
     kind = event.get("kind")
     again = refresh + 1
     build_revision = (ctx or {}).get("build_revision", 0)
+    if isinstance(kind, str) and kind.startswith(ENHANCE_PREFIX):
+        return _dispatch_enhance(settings, event, request_id, again, ctx or {})
     if kind in ("build_facts", "rebuild_facts"):
         # The browser re-scanned the planned files; the server starts (or restarts) the build and
         # hands it to the background runner. The Build page then polls (spec sections 1 and 10).
@@ -166,6 +170,25 @@ def _dispatch(settings, event: dict, request_id: str, revision: int, refresh: in
         }
         return again, None, pack, ""
     elif kind != "reconnected":
+        raise PreventUpdate
+    return again, None, no_update, ""
+
+
+def _dispatch_enhance(settings, event: dict, request_id: str, again: int, ctx: dict):
+    """Phase 9 step 16c: the browser read the confirmed targets in his folder (nothing else, 9-48);
+    the server compares them with main. The revision is the Enhance step's, never the workspace's.
+    Nothing is written to his folder."""
+    kind = event["kind"]
+    if kind == "enhance_cancelled":
+        raise PreventUpdate  # the picker was closed: nothing to save, nothing to redraw
+    facts = FolderFacts.model_validate(event["facts"])
+    revision = ctx.get("enhance_revision")
+    if kind in ("enhance_check", "enhance_check_again"):
+        enhance_flow.run_freshness(settings, request_id, facts.files, revision)
+    elif kind in ("enhance_intentional", "enhance_unchecked"):
+        which = kind.removeprefix(ENHANCE_PREFIX)
+        enhance_flow.override_freshness(settings, request_id, which, facts.files, revision)
+    else:
         raise PreventUpdate
     return again, None, no_update, ""
 
