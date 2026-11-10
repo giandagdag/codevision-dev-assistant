@@ -17,6 +17,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from agents.da_approach_checks import normalise_path
+from agents.da_build_agent import AIResult, get_build_client
+from agents.da_enhance_agent import TODAY_ROLE, draft_today
 from agents.da_enhance_checks import (
     NO_CANDIDATES_TEXT,
     find_round_allowed,
@@ -27,6 +29,7 @@ from agents.da_enhance_checks import (
     target_problems,
     with_catalog,
 )
+from agents.da_llm_client import LLMClient
 from agents.da_main_source import (
     check_freshness,
     get_main_source,
@@ -43,7 +46,7 @@ from agents.da_search_index import (
 )
 from agents.da_understand_checks import developer_message_problem
 from agents.da_workspace_checks import fingerprint, line_ending_of
-from configs.da_config import Settings
+from configs.da_config import ConfigError, Settings
 from da_logging import get_logger
 from db_table_functions.da_db import begin_write, open_db
 from db_table_functions.db_tbl_da_approach import read_latest_approach
@@ -63,7 +66,12 @@ from db_table_functions.db_tbl_da_enhance import (
     read_latest_freshness,
     save_enhance_state,
 )
-from db_table_functions.db_tbl_da_requests import get_rulebook_for_request, insert_request
+from db_table_functions.db_tbl_da_requests import (
+    get_rulebook_for_request,
+    insert_request,
+    read_request,
+    update_request,
+)
 from db_table_functions.db_tbl_da_rulebook import ensure_rulebook_tables
 from db_table_functions.db_tbl_da_understand import (
     STALE_MESSAGE,
@@ -71,18 +79,31 @@ from db_table_functions.db_tbl_da_understand import (
     add_message,
     ensure_understand_tables,
     get_session,
+    insert_session,
     list_messages,
 )
-from db_table_functions.db_tbl_da_workspace import ensure_workspace_tables, insert_workspace_file
+from db_table_functions.db_tbl_da_workspace import (
+    ensure_workspace_tables,
+    insert_workspace_file,
+    read_file_versions,
+)
 from pydantic_classes.da_discovery_models import SearchFilters
 from pydantic_classes.da_enhance_models import (
     Candidate,
     EnhanceState,
     FreshnessResult,
     TargetChoice,
+    TodayDraft,
     step_label,
 )
-from pydantic_classes.da_request_record_models import ChatMessage, Speaker
+from pydantic_classes.da_models import STATUS_CLARIFICATION
+from pydantic_classes.da_request_record_models import (
+    ChatMessage,
+    RecordFreshness,
+    RequestRecord,
+    Speaker,
+    UnderstandSession,
+)
 from pydantic_classes.da_rulebook_models import Policy
 from pydantic_classes.da_workspace_models import FileFact, WorkspaceFile
 
@@ -102,6 +123,14 @@ FIND_STEPS = ("e_find", "e_pick")
 # No record exists before Understand, so the first record version stands in (version numbers
 # start at 1).
 RECORD_VERSION_BEFORE_UNDERSTAND = 1
+FORM_MESSAGE = (
+    "Thanks. Check what it does today, say what should change and what must NOT change, "
+    "then press Submit. The last box is optional."
+)
+FORM_MESSAGE_NO_DRAFT = (
+    "I could not draft what the program does today. Please write it yourself in the first box, "
+    "say what should change and what must NOT change, then press Submit."
+)
 OVERRIDE_LABELS = {
     "intentional": "My local changes are intentional",
     "unchecked": "Continue without the check",
@@ -274,6 +303,95 @@ def confirm_targets(
         tx.say("assistant", _confirmed_message(targets))
         save_enhance_state(conn, state.model_copy(update={"targets": targets}), base_revision, now)
     return _view(settings, request_id)
+
+
+# --- Understand, enhancement mode: start (spec section 6, steps 1 to 3) ---
+
+
+def baseline_texts(settings: Settings, request_id: str) -> dict[str, str]:
+    """Today's code for each confirmed target: the latest baseline taken at freshness (D-G)."""
+    with _read(settings.db_path) as conn:
+        state = read_enhance_state(conn, request_id)
+        if state is None:
+            raise EnhanceError(f"Request {request_id} is not an Enhance request.")
+        texts: dict[str, str] = {}
+        for target in state.targets:
+            versions = [v for v in read_file_versions(conn, request_id, target.path)
+                        if v.kind == "baseline"]
+            if versions:
+                texts[target.path] = versions[-1].text
+    return texts
+
+
+def start_understand(
+    settings: Settings,
+    request_id: str,
+    base_revision: int,
+    client: LLMClient | None = None,
+    now: datetime | None = None,
+) -> EnhanceView:
+    """Freshness passed (e_fresh): make the Understand session for this request, with ONE
+    today-draft call (no chat is sent, only the target's functions). A draft that cannot be used
+    leaves the box empty; he writes it himself. The draft's guess of the functions in scope is
+    kept in the record for him to tick or untick at the checkpoint."""
+    now = now or datetime.now(UTC)
+    state = _load_state(settings, request_id, base_revision, ("e_fresh",))
+    if get_session(settings.db_path, request_id) is not None:
+        raise EnhanceError("Understand has already started for this request.")
+    pinned = get_rulebook_for_request(settings.db_path, request_id)
+    files = baseline_texts(settings, request_id)
+    try:
+        client = client or get_build_client(settings, TODAY_ROLE)
+        drafted = draft_today(
+            client, pinned.rulebook.charter.purpose, request_id,
+            _first_developer_text(settings, request_id), files,
+            pinned.rulebook.policy.build_max_prompt_chars,
+        )
+    except ConfigError as error:  # for example the work server is "not configured yet"
+        drafted = AIResult(None, kind="unreachable", message=str(error))
+    draft = drafted.value
+    with _write_transaction(settings.db_path) as conn:
+        tx = _Tx(conn, request_id, now)
+        request = read_request(conn, request_id)
+        latest = read_latest_freshness(conn, request_id)
+        record = _enhance_record(request, state, latest.result if latest else None, draft)
+        insert_session(
+            conn, UnderstandSession(request_id=request_id, record=record, step="form"), now
+        )
+        tx.audit(
+            "system", "today_drafted",
+            {"attempts": drafted.attempts, "ok": draft is not None, "kind": drafted.kind or "ok"},
+        )
+        update_request(conn, request_id, now=now, status=STATUS_CLARIFICATION)
+        tx.audit("system", "status_changed", {"from": request.status, "to": STATUS_CLARIFICATION})
+        if drafted.message and draft is not None:
+            tx.say("assistant", drafted.message)
+        tx.say("assistant", FORM_MESSAGE if draft is not None else FORM_MESSAGE_NO_DRAFT)
+        save_enhance_state(conn, state, base_revision, now)
+    return _view(settings, request_id)
+
+
+def _enhance_record(
+    request, state: EnhanceState, freshness: FreshnessResult | None, draft: TodayDraft | None
+) -> RequestRecord:
+    first = state.targets[0]
+    summary = "" if freshness is None else (
+        "equal" if freshness.all_equal else ",".join(sorted({p.state for p in freshness.paths}))
+    )
+    return RequestRecord(
+        request_id=request.request_id,
+        rulebook_version=request.rulebook_version,
+        kind=state.kind,
+        targets=[target.path for target in state.targets],
+        today=draft.today if draft else "",
+        functions_in_scope=draft.functions_in_scope_guess if draft else [],
+        capability=first.capability,
+        capability_confirmed=all(t.capability_confirmed for t in state.targets),
+        named_senior=first.named_senior,
+        freshness=RecordFreshness(
+            result=summary, override=freshness.override if freshness else ""
+        ),
+    )
 
 
 # --- freshness (spec section 5) ---

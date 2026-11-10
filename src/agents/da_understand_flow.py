@@ -17,7 +17,15 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from agents.da_enhance_flow import maybe_offer_switch
+from pydantic import ValidationError
+
+from agents.da_enhance_checks import (
+    available_symbols,
+    number_keep_items,
+    parse_keep_lines,
+    scope_problems,
+)
+from agents.da_enhance_flow import baseline_texts, maybe_offer_switch
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_understand_agent import InterpretResult, get_understand_client, interpret
 from agents.da_understand_checks import (
@@ -64,8 +72,10 @@ from pydantic_classes.da_models import (
 )
 from pydantic_classes.da_request_record_models import (
     QUESTION_COUNT,
+    TEXT_LIMIT,
     Decision,
     InputMode,
+    MustNotChange,
     PendingDecision,
     RequestRecord,
     Speaker,
@@ -103,6 +113,15 @@ SKIP_TEXT = "Skip"
 # The form (Phase 6 fixes, U1): the 4 mandatory questions in their wording, plus the optional box.
 FORM_BOXES: tuple[tuple[int, str], ...] = tuple(QUESTIONS.items())
 FORM_OPTIONAL_BOX = QUESTION_COUNT + 1
+# Phase 9: the form of an enhance or fix request (spec section 6, step 2). Still 5 boxes. Box 1 is
+# pre-filled by the today-draft; box 3 holds the must-NOT-change items, one per line.
+ENHANCE_FORM_BOXES: tuple[tuple[int, str], ...] = (
+    (1, "What does it do today?"),
+    (2, "What should change?"),
+    (3, "What must NOT change? (one item per line, or write Nothing special)"),
+    (4, QUESTIONS[4]),
+)
+SCOPE_REQUIRED = "Tick at least one function that the change touches, then press Proceed."
 FORM_QUESTION = (
     "The developer's opening statement and the answers to the 4 mandatory questions "
     "(and the optional notes)"
@@ -285,7 +304,10 @@ def submit_form(
     if session.step != FORM_STEP:
         raise UnderstandError(_wrong_step_message(session))
     answers = _check_form_boxes(answers)
-    text = _form_text(answers)
+    boxes = form_boxes(session.record.kind)
+    # Phase 9: the must-NOT-change items are numbered by plain code before any AI call.
+    keep_items = _numbered_keep_items(settings, session, answers) if boxes != FORM_BOXES else []
+    text = _form_text(answers, boxes)
     # The interpreter sees the opening statement AND the answers together (U3).
     prompt_text = f"{OPENING_LABEL}\n{_opening_statement(settings, request_id)}\n\n{text}"
     result = _interpret(settings, session, FORM_STEP, FORM_QUESTION, prompt_text, client)
@@ -305,6 +327,8 @@ def submit_form(
         turn.say("developer", text)
         turn.audit("developer", "form_submitted", {"optional_used": bool(answers[-1])})
         _apply_result(turn, result, answered=tuple(number for number, _ in FORM_BOXES))
+        if boxes != FORM_BOXES:
+            _apply_enhance_boxes(turn, answers[0], keep_items)
         turn.session.optional_done = True
         _advance(turn)
     # Phase 9 (D-N): if the description names a program that already exists, offer to switch to
@@ -340,9 +364,69 @@ def _check_form_boxes(answers: list[str]) -> list[str]:
     return cleaned
 
 
-def _form_text(answers: list[str]) -> str:
+def form_boxes(kind: str) -> tuple[tuple[int, str], ...]:
+    """The four titled boxes of the form for a request kind (the optional box is always last)."""
+    return FORM_BOXES if kind == "new" else ENHANCE_FORM_BOXES
+
+
+def _numbered_keep_items(
+    settings: Settings, session: UnderstandSession, answers: list[str]
+) -> list[MustNotChange]:
+    """Check box 1 and box 3 of an enhance form and number its NC items (never reusing an ID).
+    Raises FormError with the plain message under the box; nothing is saved."""
+    record = session.record
+    policy = get_rulebook_for_request(settings.db_path, record.request_id).rulebook.policy
+    lines, problems = parse_keep_lines(answers[2], policy)
+    if len(answers[0]) > TEXT_LIMIT:
+        raise FormError({1: f"Please keep this under {TEXT_LIMIT} characters."})
+    if problems:
+        raise FormError({3: problems[0]})
+    try:
+        return number_keep_items(lines, record.must_not_change, [record])
+    except ValidationError as error:
+        raise FormError({3: "Please keep each item to one short line."}) from error
+
+
+def _apply_enhance_boxes(turn: _Turn, today: str, keep_items: list[MustNotChange]) -> None:
+    """Plain code sets what the AI may not: the today text and the NC items."""
+    record = turn.session.record.model_copy(
+        update={"today": today, "must_not_change": keep_items}
+    )
+    turn.session.record = record
+    turn.session.last_changed_fields = [
+        *turn.session.last_changed_fields, "today", "must_not_change"
+    ]
+
+
+def set_functions_in_scope(
+    settings: Settings,
+    request_id: str,
+    chosen: list[str],
+    base_revision: int,
+    now: datetime | None = None,
+) -> UnderstandView:
+    """The checkpoint tick list (D-D). Plain code refuses symbols that are not in the chosen
+    programs, and an empty list. Saved in the record; confirm uses it."""
+    now = now or datetime.now(UTC)
+    texts = baseline_texts(settings, request_id)
+    available = [name for path, text in texts.items() for name in available_symbols(path, text)]
+    problems = scope_problems(chosen, available)
+    if problems:
+        raise UnderstandError("\n".join(problems))
+    with _turn(settings.db_path, request_id, base_revision, now) as turn:
+        if turn.session.record.kind == "new" or turn.session.step == "done":
+            raise UnderstandError("The functions in scope cannot be set on this request.")
+        turn.session.record = turn.session.record.model_copy(
+            update={"functions_in_scope": list(dict.fromkeys(chosen))}
+        )
+        turn.session.last_changed_fields = ["functions_in_scope"]
+        turn.audit("developer", "functions_in_scope_set", {"functions": chosen})
+    return get_understand_view(settings, request_id)
+
+
+def _form_text(answers: list[str], boxes: tuple[tuple[int, str], ...] = FORM_BOXES) -> str:
     """The answers as one readable message: each question's wording, then the developer's text."""
-    sections = [f"{number}. {title}\n{answers[number - 1]}" for number, title in FORM_BOXES]
+    sections = [f"{number}. {title}\n{answers[number - 1]}" for number, title in boxes]
     if answers[-1]:
         sections.append(f"{OPTIONAL_QUESTION}\n{answers[-1]}")
     return "\n\n".join(sections)
@@ -797,6 +881,13 @@ def _choose_checkpoint(turn: _Turn, option: str) -> None:
     session = turn.session
     if option not in CHECKPOINT_OPTIONS:
         raise UnderstandError(_not_a_choice_message(option, list(CHECKPOINT_OPTIONS)))
+    # Phase 9: an enhance or fix request needs at least one function in scope before it is saved.
+    if (
+        option == PROCEED_OPTION
+        and session.record.kind != "new"
+        and not session.record.functions_in_scope
+    ):
+        raise UnderstandError(SCOPE_REQUIRED)
     turn.say("developer", option)
 
     if option == HELP_OPTION:
