@@ -27,6 +27,13 @@ from agents.da_enhance_checks import (
     target_problems,
     with_catalog,
 )
+from agents.da_main_source import (
+    check_freshness,
+    get_main_source,
+    next_step,
+    stale_message,
+    stale_options,
+)
 from agents.da_search_index import (
     IndexFormatError,
     SearchIndex,
@@ -35,9 +42,11 @@ from agents.da_search_index import (
     search_safely,
 )
 from agents.da_understand_checks import developer_message_problem
+from agents.da_workspace_checks import fingerprint, line_ending_of
 from configs.da_config import Settings
 from da_logging import get_logger
 from db_table_functions.da_db import begin_write, open_db
+from db_table_functions.db_tbl_da_approach import read_latest_approach
 from db_table_functions.db_tbl_da_audit import (
     ensure_audit_table,
     insert_audit_event,
@@ -48,8 +57,10 @@ from db_table_functions.db_tbl_da_enhance import (
     add_unassigned,
     ensure_enhance_tables,
     insert_candidates,
+    insert_freshness_check,
     read_candidates,
     read_enhance_state,
+    read_latest_freshness,
     save_enhance_state,
 )
 from db_table_functions.db_tbl_da_requests import get_rulebook_for_request, insert_request
@@ -62,15 +73,18 @@ from db_table_functions.db_tbl_da_understand import (
     get_session,
     list_messages,
 )
+from db_table_functions.db_tbl_da_workspace import ensure_workspace_tables, insert_workspace_file
 from pydantic_classes.da_discovery_models import SearchFilters
 from pydantic_classes.da_enhance_models import (
     Candidate,
     EnhanceState,
+    FreshnessResult,
     TargetChoice,
     step_label,
 )
 from pydantic_classes.da_request_record_models import ChatMessage, Speaker
 from pydantic_classes.da_rulebook_models import Policy
+from pydantic_classes.da_workspace_models import FileFact, WorkspaceFile
 
 logger = get_logger(__name__)
 
@@ -85,6 +99,17 @@ DECLINED_EVENT = "switch_declined"
 FIX_PREFIX = "Make it work as intended: "
 SEARCH_POOL = 50  # how many raw hits to ask the index for, before the top-k cut
 FIND_STEPS = ("e_find", "e_pick")
+# No record exists before Understand, so the first record version stands in (version numbers
+# start at 1).
+RECORD_VERSION_BEFORE_UNDERSTAND = 1
+OVERRIDE_LABELS = {
+    "intentional": "My local changes are intentional",
+    "unchecked": "Continue without the check",
+}
+OVERRIDE_REPLIES = {
+    "intentional": "Noted: your local changes are intentional. This goes into the PR summary.",
+    "unchecked": "Continuing without the freshness check. This goes into the PR summary.",
+}
 
 
 @dataclass
@@ -102,6 +127,10 @@ class EnhanceView:
     searches_left: int = 0
     change_prefill: str = ""
     messages: list[ChatMessage] = field(default_factory=list)
+    # Part B: the latest freshness check (None before the first) and the buttons the stale
+    # banner shows ("check_again", "intentional", "unchecked").
+    freshness: FreshnessResult | None = None
+    stale_options: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -247,6 +276,140 @@ def confirm_targets(
     return _view(settings, request_id)
 
 
+# --- freshness (spec section 5) ---
+
+
+def browser_read_paths(settings: Settings, request_id: str) -> list[str]:
+    """The only files the browser may read for this request (9-48, rule R1): the confirmed
+    targets until an Approach exists, the planned files after. Reads only; saves nothing."""
+    with _read(settings.db_path) as conn:
+        state = read_enhance_state(conn, request_id)
+        approach = read_latest_approach(conn, request_id)
+    if state is None:
+        raise EnhanceError(f"Request {request_id} is not an Enhance request.")
+    if approach is not None:
+        return [normalise_path(item.path) for item in approach.plan.files]
+    return [target.path for target in state.targets]
+
+
+def run_freshness(
+    settings: Settings,
+    request_id: str,
+    facts: list[FileFact],
+    base_revision: int,
+    now: datetime | None = None,
+) -> EnhanceView:
+    """Freshness check, also "I've updated, check again" and "Try again": the browser sent each
+    target as it is in his folder; the server compares it with main. All equal: the text becomes
+    the baseline and the step is e_fresh. Anything else: e_stale, nothing silently passed."""
+    now = now or datetime.now(UTC)
+    state = _load_state(settings, request_id, base_revision, ("e_pick", "e_stale"))
+    _require_targets(state)
+    texts = _texts_from_facts(facts, state, _policy(settings, request_id))
+    result = check_freshness(texts, get_main_source(settings))  # slow: outside the transaction
+    step = next_step(result)
+    with _write_transaction(settings.db_path) as conn:
+        tx = _Tx(conn, request_id, now)
+        insert_freshness_check(conn, request_id, RECORD_VERSION_BEFORE_UNDERSTAND, result, now)
+        tx.audit("system", "freshness_checked", _check_details(result))
+        tx.say("assistant", stale_message(result))
+        if step == "e_fresh":
+            _save_baselines(tx, texts)
+        save_enhance_state(conn, state.model_copy(update={"step": step}), base_revision, now)
+    return _view(settings, request_id)
+
+
+def override_freshness(
+    settings: Settings,
+    request_id: str,
+    which: str,
+    facts: list[FileFact],
+    base_revision: int,
+    now: datetime | None = None,
+) -> EnhanceView:
+    """"My local changes are intentional" (`intentional`) or "Continue without the check"
+    (`unchecked`). Allowed only when the latest check offered it. The text must still be the one
+    that was checked, so the baseline is what he saw. Stored and audited for the PR summary."""
+    now = now or datetime.now(UTC)
+    state = _load_state(settings, request_id, base_revision, ("e_stale",))
+    with _read(settings.db_path) as conn:
+        latest = read_latest_freshness(conn, request_id)
+    if latest is None or which not in stale_options(latest.result):
+        raise EnhanceError("That choice is not available for this freshness result.")
+    texts = _texts_from_facts(facts, state, _policy(settings, request_id))
+    checked = {item.path: item.his_fingerprint for item in latest.result.paths}
+    if any(fingerprint(text) != checked[path] for path, text in texts.items() if text is not None):
+        raise EnhanceError("Your folder changed since the check. Please check again.")
+    result = latest.result.model_copy(update={"override": which})
+    with _write_transaction(settings.db_path) as conn:
+        tx = _Tx(conn, request_id, now)
+        insert_freshness_check(conn, request_id, RECORD_VERSION_BEFORE_UNDERSTAND, result, now)
+        tx.audit("developer", "freshness_override", {"which": which})
+        tx.say("developer", OVERRIDE_LABELS[which])
+        tx.say("assistant", OVERRIDE_REPLIES[which])
+        _save_baselines(tx, texts)
+        new = state.model_copy(update={"step": "e_fresh"})
+        save_enhance_state(conn, new, base_revision, now)
+    return _view(settings, request_id)
+
+
+def _require_targets(state: EnhanceState) -> None:
+    if not state.targets:
+        raise EnhanceError("Confirm the program first; then I can check it is up to date.")
+
+
+def _texts_from_facts(
+    facts: list[FileFact], state: EnhanceState, policy: Policy
+) -> dict[str, str | None]:
+    """His folder's text for each target, in target order. The browser may send exactly the
+    confirmed targets and nothing else (9-48); a file too big or not UTF-8 is refused."""
+    wanted = [target.path for target in state.targets]
+    sent = {normalise_path(item.path): item for item in facts}
+    if len(sent) != len(facts) or set(sent) != set(wanted):
+        raise EnhanceError("The files sent are not the confirmed program(s). Please try again.")
+    limit = policy.workspace_max_file_kb * 1024
+    texts: dict[str, str | None] = {}
+    for path in wanted:
+        fact = sent[path]
+        if fact.too_big or fact.not_utf8:
+            reason = "too big to read" if fact.too_big else "not UTF-8 text"
+            raise EnhanceError(f"`{path}` is {reason}, so I cannot check it.")
+        if not fact.exists:
+            texts[path] = None
+            continue
+        if fact.text is None or len(fact.text.encode("utf-8")) > limit:
+            raise EnhanceError(f"`{path}` could not be read. Please choose the folder again.")
+        if fact.fingerprint is not None and fact.fingerprint != fingerprint(fact.text):
+            raise EnhanceError(f"`{path}` did not arrive intact. Please try again.")
+        texts[path] = fact.text
+    return texts
+
+
+def _save_baselines(tx: _Tx, texts: dict[str, str | None]) -> None:
+    """His text becomes the baseline: today's code for the rest of Phase 9 (D-G)."""
+    saved: dict[str, str] = {}
+    for path, text in texts.items():
+        if text is None:
+            continue
+        insert_workspace_file(
+            tx.conn,
+            WorkspaceFile(
+                request_id=tx.request_id, path=path, file_version=1, kind="baseline", text=text,
+                fingerprint=fingerprint(text), line_ending=line_ending_of(text),
+            ),
+            tx.now,
+        )
+        saved[path] = fingerprint(text)
+    tx.audit("system", "enhance_baseline_taken", {"files": saved})
+
+
+def _check_details(result: FreshnessResult) -> dict:
+    return {
+        "paths": [{"path": item.path, "state": item.state} for item in result.paths],
+        "main_source": result.main_source,
+    }
+
+
 # --- the switch offer on card 1 (D-N) ---
 
 
@@ -338,9 +501,11 @@ def _view(settings: Settings, request_id: str) -> EnhanceView:
     with _read(settings.db_path) as conn:
         state = read_enhance_state(conn, request_id)
         rounds = read_candidates(conn, request_id)
+        latest = read_latest_freshness(conn, request_id)
     if state is None:
         raise EnhanceError(f"Request {request_id} is not an Enhance request.")
     policy = _policy(settings, request_id)
+    stale = state.step == "e_stale" and latest is not None
     return EnhanceView(
         request_id=request_id,
         kind=state.kind,
@@ -353,6 +518,8 @@ def _view(settings: Settings, request_id: str) -> EnhanceView:
         searches_left=max(policy.enhance_find_max_rounds - state.find_rounds_used, 0),
         change_prefill=state.change_prefill,
         messages=list_messages(settings.db_path, request_id),
+        freshness=latest.result if latest else None,
+        stale_options=stale_options(latest.result) if stale else [],
     )
 
 
@@ -524,4 +691,5 @@ def _ensure(conn: sqlite3.Connection) -> None:
     ensure_rulebook_tables(conn)
     ensure_audit_table(conn)
     ensure_understand_tables(conn)
+    ensure_workspace_tables(conn)
     ensure_enhance_tables(conn)

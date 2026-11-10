@@ -93,6 +93,21 @@ def next_step(result: FreshnessResult) -> str:
     return "e_fresh" if result.all_equal else "e_stale"
 
 
+def stale_options(result: FreshnessResult) -> list[str]:
+    """The buttons at `e_stale` (spec section 5, steps 5 and 6). Check again is always there.
+    "Intentional" needs a copy that really differs; "unchecked" needs a main that could not be
+    reached. A file missing from his folder has no text to keep, so neither override is offered."""
+    options = ["check_again"]
+    states = {item.state for item in result.paths}
+    if "missing_in_folder" in states or result.all_equal:
+        return options
+    if "unreachable" in states:
+        options.append("unchecked")
+    elif states & {"differs", "not_on_main"}:
+        options.append("intentional")
+    return options
+
+
 def stale_message(result: FreshnessResult) -> str:
     """The plain words for the chat and the banner (spec section 5, steps 1, 4, 5 and 6)."""
     if result.all_equal:
