@@ -189,6 +189,12 @@ def save_enhance_state(
     return state.model_copy(update={"revision": base_revision + 1})
 
 
+def list_requests_at_step(conn: sqlite3.Connection, step: str) -> list[str]:
+    """Request IDs whose Enhance step is `step` (used at start-up to find cut-off safety nets)."""
+    rows = conn.execute("SELECT request_id, state FROM da_enhance_state ORDER BY request_id")
+    return [row["request_id"] for row in rows if json.loads(row["state"]).get("step") == step]
+
+
 # --- Find rounds ---
 
 

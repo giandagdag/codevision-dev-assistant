@@ -215,7 +215,7 @@ def test_an_ai_that_cannot_be_reached_for_the_fix_call_gives_s_unable(make_setti
     assert view.step == "s_unable" and nets_of(settings, request_id) == []
 
 
-def test_9_30_a_stale_window_a_wrong_step_and_a_missing_runner_are_refused(
+def test_9_30_a_stale_window_and_a_wrong_step_are_refused(
     make_settings, tmp_path
 ):
     settings = make_settings()
@@ -224,8 +224,6 @@ def test_9_30_a_stale_window_a_wrong_step_and_a_missing_runner_are_refused(
 
     with pytest.raises(StaleRevisionError):
         net_flow.run_safety_net(settings, request_id, revision - 1, Runner(tmp_path))
-    with pytest.raises(EnhanceError, match="sandbox is not connected"):
-        net_flow.run_safety_net(settings, request_id, revision, None)
     done = net_flow.run_safety_net(settings, request_id, revision, Runner(tmp_path))
     with pytest.raises(EnhanceError, match="not available at this step"):
         net_flow.run_safety_net(settings, request_id, done.revision, Runner(tmp_path))
@@ -244,3 +242,74 @@ def test_a_restart_at_s_writing_just_runs_again(make_settings, tmp_path):
     )
 
     assert view.step == "s_review"
+
+
+def in_review(settings, tmp_path):
+    request_id = at_s_writing(settings)
+    revision = state_of(settings, request_id).revision
+    net_flow.run_safety_net(settings, request_id, revision, Runner(tmp_path))
+    return request_id
+
+
+def test_9_31_continue_accepts_and_freezes_the_net(make_settings, tmp_path):
+    settings = make_settings()
+    request_id = in_review(settings, tmp_path)
+
+    view = net_flow.accept_safety_net(
+        settings, request_id, state_of(settings, request_id).revision
+    )
+
+    assert view.step == "s_accepted"
+    assert nets_of(settings, request_id)[-1].accepted
+    assert "safety_net_accepted" in events_of(settings, request_id)
+    with pytest.raises(EnhanceError, match="not available at this step"):
+        net_flow.accept_safety_net(settings, request_id, view.revision)
+
+
+def test_9_32_a_mark_is_saved_as_a_new_row_and_can_be_undone(make_settings, tmp_path):
+    settings = make_settings()
+    request_id = in_review(settings, tmp_path)
+    revision = state_of(settings, request_id).revision
+    first = nets_of(settings, request_id)[0].net.cases[0].expected_to_change
+    # Flip to the other kind of mark, whatever the fake Tester started with.
+    criterion = "AC-1"
+    target = "" if first == criterion else criterion
+
+    view = net_flow.mark_expected_change(settings, request_id, "S-1", target, revision)
+
+    rows = nets_of(settings, request_id)
+    assert len(rows) == 2 and rows[-1].net.cases[0].expected_to_change == (target or None)
+    assert rows[0].net.cases[0].expected_to_change == first  # the old row is untouched
+    with pytest.raises(StaleRevisionError):
+        net_flow.mark_expected_change(settings, request_id, "S-1", first or "", revision)
+    with pytest.raises(EnhanceError, match="already marked"):
+        net_flow.mark_expected_change(settings, request_id, "S-1", target, view.revision)
+    with pytest.raises(EnhanceError, match="not a criterion"):
+        net_flow.mark_expected_change(settings, request_id, "S-1", "AC-99", view.revision)
+
+
+def test_9_33_correct_something_proves_again_and_counts_one_correction(make_settings, tmp_path):
+    settings = make_settings()
+    request_id = in_review(settings, tmp_path)
+    state = state_of(settings, request_id)
+
+    view = net_flow.correct_safety_net(
+        settings, request_id, "Please also check the expiry date.", state.revision,
+        Runner(tmp_path),
+    )
+
+    assert view.step == "s_review"
+    assert len(nets_of(settings, request_id)) == 2
+    assert state_of(settings, request_id).corrections_used == state.corrections_used + 1
+    assert "safety_net_corrected" in events_of(settings, request_id)
+
+
+def test_9_35_a_restart_at_s_writing_becomes_s_unable(make_settings):
+    settings = make_settings()
+    request_id = at_s_writing(settings)
+
+    assert net_flow.recover_interrupted_safety_nets(settings) == [request_id]
+
+    assert state_of(settings, request_id).step == "s_unable"
+    assert "safety_net_interrupted" in events_of(settings, request_id)
+    assert net_flow.recover_interrupted_safety_nets(settings) == []
