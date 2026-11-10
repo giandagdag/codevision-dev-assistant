@@ -103,6 +103,28 @@ def check_criteria_have_tests(record: RequestRecord, test_text: str) -> list[Fin
     return found
 
 
+NC_NOT_COVERED_TEXT = "Not covered by the safety net, check manually"
+
+
+def check_nc_items(
+    record: RequestRecord, run_nc_ids: set[str], not_covered: set[str]
+) -> list[Finding]:
+    """Check 1, Phase 9 line: every NC item has a proven safety-net test that was run, or is listed
+    as not covered. A listed one is an FYI (it never lowers the label; the developer saw it at
+    review). One neither run nor listed should not happen, so it is a Should fix."""
+    found = []
+    for item in record.must_not_change:
+        if item.id in run_nc_ids:
+            continue
+        if item.id in not_covered:
+            message = f"{item.id}: {NC_NOT_COVERED_TEXT}. ({item.text})"
+            found.append(_plain(len(found) + 1, 1, "fyi", "", 1, item.id, message, False))
+        else:
+            message = f"{item.id} has no safety-net test that was run and is not listed."
+            found.append(_plain(len(found) + 1, 1, "should_fix", "", 1, item.id, message, False))
+    return found
+
+
 def check_tests_pass(record: RequestRecord, layer_b: LayerBResult) -> list[Finding]:
     """Check 2: every criterion's tests pass. Only a guard: Layer C runs after Layer B passed."""
     failed = set()

@@ -48,6 +48,7 @@ FILE_METHODS = ("write_text", "write_bytes", "read_text", "read_bytes", "unlink"
 FILE_OS_CALLS = ("remove", "unlink", "rmdir", "rename")
 _TEST_NAME = re.compile(r"^test_t(\d+)_ac(\d+)_")
 _TRACE_FILE = re.compile(r'File "([^"]+)"')
+_SAFETY_NAME = re.compile(r"^test_s(\d+)_")  # Phase 9 safety-net methods
 
 
 # --- small helpers ---
@@ -599,9 +600,11 @@ def build_failure_report(
     cases: list[TestCase],
     test_source: str,
     files_to_fix: list[str],
+    safety_notes: dict[str, str] | None = None,
 ) -> FailureReport:
     """Built by plain code, not AI. One item per failed test, with the case, the criterion, the
-    expected sentence (the test's docstring) and the assertion message."""
+    expected sentence (the test's docstring) and the assertion message. `safety_notes` (Phase 9,
+    case ID -> sentence) puts a safety-net test in its own words."""
     by_id = {case.test_id: case for case in cases}
     try:
         methods = find_test_methods(ast.parse(test_source))
@@ -615,14 +618,17 @@ def build_failure_report(
         case = by_id.get(ids[0]) if ids else None
         method = methods.get(item.name)
         docstring = (ast.get_docstring(method) or "").strip() if method else ""
+        safety = _SAFETY_NAME.match(item.name)
+        safety_id = f"S-{safety.group(1)}" if safety else ""
         items.append(
             FailureItem(
-                test_id=ids[0] if ids else item.name,
+                test_id=ids[0] if ids else (safety_id or item.name),
                 criterion_id=ids[1] if ids else "",
                 yours=bool(case and case.source == "developer"),
                 expected=docstring.split("\n")[0] if docstring else "(no description)",
                 message=item.message or item.result,
                 traceback_tail=item.traceback_tail,
+                note=(safety_notes or {}).get(safety_id, ""),
             )
         )
     return FailureReport(
@@ -641,6 +647,9 @@ def report_for_developer(report: FailureReport) -> str:
         lines.append(f"Timed out. The test running was {report.running_test or 'unknown'}.")
     lines += [f"{p.path}: {p.text}" for p in report.layer_a]
     for item in report.items:
+        if item.note:
+            lines.append(f"{item.note} Got: {item.message}")
+            continue
         tag = " (Yours)" if item.yours else ""
         lines.append(
             f"{item.test_id}{tag}, {item.criterion_id}: expected {item.expected} "
