@@ -2,16 +2,19 @@
 
 Version 1.0 APPROVED, 10 Nov 2026 (22:36 SGT). Gian: "go ahead and proceed with your recommendations".
 Written in the project chat from Gian's home test of CVDA-2026-0002 and CVDA-2026-0006 (demo mode).
-All D-x below are option 1 (the recommended one).
+All D-x below are option 1 (the recommended one), except D-E: option 2.
 
-Branch `phase-8-fix-1` (from `auto/phases-7-10`). PR into `auto/phases-7-10`; the chief merges it.
-Build it the normal way: plan, plan review, build in small steps with tests, code review (max 3
-rounds), pytest, ruff, smoke check. Build in a **cloud** session: the laptop team is busy with
-Phase 9 (one worker at a time). **Do not touch `auto/phase-9`.** Phase 9 gets these fixes when it
-merges `auto/phases-7-10` before its own PR (as it did on 9 Nov, 37fe38b).
+Branch `phase-8-fix-1` (spec commit fbe4ab6, from `auto/phases-7-10`). PR into `auto/phases-7-10`;
+the chief merges it. Build it the normal way: plan, plan review, build in small steps with tests, code
+review (max 3 rounds), pytest, ruff, smoke check.
 
-Keep changes surgical: Phase 9 steps 14 to 16 will edit the same screen and Refine files, so every
-line changed here is a line someone may have to merge.
+**When (Gian, 10 Nov 22:47, D-E option 2): queued AFTER Phase 9.** Do not pause or touch Phase 9.
+When the Phase 9 PR is merged into `auto/phases-7-10`, the chief launches the builder on this fix
+(laptop team, as normal). First step of the build: merge `auto/phases-7-10` into `phase-8-fix-1`, so
+the fix is built on top of Phase 9. Then Phase 10.
+
+Keep changes surgical: Phase 9 has changed the same screen and Refine files. Check each fix still
+applies to the Phase 9 version of the file (for example Phase 9 Refine steps and enhance requests).
 
 ## 1. The bugs
 
@@ -77,7 +80,7 @@ If the cause cannot be found in 2 attempts, stop and report (CLAUDE.md stop rule
 - **D-B Undo my edits:** 1. Offer the last tested set when untested edits exist (F5). 2. Never (today).
 - **D-C Discover after a revision:** 1. The three Phase 3 buttons (F4), changes Phase 8 D-D. 2. One click (today).
 - **D-D Check run wording:** 1. Screen-only TESTING (F6). 2. A real TESTING status (more moves and tests, same result on screen).
-- **D-E When:** 1. Now, in a cloud session in parallel with Phase 9, PR into `auto/phases-7-10`. 2. After Phase 9 finishes.
+- **D-E When:** CHOSEN option 2 by Gian (10 Nov 22:47): after Phase 9 is merged, before Phase 10. (Option 1 was now, in a cloud session in parallel.)
 - **Parked (Phase 9 or later):** a warning when his edit adds behaviour no criterion covers.
 
 ## 6. Acceptance criteria (Given / When / Then)
