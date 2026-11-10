@@ -26,6 +26,7 @@ EnhanceStep = Literal[
     "s_unable",
     "s_review",
     "s_accepted",
+    "escalated",  # Get help was pressed (spec section 2, test 9-45)
 ]
 STEP_LABELS: dict[str, str] = {
     "e_find": "FIND THE PROGRAM",
@@ -36,6 +37,7 @@ STEP_LABELS: dict[str, str] = {
     "s_unable": "SAFETY NET NOT READY",
     "s_review": "SAFETY NET READY",
     "s_accepted": "",  # empty = show the normal status pill
+    "escalated": "",  # the status pill shows ESCALATION REQUIRED
 }
 
 HowFound = Literal["name", "meaning", "name+meaning"]
@@ -163,6 +165,8 @@ class EnhanceState(_Shape):
     targets: list[TargetChoice] = Field(default_factory=list)
     # "This is a fix" pre-fills "What should change?" with this text (D-M).
     change_prefill: str = ""
+    # `Escalated in Enhance: <step>` after Get help, else empty (Phase 10 reads it).
+    open_item: str = ""
     # Own revision: goes up by 1 with every save (stale-save protection, F1).
     revision: int = Field(default=1, ge=1)
 
