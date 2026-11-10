@@ -46,6 +46,11 @@ from db_table_functions.db_tbl_da_discovery import (
     read_escalation_open_item,
     read_latest_result,
 )
+from db_table_functions.db_tbl_da_enhance import (
+    ensure_enhance_tables,
+    read_enhance_state,
+    save_enhance_state,
+)
 from db_table_functions.db_tbl_da_requests import read_request, update_request
 from db_table_functions.db_tbl_da_rulebook import ensure_rulebook_tables
 from db_table_functions.db_tbl_da_understand import (
@@ -163,6 +168,7 @@ def confirm_discovery(
             f"Discovery confirmed after round {rounds}. Now planning how it will be built.",
             now,
         )
+        _start_safety_net_step(conn, request_id, now)
     logger.info("Discovery confirmed for %s", request_id)
     return get_discovery_view(settings, request_id)
 
@@ -386,8 +392,19 @@ def _write_transaction(db_path: Path) -> Iterator[sqlite3.Connection]:
         ensure_rulebook_tables(conn)
         ensure_audit_table(conn)
         ensure_discovery_tables(conn)
+        ensure_enhance_tables(conn)
         begin_write(conn)
         yield conn
+
+
+def _start_safety_net_step(conn: sqlite3.Connection, request_id: str, now: datetime) -> None:
+    """An enhance request goes on to the safety net (spec section 8): its Enhance step becomes
+    `s_writing`. Read inside this transaction, so its own revision cannot be stale. A new-program
+    request has no Enhance state and is left alone."""
+    state = read_enhance_state(conn, request_id)
+    if state is not None and state.step == "e_fresh":
+        moved = state.model_copy(update={"step": "s_writing"})
+        save_enhance_state(conn, moved, state.revision, now)
 
 
 def _require_request(conn: sqlite3.Connection, request_id: str) -> Request:
