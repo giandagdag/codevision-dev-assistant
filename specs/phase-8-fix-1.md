@@ -1,6 +1,6 @@
 # Phase 8 fix 1: what Gian found testing Refine at home
 
-Version 1.0 APPROVED, 10 Nov 2026 (22:36 SGT). Gian: "go ahead and proceed with your recommendations".
+Version 1.1 APPROVED, 10 Nov 2026 (22:36 SGT; timing changed 22:47). Gian: "go ahead and proceed with your recommendations".
 Written in the project chat from Gian's home test of CVDA-2026-0002 and CVDA-2026-0006 (demo mode).
 All D-x below are option 1 (the recommended one), except D-E: option 2.
 
