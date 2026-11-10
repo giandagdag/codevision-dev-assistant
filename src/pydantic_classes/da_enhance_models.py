@@ -7,7 +7,7 @@ Plain code builds and checks all of these (da_enhance_checks.py). AS400 picture:
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from pydantic_classes.da_models import REQUEST_ID_PATTERN
 from pydantic_classes.da_request_record_models import (
@@ -150,6 +150,47 @@ class EnhanceState(_Shape):
     corrections_used: int = Field(default=0, ge=0)
     # Own revision: goes up by 1 with every save (stale-save protection, F1).
     revision: int = Field(default=1, ge=1)
+
+
+class SafetyNetRow(_Shape):
+    """One saved version of the safety net (da_safety_nets, append-only). Accepting appends a copy
+    with `accepted` True; the latest accepted row per record version is in force."""
+
+    request_id: str = Field(pattern=REQUEST_ID_PATTERN)
+    net_version: int = Field(ge=1)
+    record_version: int = Field(ge=1)
+    net: SafetyNet
+    fingerprint: str = ""
+    # LayerBResult as a plain dictionary (proof run results), empty before the proof.
+    proof: dict = Field(default_factory=dict)
+    accepted: bool = False
+    created_at: AwareDatetime | None = None
+
+
+class FreshnessCheckRow(_Shape):
+    """One saved freshness check (da_freshness_checks, append-only)."""
+
+    request_id: str = Field(pattern=REQUEST_ID_PATTERN)
+    check_number: int = Field(ge=1)
+    record_version: int = Field(ge=1)
+    result: FreshnessResult
+    created_at: AwareDatetime | None = None
+
+
+UnassignedState = Literal["open", "confirmed", "changed"]
+
+
+class UnassignedFile(_Shape):
+    """A file in no capability, with the capability the developer picked (spec section 11)."""
+
+    unassigned_id: int = 0
+    path: str = Field(min_length=1)
+    picked_capability: str = Field(min_length=1)
+    request_id: str = Field(pattern=REQUEST_ID_PATTERN)
+    state: UnassignedState = "open"
+    resolved_by: str = ""
+    resolved_at: AwareDatetime | None = None
+    created_at: AwareDatetime | None = None
 
 
 def step_label(step: str) -> str:
