@@ -29,7 +29,7 @@ Findings (each cites hit numbers):
 Hits. The number in square brackets is the only way you may refer to one:
 
 {{hits}}
-
+{{enhance}}
 ## Rules the plan must follow
 
 {{policy}}

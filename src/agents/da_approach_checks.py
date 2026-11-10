@@ -67,9 +67,11 @@ def find_approach_problems(
     discovery: DiscoveryResult,
     answered_questions: set[str],
     call: str,
+    targets: list[str] | None = None,
 ) -> list[str]:
     """Every reason the reply cannot be used. An empty list means it is fine."""
     problems = _file_problems(reply, policy)
+    problems += _target_problems(reply, targets or [])
     problems += _needs_people_problems(reply)
     problems += _reuse_problems(reply, discovery)
     problems += _library_problems(reply, policy)
@@ -113,6 +115,22 @@ def _file_problems(reply: ApproachReply, policy: Policy) -> list[str]:
         if lower in seen:
             problems.append(f"{path} is listed more than once.")
         seen.add(lower)
+    return problems
+
+
+def _target_problems(reply: ApproachReply, targets: list[str]) -> list[str]:
+    """Phase 9 (spec section 9): each confirmed target appears in the file plan as `modify`.
+    A target that a person must change (needs_people) is the one allowed exception."""
+    modified = {normalise_path(i.path).lower() for i in reply.files if i.action == "modify"}
+    people = {normalise_path(i.path).lower() for i in reply.needs_people}
+    problems = []
+    for target in targets:
+        lower = normalise_path(target).lower()
+        if lower not in modified and lower not in people:
+            problems.append(
+                f"{normalise_path(target)} is the program being enhanced. List it in files "
+                "with action modify."
+            )
     return problems
 
 
@@ -412,8 +430,12 @@ def compute_gate(
     state: ApproachState | None,
     plan: TestPlanVersion | None,
     confirmed_round_record_version: int | None = None,
+    net_accepted: bool = False,
 ) -> list[GateCheck]:
     """The 4 checks. A false check carries a plain sentence saying why.
+
+    Phase 9 (spec section 9): for an enhance or fix request, check 4 also needs the safety net
+    accepted for this record version (`net_accepted`). A new-program request ignores it.
 
     `confirmed_round_record_version` is the request version the confirmed Discover round was
     built from (N2). None means the caller has no such round to compare, so only the round
@@ -466,6 +488,8 @@ def compute_gate(
         )
     )
     reason = _plan_problem(record, state, plan)
+    if not reason and record is not None and record.kind != "new" and not net_accepted:
+        reason = "The safety net has not been accepted for this version of the request."
     checks.append(
         GateCheck(
             name=GATE_NAMES[3],
