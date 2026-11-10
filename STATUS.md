@@ -1,8 +1,8 @@
 # STATUS (the chief's whole memory, max 60 lines)
 
-Usage: 5h 48% / weekly 78% (as of 09 Nov 18:21 SGT), stopped no
+Usage: 5h 0% / weekly 100% (as of 11 Nov 05:51 SGT), stopped no
 Stopped: no
-Running: builder since 18:21 SGT
+Running: builder since 05:51 SGT
 
 ## Where we are
 - main has Phases 0 to 6 and Phase A merged (PR #19, 7 Nov). Integration branch: auto/phases-7-10.
@@ -24,7 +24,8 @@ Running: builder since 18:21 SGT
 - 09 Nov 16:3x: PR #35 became MERGEABLE (conflict fixed outside), merged into auto/phases-7-10 by the helper. Phase 8 DONE. Issue #36 (conflict) has no comments; close it if still open.
 - Issue #36 closed.
 - 09 Nov 17:5x: Phase 9 spec DRAFT v0.1 checked. D-A to D-N all Chosen by chief, 6.1 (option 1), none is a work fact. Committed and pushed on auto/phase-9 (46df9b3). Issues: #38 WF-1, #39 WF-2, #40 WF-4 (needs-gian); #41 WF-3, #42 WF-5, #43 WF-6, #44 WF-7, #45 WF-8 (needs-work-test).
-- Next: builder continue Phase 9 from step 1 (code written, uncommitted, run tests then commit), then steps 2 and 3
+- Gian 10 Nov 23:38: after the Phase 9 PR is merged, set Next to: builder Phase 8 fix 1 (issue #46, spec specs/phase-8-fix-1.md v1.1 on branch phase-8-fix-1; first merge auto/phases-7-10 into it). After fix 1 is merged, do NOT start Phase 10 before Thu 12 Nov 19:00 SGT: set Next to waiting for Gian (Phase 10 after Thursday reset). Fix 5b (Claude, 10 Nov 23:50, Gian asked: build overnight on credits) changed ops/usage_guard.py, tests/ops/test_ops_usage_guard.py, docs/automation.md on disk: commit those 3 alone as Phase A fix 5b and push, before the next Phase 9 commit.
+- Next: builder continue Phase 9 from step 18a (fix code review round 1 Must fix, see specs/phase-9-plan.md)
 
 ## Phase 7 facts
 - specs/phase-7-facts.md (Q9 bake-off and Q7 context limit are work facts).
@@ -42,19 +43,18 @@ Running: builder since 18:21 SGT
 - 07 Nov: Phase 7 built and merged (PR #23). Phase 8 spec written, committed, approved by Gian (19:30).
 - 07 Nov 14:07 SGT: Gian decided: a Tester re-run that finds a Must fix ends NOT_PASSING, no extra round.
 - 07 Nov 18:20 SGT: Gian: P31 accepted. Status board (Phase A fix 2) built in parallel in the cloud.
-- 07 Nov 19:55 to 08 Nov 00:51: chief ticks repeated; merge denied 3x, nothing changed each time. Waiting for Gian.
 - 08 Nov SGT: chief: fetched, origin/auto/phase-8 still lacks origin/auto/phases-7-10. No retry. Trimmed Log to fit 60 lines.
 ## Log
-- 09 Nov 12:40 SGT: builder: I stopped before finishing: the usage guard fired at 87% (it resets 09 Nov 13:49 SGT). 16a, 16b and 16c are built and pushed to `auto/phase-8`. 16d is written b [5 tool calls denied] -> logs/workers/20261109-044029-builder.json
-- 09 Nov 12:40 SGT: worker note: # Worker note: Phase 8 step 16 (stopped by the usage guard, 9 Nov 2026)  Branch `auto/phase-8`. The usage guard fired at 87% (resets 09 Nov 13:49 SGT). Nothing is lost on disk, but 16d is NOT committe
-- 09 Nov 13:51 SGT: chief: I relaunched the Phase 8 builder on `auto/phase-8` and recorded it in `STATUS.md`. It is running in the background and I haven't seen a result yet. -> logs/workers/20261109-055101-chief.json
-- 09 Nov 14:26 SGT: builder: Phase 8 is finished and PR #35 is open into `auto/phases-7-10`. The Re-scan and Restore buttons have not been clicked in a real browser, because the browser tes [3 tool calls denied] -> logs/workers/20261109-062625-builder.json
-- 09 Nov 14:51 SGT: chief: PR #35 (Phase 8) has green checks, but I couldn't merge it. The merge helper refused because GitHub says the PR conflicts with `auto/phases-7-10`. -> logs/workers/20261109-065101-chief.json
-- 09 Nov 15:21 SGT: chief: Still conflicting, and issue #36 has no answer. Nothing to change; STATUS.md's Next line is already correct. -> logs/workers/20261109-072103-chief.json
-- 09 Nov 15:51 SGT: chief: Nothing has changed this step. PR #35 still conflicts with `auto/phases-7-10`. Issue #36 shows no output from `gh issue view`, so I'm treating it as unanswered. -> logs/workers/20261109-075101-chief.json
-- 09 Nov 16:21 SGT: chief: I merged PR #35 (Phase 8) into `auto/phases-7-10`. When I checked, GitHub showed it as mergeable again, so the conflict was fixed outside this step. I didn't to -> logs/workers/20261109-082102-chief.json
-- 09 Nov 16:51 SGT: chief: I launched the spec-writer for Phase 9 (Enhance existing program). It is running in the background and has not returned anything yet. No phase-9 spec existed, a -> logs/workers/20261109-085101-chief.json
-- 09 Nov 16:57 SGT: spec-writer: I've written `specs/phase-9-enhance.md` as DRAFT v0.1. It follows the Phase 7 and 8 layout, takes its scope from redesign sections 2, 5.1, 5.2, 5.8 and 5.10, an -> logs/workers/20261109-085705-spec-writer.json
-- 09 Nov 17:21 SGT: chief: I checked the Phase 9 spec and pushed it to `auto/phase-9` as commit `46df9b3`. Only the spec is in that commit. Gian has to approve the spec before the builder -> logs/workers/20261109-092101-chief.json
-- 09 Nov 17:51 SGT: chief: I made no changes this step. `STATUS.md` still says to wait for Gian to approve the Phase 9 spec, and it has no approval line. -> logs/workers/20261109-095102-chief.json
-- 09 Nov 18:21 SGT: chief: I launched the Phase 9 builder on `auto/phase-9`. It writes the plan in `specs/phase-9-plan.md` from the approved spec v1.0, then asks the `plan-reviewer` to re -> logs/workers/20261109-102101-chief.json
+- 11 Nov 00:42 SGT: builder: Step 12b is finished, committed and pushed to `auto/phase-9` (commit 49962f0). I stopped there on purpose, so steps 13 and 14 were not started. [1 tool call denied] -> logs/workers/20261110-164220-builder.json
+- 11 Nov 00:51 SGT: chief: I launched the Phase 9 builder to continue from step 13 (Approach and gate). It runs in the background, so I haven't seen a result yet. The next tick will log w -> logs/workers/20261110-165101-chief.json
+- 11 Nov 01:44 SGT: builder: I finished steps 13 and 14a of Phase 9 and pushed both to `auto/phase-9`. The full suite last ran before step 14a and had 1 failure. After 14a, only the `build  -> logs/workers/20261110-174455-builder.json
+- 11 Nov 01:44 SGT: worker note: # Worker note (Phase 9 run, 11 Nov)  Done this run, each committed and pushed to `auto/phase-9`: - Step 13 (cd52d73): Approach and gate for an enhance request. Targets must be `modify` in the file   p
+- 11 Nov 01:51 SGT: chief: I relaunched the Phase 9 builder, as the `Next:` line said, to continue from step 14b and then do 14c. It runs in the background, so I haven't seen a result yet -> logs/workers/20261110-175101-chief.json
+- 11 Nov 02:25 SGT: builder: Steps 14b and 14c are built, committed and pushed to `auto/phase-9`. The next step in STATUS.md is now step 15 (Refine and Get help). One test in the full run f [1 tool call denied] -> logs/workers/20261110-182557-builder.json
+- 11 Nov 02:51 SGT: chief: I launched the Phase 9 builder to continue from step 15 (Refine and Get help), as the `Next:` line said. It runs in the background, so I have no result yet. The -> logs/workers/20261110-185101-chief.json
+- 11 Nov 03:23 SGT: builder: The full run finished with 1 failed, 2846 passed and 38 skipped. The one failure is a Windows process-cleanup test in `tests/test_da_sandbox.py`. It checks that -> logs/workers/20261110-192304-builder.json
+- 11 Nov 03:51 SGT: chief: I launched the Phase 9 builder to continue from step 16c, as the `Next:` line said. It runs in the background, so I have no result yet. The tick will log the re -> logs/workers/20261110-195101-chief.json
+- 11 Nov 04:22 SGT: builder: Step 16c is done and pushed to `auto/phase-9` (commit 4bd39fc). The full run of `pytest` has 1 failure left, the sandbox test `test_a_child_left_running_by_a_te -> logs/workers/20261110-202235-builder.json
+- 11 Nov 04:51 SGT: chief: I launched the Phase 9 builder with the prompt "continue Phase 9 from step 17", as the `Next:` line said. It runs in the background, so I have no result yet. Th -> logs/workers/20261110-205101-chief.json
+- 11 Nov 05:28 SGT: builder: Step 17 is built, committed and pushed to `auto/phase-9` (commit d35cafc). The code review (step 18) is not started; I set it as the next step. -> logs/workers/20261110-212850-builder.json
+- 11 Nov 05:51 SGT: chief: I launched the Phase 9 builder to continue from step 18 (code review, max 3 rounds), as the `Next:` line said. It runs in the background, so there is no result  -> logs/workers/20261110-215101-chief.json

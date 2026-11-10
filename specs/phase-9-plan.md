@@ -106,6 +106,20 @@ Code review only after the last step (max 3 rounds). A stop rule firing is writt
 
 Steps may be split (a, b) when a step grows past what one commit can test; the split is noted here.
 
+### Code review round 1 (4 Must fix) and the fix steps (added 11 Nov)
+The engine is fine; the screen is not wired (same kind of gap as Phase 8 round 1). Fix steps, each with
+a click-through style test that calls the callback, not the engine:
+- 18a. Card 1 switch: `switch_to_enhance` must drop or reset card 1's Understand session so
+  `start_understand` works (test: switch to `e_fresh` to `start_understand`). Add the two buttons
+  "Switch to Enhance or fix" and "No, this is new" with callbacks.
+- 18b. Safety net wiring: start `run_safety_net` in the background after Discover confirm, buttons
+  Continue to Approach, Correct something (text), Try again, Get help, the mark dropdown; call
+  `recover_interrupted_safety_nets` at server start.
+- 18c. Render `impact_card`, `safety_net_tab`, `test_plan_net_section`, `pill_text`; route the `s_*`
+  steps to a screen. Functions-in-scope tick list wired to `set_functions_in_scope`.
+- 18d. Should fix: multi-tick of candidates with "Show other matches"; README known-gap text; re-run
+  full pytest, ruff, smoke; code review round 2.
+
 ## Plan review 1 (0 Must fix) and what I take from it
 - Pre-split: 9a (start, switch offer, search, pick, fix, capability), 9b (confirm, freshness run, stale
   buttons, baseline, server-side list of paths the browser may read: targets before Approach, planned
