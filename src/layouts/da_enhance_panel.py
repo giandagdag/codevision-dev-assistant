@@ -61,6 +61,11 @@ KEY_UNDERSTAND = "understand"
 KEY_HELP = "help"
 KEY_PICK = "pick"
 PICK_SEPARATOR = "|"
+KEY_CONTINUE = "continue"
+KEY_TRY_AGAIN = "try_again"
+CONTINUE_LABEL = "Continue to Approach"
+TRY_AGAIN_LABEL = "Try again"
+CORRECT_LABEL = "Correct something"  # the Send button at s_review: the text is his correction
 UNDERSTAND_LABEL = "Describe the change"
 FIX_LABEL = "This is a fix"
 BROWSER_PREFIX = "enhance_"
@@ -93,6 +98,10 @@ def enhance_buttons(view: EnhanceView) -> list[tuple[str, str]]:
             buttons.append((KEY_FIX, FIX_LABEL))
     if view.step == "e_fresh" and not view.understand_started:
         buttons.append((KEY_UNDERSTAND, UNDERSTAND_LABEL))
+    if view.step == "s_review":
+        buttons.append((KEY_CONTINUE, CONTINUE_LABEL))
+    if view.step == "s_unable":
+        buttons.append((KEY_TRY_AGAIN, TRY_AGAIN_LABEL))
     if view.step in HELP_STATUS:
         buttons.append((KEY_HELP, HELP_BUTTON))
     return buttons
@@ -123,6 +132,15 @@ def enhance_composer(view: EnhanceView):
             typing_prompt="Name the program or describe it, then press Search"
             if buttons
             else "",
+        )
+    elif view.step == "s_review":
+        composer = page._composer(
+            "choices",
+            [label for _key, label in buttons],
+            False,
+            "",
+            send_label=CORRECT_LABEL,
+            typing_prompt="Tell me what to correct, then press Correct something",
         )
     else:
         composer = page._composer(
@@ -268,8 +286,33 @@ def after_mark(case: SafetyCase) -> str:
     return MUST_STILL_PASS
 
 
-def safety_net_tab(row: SafetyNetRow | None) -> list:
-    """The Safety net tab (spec section 8, step 6): banner, table, and the not-covered card."""
+MARK_TYPE = "da-net-mark"  # pattern id of the "After the change" dropdowns (step 18b)
+MARK_NONE_VALUE = "none"  # a dropdown cannot hold an empty value; the callback maps it back
+
+
+def mark_options(criteria: list[str]) -> list[dict]:
+    """The choices of one dropdown: "Must still pass", or "Expected to change (AC-n)"."""
+    return [{"value": MARK_NONE_VALUE, "label": MUST_STILL_PASS}] + [
+        {"value": item, "label": f"Expected to change ({item})"} for item in criteria
+    ]
+
+
+def _after_cell(case: SafetyCase, criteria: list[str] | None):
+    """Text, or (while the net is in review) a dropdown he can change."""
+    if criteria is None:
+        return after_mark(case)
+    return dmc.Select(
+        id={"type": MARK_TYPE, "index": case.id},
+        data=mark_options(criteria),
+        value=case.expected_to_change or MARK_NONE_VALUE,
+        allowDeselect=False,
+        size="xs",
+    )
+
+
+def safety_net_tab(row: SafetyNetRow | None, mark_criteria: list[str] | None = None) -> list:
+    """The Safety net tab (spec section 8, step 6): banner, table, and the not-covered card.
+    `mark_criteria` (the AC IDs) turns the "After the change" column into dropdowns; None = text."""
     if row is None:
         return [dmc.Text(NET_EMPTY, c=da_styles.MUTED, size="sm")]
     net = row.net
@@ -290,7 +333,7 @@ def safety_net_tab(row: SafetyNetRow | None) -> list:
                 [
                     dmc.TableTd(dmc.Badge(case.id, variant="light", style=page.ID_BADGE_STYLE)),
                     dmc.TableTd(case.today_behaviour),
-                    dmc.TableTd(after_mark(case)),
+                    dmc.TableTd(_after_cell(case, mark_criteria)),
                 ]
             )
             for case in net.cases

@@ -18,6 +18,8 @@ from agents import da_build_flow as build_flow
 from agents import da_build_runner as build_runner
 from agents import da_enhance_flow as enhance_flow
 from agents import da_enhance_help as enhance_help
+from agents import da_safety_net_flow as net_flow
+from agents import da_safety_net_runner as net_runner
 from agents import da_tester_flow as tester_flow
 from agents import da_workspace_flow as workspace_flow
 from agents.da_discover_flow import (
@@ -87,10 +89,14 @@ from layouts.da_developer_assistant_page import (
     render_workspace,
 )
 from layouts.da_enhance_panel import (
+    KEY_CONTINUE,
     KEY_FIX,
     KEY_HELP,
     KEY_PICK,
+    KEY_TRY_AGAIN,
     KEY_UNDERSTAND,
+    MARK_NONE_VALUE,
+    MARK_TYPE,
     PICK_SEPARATOR,
     enhance_buttons,
     render_enhance_workspace,
@@ -290,6 +296,33 @@ def perform_switch_answer(settings: Settings, trigger, state, refresh):
     return (refresh or 0) + 1, ""
 
 
+def change_mark(values, state, refresh):
+    """A dropdown of the "After the change" column changed on the Safety net tab (step 18b)."""
+    trigger = ctx.triggered_id
+    if not isinstance(trigger, dict) or trigger.get("type") != MARK_TYPE:
+        raise PreventUpdate
+    value = ctx.triggered[0]["value"]
+    if value is None:
+        raise PreventUpdate
+    return perform_mark(get_settings(), trigger["index"], value, state, refresh)
+
+
+def perform_mark(settings: Settings, case_id: str, value: str, state, refresh):
+    """Call mark_expected_change. A mark that is already saved (the dropdown fires when it is
+    drawn) changes nothing and shows no message. Returns (refresh counter, message)."""
+    state = state or {}
+    mark = "" if value == MARK_NONE_VALUE else value
+    try:
+        net_flow.mark_expected_change(
+            settings, state.get("request_id"), case_id, mark, state.get("revision")
+        )
+    except SHOWN_ERRORS as error:
+        if "already marked" in str(error):
+            raise PreventUpdate from None
+        return no_update, str(error)
+    return (refresh or 0) + 1, ""
+
+
 def handle_action(send_clicks, choice_clicks, skip_clicks, text, state, refresh):
     """Send, a choice button or Skip was pressed."""
     trigger = ctx.triggered_id
@@ -316,7 +349,7 @@ def perform_action(settings: Settings, trigger, text, state, refresh):
             # Phase 8: Send is Refine's (the Refine box, a correction, the bug description).
             message = run_refine(settings, "send", state, text or "")
         elif state.get("enhance") and trigger != SKIP_ID:
-            _enhance_action(settings, trigger, request_id, revision, text)
+            message = _enhance_action(settings, trigger, request_id, revision, text)
         elif state.get("build") and trigger != SKIP_ID:
             _build_action(settings, trigger, request_id, revision)
         elif state.get("workspace") and trigger != SKIP_ID:
@@ -347,13 +380,18 @@ def perform_action(settings: Settings, trigger, text, state, refresh):
     return (refresh or 0) + 1, no_update, message
 
 
-def _enhance_action(settings: Settings, trigger, request_id: str, revision: int, text) -> None:
+def _enhance_action(settings: Settings, trigger, request_id: str, revision: int, text) -> str:
     """The one Enhance engine function a click stands for (Phase 9, step 16c). Send is a search.
     A button is looked up again from the saved request: an old window, or an index with no
     button behind it, gets the stale-window message. Every check lives in the engine."""
     if trigger == SEND_ID:
+        view = enhance_flow.get_enhance_view(settings, request_id)
+        if view is not None and view.step == "s_review":
+            # "Correct something": slow (an AI call and a proof), the busy mode covers the wait.
+            net_flow.correct_safety_net(settings, request_id, text or "", revision)
+            return ""
         enhance_flow.find_program(settings, request_id, text or "", revision)
-        return
+        return ""
     if not _is_choice(trigger):
         raise PreventUpdate
     view = enhance_flow.get_enhance_view(settings, request_id)
@@ -368,12 +406,19 @@ def _enhance_action(settings: Settings, trigger, request_id: str, revision: int,
         enhance_help.request_help(settings, request_id, revision)
     elif key == KEY_UNDERSTAND:
         enhance_flow.start_understand(settings, request_id, revision)
+    elif key == KEY_TRY_AGAIN:
+        # The write runs in the background; the screen shows "writing" while it does (F3).
+        net_runner.submit_safety_net(settings, request_id, revision)
+    elif key == KEY_CONTINUE:
+        net_flow.accept_safety_net(settings, request_id, revision)
+        return _start_by_itself(lambda: _start_approach_now(settings, request_id))
     elif key.startswith(KEY_PICK + PICK_SEPARATOR):
         _, path, capability = key.split(PICK_SEPARATOR, 2)
         picks = {path: capability} if capability else {}
         enhance_flow.confirm_targets(settings, request_id, [path], picks, revision)
     else:
         raise PreventUpdate
+    return ""
 
 
 def _start_by_itself(step) -> str:
@@ -559,6 +604,11 @@ def _discover_choice(settings: Settings, request_id: str, key: str, revision: in
         start_discovery(settings, request_id, revision)
     elif key == CONFIRM_KEY:
         confirm_discovery(settings, request_id, revision)
+        enhance = enhance_flow.get_enhance_view(settings, request_id)
+        if enhance is not None and enhance.step == "s_writing":
+            # Phase 9: an enhance request writes its safety net first; Approach comes after OK.
+            net_runner.submit_safety_net(settings, request_id, enhance.revision)
+            return ""
         return _start_by_itself(lambda: _start_approach_now(settings, request_id))
     elif key == ESCALATE_KEY:
         escalate_discovery(settings, request_id, revision)
@@ -688,3 +738,13 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
         State(REFRESH_ID, "data"),
         prevent_initial_call=True,
     )(answer_switch_offer)
+
+    # The "After the change" dropdowns of the Safety net tab (step 18b).
+    app.callback(
+        Output(REFRESH_ID, "data", allow_duplicate=True),
+        Output(MESSAGE_ID, "children", allow_duplicate=True),
+        Input({"type": MARK_TYPE, "index": ALL}, "value"),
+        State(STATE_ID, "data"),
+        State(REFRESH_ID, "data"),
+        prevent_initial_call=True,
+    )(change_mark)

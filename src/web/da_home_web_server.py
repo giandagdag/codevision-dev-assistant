@@ -18,6 +18,7 @@ from dash import Dash, dcc  # noqa: E402
 from dash_iconify import DashIconify  # noqa: E402
 
 from agents.da_build_runner import recover_interrupted_builds  # noqa: E402
+from agents.da_safety_net_flow import recover_interrupted_safety_nets  # noqa: E402
 from callbacks.screen_callbacks.da_developer_assistant_page_callbacks import (  # noqa: E402
     get_settings,
     register_da_developer_assistant_page_callbacks,
@@ -105,6 +106,9 @@ def main() -> int:
     # restart. Mark it paused; Try again resumes it from the last saved step (spec section 10).
     for request_id in recover_interrupted_builds(settings):
         print(f"Build of {request_id} was paused by the restart. Open it and press Try again.")
+    # Same for a safety net that was being written (Phase 9, F3): Try again runs it again.
+    for request_id in recover_interrupted_safety_nets(settings):
+        print(f"The safety net of {request_id} was cut off by the restart. Press Try again.")
     create_app().run(host=HOST, port=PORT, debug=False)
     return 0
 
