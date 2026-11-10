@@ -74,7 +74,7 @@ If the cause cannot be found in 2 attempts, stop and report (CLAUDE.md stop rule
 - F6 words come from one place (constants), so Phase 9 can reuse them.
 - The Refine cap, budgets and audit events are unchanged, except F4's escalate event.
 
-## 5. Choices (D-x). DECIDED: option 1 for all (Gian, 10 Nov 22:36)
+## 5. Choices (D-x). DECIDED: option 1 for D-A to D-D (Gian, 10 Nov 22:36), option 2 for D-E (22:47)
 
 - **D-A Pending test display:** 1. Row on the Tests tab (F1). 2. Chat only (today). 3. A separate "Pending" box.
 - **D-B Undo my edits:** 1. Offer the last tested set when untested edits exist (F5). 2. Never (today).
@@ -104,6 +104,6 @@ If the cause cannot be found in 2 attempts, stop and report (CLAUDE.md stop rule
 ## 7. Out of scope
 
 - P31 (Windows-only sandbox child-process test). Still open, still must be fixed before `main`.
-- Any Phase 9 feature or file that exists only on `auto/phase-9`.
+- New Phase 9 features. Only change Phase 9 code where a fix above needs it (say so in the plan).
 - The Audit tab (greyed today as planned).
 - The parked "behaviour no criterion covers" warning.
