@@ -125,6 +125,19 @@ def check_nc_items(
     return found
 
 
+def check_still_old(still_old: list[tuple[str, str]]) -> list[Finding]:
+    """Phase 9 (D-G): (case ID, AC ID) pairs whose expected-to-change test still passes. An FYI
+    only: it never changes the label."""
+    found = []
+    for case_id, ac_id in still_old:
+        message = (
+            f"{ac_id} was meant to change this; {case_id} still shows the old result. "
+            f"Check the {ac_id} tests."
+        )
+        found.append(_plain(len(found) + 1, 1, "fyi", "", 1, ac_id, message, False))
+    return found
+
+
 def check_tests_pass(record: RequestRecord, layer_b: LayerBResult) -> list[Finding]:
     """Check 2: every criterion's tests pass. Only a guard: Layer C runs after Layer B passed."""
     failed = set()

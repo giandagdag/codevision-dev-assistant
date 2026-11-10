@@ -124,6 +124,73 @@ def test_9_14_after_updating_the_folder_check_again_passes(settings, confirmed):
     assert [v.text for v in baselines(settings, again.request_id)] == [MAIN_TEXT]
 
 
+# --- step 14b: freshness again at the first workspace check (spec section 5, step 8) ---
+
+
+@pytest.fixture
+def fresh(settings, confirmed):
+    return flow.run_freshness(settings, confirmed.request_id, [fact()], confirmed.revision)
+
+
+def change_main(main_dir, text):
+    (main_dir / LIMITS).write_bytes(text.encode("utf-8"))
+
+
+def test_recheck_with_main_unchanged_says_nothing(settings, fresh):
+    assert flow.recheck_main(settings, fresh.request_id) is None
+    assert len(checks(settings, fresh.request_id)) == 1
+
+
+def test_recheck_with_main_changed_since_find_shows_the_stale_banner_again(
+    settings, fresh, main_dir
+):
+    change_main(main_dir, MAIN_TEXT + "# someone else\n")
+
+    result = flow.recheck_main(settings, fresh.request_id)
+
+    assert [p.state for p in result.paths] == ["differs"]
+    view = flow.get_enhance_view(settings, fresh.request_id)
+    assert view.step == "e_stale" and view.stale_options == ["check_again", "intentional"]
+    assert LIMITS in view.messages[-1].text and "git pull" in view.messages[-1].text
+    assert len(checks(settings, fresh.request_id)) == 2
+    assert "freshness_checked" in events(settings, fresh.request_id)
+
+
+def test_after_a_recheck_check_again_works_and_takes_a_new_baseline(settings, fresh, main_dir):
+    new_main = MAIN_TEXT + "# someone else\n"
+    change_main(main_dir, new_main)
+    flow.recheck_main(settings, fresh.request_id)
+    stale = flow.get_enhance_view(settings, fresh.request_id)
+
+    again = flow.run_freshness(settings, fresh.request_id, [fact(new_main)], stale.revision)
+
+    assert again.step == "e_fresh"
+    assert [v.text for v in baselines(settings, fresh.request_id)][-1] == new_main
+
+
+def test_recheck_when_main_lost_the_file_is_stale(settings, fresh, main_dir):
+    (main_dir / LIMITS).unlink()
+
+    result = flow.recheck_main(settings, fresh.request_id)
+
+    assert [p.state for p in result.paths] == ["not_on_main"]
+
+
+def test_the_workspace_check_is_refused_with_the_stale_words(settings, fresh, main_dir):
+    from agents.da_workspace_flow import _refuse_if_main_changed
+    from db_table_functions.db_tbl_da_workspace import WorkspaceError
+
+    _refuse_if_main_changed(settings, fresh.request_id, None)  # unchanged: no error
+    change_main(main_dir, MAIN_TEXT + "# someone else\n")
+
+    with pytest.raises(WorkspaceError, match="differs from Bitbucket main"):
+        _refuse_if_main_changed(settings, fresh.request_id, None)
+
+
+def test_recheck_of_a_request_that_is_not_an_enhance_request_does_nothing(settings):
+    assert flow.recheck_main(settings, "CVDA-2026-0001") is None
+
+
 # --- 9-15: intentional ---
 
 

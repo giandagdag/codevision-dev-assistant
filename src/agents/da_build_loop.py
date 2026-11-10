@@ -41,7 +41,12 @@ from agents.da_build_flow import (
     _write,
 )
 from agents.da_enhance_build_checks import (
+    STILL_OLD,
+    ExpectedOutcome,
+    expected_outcomes,
+    expected_test_text,
     frozen_set_with_net,
+    net_nc_status,
     scope_problems,
     scoped_view,
     signature_problems,
@@ -237,6 +242,7 @@ class _Run:
         self.reference: Path
         self.context: agent.BuildContext
         self._layer_b_line: int | None = None
+        self.expected_outcomes: list[ExpectedOutcome] = []
 
     # --- the top ---
 
@@ -1069,6 +1075,7 @@ class _Run:
         number = last.round
         line = None if self.rerun else self._enter_layer_c(number)
         data = self._review_input(last)
+        self._run_expected_tests()
         plain = self._plain_findings(last)
         check_one_failed = any(f.check == 1 for f in plain)
         started = self.now_fn()
@@ -1134,9 +1141,56 @@ class _Run:
         code = {path: item.text for path, item in self.inp.code.items()}
         return (
             tester.check_criteria_have_tests(self.inp.record, test_text)
+            + self._enhance_findings()
             + tester.check_tests_pass(self.inp.record, last.layer_b)
             + tester.check_files_match_plan(planned, code, self._review_start_texts)
         )
+
+    def _enhance_findings(self) -> list[Finding]:
+        """Phase 9, check 1: the NC line, and the FYI for an expected-to-change test that still
+        shows the old result (it never changes the label)."""
+        if self.inp.net is None:
+            return []
+        net = self.inp.net.net
+        run_ids, listed = net_nc_status(net)
+        found = tester.check_nc_items(self.inp.record, run_ids, listed)
+        still_old = [(o.case_id, o.ac_id) for o in self.expected_outcomes if o.label == STILL_OLD]
+        return found + tester.check_still_old(still_old)
+
+    def _run_expected_tests(self) -> None:
+        """Run the expected-to-change tests once, for information, on the code that passed Layer B
+        (D-G). A sandbox that cannot run them is not a pause: nothing is claimed and the audit says
+        so."""
+        self.expected_outcomes = []
+        if self.inp.net is None:
+            return
+        net = self.inp.net.net
+        text = expected_test_text(net)
+        if not text:
+            return
+        policy = self.inp.policy
+        result = run_tests(
+            self.reference,
+            {path: item.text for path, item in self.inp.code.items()},
+            self.test_id,
+            text,
+            exclude=policy.build_sandbox_exclude,
+            timeout_seconds=policy.build_test_timeout_seconds,
+        )
+        if result.ran:
+            self.expected_outcomes = expected_outcomes(net, result)
+        with self._turn() as tx:
+            tx.audit(
+                "system",
+                "expected_to_change_run",
+                {
+                    "ran": result.ran,
+                    "results": [
+                        {"case": o.case_id, "ac": o.ac_id, "label": o.label}
+                        for o in self.expected_outcomes
+                    ],
+                },
+            )
 
     @property
     def _review_start_texts(self) -> dict[str, str]:

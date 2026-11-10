@@ -4,8 +4,18 @@ the safety net (tests 9-37 pure part, 9-38 pure part). The build loop calls thes
 import ast
 
 from agents.da_build_checks import find_test_methods
-from agents.da_enhance_build_checks import frozen_set_with_net, scoped_view
-from pydantic_classes.da_enhance_models import SafetyCase, SafetyNet
+from agents.da_enhance_build_checks import (
+    CHANGED_AS_EXPECTED,
+    STILL_OLD,
+    expected_outcomes,
+    expected_test_text,
+    frozen_set_with_net,
+    net_nc_status,
+    scoped_view,
+)
+from agents.da_tester_review import check_still_old, compute_label
+from pydantic_classes.da_build_models import LayerBResult, TestOutcome
+from pydantic_classes.da_enhance_models import NotCovered, SafetyCase, SafetyNet
 
 SOURCE = '''import os
 from datetime import date
@@ -110,6 +120,52 @@ def test_9_38_a_test_expected_to_change_is_kept_by_name_but_left_out_of_the_set(
     assert net_methods == ["test_s1_day_text"] and expected == ["test_s2_days_left"]
     assert "test_s2_days_left" not in text and "test_s1_day_text" in text
     ast.parse(text)  # one valid file the sandbox can run
+
+
+# --- step 14b: the information run, the NC line, the Layer C FYI ---
+
+
+def outcome_of(**results):
+    return LayerBResult(tests=[TestOutcome(name=n, result=r) for n, r in results.items()])
+
+
+def test_9_42_the_expected_half_is_the_accepted_text_of_those_methods_only():
+    text = expected_test_text(net("AC-1"))
+
+    assert "test_s2_days_left" in text and "test_s1_day_text" not in text
+    assert expected_test_text(net()) == ""
+
+
+def test_9_42_a_failing_expected_test_is_changed_as_expected_and_a_passing_one_is_not():
+    failing = expected_outcomes(net("AC-1"), outcome_of(test_s2_days_left="fail"))
+    passing = expected_outcomes(net("AC-1"), outcome_of(test_s2_days_left="pass"))
+
+    changed = [(o.case_id, o.ac_id, o.label) for o in failing]
+    assert changed == [("S-2", "AC-1", CHANGED_AS_EXPECTED)]
+    assert [o.label for o in passing] == [STILL_OLD]
+
+
+def test_9_42_a_case_that_did_not_run_gets_no_label():
+    assert expected_outcomes(net("AC-1"), LayerBResult()) == []
+
+
+def test_9_42_still_old_gives_an_fyi_that_leaves_the_label_alone():
+    found = check_still_old([("S-2", "AC-1")])
+
+    assert [(f.check, f.severity, f.cites) for f in found] == [(1, "fyi", "AC-1")]
+    assert found[0].message == (
+        "AC-1 was meant to change this; S-2 still shows the old result. Check the AC-1 tests."
+    )
+    assert compute_label(found, [], "ok", 1, []) == compute_label([], [], "ok", 1, [])
+
+
+def test_9_43_nc_status_counts_kept_cases_as_run_and_lists_not_covered():
+    base = SafetyNet(
+        cases=[SafetyCase(id="S-1", today_behaviour="x", function="f", nc_ids=["NC-1"])],
+        not_covered=[NotCovered(item="NC-2", reason="no test")],
+    )
+
+    assert net_nc_status(base) == ({"NC-1"}, {"NC-2"})
 
 
 def test_a_net_whose_every_test_is_expected_to_change_adds_nothing_to_the_set():

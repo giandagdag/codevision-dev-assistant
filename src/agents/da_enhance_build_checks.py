@@ -7,6 +7,7 @@ not in this change, so the list must stay the same.
 """
 
 import ast
+from dataclasses import dataclass
 
 from agents.da_approach_checks import normalise_path
 from agents.da_build_checks import find_test_methods
@@ -235,6 +236,48 @@ def safety_notes(net: SafetyNet) -> dict[str, str]:
             text += f" It captures how {case.function} worked before the change."
         notes[case.id] = text
     return notes
+
+
+# --- expected-to-change tests, run once for information (spec section 10, D-G) ---
+
+CHANGED_AS_EXPECTED = "Changed, as expected"
+STILL_OLD = "Still the old behaviour"
+
+
+@dataclass(frozen=True)
+class ExpectedOutcome:
+    case_id: str
+    ac_id: str
+    label: str
+
+
+def expected_test_text(net: SafetyNet) -> str:
+    """The expected-to-change half of the net, byte for byte as accepted ("" when there is none)."""
+    return split_by_expected(net)[1]
+
+
+def expected_outcomes(net: SafetyNet, result: LayerBResult) -> list[ExpectedOutcome]:
+    """One label per expected-to-change case. The old behaviour is still there only when every test
+    of the case passes; a case whose tests did not run gets no label (nothing is claimed)."""
+    by_name = {item.name: item.result for item in result.tests}
+    found: list[ExpectedOutcome] = []
+    for case in net.cases:
+        if case.expected_to_change is None:
+            continue
+        results = [r for name, r in by_name.items() if case_id_of_method(name) == case.id]
+        if not results:
+            continue
+        label = STILL_OLD if all(r == "pass" for r in results) else CHANGED_AS_EXPECTED
+        found.append(ExpectedOutcome(case.id, case.expected_to_change, label))
+    return found
+
+
+def net_nc_status(net: SafetyNet) -> tuple[set[str], set[str]]:
+    """(NC IDs with a proven net test that is run, NC IDs and items listed as not covered).
+    Cases are only in the net after the proof run, so a kept case is a proven test. An expected-to-
+    change test is run too (once, for information), so its NC items count as run."""
+    run = {nc for case in net.cases for nc in case.nc_ids}
+    return run, {item.item for item in net.not_covered}
 
 
 def failing_safety_cases(result: LayerBResult) -> list[str]:

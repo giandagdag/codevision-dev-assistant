@@ -33,6 +33,7 @@ from agents.da_enhance_checks import (
 from agents.da_impact import find_impact
 from agents.da_llm_client import LLMClient
 from agents.da_main_source import (
+    MainSourceError,
     check_freshness,
     get_main_source,
     next_step,
@@ -95,6 +96,7 @@ from pydantic_classes.da_enhance_models import (
     EnhanceState,
     FreshnessResult,
     ImpactResult,
+    PathFreshness,
     TargetChoice,
     TodayDraft,
     step_label,
@@ -498,6 +500,55 @@ def override_freshness(
         new = state.model_copy(update={"step": "e_fresh"})
         save_enhance_state(conn, new, base_revision, now)
     return _view(settings, request_id)
+
+
+def recheck_main(
+    settings: Settings, request_id: str, now: datetime | None = None
+) -> FreshnessResult | None:
+    """Freshness again at the first workspace check (spec section 5, step 8). If the `main` version
+    of a target is no longer the one seen at Find, the e_stale banner shows again and the workspace
+    check is refused until he checks again. None: not an Enhance request, or nothing changed.
+
+    Only `main` is looked at here: his own edits since the baseline are the Phase 6 pre-build
+    re-scan's job. A `main` that cannot be reached now is stale too, unless he already chose
+    "Continue without the check"."""
+    now = now or datetime.now(UTC)
+    with _read(settings.db_path) as conn:
+        state = read_enhance_state(conn, request_id)
+        latest = read_latest_freshness(conn, request_id)
+    if state is None or latest is None or not state.targets:
+        return None
+    source = get_main_source(settings)  # slow calls below, outside any transaction
+    paths = [_recheck_path(item, source, latest.result.override) for item in latest.result.paths]
+    if paths == latest.result.paths:
+        return None
+    result = FreshnessResult(paths=paths, main_source=source.name)
+    with _write_transaction(settings.db_path) as conn:
+        tx = _Tx(conn, request_id, now)
+        insert_freshness_check(conn, request_id, RECORD_VERSION_BEFORE_UNDERSTAND, result, now)
+        tx.audit("system", "freshness_checked", {**_check_details(result), "recheck": True})
+        tx.say("assistant", stale_message(result))
+        save_enhance_state(
+            conn, state.model_copy(update={"step": "e_stale"}), state.revision, now
+        )
+    return result
+
+
+def _recheck_path(item: PathFreshness, source, override: str) -> PathFreshness:
+    """The saved row, unless the file on main is no longer the version seen at Find."""
+    if not item.main_fingerprint:
+        return item  # was not on main, or main was out of reach: his choice at Find stands
+    try:
+        main_text = source.get_text(item.path)
+    except MainSourceError:
+        if override == "unchecked":
+            return item
+        return item.model_copy(update={"state": "unreachable"})
+    now_fingerprint = fingerprint(main_text) if main_text is not None else ""
+    if now_fingerprint == item.main_fingerprint:
+        return item
+    state = "differs" if main_text is not None else "not_on_main"
+    return item.model_copy(update={"state": state, "main_fingerprint": now_fingerprint})
 
 
 def _require_targets(state: EnhanceState) -> None:
