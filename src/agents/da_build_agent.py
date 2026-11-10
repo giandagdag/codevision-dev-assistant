@@ -144,6 +144,11 @@ def scripted_build_reply(prompt: str, switches: frozenset[str] | None = None) ->
 
     if is_refine_prompt(prompt):
         return scripted_refine_reply(prompt, switches)
+    # Phase 9: the today-draft and the safety-net calls of Enhance.
+    from agents.da_enhance_agent import is_enhance_prompt, scripted_enhance_reply
+
+    if is_enhance_prompt(prompt):
+        return scripted_enhance_reply(prompt, switches)
     raise LLMClientError("The scripted build client was given a prompt it does not know.")
 
 

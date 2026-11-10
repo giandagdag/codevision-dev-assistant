@@ -135,6 +135,36 @@ def _import_problems(tree: ast.AST, code_modules: set[str], policy: Policy) -> l
     return problems
 
 
+def kept_case_problems(old: SafetyNet, new: SafetyNet, keep_ids: list[str]) -> list[str]:
+    """A fix reply must leave the proven cases and their test methods byte for byte as they were
+    (spec section 8, step 4). Empty list = they are."""
+    problems: list[str] = []
+    old_methods = _method_sources(old.test_code)
+    new_methods = _method_sources(new.test_code)
+    new_cases = {case.id: case for case in new.cases}
+    for case_id in keep_ids:
+        old_case = next((case for case in old.cases if case.id == case_id), None)
+        if old_case is None:
+            continue
+        if new_cases.get(case_id) != old_case:
+            problems.append(f"{case_id} is already proven. Keep the case exactly as it is.")
+        for name, source in old_methods.items():
+            if case_id_of_method(name) == case_id and new_methods.get(name) != source:
+                problems.append(f"{name} is already proven. Keep the method exactly as it is.")
+    return problems
+
+
+def _method_sources(text: str) -> dict[str, str]:
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return {}
+    return {
+        name: ast.get_source_segment(text, node) or ""
+        for name, node in find_test_methods(tree).items()
+    }
+
+
 def code_modules_of(paths: list[str]) -> set[str]:
     """Dotted module names of the target files."""
     return {module_of_path(path) for path in paths}
