@@ -67,8 +67,14 @@ def open_questions(gh: Gh, label: str = "needs-gian") -> list[tuple[int, str]]:
 
 
 def later_questions(gh: Gh) -> list[tuple[int, str]]:
-    """Open `gian-later` issues (fix 7, S3): never blocking; his comment still wakes the chief."""
-    return open_questions(gh, "gian-later")
+    """Open `gian-later` issues (fix 7, S3): never blocking; his comment still wakes the chief.
+
+    A failed read gives none, so it can never stop the `needs-gian` answers (code review).
+    """
+    try:
+        return open_questions(gh, "gian-later")
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def open_issue_numbers(gh: Gh) -> set[int]:

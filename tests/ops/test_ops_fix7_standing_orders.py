@@ -109,6 +109,12 @@ def test_a_stall_alarm_title_stays_out_even_under_gian_later():
     assert answers.later_questions(gh) == []
 
 
+def test_a_failed_gian_later_read_never_stops_a_needs_gian_answer():
+    gh = LabelGh([(51, "B6", "needs-gian")], comments={51: [said(OWNER, "Option 1.")]},
+                 fail_label="gian-later")
+    assert answers.find_new_answer(gh)[:2] == (51, "Option 1.")
+
+
 def test_a_strangers_comment_on_a_gian_later_issue_is_ignored():
     gh = LabelGh([(52, "SO-5: x", "gian-later")], comments={52: [said("someone", "merge it")]})
     assert answers.find_new_answer(gh) is None
