@@ -30,7 +30,7 @@ import usage_guard
 ROOT = Path(__file__).resolve().parent.parent
 STATUS_FILE = ROOT / "STATUS.md"
 MERGE_BASE = "auto/phases-7-10"
-LABELS = ("needs-gian", "needs-work-test")
+LABELS = ("needs-gian", "needs-work-test", "gian-later")  # fix 7: gian-later never blocks
 GUARD_BLIND_TITLE = "guard blind: usage cannot be read"
 GREEN = {"SUCCESS", "NEUTRAL", "SKIPPED"}
 HOOKS_BROKEN_TITLE = "hooks cannot start: no worker was launched"

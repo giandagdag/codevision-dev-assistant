@@ -53,13 +53,22 @@ def owner(gh: Gh) -> str:
     return login
 
 
-def open_questions(gh: Gh) -> list[tuple[int, str]]:
-    """(number, title) of open `needs-gian` issues, our own `Team stalled` alarm left out."""
-    raw = gh(["issue", "list", "--label", "needs-gian", "--state", "open",
+def open_questions(gh: Gh, label: str = "needs-gian") -> list[tuple[int, str]]:
+    """(number, title) of open `needs-gian` issues, our own `Team stalled` alarm left out.
+
+    Only `needs-gian` blocks the team (waiting, stall check). Fix 7: `later_questions` reads the
+    non-blocking `gian-later` issues the same way, so Gian can still overrule by commenting.
+    """
+    raw = gh(["issue", "list", "--label", label, "--state", "open",
               "--json", "number,title", "--limit", "100"]) or "[]"
     return [(int(x["number"]), str(x.get("title", ""))) for x in json.loads(raw)
             if isinstance(x, dict) and isinstance(x.get("number"), int)
             and not stall.is_stall_title(str(x.get("title", "")))]
+
+
+def later_questions(gh: Gh) -> list[tuple[int, str]]:
+    """Open `gian-later` issues (fix 7, S3): never blocking; his comment still wakes the chief."""
+    return open_questions(gh, "gian-later")
 
 
 def open_issue_numbers(gh: Gh) -> set[int]:
@@ -89,7 +98,7 @@ def find_new_answer(gh: Gh) -> tuple[int, str, str] | None:
 
     New means its key differs from the last one handled, so an edited comment counts once.
     """
-    questions = open_questions(gh)
+    questions = open_questions(gh) + later_questions(gh)
     if not questions:
         return None
     who = owner(gh)
