@@ -361,6 +361,33 @@ def pill_text(status: str, step: str) -> str:
     return step_label(step) or status
 
 
+SCOPE_GROUP_ID = "da-scope-group"
+SCOPE_SAVE_ID = "da-scope-save"
+SCOPE_SAVE_LABEL = "Save functions in scope"
+SCOPE_TITLE = "Which functions does the change touch?"
+
+
+def scope_picker(symbols: list[str], chosen: list[str]) -> list:
+    """The tick list at the Understand checkpoint (D-D). Only the engine decides what is valid:
+    it refuses an unknown name or an empty list. `symbols` come from the confirmed programs."""
+    if not symbols:
+        return []
+    return [
+        dmc.Box(
+            [
+                dmc.Text(SCOPE_TITLE, fw=600, size="sm"),
+                dmc.CheckboxGroup(
+                    id=SCOPE_GROUP_ID,
+                    value=[name for name in chosen if name in symbols],
+                    children=dmc.Stack([dmc.Checkbox(label=name, value=name) for name in symbols]),
+                ),
+                dmc.Button(SCOPE_SAVE_LABEL, id=SCOPE_SAVE_ID, variant="light", mt="xs"),
+            ],
+            p="md",
+        )
+    ]
+
+
 def enhancement_summary(record: RequestRecord | None) -> list:
     """The Enhancement block of the Summary tab (spec section 6). Empty until a record exists."""
     if record is None or record.kind == "new":

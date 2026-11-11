@@ -10,7 +10,7 @@ the file and only attached inside it, so tests can call them directly.
 from functools import lru_cache
 from urllib.parse import parse_qs
 
-from dash import ALL, Input, Output, State, ctx, no_update
+from dash import ALL, Input, Output, State, ctx, dcc, no_update
 from dash.exceptions import PreventUpdate
 
 from agents import da_approach_flow as approach_flow
@@ -29,6 +29,7 @@ from agents.da_discover_flow import (
     get_discovery_view,
     start_discovery,
 )
+from agents.da_enhance_checks import available_symbols
 from agents.da_enhance_flow import get_enhance_view, start_enhance_request
 from agents.da_refine_actions import get_refine_bar
 from agents.da_refine_screen import (
@@ -43,9 +44,13 @@ from agents.da_understand_flow import (
     create_understand_request,
     get_understand_view,
     list_my_requests,
+    set_functions_in_scope,
     skip_optional,
     submit_answer,
     submit_form,
+)
+from agents.da_understand_flow import (
+    PROCEED_OPTION as UNDERSTAND_PROCEED,
 )
 from callbacks.screen_callbacks.da_refine_callbacks import register_da_refine_callbacks, run_refine
 from callbacks.screen_callbacks.da_workspace_callbacks import register_da_workspace_callbacks
@@ -57,7 +62,7 @@ from db_table_functions.db_tbl_da_understand import (
     StaleRevisionError,
     UnderstandError,
 )
-from layouts.da_build_panel import POLL_ID
+from layouts.da_build_panel import POLL_ID, POLL_MS
 from layouts.da_developer_assistant_page import (
     BUSY_ID,
     CHOICE_TYPE,
@@ -98,8 +103,16 @@ from layouts.da_enhance_panel import (
     MARK_NONE_VALUE,
     MARK_TYPE,
     PICK_SEPARATOR,
+    SCOPE_GROUP_ID,
+    SCOPE_SAVE_ID,
     enhance_buttons,
+    enhance_composer,
+    impact_card,
+    pill_text,
     render_enhance_workspace,
+    safety_net_tab,
+    scope_picker,
+    test_plan_net_section,
 )
 from layouts.da_tester_panel import FINDING_ACT_TYPE, FINDING_REASON_TYPE
 from pydantic_classes.da_models import (
@@ -199,6 +212,83 @@ def get_settings() -> Settings:
     return load_settings()
 
 
+NET_STEPS_WITH_BUTTONS =("s_writing", "s_unable", "s_review")  # their buttons are Enhance's
+
+
+def understand_extras(settings: Settings, view, enhance) -> dict | None:
+    """Phase 9 (step 18c), Enhance requests in Understand: the header pill, and at the
+    checkpoint the tick list of functions in scope. None for any other request."""
+    if enhance is None:
+        return None
+    scope: list = []
+    if view.record.kind != "new" and UNDERSTAND_PROCEED in view.choices:
+        texts = enhance_flow.baseline_texts(settings, view.request.request_id)
+        names = (name for path, text in texts.items() for name in available_symbols(path, text))
+        symbols = list(dict.fromkeys(names))
+        scope = scope_picker(symbols, view.record.functions_in_scope)
+    return {"pill": pill_text(view.request.status, enhance.step), "scope": scope}
+
+
+def discover_extras(settings: Settings, discovery, enhance) -> dict | None:
+    """Phase 9 (step 18c), Enhance requests in Discover: impact card, Safety net tab, the pill,
+    and for the safety-net steps their own buttons and revision."""
+    if enhance is None:
+        return None
+    row = net_flow.get_net_row(settings, enhance.request_id)
+    in_review = enhance.step == "s_review"
+    criteria = _criteria_ids(settings, enhance.request_id) if in_review else None
+    extras: dict = {
+        "pill": pill_text(discovery.request.status, enhance.step),
+        "impact": [impact_card(discovery.result.impact if discovery.result else None)],
+        "net": safety_net_tab(row, criteria) if enhance.step.startswith("s_") else None,
+    }
+    if enhance.step in NET_STEPS_WITH_BUTTONS:
+        extras["composer"] = enhance_composer(enhance)
+        extras["state"] = {
+            "request_id": enhance.request_id,
+            "revision": enhance.revision,
+            "enhance": enhance.step,
+        }
+    if enhance.step == "s_writing":
+        extras["poll"] = dcc.Interval(id=POLL_ID, interval=POLL_MS, disabled=False)
+    return extras
+
+
+def approach_extras(settings: Settings, request_id: str, enhance) -> dict | None:
+    """Phase 9 (step 18c), Enhance requests in Approach: the net tab and, in the test plan, the
+    read-only accepted net."""
+    if enhance is None:
+        return None
+    row = net_flow.get_net_row(settings, request_id)
+    return {"net": safety_net_tab(row), "plan": test_plan_net_section(row)}
+
+
+def _criteria_ids(settings: Settings, request_id: str) -> list[str]:
+    """The AC IDs a case can be marked as "expected to change" for (from the saved record)."""
+    record = get_understand_view(settings, request_id).record
+    return [item.id for item in record.acceptance_criteria]
+
+
+def save_scope(clicks, chosen, state, refresh):
+    """"Save functions in scope" under the chat at the checkpoint (Phase 9, step 18c)."""
+    if not clicks:
+        raise PreventUpdate
+    return perform_scope_save(get_settings(), chosen, state, refresh)
+
+
+def perform_scope_save(settings: Settings, chosen, state, refresh):
+    """Call set_functions_in_scope; a refusal (unknown name, nothing ticked) is shown under the
+    chat and nothing is written. Returns (refresh counter, message)."""
+    state = state or {}
+    try:
+        set_functions_in_scope(
+            settings, state.get("request_id"), list(chosen or []), state.get("revision")
+        )
+    except SHOWN_ERRORS as error:
+        return no_update, str(error)
+    return (refresh or 0) + 1, ""
+
+
 def show_page(search: str | None, refresh: int | None):
     """Draw Home, the blank workspace, or one request, from the URL.
 
@@ -219,7 +309,9 @@ def show_page(search: str | None, refresh: int | None):
             view = get_understand_view(settings, request_id)
             if view.request.status in UNDERSTAND_STATUSES:
                 return render_workspace(
-                    view, switch_offer=enhance_flow.has_open_offer(settings, request_id)
+                    view,
+                    switch_offer=enhance_flow.has_open_offer(settings, request_id),
+                    enhance=understand_extras(settings, view, enhance),
                 )
             discovery = get_discovery_view(settings, request_id)
             status = view.request.status
@@ -245,14 +337,18 @@ def show_page(search: str | None, refresh: int | None):
                     else None
                 )
                 return render_approach_workspace(
-                    view, discovery, approach, workspace, build, refine, history, panel
+                    view, discovery, approach, workspace, build, refine, history, panel,
+                    enhance=approach_extras(settings, request_id, enhance),
                 )
             # A requirement lane runs Discover again; the Refine bar replaces its buttons.
             lane_bar = get_refine_bar(settings, request_id)
+            extras = discover_extras(settings, discovery, enhance)
             if status == STATUS_DISCOVERY_CONFIRMED:
                 approach = approach_flow.get_approach_view(settings, request_id)
-                return render_discover_workspace(view, discovery, approach, lane_bar)
-            return render_discover_workspace(view, discovery, None, lane_bar)
+                return render_discover_workspace(
+                    view, discovery, approach, lane_bar, enhance=extras
+                )
+            return render_discover_workspace(view, discovery, None, lane_bar, enhance=extras)
         except (UnderstandError, DatabaseBusyError) as error:
             return render_message_page(str(error))
     if params.get("new"):
@@ -536,7 +632,8 @@ def perform_finding_action(settings: Settings, index: str, reasons: dict, state,
 def poll_build(n_intervals, state, refresh):
     """Every 3 seconds while a build runs: redraw, so the progress list is current. The page
     asks again only while the Interval is on; the redraw switches it off when the build ends."""
-    if not n_intervals or not state or not state.get("build"):
+    writing_net = bool(state) and state.get("enhance") == "s_writing"  # Phase 9: net being written
+    if not n_intervals or not state or not (state.get("build") or writing_net):
         raise PreventUpdate
     return (refresh or 0) + 1
 
@@ -738,6 +835,17 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
         State(REFRESH_ID, "data"),
         prevent_initial_call=True,
     )(answer_switch_offer)
+
+    # The functions-in-scope tick list at the Understand checkpoint (step 18c).
+    app.callback(
+        Output(REFRESH_ID, "data", allow_duplicate=True),
+        Output(MESSAGE_ID, "children", allow_duplicate=True),
+        Input(SCOPE_SAVE_ID, "n_clicks"),
+        State(SCOPE_GROUP_ID, "value"),
+        State(STATE_ID, "data"),
+        State(REFRESH_ID, "data"),
+        prevent_initial_call=True,
+    )(save_scope)
 
     # The "After the change" dropdowns of the Safety net tab (step 18b).
     app.callback(

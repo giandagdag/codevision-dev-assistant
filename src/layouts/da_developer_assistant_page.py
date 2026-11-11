@@ -170,6 +170,10 @@ PANEL_TABS: tuple[tuple[str, str], ...] = (
 )
 
 
+NET_TAB_NAME = "Safety net"  # Phase 9: only on an Enhance request, after the six fixed tabs
+NET_TAB_VALUE = "safety-net"
+
+
 def layout() -> list:
     """The page itself. The content is filled in by the callbacks, from the URL."""
     return [
@@ -295,16 +299,23 @@ def _switch_offer_buttons() -> dmc.Group:
     )
 
 
-def render_workspace(view: UnderstandView, switch_offer: bool = False) -> list:
-    """`switch_offer`: the Enhance switch offer waits for an answer (Phase 9, D-N)."""
+def render_workspace(
+    view: UnderstandView,
+    switch_offer: bool = False,
+    enhance: dict | None = None,
+) -> list:
+    """`switch_offer`: the Enhance switch offer waits for an answer (Phase 9, D-N).
+    `enhance` (Phase 9, step 18c): `pill` (header text), `scope` (tick list under the chat)."""
+    enhance = enhance or {}
     return _workspace(
         title=view.request.title,
         request_id=view.request.request_id,
-        status=view.request.status,
+        status=enhance.get("pill") or view.request.status,
         demo_mode=view.demo_mode,
         messages=[parts.chat_bubble(message) for message in view.messages]
         + ([_form()] if view.input_mode == "form" else [])
-        + ([_switch_offer_buttons()] if switch_offer else []),
+        + ([_switch_offer_buttons()] if switch_offer else [])
+        + list(enhance.get("scope") or []),
         composer=_composer(
             view.input_mode,
             view.choices,
@@ -370,7 +381,9 @@ def _workspace(
     poll=None,
     open_tab: str | None = None,
     code_written: bool = False,
+    net: list | None = None,
 ) -> list:
+    """`net`: the Safety net tab of an Enhance request (Phase 9, step 18c). None = no such tab."""
     top = dmc.Group(
         [
             dmc.Group(
@@ -443,7 +456,19 @@ def _workspace(
                 px="xs",
             )
             for name, icon in PANEL_TABS
-        ],
+        ]
+        + (
+            [
+                dmc.TabsTab(
+                    NET_TAB_NAME,
+                    value=NET_TAB_VALUE,
+                    leftSection=DashIconify(icon="tabler:shield-check", width=16),
+                    px="xs",
+                )
+            ]
+            if net and discovery
+            else []
+        ),
         # All six tabs stay on one line; a narrow window scrolls them sideways.
         style={"flexWrap": "nowrap", "overflowX": "auto", "flexShrink": 0},
     )
@@ -456,6 +481,8 @@ def _workspace(
             panels.append(_tab_panel(build, "build"))
         if tests:
             panels.append(_tab_panel(tests, "tests"))
+        if net:
+            panels.append(_tab_panel(net, NET_TAB_VALUE))
         tabs = dmc.Tabs(
             [tab_list, *panels],
             value=open_tab or ("approach" if approach else "discovery"),
@@ -498,10 +525,16 @@ def render_discover_workspace(
     view: DiscoveryView,
     approach: ApproachView | None = None,
     refine: RefineBox | None = None,
+    enhance: dict | None = None,
 ) -> list:
     """The workspace once the request is confirmed: Discover is step 2, the chat carries on, and
     the Discovery tab opens as soon as there is a round to show. Once Discover is confirmed, the
-    approach view brings the active Proceed to Approach button (Phase 4)."""
+    approach view brings the active Proceed to Approach button (Phase 4).
+
+    `enhance` (Phase 9, step 18c, Enhance requests only): `pill`, `impact` (blocks under the
+    findings), `net` (the Safety net tab), `composer` and `state` (the safety-net steps s_* have
+    their own buttons and revision, so they replace the Approach ones)."""
+    enhance = enhance or {}
     # SEARCHING with no saved round also opens the tab, to say the round did not finish.
     show_tab = view.result is not None or view.request.status == STATUS_SEARCHING
     confirmed = view.request.status == STATUS_DISCOVERY_CONFIRMED and approach is not None
@@ -518,17 +551,25 @@ def render_discover_workspace(
         composer = _discover_composer(view, refine)
     else:
         composer = _approach_composer(approach) if confirmed else _discover_composer(view)
+    if enhance.get("composer") is not None:
+        composer, state = enhance["composer"], enhance["state"]
+    discovery_blocks = _discovery_panel(view) if show_tab else None
+    if discovery_blocks is not None and enhance.get("impact"):
+        discovery_blocks = [*discovery_blocks, *enhance["impact"]]
     return _workspace(
         title=view.request.title,
         request_id=view.request.request_id,
-        status=view.request.status,
+        status=enhance.get("pill") or view.request.status,
         demo_mode=view.demo_mode,
         messages=[parts.chat_bubble(message) for message in view.messages],
         composer=composer,
         panel=_summary_panel(understand),
         state=state,
         step=DISCOVER_STEP,
-        discovery=_discovery_panel(view) if show_tab else None,
+        discovery=discovery_blocks,
+        net=enhance.get("net"),
+        poll=enhance.get("poll"),
+        open_tab=NET_TAB_VALUE if enhance.get("net") and discovery_blocks else None,
         # After a round, "Findings look right" also starts Approach, so the line is a general one.
         busy_text=BUSY_TEXT if view.request.status == STATUS_CONFIRMED else APPROACH_BUSY_TEXT,
     )
@@ -543,12 +584,19 @@ def render_approach_workspace(
     refine: RefineBox | None = None,
     history: VersionHistory | None = None,
     refine_panel: RefineBuildPanel | None = None,
+    enhance: dict | None = None,
 ) -> list:
     """The workspace from APPROACH_PROPOSED on: Approach is step 3 and its tab opens first.
+
+    `enhance` (Phase 9, step 18c): `net` (the Safety net tab) and `plan` (the read-only net section
+    of the test plan, added under the Approach tab).
 
     From READY_TO_BUILD on, `workspace` (Phase 5) adds the header chip, the folder buttons, and
     the Build tab once the check has passed. The page state then carries the WORKSPACE revision,
     because every button on this screen belongs to the workspace."""
+    enhance = enhance or {}
+    net_blocks = enhance.get("net")
+    plan_extra = list(enhance.get("plan") or [])
     if workspace is not None:
         # Once a build has started, every button on this screen belongs to the BUILD (its own
         # revision); before that, to the workspace.
@@ -584,7 +632,12 @@ def render_approach_workspace(
             step=BUILD_STEP if building else APPROACH_STEP,
             discovery=_discovery_panel(discovery),
             busy_text=WS_BUSY_TEXT,
-            approach=[*approach_panel(view, workspace.check), *approach_version_blocks(history)],
+            approach=[
+                *approach_panel(view, workspace.check),
+                *plan_extra,
+                *approach_version_blocks(history),
+            ],
+            net=net_blocks,
             chip=workspace_chip(workspace),
             build=build_content,
             stores=workspace_stores(
@@ -607,7 +660,8 @@ def render_approach_workspace(
         step=APPROACH_STEP,
         discovery=_discovery_panel(discovery),
         busy_text=APPROACH_BUSY_TEXT,
-        approach=approach_panel(view),
+        approach=[*approach_panel(view), *plan_extra],
+        net=net_blocks,
     )
 
 

@@ -293,6 +293,12 @@ def _reason(failed: AIResult) -> str:
     return failed.message or "; ".join(failed.problems) or failed.kind
 
 
+def get_net_row(settings: Settings, request_id: str) -> SafetyNetRow | None:
+    """The newest safety-net row for the screen (read only, no lock). None = none written yet."""
+    with _read(settings.db_path) as conn:
+        return read_latest_safety_net(conn, request_id)
+
+
 # --- the review actions (spec section 8, step 6) ---
 
 
