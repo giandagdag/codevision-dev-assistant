@@ -1,8 +1,9 @@
-# Phase A fix 5: STATUS.md stops blocking branch switches
+# Phase A fix 6: STATUS.md stops blocking branch switches
 
 Version 1.0 APPROVED, 11 Nov 2026 (16:02 SGT). Gian chose option 1 for D-A to D-D (section 5).
+(Named fix 6 because fix 5 and 5b already exist: usage credits and Fable. The hold on #48 says "fix 5": it means this one.)
 Written in the project chat after issue #48 (Phase 8 fix 1 builder blocked 3 times).
-Branch `phase-a-fix-5` (from `auto/phases-7-10`). PR into `auto/phases-7-10`; **Gian merges it**
+Branch `phase-a-fix-6` (from `auto/phases-7-10`). PR into `auto/phases-7-10`; **Gian merges it**
 (it changes the team's machinery). Build it the normal way: plan, plan review, build, code review,
 pytest, ruff, smoke check. Build in a **cloud** session, never on the laptop while a team worker runs.
 **Do not touch `phase-8-fix-1`**: the laptop team is building it now.
@@ -28,10 +29,10 @@ which `ops/status_board.py` builds from local files.
 
 | # | Piece | What it does |
 |---|---|---|
-| H1 | **Take STATUS.md out of git** | Add `STATUS.md` to `.gitignore` (with a comment: "the chief's live notepad, machine-only, Phase A fix 5"). `git rm --cached STATUS.md` (removes it from git, keeps the file on disk). Path and format do not change, so the chief, tick, board and hooks keep working with no path changes |
+| H1 | **Take STATUS.md out of git** | Add `STATUS.md` to `.gitignore` (with a comment: "the chief's live notepad, machine-only, Phase A fix 6"). `git rm --cached STATUS.md` (removes it from git, keeps the file on disk). Path and format do not change, so the chief, tick, board and hooks keep working with no path changes |
 | H2 | **Template for a fresh copy** | New tracked file `ops/STATUS.template.md`: the empty layout (headings, `Stopped: no`, `Usage:` line, `- Next: none`), at most 60 lines |
 | H3 | **Backup and self-heal** (zero tokens) | At the end of every tick, copy `STATUS.md` to `ops/state/STATUS.backup.md` (ignored by git already). At the start of every tick, if `STATUS.md` is missing: restore it from the backup if one exists, else create it from the template. One Log line either way: `STATUS.md restored from backup` or `STATUS.md created from template`. A template copy has `Next: none` and no open issue, so fix 3's stall alarm tells Gian (that is the alarm working) |
-| H4 | **Workers never stage STATUS.md** | Safety hook: refuse `git add` that names `STATUS.md`, and refuse `git add -f` / `--force` (forcing an ignored file in). Reason text: "STATUS.md is not in git (Phase A fix 5)". `chief.md` and `builder.md`: one line, "STATUS.md is not in git. Never add or commit it" |
+| H4 | **Workers never stage STATUS.md** | Safety hook: refuse `git add` that names `STATUS.md`, and refuse `git add -f` / `--force` (forcing an ignored file in). Reason text: "STATUS.md is not in git (Phase A fix 6)". `chief.md` and `builder.md`: one line, "STATUS.md is not in git. Never add or commit it" |
 | H5 | **Docs** | `docs/automation.md`: STATUS.md is machine-only, the backup, the template, and the one-time laptop switch-over (section 4) |
 
 ## 3. Edge rules
@@ -72,7 +73,7 @@ If step 4 is forgotten, H3 restores the file at the next tick anyway.
 1. **Backup first, then template, with a Log line.** Never loses more than one tick.
 2. Template only. Simpler, but a deleted file loses the chief's memory.
 
-### D-D When fix 5 goes live
+### D-D When fix 6 goes live
 1. **Build now in the cloud. Gian merges it after the `phase-8-fix-1` PR merges and before Phase 10
    starts, then does section 4 at home.** To make the gap exist, Gian tells the chief (comment on #48)
    to wait for him before starting Phase 10.
@@ -105,6 +106,6 @@ If step 4 is forgotten, H3 restores the file at the next tick anyway.
 
 ## 8. Open items
 
-- O1: branches made before fix 5 (`auto/phase-8`, `auto/phase-9`, `phase-8-fix-1`) still hold a
+- O1: branches made before fix 6 (`auto/phase-8`, `auto/phase-9`, `phase-8-fix-1`) still hold a
   tracked `STATUS.md`. Switching to them later is refused. They are done or nearly done, so the team
   should not need them; if it does, merge `auto/phases-7-10` into them first (as PR #49 did).
