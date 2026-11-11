@@ -18,6 +18,8 @@ from agents.da_discover_flow import (
     HINT_QUESTION,
     outcome_status,
 )
+from agents.da_refine_hooks import STEP_REQ_APPROACH, STEP_REQ_FINDINGS
+from agents.da_refine_lanes import STEP_APPROACH, STEP_REQ_CHECKPOINT
 from agents.da_refine_screen import RefineBox, RefineBuildPanel, VersionHistory
 from agents.da_understand_checks import MAX_MESSAGE_LENGTH
 from agents.da_understand_flow import (
@@ -576,6 +578,20 @@ def render_discover_workspace(
     )
 
 
+# F3: the right-panel tab a Refine step is about. A running build or check run keeps the Build tab.
+REFINE_STEP_TABS = {
+    STEP_REQ_CHECKPOINT: "summary",
+    STEP_REQ_FINDINGS: "discovery",
+    STEP_REQ_APPROACH: "approach",
+    STEP_APPROACH: "approach",
+}
+
+
+def refine_step_tab(refine: RefineBox | None) -> str | None:
+    """The tab to open for the Refine step on screen, or None (then the Build tab as before)."""
+    return REFINE_STEP_TABS.get(refine.step) if refine is not None else None
+
+
 def render_approach_workspace(
     understand: UnderstandView,
     discovery: DiscoveryView,
@@ -648,7 +664,7 @@ def render_approach_workspace(
             ),
             tests=tests_tab(build) if building else None,
             poll=poll_interval(build) if building else None,
-            open_tab="build" if building else None,
+            open_tab=refine_step_tab(refine) or ("build" if building else None),
             code_written=building and any(row.status == "Written" for row in build.rows),
         )
     return _workspace(

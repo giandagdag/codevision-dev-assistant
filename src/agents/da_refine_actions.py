@@ -249,7 +249,7 @@ def _lane_bar(step: str, status: str, rev: int) -> RefineBox:
         buttons.append(("help", LABELS["help"]))
     return RefineBox(
         offered=True, lane=True, note=note, buttons=buttons, refine_revision=rev,
-        text_open=bool(prompt), placeholder=prompt, send_label=send or "Send",
+        text_open=bool(prompt), placeholder=prompt, send_label=send or "Send", step=step,
     )
 
 

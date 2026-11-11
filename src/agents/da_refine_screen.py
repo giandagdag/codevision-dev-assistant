@@ -9,6 +9,7 @@ the state of the job, and this file decides which ones.
 import ast
 from dataclasses import dataclass, field
 
+from agents import da_refine_lanes as lanes
 from agents import da_refine_owntest as owntest
 from agents.da_build_checks import case_ids_from_method, find_test_methods
 from agents.da_refine_checks import (
@@ -80,6 +81,8 @@ class RefineBox:
     restore_build: int = 0
     # Buttons drawn greyed (F5: Restore with nothing to restore). No click reaches the server.
     disabled_keys: list[str] = field(default_factory=list)
+    # F3: the Refine step of a lane bar, so the page can open the tab the step is about.
+    step: str = ""
 
 
 def make_refine_box(
@@ -272,6 +275,16 @@ def get_tagged_build(settings, request_id: str, build: BuildView, plan) -> Build
 
 
 @dataclass
+class DraftRow:
+    """One criterion of the draft. `tag`: "new", "changed", "removed" or "" (unchanged)."""
+
+    criterion_id: str
+    tag: str
+    text: str
+    old_text: str = ""
+
+
+@dataclass
 class VersionHistory:
     """Record diffs and the approach versions. Empty when nothing was refined."""
 
@@ -279,6 +292,31 @@ class VersionHistory:
     marks: dict[str, list[str]] = field(default_factory=dict)
     # (approach version, source, record version)
     approaches: list[tuple[int, str, int]] = field(default_factory=list)
+    # F2: the draft v(N+1) shown at the checkpoint, before Confirm. 0 = no draft.
+    draft_version: int = 0
+    draft: list[DraftRow] = field(default_factory=list)
+
+
+DRAFT_TAG_WORDS = {"new": "New in v{n} (not saved yet)", "changed": "Changed", "removed": "Removed"}
+
+
+def make_draft(old: RequestRecord, pending: RequestRecord) -> tuple[int, list[DraftRow]]:
+    """Pure rule: the criteria of the draft in order, each tagged, then the removed ones."""
+    diff = diff_records(old, pending)
+    by_id = {item.id: item for item in diff.criteria}
+    rows = []
+    for criterion in pending.acceptance_criteria:
+        item = by_id.get(criterion.id)
+        text = lanes.criterion_words(criterion.model_dump())
+        tag = {"added": "new", "changed": "changed"}.get(item.change if item else "", "")
+        old_text = lanes.criterion_words(item.old) if item and item.change == "changed" else ""
+        rows.append(DraftRow(criterion.id, tag, text, old_text))
+    rows += [
+        DraftRow(item.id, "removed", lanes.criterion_words(item.old))
+        for item in diff.criteria
+        if item.change == "removed"
+    ]
+    return diff.to_version, rows
 
 
 def make_history(records: list[RequestRecord], approaches: list[ApproachVersion]) -> VersionHistory:
@@ -294,6 +332,9 @@ def make_history(records: list[RequestRecord], approaches: list[ApproachVersion]
 
 def get_history(settings, request_id: str) -> VersionHistory:
     with open_db(settings.db_path) as conn:
-        return make_history(
-            read_all_records(conn, request_id), read_approach_versions(conn, request_id)
-        )
+        records = read_all_records(conn, request_id)
+        history = make_history(records, read_approach_versions(conn, request_id))
+    state = get_refine_state(settings, request_id)
+    if records and state and state.step == lanes.STEP_REQ_CHECKPOINT and state.pending_record:
+        history.draft_version, history.draft = make_draft(records[-1], state.pending_record)
+    return history
