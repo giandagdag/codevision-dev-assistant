@@ -376,12 +376,14 @@ def _test_row(item: TestRow) -> dmc.TableTr:
             dmc.TableTd(dmc.Text(name, size="xs", fw=600)),
             dmc.TableTd(dmc.Text(item.criterion_id, size="xs")),
             dmc.TableTd(dmc.Text(item.description, size="xs")),
-            dmc.TableTd(
-                dmc.Text(
-                    RESULT_TEXT.get(item.result, item.result),
-                    size="xs",
-                    c=RESULT_COLOUR.get(item.result),
-                )
-            ),
+            dmc.TableTd(_result_cell(item)),
         ]
+    )
+
+
+def _result_cell(item: TestRow) -> dmc.Text:
+    if item.pending:
+        return dmc.Text(item.pending, size="xs", c="orange")
+    return dmc.Text(
+        RESULT_TEXT.get(item.result, item.result), size="xs", c=RESULT_COLOUR.get(item.result)
     )

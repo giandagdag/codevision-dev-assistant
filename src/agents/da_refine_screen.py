@@ -9,6 +9,7 @@ the state of the job, and this file decides which ones.
 import ast
 from dataclasses import dataclass, field
 
+from agents import da_refine_owntest as owntest
 from agents.da_build_checks import case_ids_from_method, find_test_methods
 from agents.da_refine_checks import (
     cap_message,
@@ -44,7 +45,13 @@ from db_table_functions.db_tbl_da_refine import (
 from db_table_functions.db_tbl_da_requests import get_rulebook_for_request
 from pydantic_classes.da_approach_models import ApproachVersion
 from pydantic_classes.da_build_models import BuildView, TestRow
-from pydantic_classes.da_refine_models import Conflict, RecordDiff, RefineRow, TestSet
+from pydantic_classes.da_refine_models import (
+    Conflict,
+    RecordDiff,
+    RefineRow,
+    RefineState,
+    TestSet,
+)
 from pydantic_classes.da_request_record_models import RequestRecord
 
 REFINE_PLACEHOLDER = "Tell me what to change or fix, then press Send."
@@ -189,15 +196,39 @@ def _row_tag(row: TestRow, new_ids: set[str]) -> str:
     return "New" if row.test_id in new_ids else ""
 
 
+PENDING_TEXT = {
+    owntest.STEP_OWN_FAILS: "Fails today, waiting for your choice",
+    owntest.STEP_OWN_CONFIRM: "Passes today, waiting for your choice",
+}
+
+
+def pending_row(state: RefineState | None) -> TestRow | None:
+    """F1: the new test case waiting for his choice, read from the Refine state (nothing stored)."""
+    if state is None or state.repro is None or state.step not in PENDING_TEXT:
+        return None
+    return TestRow(
+        test_id=state.repro.case_id,
+        criterion_id=state.repro.criterion_id,
+        tag="Yours",
+        description=state.repro.expect,
+        pending=PENDING_TEXT[state.step],
+    )
+
+
 def tag_tests(
-    build: BuildView, new_ids: set[str], yours_ids: set[str], test_sets: list[TestSet]
+    build: BuildView,
+    new_ids: set[str],
+    yours_ids: set[str],
+    test_sets: list[TestSet],
+    pending: TestRow | None = None,
 ) -> BuildView:
     """Pure rule: New (requirement lane), Bug (repro test) or Yours on every test, repro and
     own tests that live only in the appended test sets get a row too, and a line says which test
-    set version and approach version the list belongs to."""
+    set version and approach version the list belongs to. `pending` (a new case waiting for his
+    choice) is the last row."""
     rows = [row.model_copy(update={"tag": _row_tag(row, new_ids)}) for row in build.tests]
     if not test_sets:
-        return build.model_copy(update={"tests": rows})
+        return build.model_copy(update={"tests": _with_pending(rows, pending)})
     latest = test_sets[-1]
     docs = _method_docs(latest.text)
     results = {row.test_id: row.result for row in build.tests}
@@ -217,7 +248,13 @@ def tag_tests(
                 )
             )
     note = f"Test set version {latest.test_set_version}, approach version {latest.approach_version}"
-    return build.model_copy(update={"tests": rows, "tests_note": note})
+    return build.model_copy(update={"tests": _with_pending(rows, pending), "tests_note": note})
+
+
+def _with_pending(rows: list[TestRow], pending: TestRow | None) -> list[TestRow]:
+    if pending is None or any(row.test_id == pending.test_id for row in rows):
+        return rows
+    return [*rows, pending]
 
 
 def get_tagged_build(settings, request_id: str, build: BuildView, plan) -> BuildView:
@@ -227,7 +264,8 @@ def get_tagged_build(settings, request_id: str, build: BuildView, plan) -> Build
         test_sets = read_test_sets(conn, request_id)
     events = list_audit_events(settings.db_path, request_id) if test_sets else []
     yours = {e.details.get("case") for e in events if e.event_type == "own_test_added"}
-    return tag_tests(build, new_ids, yours, test_sets)
+    pending = pending_row(get_refine_state(settings, request_id))
+    return tag_tests(build, new_ids, yours, test_sets, pending)
 
 
 # --- version history for the Summary and Approach tabs (step 13b) ---

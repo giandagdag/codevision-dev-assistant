@@ -43,7 +43,8 @@ STEP_OWN_FAILS = "own_fails"  # the new test fails today; treat it as a bug or d
 ADD_LABEL = "Add this test"
 YES_FIX_LABEL = "Yes, fix it"
 DROP_LABEL = "Drop this test"
-FAILS_LINE = "Your new test fails on the current code. Treat it as a bug?"
+VAGUE_PREFIX = "Describe the case more:"
+FAILS_LINE ="Your new test fails on the current code. Treat it as a bug?"
 
 
 def add_test_case(
@@ -64,7 +65,7 @@ def add_test_case(
     work = _read_work(settings, request_id, base_revision, (STEP_START,), criterion_id)
     if criterion_id not in [c.id for c in work.context.record.acceptance_criteria]:
         raise RefineError("Pick one of the acceptance criteria of this request.")
-    reply, why, _, proof = _write_and_prove(settings, work, description, client)
+    reply, why, _, proof = _write_and_prove(settings, work, description, client, own_test=True)
     with _write(settings.db_path) as conn:
         state = _load_state(conn, request_id, base_revision)
         _require_step(state, STEP_START)
@@ -72,6 +73,11 @@ def add_test_case(
         _require_refinable(conn, request)
         tx = RefineTx(conn, request, state, now)
         tx.say("developer", f"Add a test case for {criterion_id}: {description}")
+        if reply is not None and reply.question:
+            # Too vague is an answer: nothing is run or stored, and no case ID is used up.
+            tx.audit("system", "own_test_vague", {"question": reply.question})
+            tx.say("assistant", f"{VAGUE_PREFIX} {reply.question}")
+            return _save(tx, base_revision)
         if reply is None or proof is None:
             tx.audit("system", "own_test_unusable", {"why": why})
             tx.say("assistant", f"I could not write that test. {why} Describe it again.")
