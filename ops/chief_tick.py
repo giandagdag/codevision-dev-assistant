@@ -29,6 +29,8 @@ import usage_guard
 
 ROOT = Path(__file__).resolve().parent.parent
 STATUS_FILE = ROOT / "STATUS.md"
+TEMPLATE_FILE = ROOT / "ops" / "STATUS.template.md"  # fix 6: STATUS.md is not in git
+FALLBACK_STATUS = "# STATUS\n\n## Where we are\n- Next: none\n\n## Log\n"
 MERGE_BASE = "auto/phases-7-10"
 LABELS = ("needs-gian", "needs-work-test")
 GUARD_BLIND_TITLE = "guard blind: usage cannot be read"
@@ -182,11 +184,59 @@ def tick(
 
     `git=None` switches the stall alarm and the unpushed check off (fix 3); `main` passes real git.
     """
+    ensure_status(status_file, time.time() if now is None else now)
     result = _tick(reader, gh, launcher, status_file, now, preflight, alive, killer, git)
+    backup_status(status_file, time.time() if now is None else now)
     if git is not None and result != "idle":
         stall.clear_stall()  # a worker is running or work was found: not stalled any more
     run_board(board, result)
     return result
+
+
+# ---- STATUS.md is machine-only (Phase A fix 6, H3) ----
+# AS400 comparison: the data area now lives outside the source file, so the tick saves it after
+# every wake (like a SAVOBJ) and restores it if it is gone. Plain file copies: git is never called.
+
+def backup_path() -> Path:
+    """`ops/state/STATUS.backup.md` (follows DA_STATE_DIR, so tests keep it in tmp_path)."""
+    return usage_guard.state_path().parent / "STATUS.backup.md"
+
+
+def ensure_status(status_file: Path, now: float) -> None:
+    """A missing STATUS.md comes back from the backup, else from the template, with one Log line.
+
+    An existing file is never touched. A failed copy is logged once and the tick goes on.
+    """
+    if status_file.exists():
+        return
+    backup = backup_path()
+    source, note = ((backup, "STATUS.md restored from backup") if backup.exists()
+                    else (TEMPLATE_FILE, "STATUS.md created from template"))
+    try:
+        text = source.read_text(encoding="utf-8")
+    except OSError as problem:  # template gone too: the smallest valid file, so the tick goes on
+        status_board.log_failure(problem, now)
+        text, note = FALLBACK_STATUS, "STATUS.md created from the built-in fallback"
+    try:
+        status_file.write_text(text, encoding="utf-8")
+        status.add_log(status_file, f"{usage_guard.format_sgt(now)}: {note}")
+    except OSError as problem:
+        status_board.log_failure(problem, now)
+
+
+def backup_status(status_file: Path, now: float) -> None:
+    """Save STATUS.md whole-or-nothing (temp file, then replace). Never changes the tick result."""
+    try:
+        text = status_file.read_text(encoding="utf-8")
+        if not stall.next_lines(text):
+            return  # empty or broken file: keep the last good backup (code review, Should fix)
+        backup = backup_path()
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        temp = backup.with_suffix(".tmp")
+        temp.write_text(text, encoding="utf-8")
+        os.replace(temp, backup)
+    except OSError as problem:
+        status_board.log_failure(problem, now)
 
 
 def run_board(board: Callable[[str], object] | None, result: str) -> None:
@@ -842,8 +892,10 @@ def main(argv: list[str] | None = None, gh: Gh | None = None) -> int:
     try:
         if args.cmd == "tick":
             launcher = real_launcher if args.launch else None
-            print(tick(usage_guard.endpoint_reader, gh, launcher, board=board,
-                       git=status_board.run_git))
+            # status_file is passed at call time (fix 6): the default is bound at import, so a
+            # patched STATUS_FILE in tests would not reach it.
+            print(tick(usage_guard.endpoint_reader, gh, launcher, status_file=STATUS_FILE,
+                       board=board, git=status_board.run_git))
         elif args.cmd == "issue":
             print(open_gian_issue(args.title, args.body, args.label, gh) or "already open")
         elif args.cmd == "launch":

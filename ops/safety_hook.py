@@ -165,8 +165,23 @@ def _push_problem(args: list[str], cwd: Path) -> str | None:
     return None
 
 
+def _add_problem(args: list[str], cwd: Path) -> str | None:
+    """Fix 6 (H4): STATUS.md is not in git, and `--force` could push an ignored file back in.
+
+    Every word after `add` is checked, flags included, so `git add -- STATUS.md` is caught too.
+    """
+    for w in args:
+        if w.startswith("--fo") or (w.startswith("-") and not w.startswith("--") and "f" in w[1:]):
+            return "git add --force is not allowed"
+        if not w.startswith("-") and _resolve(w, cwd) == STATUS_FILE.resolve():
+            return "STATUS.md is not in git (Phase A fix 6)"
+    return None
+
+
 def _git_problem(words: list[str], cwd: Path) -> str | None:
     sub, args = _git_sub(words)
+    if sub == "add":
+        return _add_problem(args, cwd)
     if sub in ("rm", "clean"):
         return f"git {sub} deletes files, which is not allowed"
     if sub == "reset" and "--hard" in args:

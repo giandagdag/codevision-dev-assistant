@@ -25,3 +25,7 @@ logs/
 
 # Usage guard state, machine-specific (Phase A)
 ops/state/
+
+# The chief's live notepad: machine-only, never in git (Phase A fix 6).
+# A fresh copy comes from ops/STATUS.template.md; the tick keeps a backup in ops/state/.
+/STATUS.md
