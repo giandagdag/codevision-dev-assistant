@@ -44,8 +44,8 @@ def _work(settings: Settings, request_id: str, base_revision: int, engine_option
     try:
         net_flow.run_safety_net(settings, request_id, base_revision, **engine_options)
     except Exception:  # noqa: BLE001 - a thread must never die without a log line
-        # Nothing was saved by a half-done run; the step stays as it was, so the screen offers
-        # Try again (s_unable) or the next server start moves s_writing to s_unable.
+        # Nothing was saved by a half-done run. The step moves to s_unable below so the screen
+        # offers Try again; start-up recovery only covers a hard kill of the whole server.
         logger.exception("The background safety net of %s stopped on an error.", request_id)
         try:
             net_flow.mark_safety_net_stopped(settings, request_id)
