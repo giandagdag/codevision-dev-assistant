@@ -8,6 +8,7 @@ from typing import Annotated, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
+from pydantic_classes.da_enhance_models import ImpactResult
 from pydantic_classes.da_models import REQUEST_ID_PATTERN, Request
 from pydantic_classes.da_request_record_models import ChatMessage, RequestRecord
 
@@ -96,6 +97,8 @@ class DiscoveryResult(_Shape):
     summary_source: SummarySource
     model: str = ""
     hint: str = ""
+    # Phase 9: what the impact walk found in this round (enhance requests only).
+    impact: ImpactResult | None = None
     created_at: AwareDatetime | None = None
 
     @model_validator(mode="after")

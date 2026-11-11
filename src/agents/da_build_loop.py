@@ -40,6 +40,17 @@ from agents.da_build_flow import (
     _require_request,
     _write,
 )
+from agents.da_enhance_build_checks import (
+    STILL_OLD,
+    ExpectedOutcome,
+    expected_outcomes,
+    expected_test_text,
+    frozen_set_with_net,
+    net_nc_status,
+    scope_problems,
+    scoped_view,
+    signature_problems,
+)
 from agents.da_refine_merge import his_lines, marker_text, plan_merge
 from agents.da_sandbox import run_tests
 from agents.da_workspace_checks import fingerprint
@@ -66,10 +77,14 @@ from db_table_functions.db_tbl_da_build import (
     read_rounds,
     save_build_state,
 )
+from db_table_functions.db_tbl_da_discovery import read_latest_result
+from db_table_functions.db_tbl_da_enhance import ensure_enhance_tables, read_accepted_net
 from db_table_functions.db_tbl_da_refine import (
     add_build_result,
     close_refine,
     insert_conflict_row,
+    insert_test_set,
+    next_test_set_version,
     read_latest_test_set,
     read_refine_state,
     save_refine_state,
@@ -97,6 +112,7 @@ from pydantic_classes.da_build_models import (
     ProgressState,
     RoundRecord,
 )
+from pydantic_classes.da_enhance_models import ImpactRow, SafetyNetRow
 from pydantic_classes.da_models import (
     STATUS_BUILDING,
     STATUS_NOT_PASSING,
@@ -105,7 +121,7 @@ from pydantic_classes.da_models import (
     STATUS_TESTER_REVIEW,
     Request,
 )
-from pydantic_classes.da_refine_models import STEP_BUG_FIXING, STEP_FINDING_FIXING
+from pydantic_classes.da_refine_models import STEP_BUG_FIXING, STEP_FINDING_FIXING, TestSet
 from pydantic_classes.da_request_record_models import RequestRecord
 from pydantic_classes.da_rulebook_models import Charter, Policy, Rule
 from pydantic_classes.da_tester_models import Finding, ReviewRecord
@@ -162,6 +178,9 @@ class _Inputs:
     reviews: list[ReviewRecord]
     # Phase 8: the newest frozen test set version (the bug lane appends to it); "" when none.
     test_set_text: str = ""
+    # Phase 9: the accepted safety net and the callers found by impact (enhance and fix only).
+    net: SafetyNetRow | None = None
+    impact_rows: list[ImpactRow] = field(default_factory=list)
     planned: list[PlannedFile] = field(init=False)
 
     def __post_init__(self) -> None:
@@ -223,6 +242,7 @@ class _Run:
         self.reference: Path
         self.context: agent.BuildContext
         self._layer_b_line: int | None = None
+        self.expected_outcomes: list[ExpectedOutcome] = []
 
     # --- the top ---
 
@@ -320,6 +340,7 @@ class _Run:
             ensure_build_tables(conn)
             ensure_workspace_tables(conn)
             ensure_audit_table(conn)
+            ensure_enhance_tables(conn)
             conn.execute("BEGIN")
             request = _require_request(conn, self.request_id)
             state = read_build_state(conn, self.request_id)
@@ -362,7 +383,13 @@ class _Run:
                 and refine.step == STEP_FINDING_FIXING
                 else None
             )
+            enhancing = record.kind != "new"
+            net = read_accepted_net(conn, self.request_id, request.version) if enhancing else None
+            found = read_latest_result(conn, self.request_id) if enhancing else None
+            impact = found.impact if found is not None else None
             self.inp = _Inputs(
+                net=net,
+                impact_rows=impact.rows if impact is not None and impact.available else [],
                 test_set_text=latest_set.text if latest_set else "",
                 request=request,
                 state=state,
@@ -408,8 +435,40 @@ class _Run:
         contract = Contract.model_validate_json(self.inp.frozen["contract"].text)
         if "test" not in self.inp.frozen:
             self._write_tests(contract)
+        self._freeze_safety_net()
         # The frozen file is never changed; test set versions only add methods to it.
         return contract, self.inp.test_set_text or self.inp.frozen["test"].text
+
+    def _freeze_safety_net(self) -> None:
+        """Phase 9 (spec section 10): the frozen set of an enhance request is the criterion tests
+        plus the safety-net tests that must still pass, as the first test set version. Tests
+        expected to change are only recorded by name: they do not run in Layer B."""
+        if self.inp.net is None or self.inp.test_set_text:
+            return
+        text, net_methods, expected = frozen_set_with_net(
+            self.inp.frozen["test"].text, self.inp.net.net
+        )
+        with self._turn() as tx:
+            version = next_test_set_version(tx.conn, self.request_id)
+            insert_test_set(
+                tx.conn,
+                TestSet(
+                    request_id=self.request_id,
+                    test_set_version=version,
+                    approach_version=tx.state.approach_version,
+                    added_case_ids=[case.id for case in self.inp.net.net.cases],
+                    text=text,
+                    fingerprint=fingerprint(text),
+                    net_methods=net_methods,
+                    expected_to_change_methods=expected,
+                ),
+                tx.now,
+            )
+            tx.audit(
+                "system", "safety_net_frozen",
+                {"tests": len(net_methods), "expected_to_change": len(expected)},
+            )
+        self.inp.test_set_text = text
 
     def _write_contract(self) -> None:
         self._alive()
@@ -611,8 +670,13 @@ class _Run:
         self._alive()
         name = path.rsplit("/", 1)[-1]
         line = self._line(f"AI writes {name}", "running")
+        scoped = self._is_scoped(path, action)
+        # Phase 9: an enhance target shows only the functions in scope, never the whole file.
+        shown = (
+            scoped_view(path, base, self.inp.record.functions_in_scope) if scoped else base
+        )
         prompt = agent.build_code_prompt(
-            self.context, contract, path, action, number, tests, base, failures,
+            self.context, contract, path, action, number, tests, shown, failures,
             self._his_lines_note(path),
         )
         result = agent.write_code(self.client("generator"), self.context, prompt, action)
@@ -632,6 +696,11 @@ class _Run:
             )
         elif action == "modify":
             text, problems = apply_edits(base, result.value.edits, path)
+            if scoped:
+                # A8: an edit outside the functions in scope is a Layer A problem.
+                problems += scope_problems(
+                    path, base, result.value.edits, self.inp.record.functions_in_scope
+                )
         else:
             text = result.value.text
         with self._turn() as tx:
@@ -654,6 +723,17 @@ class _Run:
             self._note(tx, f"AI wrote {name}", "failed" if problems else "done", line)
         return text, problems
 
+    def _is_scoped(self, path: str, action: str) -> bool:
+        """True for an existing target of an enhance or fix request that names functions."""
+        record = self.inp.record
+        targets = {_clean(target).lower() for target in record.targets}
+        return (
+            record.kind != "new"
+            and action == "modify"
+            and bool(record.functions_in_scope)
+            and path.lower() in targets
+        )
+
     def _saved_this_round(self, path: str, number: int) -> BuildFile | None:
         """The file already written in this round, if it was written cleanly. A file saved with
         problems (made_by "system": its edit blocks did not match) is NOT skipped on a resume, so
@@ -673,10 +753,24 @@ class _Run:
             codevision_modules=list_codevision_modules(self.reference / "src"),
         )
         found = check_layer_a(generated, context)
+        problems = problems + self._locked_signature_problems(generated)
         return LayerAResult(
             problems=problems + found.problems,
             rulebook_checks_applied=found.rulebook_checks_applied,
         )
+
+    def _locked_signature_problems(self, generated: dict[str, str]) -> list[LayerAProblem]:
+        """A9: a function in scope that a file outside the plan calls keeps its arguments."""
+        if not self.inp.impact_rows:
+            return []
+        planned = [_clean(i.path) for i in self.inp.planned]
+        found: list[LayerAProblem] = []
+        for path, text in generated.items():
+            if path in self.inp.start_texts:
+                found += signature_problems(
+                    path, self.inp.start_texts[path], text, self.inp.impact_rows, planned
+                )
+        return found
 
     def _layer_b(self, tests: str) -> LayerBResult:
         self._alive()
@@ -981,8 +1075,11 @@ class _Run:
         number = last.round
         line = None if self.rerun else self._enter_layer_c(number)
         data = self._review_input(last)
+        self._run_expected_tests()
         plain = self._plain_findings(last)
-        check_one_failed = any(f.check == 1 for f in plain)
+        # Only a Must fix of check 1 ends the build; the Phase 9 FYI lines (an NC item listed as
+        # not covered, a test that still shows the old result) never change the label.
+        check_one_failed = any(f.check == 1 and f.severity == "must_fix" for f in plain)
         started = self.now_fn()
         client = self.client("tester")
         outcome = tester_agent.ReviewOutcome(model=getattr(client, "model", ""))
@@ -1046,9 +1143,56 @@ class _Run:
         code = {path: item.text for path, item in self.inp.code.items()}
         return (
             tester.check_criteria_have_tests(self.inp.record, test_text)
+            + self._enhance_findings()
             + tester.check_tests_pass(self.inp.record, last.layer_b)
             + tester.check_files_match_plan(planned, code, self._review_start_texts)
         )
+
+    def _enhance_findings(self) -> list[Finding]:
+        """Phase 9, check 1: the NC line, and the FYI for an expected-to-change test that still
+        shows the old result (it never changes the label)."""
+        if self.inp.net is None:
+            return []
+        net = self.inp.net.net
+        run_ids, listed = net_nc_status(net)
+        found = tester.check_nc_items(self.inp.record, run_ids, listed)
+        still_old = [(o.case_id, o.ac_id) for o in self.expected_outcomes if o.label == STILL_OLD]
+        return found + tester.check_still_old(still_old)
+
+    def _run_expected_tests(self) -> None:
+        """Run the expected-to-change tests once, for information, on the code that passed Layer B
+        (D-G). A sandbox that cannot run them is not a pause: nothing is claimed and the audit says
+        so."""
+        self.expected_outcomes = []
+        if self.inp.net is None:
+            return
+        net = self.inp.net.net
+        text = expected_test_text(net)
+        if not text:
+            return
+        policy = self.inp.policy
+        result = run_tests(
+            self.reference,
+            {path: item.text for path, item in self.inp.code.items()},
+            self.test_id,
+            text,
+            exclude=policy.build_sandbox_exclude,
+            timeout_seconds=policy.build_test_timeout_seconds,
+        )
+        if result.ran:
+            self.expected_outcomes = expected_outcomes(net, result)
+        with self._turn() as tx:
+            tx.audit(
+                "system",
+                "expected_to_change_run",
+                {
+                    "ran": result.ran,
+                    "results": [
+                        {"case": o.case_id, "ac": o.ac_id, "label": o.label}
+                        for o in self.expected_outcomes
+                    ],
+                },
+            )
 
     @property
     def _review_start_texts(self) -> dict[str, str]:
@@ -1097,7 +1241,9 @@ class _Run:
             if self.rerun:
                 self._finish_rerun(tx, saved, label, bool(must) or check_one_failed)
             elif check_one_failed:
-                criterion = next(f for f in findings if f.check == 1)
+                criterion = next(
+                    f for f in findings if f.check == 1 and f.severity == "must_fix"
+                )
                 text = f"Criterion {criterion.cites} has no test. Change the approach or get help."
                 self._close(tx, False, used, LABEL_NOT_PASSING, text)
             elif self.check and must:

@@ -161,6 +161,8 @@ class FailureItem(_Shape):
     expected: str  # one plain sentence from the test's docstring
     message: str
     traceback_tail: list[str] = Field(default_factory=list)
+    # Phase 9: a safety-net test is told in its own words ("Safety-net test S-4 ... now fails").
+    note: str = ""
 
 
 class FailureReport(_Shape):

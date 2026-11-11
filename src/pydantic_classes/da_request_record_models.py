@@ -102,6 +102,25 @@ class AcceptanceCriterion(_Shape):
 
 CriteriaList = Annotated[list[AcceptanceCriterion], Field(max_length=LIST_LENGTH_LIMIT)]
 
+# Phase 9 (Enhance). The ID of a must-not-change item; never reused, like a criterion ID.
+NC_ID_PATTERN = r"^NC-[1-9]\d*$"
+RequestKind = Literal["new", "enhance", "fix"]
+# "" = not checked yet. "intentional" = he confirmed his local changes. "unchecked" = main could
+# not be reached and he went on without the check (spec section 5).
+FreshnessOverride = Literal["", "intentional", "unchecked"]
+
+
+class MustNotChange(_Shape):
+    """One line of the answer to "What must NOT change?"."""
+
+    id: str = Field(pattern=NC_ID_PATTERN)
+    text: ShortText
+
+
+class RecordFreshness(_Shape):
+    result: str = ""
+    override: FreshnessOverride = ""
+
 
 class RequestRecord(_Shape):
     request_id: str = Field(pattern=REQUEST_ID_PATTERN)
@@ -129,6 +148,16 @@ class RequestRecord(_Shape):
     answered_questions: list[Annotated[int, Field(ge=1, le=QUESTION_COUNT)]] = Field(
         default_factory=list
     )
+    # Phase 9 (Enhance). All optional with empty defaults, so records saved before it still load.
+    kind: RequestKind = "new"
+    targets: list[str] = Field(default_factory=list)
+    today: LongText = ""
+    must_not_change: list[MustNotChange] = Field(default_factory=list)
+    functions_in_scope: list[str] = Field(default_factory=list)
+    capability: str = ""
+    capability_confirmed: bool = True
+    named_senior: str = ""
+    freshness: RecordFreshness = Field(default_factory=RecordFreshness)
 
 
 class Ambiguity(_Shape):

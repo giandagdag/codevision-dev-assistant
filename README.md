@@ -572,6 +572,43 @@ local fixes must survive. It starts at `b_written` (READY_FOR_REVIEW or NOT_PASS
 - **Known gap.** The Refine box is drawn, but its click callbacks are not wired yet, so the browser
   test 8-42 (`tests/test_da_refine_e2e.py`) is written and skipped. Work test: `docs/refine-work-test.md`.
 
+## How Phase 9 works
+
+Phase 9 is **Enhance**: change a program that already exists (home card 2, "Change an existing
+program"). AS400 picture: changing a live RPG program. First you find the member, check your copy
+is the one in the production library, record what it does today, then change only the procedures
+you named. Spec `specs/phase-9-enhance.md`, plan `specs/phase-9-plan.md`. No new status: the header
+pill shows the step (`e_find` to `s_accepted`).
+
+- **Find.** Name the program or describe it. A name search and a meaning search run on the Phase 3
+  index (same safety filter), merged, with a **Best match** mark. Each program shows its capability
+  (the rulebook's catalog); one not in it gets a pick and goes to the **Unassigned** queue.
+  **This is a fix** pre-fills "Make it work as intended". Card 1 offers a switch to Enhance once
+  when a program is a Best match.
+- **Freshness.** The browser sends the program as it is in your folder; the server compares it with
+  main (`DA_MAIN_SOURCE`: `fake` reads `DA_FAKE_MAIN_DIR`, `bitbucket` says "not configured" until
+  WF-1). Equal: the text becomes the baseline. Anything else stops at `e_stale`, never a silent pass.
+- **Understand** gets a today-draft (one AI call), boxes for what changes and what must NOT change
+  (`NC-1`, `NC-2`...), and a functions-in-scope checkpoint.
+- **Impact** is plain code (`ast`): who calls the functions in scope, in the server's reference copy.
+- **Safety net.** The Tester writes tests of today's behaviour, they are proven on today's code,
+  failing ones are fixed or dropped and listed as not covered. You accept the net before Approach.
+- **Build** shows the Generator only the functions in scope. Two new Layer A checks: **A8** (an edit
+  outside the scope) and **A9** (a locked signature changed while a caller is outside the plan).
+  Tests you marked "expected to change" run once for information; a still-old result is an FYI.
+- **Smoke check** items 29 (card 2 to READY_FOR_REVIEW) and 30 (the card 1 switch offer).
+  The real-browser test 9-50 (`tests/test_da_enhance_e2e.py`) is skipped when no browser is found.
+  Work test: `docs/enhance-work-test.md`.
+- **Fixed on the way:** a Layer C check-1 FYI (an NC item "not covered") used to end the build as
+  Not passing. Only a Must fix of check 1 does now.
+- **Screen, as wired.** Impact card (Discovery tab), **Safety net** tab (with "After the change"
+  dropdowns while you review), the read-only net in the Approach tab, the header pill, the
+  functions-in-scope tick list at the checkpoint and the safety net writing in the background
+  (the page redraws every 3 seconds) are all connected to their callbacks.
+- **Known gaps.** There is no separate "Show other matches" button: when Find returns more than one
+  program, a tick list is shown at once with the Best match ticked (same result, one click less).
+  The real-browser test 9-50 is written and skipped until a browser is available.
+
 ## Notes for the move to CodeVision
 
 - **The audit-table triggers are SQLite-only.** The append-only guarantee comes from two SQLite

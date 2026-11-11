@@ -11,7 +11,8 @@ limit is per copy: open question Q14 (e), plan item P9.)
 """
 
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 
 from agents import da_build_loop as loop
@@ -133,6 +134,32 @@ def _wait_for_slot(settings: Settings, key: Key) -> bool:
         if ahead != announced:
             announced = ahead
             _note_waiting(settings, request_id, ahead)
+
+
+SAFETY_NET_NUMBER = -1  # the "build number" of a safety-net run, so its key never matches a build
+
+
+@contextmanager
+def safety_net_slot(settings: Settings, request_id: str) -> Iterator[None]:
+    """One slot of the shared pool for a safety-net write or proof (Phase 9 F2): it uses the AI
+    and the sandbox like a build, so it counts towards `build_max_parallel` and waits its turn
+    first in first out with the builds."""
+    key: Key = (request_id, SAFETY_NET_NUMBER)
+    limit = get_rulebook_for_request(
+        settings.db_path, request_id
+    ).rulebook.policy.build_max_parallel
+    with _condition:
+        _waiting.append(key)
+        while not (_waiting[0] == key and len(_active) < limit):
+            _condition.wait(timeout=WAIT_SECONDS)
+        _waiting.remove(key)
+        _active.add(key)
+    try:
+        yield
+    finally:
+        with _condition:
+            _active.discard(key)
+            _condition.notify_all()
 
 
 def _leave_queue(key: Key) -> None:

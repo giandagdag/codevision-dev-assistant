@@ -39,6 +39,12 @@ def build_queries(record: RequestRecord, hint: str = "") -> list[Query]:
     hint = hint.strip()
     if hint:
         wanted += [Query(hint, "exact"), Query(hint, "meaning")]
+    # Phase 9: an enhance or fix request also searches for its own programs and the functions in
+    # scope. They come before the title, so the cap of 6 keeps them (spec section 7, step 1).
+    if record.kind != "new":
+        wanted += [Query(path, "exact") for path in record.targets]
+        if record.functions_in_scope:
+            wanted.append(Query(" ".join(record.functions_in_scope), "exact"))
     wanted.append(Query(record.title, "exact"))
     wanted.append(Query(record.objective, "meaning"))
     wanted.append(Query(record.expected_behaviour, "meaning"))

@@ -6,7 +6,7 @@ AS400 comparison: a job schedule entry wakes a small job every 30 minutes. It ch
 ## The pieces
 | Piece | File | What it does |
 |---|---|---|
-| Usage guard | `ops/usage_guard.py`, `ops/guard_hook.py` | GO or STOP at 80% weekly or 85% of the 5-hour limit. Blind = STOP |
+| Usage guard | `ops/usage_guard.py`, `ops/guard_hook.py` | GO or STOP at 95% weekly (past it only on usage credits, max $50) or 85% of the 5-hour limit. Blind = STOP |
 | Quiet runner | `ops/quiet.py`, `ops/quiet_hook.py` | Short summary of pytest, ruff, git status/diff/log. Full output in `logs/quiet/` |
 | Safety hook | `ops/safety_hook.py` | No push to `main`, no force push, no `.env`, no deleting outside `logs/` and `ops/state/` |
 | Chief and team | `.claude/agents/chief.md` and others, `ops/chief_tick.py` | The decision rule and the wake-up job |
@@ -76,7 +76,7 @@ Build 55% (by step: highest "Phase N step K" commit over the plan's numbered ste
 says "0 Must fix", a stand-in because the board cannot run tests), Merged 5%. Overall =
 (merged phases x 100 + current phase %) / 4. A stage that cannot be read counts as not done and the
 line says "(estimate)". The usage bars show the guard's numbers next to the stop lines (85% for 5h,
-80% weekly), or `blind`.
+95% weekly), or `blind`. A "Usage credits" row shows on or off and the dollars spent.
 
 **A stale "Updated" time means check the laptop**: the tick has stopped running (laptop off or
 asleep, Task Scheduler stopped).
@@ -185,6 +185,29 @@ three different allowed commands in a row are refused.
 **The board shows sub-steps.** Commits named `Phase 8 step 13d: ...` show as `Build, step 13d of 15`;
 the bar still counts whole steps (13d is inside step 13).
 
+## Usage credits and Fable (Phase A fix 5, 10 Nov)
+AS400 comparison: a second data area that is only read once the first one says "full".
+
+**Weekly line 95%.** Gian moved it from 80% on 10 Nov. Below 95% nothing changed.
+
+**Past either line (95% weekly or 85% 5-hour): only on usage credits.** The guard reads the `extra_usage` part of the same reply.
+It says GO only when all of these hold, otherwise STOP with the normal weekly reason:
+- credits are switched on and spendable (`is_enabled` true, no `disabled_reason`, spend limit not
+  reached, not switched off by you). A $0 balance shows as `out_of_credits`: buy credits first.
+- less than `TEAM_CREDIT_CAP` ($50) spent this month, and under the account's monthly limit.
+- fix 5b (10 Nov 23:39): credits also pay past the 5-hour line (85%), so the team builds
+  overnight. A reading from 100% to 200% counts as 100% (full); above 200% is "guard blind".
+Amounts come in cents (`monthly_limit` 5000 = $50 on 10 Nov). Anything odd in that part means
+"no credits", never "guard blind". The $50 is the account's spend, so your own chats count too.
+
+**Fable from Thu 12 Nov 19:00 SGT** (the weekly reset). `model_for()` in `ops/chief_tick.py`:
+spec-writer, plan-reviewer and code-reviewer run on `fable`; chief, builder and status-digest keep
+their models. The builder starts the two reviewers itself, so after that time its worker gets
+`CLAUDE_CODE_SUBAGENT_MODEL=fable` and `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` (Claude Code 2.1.257
+or later; check with `claude --version`; an older one ignores FORCE and the reviews stay on
+sonnet). FORCE puts every subagent of the builder on Fable, not only the two reviewers. The
+ledger's `model` column shows the worker's own model (a builder row says sonnet).
+
 ## How questions reach you
 One GitHub issue per question, label `needs-gian` (or `needs-work-test` for things that need the
 work laptop). You get a phone notification and answer in a comment. The chief reads it on its next wake-up.
@@ -210,7 +233,7 @@ work laptop). You get a phone notification and answer in a comment. The chief re
      missing value, or a value outside 0 to 100 is "guard blind". The token's place in the
      credentials file (`claudeAiOauth.accessToken`) is my assumption, so this step is the proof.
 2. **Fake STOP:** edit the stop lines at the top of `ops/usage_guard.py` to 1, run it again,
-   expect `STOP`, then put them back to 85 and 80.
+   expect `STOP`, then put them back to 85 and 95.
 3. **Hook interpreter.** The three hooks in `.claude/settings.json` run with `$DA_PYTHON`, which
    `chief_tick.py` sets to the Python that runs it (use your `.venv\Scripts\python.exe` in the
    scheduled task). Outside a worker it is unset, so the hooks do nothing. Before every worker the

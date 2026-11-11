@@ -18,6 +18,12 @@ Two reply shapes are understood (A-P1 confirms them on the laptop):
 A third layout, a "limits" list, is NOT confirmed and is not supported: it is "guard blind".
 Every reply is saved raw to `ops/state/usage_raw.json` so A-P1 can check the real layout.
 A value that is missing, not a plain number, or outside 0 to 100 is also "guard blind".
+
+Usage credits (Phase A fix 5, Gian 10 Nov): past the weekly line the team may go on only while
+usage credits are switched on, the credits part of the reply (`extra_usage`) says they can be spent,
+and the team has spent less than TEAM_CREDIT_CAP dollars this month. Anything odd in that part
+means "no credits" (STOP at the weekly line), never "guard blind": the plan numbers still work.
+AS400 comparison: a second data area that only matters once the first one says "full".
 """
 
 import json
@@ -33,7 +39,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
-WEEKLY_STOP = 80  # Gian, 6 Nov: stop at 80% of the weekly limit
+WEEKLY_STOP = 95  # Gian, 10 Nov (was 80): stop at 95% of the weekly limit, unless credits allow
+OVER_LIMIT_MAX = 200  # fix 5b: a reading up to 200% counts as 100%; above that is "guard blind"
+TEAM_CREDIT_CAP = 50.0  # Gian, 10 Nov: the team may spend at most this many dollars of credits
 FIVE_HOUR_STOP = 85  # and at 85% of the 5-hour limit
 MAX_AGE_SECONDS = 180  # older than this, the hook re-reads the usage itself (X17)
 SGT = timezone(timedelta(hours=8))  # fixed +8, so Windows without tz data still works
@@ -52,6 +60,9 @@ class Usage:
     five_hour_resets_at: float | None  # Unix seconds
     weekly_resets_at: float | None
     read_at: float
+    credits_on: bool = False  # usage credits switched on AND spendable (not out, not at the limit)
+    credits_used: float = 0.0  # dollars spent this month (the account's whole spend, not only ours)
+    credits_limit: float | None = None  # the account's monthly spend limit in dollars
 
     def __post_init__(self):
         # Fail closed: NaN, infinity, negative or over-100 numbers must never reach decide(),
@@ -66,6 +77,21 @@ class Usage:
                 raise ValueError(f"{name} must be a finite number")
         if not math.isfinite(self.read_at):
             raise ValueError("read_at must be a finite number")
+        if not isinstance(self.credits_on, bool):
+            raise ValueError("credits_on must be true or false")
+        for name in ("credits_used", "credits_limit"):
+            value = getattr(self, name)
+            if value is None and name == "credits_limit":
+                continue
+            if isinstance(value, bool) or not (isinstance(value, int | float)
+                                                and math.isfinite(value) and value >= 0):
+                raise ValueError(f"{name} must be a number of dollars, 0 or more")
+
+    def credits_left(self) -> bool:
+        """True when credits may pay for more work: on, and under both dollar caps."""
+        if not self.credits_on or self.credits_used >= TEAM_CREDIT_CAP:
+            return False
+        return self.credits_limit is None or self.credits_used < self.credits_limit
 
 
 @dataclass(frozen=True)
@@ -91,7 +117,15 @@ def format_sgt(epoch: float | None) -> str:
 def decide(usage: Usage | None) -> Decision:
     if usage is None:
         return Decision(False, "guard blind: the usage could not be read")
-    if usage.weekly >= WEEKLY_STOP:
+    over_week = usage.weekly >= WEEKLY_STOP
+    over_five = usage.five_hour >= FIVE_HOUR_STOP
+    if (over_week or over_five) and usage.credits_left():
+        # Fix 5b (Gian, 10 Nov 23:39): credits pay past BOTH lines, so the team builds overnight.
+        # The dollar caps are the brake now.
+        return Decision(True, f"on usage credits: weekly {usage.weekly:g}%, 5-hour "
+                              f"{usage.five_hour:g}%, ${usage.credits_used:.2f} of "
+                              f"${TEAM_CREDIT_CAP:.0f} spent")
+    if over_week:
         return Decision(
             False,
             f"weekly {usage.weekly:g}%, resets {format_sgt(usage.weekly_resets_at)}",
@@ -121,7 +155,7 @@ def read_state(path: Path | None = None) -> Usage | None:
     try:
         data = json.loads((path or state_path()).read_text(encoding="utf-8"))
         return Usage(**data)
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, OverflowError):
         return None
 
 
@@ -158,6 +192,8 @@ def _window(body: dict, name: str) -> tuple[float, float | None]:
         raise KeyError("percentage")
     if isinstance(percent, bool) or not isinstance(percent, int | float):
         raise ValueError("a percentage must be a plain number")  # missing, text, true/false
+    if 100 < percent <= OVER_LIMIT_MAX:
+        percent = 100  # fix 5b: past a plan limit (on credits) is "full", not "blind"
     return float(percent), _epoch(window.get("resets_at"))
 
 
@@ -171,12 +207,49 @@ def _epoch(value) -> float | None:
     return datetime.fromisoformat(str(value)).timestamp()  # ISO time, e.g. 2027-01-15T09:00:00Z
 
 
+def _money(value, places: int) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value):
+        raise ValueError("not an amount")
+    return float(value) / 10 ** places
+
+
+def _credits(body: dict) -> tuple[bool, float, float | None]:
+    """(spendable, dollars used, dollar limit) from `extra_usage`. Anything odd: no credits.
+
+    The reply counts in cents: on 10 Nov `monthly_limit` 5000 with `decimal_places` 2 matched the
+    "$50" monthly spend limit on Gian's Settings > Usage screen.
+    """
+    try:
+        extra = body.get("extra_usage")
+        # Review fix: the spend, its unit and its currency must all be there. A missing one
+        # means the $50 cap cannot be checked, so no credits.
+        if not isinstance(extra, dict) or extra.get("currency") != "USD":
+            return False, 0.0, None
+        if "used_credits" not in extra or "decimal_places" not in extra:
+            return False, 0.0, None
+        places = extra["decimal_places"]
+        if isinstance(places, bool) or not isinstance(places, int) or not 0 <= places <= 4:
+            return False, 0.0, None
+        used = _money(extra["used_credits"], places)
+        limit = extra.get("monthly_limit")
+        limit = None if limit is None else _money(limit, places)
+        spendable = (extra.get("is_enabled") is True and not extra.get("disabled_reason")
+                     and extra.get("spend_limit_reached") is not True
+                     and extra.get("user_disabled") is not True)
+        if used < 0 or (limit is not None and limit < 0):
+            return False, 0.0, None
+        return spendable, used, limit
+    except (ValueError, TypeError, AttributeError, OverflowError):
+        return False, 0.0, None
+
+
 def parse_usage_response(body: dict, now: float) -> Usage:
     try:
         five, five_reset = _window(body, "five_hour")
         week, week_reset = _window(body, "seven_day")
-        return Usage(five, week, five_reset, week_reset, now)
-    except (KeyError, TypeError, ValueError, AttributeError):
+        on, used, limit = _credits(body)
+        return Usage(five, week, five_reset, week_reset, now, on, used, limit)
+    except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
         raise GuardBlind("the usage reply has an unexpected shape") from None
 
 

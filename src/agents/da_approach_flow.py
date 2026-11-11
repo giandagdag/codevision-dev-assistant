@@ -71,6 +71,7 @@ from db_table_functions.db_tbl_da_approach import (
 from db_table_functions.db_tbl_da_audit import ensure_audit_table, insert_audit_event
 from db_table_functions.db_tbl_da_build import ensure_build_tables
 from db_table_functions.db_tbl_da_discovery import count_rounds, read_latest_result
+from db_table_functions.db_tbl_da_enhance import ensure_enhance_tables, read_accepted_net
 from db_table_functions.db_tbl_da_requests import (
     get_rulebook_for_request,
     read_request,
@@ -97,6 +98,7 @@ from pydantic_classes.da_approach_models import (
     TestPlanVersion,
 )
 from pydantic_classes.da_discovery_models import DiscoveryResult
+from pydantic_classes.da_enhance_models import SafetyNetRow
 from pydantic_classes.da_models import (
     STATUS_APPROACH_PROPOSED,
     STATUS_DISCOVERY_CONFIRMED,
@@ -179,6 +181,8 @@ class _Snap:
     approach: ApproachVersion | None
     plan: TestPlanVersion | None
     developer_text: str
+    # Phase 9: the accepted safety net of this record version (None for a new-program request).
+    net: SafetyNetRow | None = None
 
 
 @dataclass
@@ -226,6 +230,9 @@ def start_approach(
         raise ApproachError(_wrong_step_message(snap))
     if snap.discovery is None:
         raise ApproachError("Discover has no saved round, so the approach cannot start.")
+    if snap.record.kind != "new" and snap.net is None:
+        # Phase 9: the safety net is accepted before the plan is made (spec section 8).
+        raise ApproachError("Accept the safety net first. Approach starts after it.")
     pinned = get_rulebook_for_request(settings.db_path, request_id)
     context = _context(pinned, snap)
     result = _generate(settings, PROPOSE, context, generator)
@@ -532,11 +539,13 @@ def get_approach_view(settings: Settings, request_id: str) -> ApproachView:
     with open_db(settings.db_path) as conn:
         ensure_approach_tables(conn)
         ensure_audit_table(conn)
+        ensure_enhance_tables(conn)
         conn.execute("BEGIN")
         request = _require_request(conn, request_id)
         record = read_confirmed_record(conn, request_id, request.version)
         if record is None:
             raise ApproachError("This request is not confirmed yet, so Approach cannot show it.")
+        net = read_accepted_net(conn, request_id, request.version) if record.kind != "new" else None
         state = read_approach_state(conn, request_id)
         approach = read_latest_approach(conn, request_id)
         plan = read_latest_plan(conn, request_id)
@@ -575,6 +584,7 @@ def get_approach_view(settings: Settings, request_id: str) -> ApproachView:
         failed_first_call=failed,
         revision=revision,
         demo_mode=settings.llm_provider == "fake",
+        safety_net_cases=net.net.cases if net else [],
     )
 
 
@@ -893,6 +903,7 @@ def _snapshot(settings: Settings, request_id: str, base_revision: int) -> _Snap:
     with open_db(settings.db_path) as conn:
         ensure_approach_tables(conn)
         ensure_audit_table(conn)
+        ensure_enhance_tables(conn)
         conn.execute("BEGIN")
         request = _require_request(conn, request_id)
         if read_approach_revision(conn, request_id) != base_revision:
@@ -900,7 +911,9 @@ def _snapshot(settings: Settings, request_id: str, base_revision: int) -> _Snap:
         record = read_confirmed_record(conn, request_id, request.version)
         if record is None:
             raise ApproachError("This request is not confirmed yet, so Approach cannot start.")
+        net = read_accepted_net(conn, request_id, request.version) if record.kind != "new" else None
         snap = _Snap(
+            net=net,
             request=request,
             record=record,
             discovery=read_latest_result(conn, request_id),
@@ -921,6 +934,7 @@ def _write_transaction(db_path: Path) -> Iterator[sqlite3.Connection]:
         ensure_rulebook_tables(conn)
         ensure_audit_table(conn)
         ensure_approach_tables(conn)
+        ensure_enhance_tables(conn)
         # Phase 8: Accept test plan may close a requirement-lane Refine and reset the workspace.
         ensure_build_tables(conn)
         ensure_workspace_tables(conn)
@@ -1007,6 +1021,7 @@ def _context(
         previous=snap.approach,
         decisions=decisions or [],
         change_text=change_text,
+        net_cases=snap.net.net.cases if snap.net else [],
     )
 
 
@@ -1078,6 +1093,8 @@ def _gate(conn: sqlite3.Connection, request: Request, state: ApproachState | Non
         state,
         read_latest_plan(conn, request_id),
         confirmed_round_record_version(conn, request_id, confirmed_round),
+        # Phase 9: read for every request; compute_gate only asks for it when the kind is not new.
+        net_accepted=read_accepted_net(conn, request_id, request.version) is not None,
     )
 
 

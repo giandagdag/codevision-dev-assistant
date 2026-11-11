@@ -35,6 +35,12 @@ from agents.da_build_agent import (  # noqa: E402
     scripted_build_reply,
 )
 from agents.da_discover_agent import TASK_MARKER, ScriptedDiscoverClient  # noqa: E402
+from agents.da_enhance_agent import (  # noqa: E402
+    CORRECT_MARKER,
+    FIX_MARKER,
+    NET_MARKER,
+    TODAY_MARKER,
+)
 from agents.da_refine_agent import (  # noqa: E402
     LANE_MARKER,
     OWN_TEST_MARKER,
@@ -111,6 +117,11 @@ _BUILD_LINES = tuple(
         REVISION_MARKER,
         REPRO_MARKER,
         OWN_TEST_MARKER,
+        # Phase 9: the today-draft and safety-net calls of Enhance.
+        TODAY_MARKER,
+        NET_MARKER,
+        FIX_MARKER,
+        CORRECT_MARKER,
     )
 )
 

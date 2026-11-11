@@ -368,6 +368,13 @@ def _usage_row(label: str, value, stop: int, i: Inputs) -> str:
     return f"| {label} | `{bar(value)}` {value:g}% of the {stop}% stop line{note} |"
 
 
+def _credits_row(usage) -> str:
+    """Phase A fix 5: the dollars spent, so Gian sees the credits on his phone."""
+    state = "on" if usage.credits_on else "off"
+    return (f"| Usage credits | {state}, ${usage.credits_used:.2f} spent this month "
+            f"(team cap ${usage_guard.TEAM_CREDIT_CAP:.0f}) |")
+
+
 def build_body(i: Inputs) -> str:
     out = [top_line(i), f"Updated {_clock(i.now)}"]
     out += [f"> ⚠️ {w}" for w in i.warnings]
@@ -383,6 +390,8 @@ def build_body(i: Inputs) -> str:
     weekly = i.usage.weekly if i.usage else 0
     out.append(_usage_row("Usage 5h", five, usage_guard.FIVE_HOUR_STOP, i))
     out.append(_usage_row("Usage weekly", weekly, usage_guard.WEEKLY_STOP, i))
+    if i.usage is not None:
+        out.append(_credits_row(i.usage))
     out += ["", "### Waiting for you"]
     out += [f"- {x.link()}" for x in i.needs_gian] or ["None."]
     out += ["", "### Needs the work laptop (does not block)"]

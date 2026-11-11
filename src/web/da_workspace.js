@@ -292,6 +292,17 @@
       if (found.kind !== "scan_facts" && found.kind !== "upload_facts") { return found; }
       return { ...found, kind: key === "build" ? "build_facts" : "rebuild_facts" };
     }
+    // Phase 9 freshness buttons: read ONLY the confirmed target(s) (ctx.planned_paths is the
+    // server's list, 9-48), then the server compares them with main. Nothing is written.
+    if (key.startsWith("enhance_")) {
+      let found = ctx.mode === "download" || !pickerAvailable() ? await upload(ctx) : await scan(ctx);
+      // No folder remembered yet: this click may open the picker, then read the same files.
+      if (found.kind === "cancelled" && pickerAvailable()) { found = await choose(ctx, false, false); }
+      if (found.kind === "facts") { found = { ...found, kind: "scan_facts" }; }
+      // Anything but facts (cancelled, refused, different folder) changes nothing on the server.
+      if (found.kind !== "scan_facts" && found.kind !== "upload_facts") { return { kind: "enhance_cancelled" }; }
+      return { ...found, kind: key };
+    }
     if (key === "build_download") { return { kind: "build_download" }; }
     // Phase 8 Restore build N: the server holds the build number (ctx.restore_build). Nothing is
     // read from the folder; the edit guard of the write job protects his files.

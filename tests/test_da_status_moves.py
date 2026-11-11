@@ -64,6 +64,13 @@ SPEC_TABLE = {
     ("REVISION_IN_PROGRESS", "READY_FOR_REVIEW"),
     ("REVISION_IN_PROGRESS", "NOT_PASSING"),
     ("REVISION_IN_PROGRESS", "ESCALATION_REQUIRED"),
+    # Phase 9, Enhance: Get help at the Find steps and at the safety-net steps.
+    ("DRAFT", "ESCALATION_REQUIRED"),
+    ("DISCOVERY_CONFIRMED", "ESCALATION_REQUIRED"),
+    # Phase 9 code review round 2: a request switched from card 1 keeps its Understand status.
+    ("CLARIFICATION_IN_PROGRESS", "ESCALATION_REQUIRED"),
+    ("DECISION_REQUIRED", "ESCALATION_REQUIRED"),
+    ("READY_FOR_CONFIRMATION", "ESCALATION_REQUIRED"),
 }
 
 # Every real move: 17 x 17 statuses minus the 17 "same status" pairs.
@@ -139,7 +146,7 @@ def test_7_tester_review_moves():
 
 
 def test_approach_moves():
-    assert ALLOWED_MOVES["DISCOVERY_CONFIRMED"] == ("APPROACH_PROPOSED",)
+    assert ALLOWED_MOVES["DISCOVERY_CONFIRMED"] == ("APPROACH_PROPOSED", "ESCALATION_REQUIRED")
     assert ALLOWED_MOVES["APPROACH_PROPOSED"] == ("READY_TO_BUILD", "ESCALATION_REQUIRED")
 
 

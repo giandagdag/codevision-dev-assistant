@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 
 from agents.da_build_agent import get_build_client
 from agents.da_build_flow import _require_request
+from agents.da_enhance_refine import carry_net_forward
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_refine_agent import (
     LANE_ROLE,
@@ -42,6 +43,7 @@ from db_table_functions.db_tbl_da_approach import (
 )
 from db_table_functions.db_tbl_da_audit import ensure_audit_table, insert_audit_event
 from db_table_functions.db_tbl_da_build import ensure_build_tables, read_build_run, read_build_state
+from db_table_functions.db_tbl_da_enhance import ensure_enhance_tables
 from db_table_functions.db_tbl_da_refine import (
     RefineError,
     close_refine,
@@ -383,6 +385,8 @@ def confirm_revision(
         tx.move_to(STATUS_READY)
         tx.move_to(STATUS_CONFIRMED)
         tx.request = update_request(conn, request_id, now=now, version=record.version)
+        # An enhance request: the safety net goes along to the new version (Phase 9, test 9-44).
+        carry_net_forward(conn, old, record, diff, now)
         tx.say(
             "assistant",
             f"Version {record.version} is saved. I will search for reusable code again.",
@@ -449,6 +453,7 @@ def _write(db_path) -> Iterator[sqlite3.Connection]:
         ensure_audit_table(conn)
         ensure_workspace_tables(conn)
         ensure_build_tables(conn)
+        ensure_enhance_tables(conn)
         begin_write(conn)
         yield conn
 

@@ -118,7 +118,7 @@ def test_af10_nothing_starts_when_the_guard_says_stop_or_hooks_are_broken(status
     def blind():
         raise g.GuardBlind("down")
 
-    kwargs = {"stop": {"reader": lambda: usage(weekly=90)}, "blind": {"reader": blind},
+    kwargs = {"stop": {"reader": lambda: usage(weekly=96)}, "blind": {"reader": blind},
               "hooks": {"hooks": lambda: "broken"}}[kind]
     expected = "hooks-broken" if kind == "hooks" else "stopped"
     assert start(status_file, spawn=boom, **kwargs) == expected

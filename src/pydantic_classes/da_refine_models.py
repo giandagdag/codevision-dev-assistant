@@ -203,4 +203,7 @@ class TestSet(_Shape):
     added_case_ids: list[str] = Field(default_factory=list)
     text: str
     fingerprint: str
+    # Phase 9: which test methods are the safety net, and which of those are expected to change.
+    net_methods: list[str] = Field(default_factory=list)
+    expected_to_change_methods: list[str] = Field(default_factory=list)
     created_at: AwareDatetime | None = None

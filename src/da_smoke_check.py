@@ -1,4 +1,4 @@
-"""Proves Phases 0 to 8 work end to end (items 27 and 28 are the Refine bug and requirement lanes).
+"""Proves Phases 0 to 9 work end to end (27, 28: Refine lanes; 29, 30: Enhance and switch offer).
 
 Run: .venv\\Scripts\\python src\\da_smoke_check.py
 """
@@ -12,19 +12,22 @@ from tempfile import TemporaryDirectory
 from agents import da_approach_flow as approach
 from agents import da_build_flow as build
 from agents import da_build_loop as build_loop
+from agents import da_enhance_flow as enhance_flow
 from agents import da_refine_bug as refine_bug
 from agents import da_refine_lanes as refine_lanes
 from agents import da_refine_revision as refine_revision
+from agents import da_safety_net_flow as net_flow
 from agents import da_tester_flow as tester_flow
 from agents import da_workspace_flow as workspace
 from agents.da_discover_flow import confirm_discovery, start_discovery
 from agents.da_llm_client import LLMClient, LLMClientError, get_llm_client
-from agents.da_search_index import FakeSearchIndex, search_safely
+from agents.da_search_index import FakeSearchIndex, IndexData, IndexPiece, search_safely
 from agents.da_understand_flow import (
     ALWAYS_VISIBLE,
     PROCEED_OPTION,
     choose_option,
     create_understand_request,
+    set_functions_in_scope,
     submit_form,
 )
 from configs.da_config import DEFAULT_ENV_FILE, ConfigError, Settings, load_settings
@@ -33,6 +36,7 @@ from da_load_starter_rulebook import load_starter_rulebook
 from db_table_functions.da_db import DatabaseBusyError, open_db
 from db_table_functions.db_tbl_da_audit import add_audit_event, list_audit_events
 from db_table_functions.db_tbl_da_build import read_rounds
+from db_table_functions.db_tbl_da_enhance import read_enhance_state, read_safety_nets
 from db_table_functions.db_tbl_da_requests import create_request, get_rulebook_for_request
 from db_table_functions.db_tbl_da_rulebook import (
     SEED_RULEBOOK_FILE,
@@ -46,6 +50,7 @@ from db_table_functions.db_tbl_da_rulebook import (
 from db_table_functions.db_tbl_da_understand import (
     UnderstandError,
     get_confirmed_record,
+    get_session,
     list_messages,
 )
 from pydantic_classes.da_discovery_models import SearchFilters
@@ -56,6 +61,7 @@ from pydantic_classes.da_models import (
     StatusMoveError,
 )
 from pydantic_classes.da_rulebook_models import Rulebook
+from pydantic_classes.da_workspace_models import FileFact
 from web.da_fake_browser_folder import FakeBrowserFolder
 from web.da_fake_onprem_server import running_fake_onprem_server
 
@@ -79,7 +85,15 @@ SAMPLE_ONPREM_MODEL = "fake-qwen"
 SAMPLE_CASE = "A workbook where every visible sheet is empty should be rejected as empty."
 # The line every Tester test-plan prompt carries (see agents/da_tester_agent.py).
 TESTER_MARKER = "Task: write a test plan"
-EXPECTED_CRITERIA = 7  # the fake script's six criteria plus the one the hidden-sheet decision adds
+ENHANCE_TARGET = "src/agents/limits_expiry_report.py"  # the made-up program under src/data
+ENHANCE_ANSWERS = (
+    "It shows the date.", "Show the month name.", "Keep it", "Date in, text out.", "",
+)
+_ENHANCE_PIECE = IndexPiece(
+    piece_no=0, path=ENHANCE_TARGET, symbol="format_expiry", line_start=1, kind="code",
+    language="python", snippet="def format_expiry(day): date text",
+)
+EXPECTED_CRITERIA = 7 # the fake script's six criteria plus the one the hidden-sheet decision adds
 
 
 def run_smoke_check(settings: Settings) -> int:
@@ -343,6 +357,108 @@ def _run_approach_steps(db_path: Path, settings: Settings) -> None:
     )
     folder = _run_workspace_steps(demo, fake_request_id)
     _run_build_steps(demo, fake_request_id, folder)
+    _run_enhance_steps(demo)
+
+
+def _run_enhance_steps(settings: Settings) -> None:
+    """Items 29 and 30 (Phase 9): card 2 from Find to READY_FOR_REVIEW on a made-up program, then
+    a card 1 request that gets the switch offer. The AI is the fake provider, the main source is
+    the made-up folder under src/data, the sandbox is the real one."""
+    index = FakeSearchIndex(
+        IndexData(build_id="smoke", built_at="", pieces=(_ENHANCE_PIECE,))
+    )
+    text = (settings.fake_main_dir / ENHANCE_TARGET).read_text(encoding="utf-8")
+    request_id = _enhance_record_confirmed(settings, index, text)
+    view = start_discovery(settings, request_id, 0)
+    confirm_discovery(settings, request_id, view.revision)
+    net_revision = _enhance_revision(settings, request_id)
+    net_flow.run_safety_net(settings, request_id, net_revision)
+    net_flow.accept_safety_net(settings, request_id, _enhance_revision(settings, request_id))
+    nets = _read_nets(settings, request_id)
+    view = approach.start_approach(settings, request_id, 0)
+    while view.step == "choices":
+        option = view.buttons[0][1]
+        view = approach.choose_design_option(settings, request_id, option, view.revision)
+    view = approach.accept_approach(settings, request_id, view.revision)
+    view = approach.accept_test_plan(settings, request_id, view.revision)
+    if view.request.status != STATUS_READY_TO_BUILD:
+        raise UnderstandError(f"The Enhance approach ended at {view.request.status}.")
+
+    wview = workspace.get_workspace_view(settings, request_id)
+    folder = _pretend_codevision_folder(wview)
+    folder.files[ENHANCE_TARGET] = text
+    facts = folder.facts(wview.planned_paths, wview.markers, request_id, wview.max_file_kb)
+    judged = workspace.judge_facts(settings, request_id, facts, wview.revision)
+    if judged.job is None:
+        raise UnderstandError(f"The folder check was blocked: {judged.view.check.blockers[0].text}")
+    workspace.save_check(settings, request_id, facts, folder.run_job(judged.job), wview.revision)
+    _run_build_steps_enhance(settings, request_id, folder)
+    shown = tester_flow.get_build_view(settings, request_id)
+    print(
+        f"29. Enhance: {request_id} found {ENHANCE_TARGET}, passed the freshness check, kept "
+        f"{len(nets[-1].net.cases)} safety-net cases, and build {shown.run.build_number} ended as "
+        f"{shown.request_status}"
+    )
+
+    card_1 = create_understand_request(
+        settings, "limits_expiry_report is wrong", developer_id=SAMPLE_DEVELOPER
+    )
+    offer = enhance_flow.maybe_offer_switch(settings, card_1.request.request_id, index=index)
+    if offer is None or offer.path != ENHANCE_TARGET:
+        raise UnderstandError("Card 1 got no switch offer for a program that exists.")
+    print(f"30. Card 1 request {card_1.request.request_id} was offered a switch to {offer.path}")
+
+
+def _enhance_record_confirmed(settings: Settings, index, text: str) -> str:
+    started = enhance_flow.start_enhance_request(settings)
+    found = enhance_flow.find_program(
+        settings, started.request_id, "limits_expiry_report", started.revision, index=index
+    )
+    done = enhance_flow.confirm_targets(
+        settings, found.request_id, [ENHANCE_TARGET], {}, found.revision
+    )
+    fact = FileFact(path=ENHANCE_TARGET, exists=True, parent_exists=True, text=text)
+    fresh = enhance_flow.run_freshness(settings, done.request_id, [fact], done.revision)
+    if fresh.step != "e_fresh":
+        raise UnderstandError(f"The freshness check ended at {fresh.step}.")
+    request_id = fresh.request_id
+    enhance_flow.start_understand(settings, request_id, fresh.revision)
+    session = get_session(settings.db_path, request_id)
+    view = submit_form(settings, request_id, list(ENHANCE_ANSWERS), session.revision)
+    view = choose_option(settings, request_id, view.choices[0], view.revision)
+    # The scripted edit changes ExpiryReport.build_line, so that is the function in scope.
+    view = set_functions_in_scope(settings, request_id, ["ExpiryReport.build_line"], view.revision)
+    view = choose_option(settings, request_id, PROCEED_OPTION, view.revision)
+    if view.request.status != STATUS_CONFIRMED:
+        raise UnderstandError(f"The Enhance conversation ended at {view.request.status}.")
+    return request_id
+
+
+def _enhance_revision(settings: Settings, request_id: str) -> int:
+    with open_db(settings.db_path) as conn:
+        return read_enhance_state(conn, request_id).revision
+
+
+def _read_nets(settings: Settings, request_id: str):
+    with open_db(settings.db_path) as conn:
+        return read_safety_nets(conn, request_id)
+
+
+def _run_build_steps_enhance(
+    settings: Settings, request_id: str, folder: FakeBrowserFolder
+) -> None:
+    wview = workspace.get_workspace_view(settings, request_id)
+    facts = folder.facts(wview.planned_paths, wview.markers, request_id, wview.max_file_kb)
+    build.start_build(settings, request_id, build.get_revision(settings, request_id), facts=facts)
+    outcome = build_loop.run_build(settings, request_id)
+    shown = tester_flow.get_build_view(settings, request_id)
+    if outcome != "done" or shown.request_status != "READY_FOR_REVIEW":
+        raise UnderstandError(
+            f"The Enhance build ended as {outcome} at {shown.state.step}, status "
+            f"{shown.request_status}: {shown.banner_text} "
+            f"{[m.text for m in list_messages(settings.db_path, request_id)][-1:]} "
+            f"{_why_a_build_failed(settings, request_id)}"
+        )
 
 
 def _run_workspace_steps(settings: Settings, request_id: str) -> FakeBrowserFolder:

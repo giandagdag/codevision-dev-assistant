@@ -59,5 +59,40 @@
     "replace": "if sheet[\"rows\"] and not sheet.get(\"hidden\")}"
    }
   }
+ },
+ "enhance": {
+  "_about": "Phase 9 step 14c: made-up enhance of src/agents/limits_expiry_report.py: the report line says 'expires today' when no days are left. In scope: ExpiryReport.build_line.",
+  "path": "src/agents/limits_expiry_report.py",
+  "contract": {
+   "files": [
+    {
+     "path": "src/agents/limits_expiry_report.py",
+     "items": [
+      {"name": "format_expiry", "kind": "function", "args": ["day", "month", "year"], "summary": "existing"},
+      {"name": "days_left", "kind": "function", "args": ["expiry_day", "today_day"], "summary": "existing"},
+      {"name": "ExpiryReport", "kind": "class", "args": [], "summary": "existing; build_line says expires today when no days are left"}
+     ]
+    }
+   ]
+  },
+  "test_imports": ["from agents.limits_expiry_report import ExpiryReport"],
+  "test_checks": [
+   "self.assertEqual(ExpiryReport().build_line(\"ACME\", 10), \"ACME: expires today\")",
+   "self.assertEqual(ExpiryReport().build_line(\"ACME\", 15), \"ACME: 5 days left\")"
+  ],
+  "edits": {
+   "first": {
+    "find": "        return f\"{customer}: {days_left(expiry_day, 10)} days left\"",
+    "replace": "        left = days_left(expiry_day, 10)\n        if left == 0:\n            return f\"{customer}: expires today\"\n        return f\"{customer}: {left} days left\""
+   },
+   "edit_outside_scope": {
+    "find": "    return f\"{day:02d}/{month:02d}/{year}\"",
+    "replace": "    return f\"{day:02d}-{month:02d}-{year}\""
+   },
+   "signature_change": {
+    "find": "def days_left(expiry_day, today_day):",
+    "replace": "def days_left(expiry_day, today_day, grace=0):"
+   }
+  }
  }
 }
