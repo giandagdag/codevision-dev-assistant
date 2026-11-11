@@ -183,6 +183,8 @@ def enhance_context(view: EnhanceView) -> dict:
 def find_panel(view: EnhanceView) -> list:
     """Candidate table, confirmed programs, and the freshness banner when there is a result."""
     sections = [parts.panel_section("Programs found", [candidate_table(view.candidates)])]
+    if view.step == "e_pick" and not view.targets and len(view.candidates) > 1:
+        sections.append(multi_pick(view))
     if view.targets:
         lines = [
             dmc.Text(
@@ -198,6 +200,46 @@ def find_panel(view: EnhanceView) -> list:
     if banner is not None:
         sections.append(banner)
     return sections
+
+
+PICK_GROUP_ID = "da-pick-group"
+PICK_CONFIRM_ID = "da-pick-confirm"
+PICK_CONFIRM_LABEL = "Yes, these are the programs"
+CAP_TYPE = "da-cap-pick"  # pattern id: the capability dropdown of a program not in the catalog
+CAP_NONE_VALUE = "none"
+
+
+def multi_pick(view: EnhanceView):
+    """Tick more than one program (D-C). The Best match starts ticked. A program not in the catalog
+    gets a capability dropdown. The engine checks the paths, the count and the picks (R12)."""
+    ticked = [item.path for item in view.candidates if item.best_match]
+    caps = [
+        dmc.Select(
+            id={"type": CAP_TYPE, "index": item.path},
+            label=f"{item.path}: capability",
+            data=[{"value": CAP_NONE_VALUE, "label": "Pick a capability"}]
+            + [{"value": name, "label": name} for name in view.capability_names],
+            value=CAP_NONE_VALUE,
+            allowDeselect=False,
+            size="xs",
+        )
+        for item in view.candidates
+        if not item.capability
+    ]
+    return parts.panel_section(
+        "Change more than one program?",
+        [
+            dmc.CheckboxGroup(
+                id=PICK_GROUP_ID,
+                value=ticked,
+                children=dmc.Stack(
+                    [dmc.Checkbox(label=item.path, value=item.path) for item in view.candidates]
+                ),
+            ),
+            *caps,
+            dmc.Button(PICK_CONFIRM_LABEL, id=PICK_CONFIRM_ID, variant="light", mt="xs"),
+        ],
+    )
 
 
 def candidate_table(candidates: list[Candidate]):

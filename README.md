@@ -601,6 +601,13 @@ pill shows the step (`e_find` to `s_accepted`).
   Work test: `docs/enhance-work-test.md`.
 - **Fixed on the way:** a Layer C check-1 FYI (an NC item "not covered") used to end the build as
   Not passing. Only a Must fix of check 1 does now.
+- **Screen, as wired.** Impact card (Discovery tab), **Safety net** tab (with "After the change"
+  dropdowns while you review), the read-only net in the Approach tab, the header pill, the
+  functions-in-scope tick list at the checkpoint and the safety net writing in the background
+  (the page redraws every 3 seconds) are all connected to their callbacks.
+- **Known gaps.** There is no separate "Show other matches" button: when Find returns more than one
+  program, a tick list is shown at once with the Best match ticked (same result, one click less).
+  The real-browser test 9-50 is written and skipped until a browser is available.
 
 ## Notes for the move to CodeVision
 

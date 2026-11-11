@@ -94,6 +94,8 @@ from layouts.da_developer_assistant_page import (
     render_workspace,
 )
 from layouts.da_enhance_panel import (
+    CAP_NONE_VALUE,
+    CAP_TYPE,
     KEY_CONTINUE,
     KEY_FIX,
     KEY_HELP,
@@ -102,6 +104,8 @@ from layouts.da_enhance_panel import (
     KEY_UNDERSTAND,
     MARK_NONE_VALUE,
     MARK_TYPE,
+    PICK_CONFIRM_ID,
+    PICK_GROUP_ID,
     PICK_SEPARATOR,
     SCOPE_GROUP_ID,
     SCOPE_SAVE_ID,
@@ -267,6 +271,37 @@ def _criteria_ids(settings: Settings, request_id: str) -> list[str]:
     """The AC IDs a case can be marked as "expected to change" for (from the saved record)."""
     record = get_understand_view(settings, request_id).record
     return [item.id for item in record.acceptance_criteria]
+
+
+def confirm_picked(clicks, ticked, cap_values, cap_ids, state, refresh):
+    """"Yes, these are the programs": the ticked candidates, with a capability pick for each
+    program not in the catalog (Phase 9, step 18d, D-C)."""
+    if not clicks:
+        raise PreventUpdate
+    picks = {
+        item["index"]: value
+        for item, value in zip(cap_ids or [], cap_values or [], strict=False)
+        if value and value != CAP_NONE_VALUE
+    }
+    return perform_pick_confirm(get_settings(), ticked, picks, state, refresh)
+
+
+def perform_pick_confirm(settings: Settings, ticked, picks: dict, state, refresh):
+    """Call confirm_targets. Only the picks of ticked programs are passed on. A refusal (nothing
+    ticked, too many files, a missing capability) is shown under the chat; nothing is written."""
+    state = state or {}
+    paths = list(ticked or [])
+    try:
+        enhance_flow.confirm_targets(
+            settings,
+            state.get("request_id"),
+            paths,
+            {path: name for path, name in picks.items() if path in paths},
+            state.get("revision"),
+        )
+    except SHOWN_ERRORS as error:
+        return no_update, str(error)
+    return (refresh or 0) + 1, ""
 
 
 def save_scope(clicks, chosen, state, refresh):
@@ -835,6 +870,19 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
         State(REFRESH_ID, "data"),
         prevent_initial_call=True,
     )(answer_switch_offer)
+
+    # Tick more than one program at Find (step 18d).
+    app.callback(
+        Output(REFRESH_ID, "data", allow_duplicate=True),
+        Output(MESSAGE_ID, "children", allow_duplicate=True),
+        Input(PICK_CONFIRM_ID, "n_clicks"),
+        State(PICK_GROUP_ID, "value"),
+        State({"type": CAP_TYPE, "index": ALL}, "value"),
+        State({"type": CAP_TYPE, "index": ALL}, "id"),
+        State(STATE_ID, "data"),
+        State(REFRESH_ID, "data"),
+        prevent_initial_call=True,
+    )(confirm_picked)
 
     # The functions-in-scope tick list at the Understand checkpoint (step 18c).
     app.callback(

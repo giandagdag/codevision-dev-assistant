@@ -95,6 +95,63 @@ def test_the_writing_step_polls_and_shows_the_writing_pill(settings, monkeypatch
     assert cb.poll_build(1, state, 0) == 1
 
 
+OTHER = "src/agents/other_expiry_helper.py"
+
+
+def two_candidates(settings, monkeypatch):
+    """Find with two files in the table, so the tick list shows."""
+    from agents.da_search_index import FakeSearchIndex, IndexData, IndexPiece
+
+    def piece(number, path, symbol):
+        return IndexPiece(
+            piece_no=number, path=path, symbol=symbol, line_start=1, kind="code",
+            language="python", snippet=f"def {symbol}(day): date text",
+        )
+
+    limits = "src/agents/limits_expiry_report.py"
+    pieces = (piece(0, limits, "format_expiry"), piece(1, OTHER, "other_expiry"))
+    index = FakeSearchIndex(IndexData(build_id="t", built_at="", pieces=pieces))
+    started = enhance.start_enhance_request(settings)
+    view = enhance.find_program(
+        settings, started.request_id, "limits_expiry_report other_expiry", started.revision,
+        index=index,
+    )
+    return view, limits
+
+
+def test_two_candidates_show_a_tick_list_with_the_best_match_ticked(settings, monkeypatch):
+    view, limits = two_candidates(settings, monkeypatch)
+
+    page = draw(settings, monkeypatch, view.request_id)
+
+    assert "da-pick-group" in page and "Yes, these are the programs" in page
+    assert len(view.candidates) == 2
+
+
+def test_confirming_ticked_programs_calls_the_engine_with_the_ticked_ones_only(
+    settings, monkeypatch
+):
+    view, limits = two_candidates(settings, monkeypatch)
+    state = {"request_id": view.request_id, "revision": view.revision, "enhance": "e_pick"}
+    picks = {OTHER: "Some capability"}  # a pick for an unticked program is dropped
+
+    refresh, message = cb.perform_pick_confirm(settings, [limits], picks, state, 0)
+
+    assert (refresh, message) == (1, "")
+    done = enhance.get_enhance_view(settings, view.request_id)
+    assert [item.path for item in done.targets] == [limits]
+
+
+def test_ticking_nothing_shows_the_refusal_and_writes_nothing(settings, monkeypatch):
+    view, _limits = two_candidates(settings, monkeypatch)
+    state = {"request_id": view.request_id, "revision": view.revision, "enhance": "e_pick"}
+
+    refresh, message = cb.perform_pick_confirm(settings, [], {}, state, 0)
+
+    assert refresh is cb.no_update and message
+    assert enhance.get_enhance_view(settings, view.request_id).targets == []
+
+
 def test_after_accepting_the_test_plan_shows_the_net_read_only(settings, monkeypatch, tmp_path):
     from agents import da_safety_net_flow as net_flow
 
