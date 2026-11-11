@@ -47,3 +47,7 @@ def _work(settings: Settings, request_id: str, base_revision: int, engine_option
         # Nothing was saved by a half-done run; the step stays as it was, so the screen offers
         # Try again (s_unable) or the next server start moves s_writing to s_unable.
         logger.exception("The background safety net of %s stopped on an error.", request_id)
+        try:
+            net_flow.mark_safety_net_stopped(settings, request_id)
+        except Exception:  # noqa: BLE001 - the database may be the very problem
+            logger.exception("Could not move %s to Try again.", request_id)

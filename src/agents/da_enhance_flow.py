@@ -67,6 +67,7 @@ from db_table_functions.db_tbl_da_enhance import (
     read_candidates,
     read_enhance_state,
     read_latest_freshness,
+    read_latest_safety_net,
     save_enhance_state,
 )
 from db_table_functions.db_tbl_da_requests import (
@@ -588,6 +589,11 @@ def _texts_from_facts(
 
 def _save_baselines(tx: _Tx, texts: dict[str, str | None]) -> None:
     """His text becomes the baseline: today's code for the rest of Phase 9 (D-G)."""
+    if read_latest_safety_net(tx.conn, tx.request_id) is not None:
+        # The net was proved on the baseline already saved. Replacing it would leave a net that
+        # belongs to other code; his later edits are the Phase 6 pre-build re-scan's job.
+        tx.audit("system", "enhance_baseline_kept", {"why": "safety net exists"})
+        return
     saved: dict[str, str] = {}
     for path, text in texts.items():
         if text is None:

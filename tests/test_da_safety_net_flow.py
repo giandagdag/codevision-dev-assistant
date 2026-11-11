@@ -313,3 +313,36 @@ def test_9_35_a_restart_at_s_writing_becomes_s_unable(make_settings):
     assert state_of(settings, request_id).step == "s_unable"
     assert "safety_net_interrupted" in events_of(settings, request_id)
     assert net_flow.recover_interrupted_safety_nets(settings) == []
+
+
+def test_a_background_write_that_dies_leaves_s_unable_not_s_writing(make_settings, monkeypatch):
+    from agents import da_safety_net_runner as net_runner
+
+    settings = make_settings()
+    request_id = at_s_writing(settings)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("the write broke")
+
+    monkeypatch.setattr(net_flow, "run_safety_net", boom)
+    net_runner.submit_safety_net(settings, request_id, 0).join(timeout=30)
+
+    assert state_of(settings, request_id).step == "s_unable"
+    assert "safety_net_interrupted" in events_of(settings, request_id)
+
+
+def test_a_new_baseline_is_not_taken_once_a_net_exists(make_settings, tmp_path):
+    from datetime import UTC, datetime
+
+    from agents import da_enhance_flow as enhance
+
+    settings = make_settings()
+    request_id = in_review(settings, tmp_path)
+    before = enhance.baseline_texts(settings, request_id)
+
+    with enhance._write_transaction(settings.db_path) as conn:
+        tx = enhance._Tx(conn, request_id, datetime.now(UTC))
+        enhance._save_baselines(tx, {path: "changed = 1\n" for path in before})
+
+    assert enhance.baseline_texts(settings, request_id) == before
+    assert "enhance_baseline_kept" in events_of(settings, request_id)

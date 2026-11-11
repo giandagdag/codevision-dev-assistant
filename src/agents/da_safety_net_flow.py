@@ -74,6 +74,7 @@ NO_REFERENCE_TEXT = (
 NO_RECORD_TEXT = "There is no confirmed request record to write a safety net for."
 BUSY_TEXT = "The safety net is already being written for this request. Please wait."
 RESTART_TEXT = "The server restarted while the safety net was being written. Press Try again."
+STOPPED_TEXT = "The safety net write stopped on an error. Press Try again."
 MARK_NONE = ""  # the "After the change" mark for "Must still pass"
 
 # Requests whose safety net is being written or proved right now, in this server (F2).
@@ -463,14 +464,27 @@ def recover_interrupted_safety_nets(settings: Settings, now: datetime | None = N
     for request_id in stuck:
         if is_safety_net_running(request_id):
             continue
-        with _write_transaction(settings.db_path) as conn:
-            state = read_enhance_state(conn, request_id)
-            if state is None or state.step != "s_writing":
-                continue
-            tx = _Tx(conn, request_id, now)
-            tx.audit("system", "safety_net_interrupted", {"why": RESTART_TEXT})
-            tx.say("assistant", RESTART_TEXT)
-            unable = state.model_copy(update={"step": "s_unable"})
-            save_enhance_state(conn, unable, state.revision, now)
+        if _interrupt_writing(settings, request_id, RESTART_TEXT, now):
             fixed.append(request_id)
     return fixed
+
+
+def mark_safety_net_stopped(
+    settings: Settings, request_id: str, now: datetime | None = None
+) -> bool:
+    """The background write died on an error (not a restart): `s_writing` becomes `s_unable` so
+    the screen stops polling and shows Try again. True when the step was moved."""
+    return _interrupt_writing(settings, request_id, STOPPED_TEXT, now or datetime.now(UTC))
+
+
+def _interrupt_writing(settings: Settings, request_id: str, text: str, now: datetime) -> bool:
+    with _write_transaction(settings.db_path) as conn:
+        state = read_enhance_state(conn, request_id)
+        if state is None or state.step != "s_writing":
+            return False
+        tx = _Tx(conn, request_id, now)
+        tx.audit("system", "safety_net_interrupted", {"why": text})
+        tx.say("assistant", text)
+        unable = state.model_copy(update={"step": "s_unable"})
+        save_enhance_state(conn, unable, state.revision, now)
+    return True
