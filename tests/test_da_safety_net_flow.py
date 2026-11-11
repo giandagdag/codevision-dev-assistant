@@ -315,20 +315,15 @@ def test_9_35_a_restart_at_s_writing_becomes_s_unable(make_settings):
     assert net_flow.recover_interrupted_safety_nets(settings) == []
 
 
-def test_a_background_write_that_dies_leaves_s_unable_not_s_writing(make_settings, monkeypatch):
-    from agents import da_safety_net_runner as net_runner
-
+def test_a_stopped_write_is_audited_as_interrupted(make_settings):
     settings = make_settings()
     request_id = at_s_writing(settings)
 
-    def boom(*args, **kwargs):
-        raise RuntimeError("the write broke")
-
-    monkeypatch.setattr(net_flow, "run_safety_net", boom)
-    net_runner.submit_safety_net(settings, request_id, 0).join(timeout=30)
+    assert net_flow.mark_safety_net_stopped(settings, request_id)
 
     assert state_of(settings, request_id).step == "s_unable"
     assert "safety_net_interrupted" in events_of(settings, request_id)
+    assert not net_flow.mark_safety_net_stopped(settings, request_id)  # already moved
 
 
 def test_a_new_baseline_is_not_taken_once_a_net_exists(make_settings, tmp_path):

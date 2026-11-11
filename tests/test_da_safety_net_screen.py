@@ -71,7 +71,7 @@ def test_the_background_thread_runs_the_engine_to_the_review_step(make_settings,
     assert state_of(settings, request_id).step == "s_review"
 
 
-def test_a_thread_that_fails_is_logged_and_leaves_the_step_alone(make_settings, monkeypatch):
+def test_a_thread_that_fails_is_logged_and_offers_try_again(make_settings, monkeypatch):
     settings = make_settings()
     request_id = at_s_writing(settings)
 
@@ -81,7 +81,8 @@ def test_a_thread_that_fails_is_logged_and_leaves_the_step_alone(make_settings, 
     monkeypatch.setattr(net_flow, "run_safety_net", boom)
     net_runner.submit_safety_net(settings, request_id, 1).join()
 
-    assert state_of(settings, request_id).step == "s_writing"
+    # Round 2 fix: a dead write must not leave the screen polling at s_writing for ever.
+    assert state_of(settings, request_id).step == "s_unable"
 
 
 def test_the_review_step_offers_continue_get_help_and_the_correct_button(make_settings, tmp_path):
