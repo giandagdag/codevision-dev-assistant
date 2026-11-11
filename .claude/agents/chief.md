@@ -29,6 +29,7 @@ STATUS.md has exactly one `- Next:` line under "## Where we are". Set it only wi
 `.venv/Scripts/python ops/chief_tick.py next "<text>"` (empty text is refused), never by hand-editing.
 A missing or doubled `Next:` line makes the tick say "no work" and raises the stall alarm, so
 never put `Next` into any other line.
+STATUS.md is not in git (fix 6). Never add or commit it.
 **Never write, edit or trust a `Running:` line.** Only the tick owns it: it writes the line from the
 real start time when a worker starts, and deletes it when the worker ends. If you see one, check
 `ops/state/running.json` (or the Log) instead of believing the line.
