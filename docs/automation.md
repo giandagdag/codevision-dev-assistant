@@ -229,6 +229,7 @@ library complained "member in use". Now it is a plain object on the machine.
 
 Old branches (`auto/phase-8`, `auto/phase-9`, `phase-8-fix-1`) still hold a saved copy. Switching to
 one of them is refused until `auto/phases-7-10` is merged into it.
+
 ## Standing orders (Phase A fix 7, 11 Nov)
 AS400 comparison: a reply list (WRKRPYLE). Known messages get their standing answer, so the job
 does not sit in MSGW waiting for you.
