@@ -396,11 +396,15 @@ def test_register_attaches_the_workspace_hops():
     app = Dash(__name__, suppress_callback_exceptions=True)
     cb.register_da_developer_assistant_page_callbacks(app)
 
-    # after draw, action, enter-to-send, the build poll, the form, the finding buttons (Phase 7)
-    hops = app._callback_list[6:]
+    # after draw, action, card 2 (Phase 9), enter-to-send, the build poll, the form, the finding
+    # buttons (Phase 7)
+    hops = app._callback_list[7:]
 
     # 8 workspace hops, then the 3 Refine callbacks of Phase 8 step 16 (buttons, picks, add case)
-    assert len(hops) == 8 + 3
+    # then the card 1 switch offer answer of Phase 9 step 18a
+    # then the mark dropdowns of the Safety net tab (Phase 9 step 18b)
+    # then the scope tick list (step 18c) and the multi-pick confirm (step 18d)
+    assert len(hops) == 8 + 3 + 1 + 1 + 1 + 1
     click_hop = hops[0]
     assert click_hop["prevent_initial_call"] is True
     assert click_hop["clientside_function"]["function_name"]

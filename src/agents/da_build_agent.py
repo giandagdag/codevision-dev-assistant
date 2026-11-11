@@ -128,11 +128,20 @@ def scripted_build_reply(prompt: str, switches: frozenset[str] | None = None) ->
     server, so both prove the same path."""
     switches = FAKE_SWITCHES if switches is None else switches
     script = json.loads(FAKE_SCRIPT_FILE.read_text(encoding="utf-8"))
+    # Phase 9: an enhance request on the made-up limits program has its own contract and edits.
+    # Imported here so this file stays the one that the others import.
+    from agents import da_enhance_build_script as enhance_script
+
+    enhancing = enhance_script.is_enhance_build_prompt(prompt, script)
     if re.search(rf"^{re.escape(CONTRACT_MARKER)}$", prompt, re.MULTILINE):
+        if enhancing:
+            return enhance_script.scripted_contract(script)
         return json.dumps(script["contract"])
     if re.search(rf"^{re.escape(TESTS_MARKER)}$", prompt, re.MULTILINE):
-        return _scripted_tests(prompt, switches)
+        return _scripted_tests(prompt, switches, script if enhancing else None)
     if re.search(rf"^{re.escape(CODE_MARKER)}$", prompt, re.MULTILINE):
+        if enhancing:
+            return enhance_script.scripted_code(prompt, script, switches, _present_prefix)
         return _scripted_code(prompt, script, switches)
     # Phase 7: the Tester's review of the code. Imported here because that file imports this one.
     from agents.da_tester_review_agent import is_review_prompt, scripted_review_reply
@@ -144,6 +153,11 @@ def scripted_build_reply(prompt: str, switches: frozenset[str] | None = None) ->
 
     if is_refine_prompt(prompt):
         return scripted_refine_reply(prompt, switches)
+    # Phase 9: the today-draft and the safety-net calls of Enhance.
+    from agents.da_enhance_agent import is_enhance_prompt, scripted_enhance_reply
+
+    if is_enhance_prompt(prompt):
+        return scripted_enhance_reply(prompt, switches)
     raise LLMClientError("The scripted build client was given a prompt it does not know.")
 
 
@@ -161,16 +175,24 @@ _EMPTY_CHECK = (
 _CHECKS = (_VALIDATE_CHECK, _HIDDEN_CHECK, _EMPTY_CHECK)
 
 
-def _scripted_tests(prompt: str, switches: frozenset[str]) -> str:
+def _scripted_tests(prompt: str, switches: frozenset[str], enhance: dict | None = None) -> str:
     cases = _CASE_LINE.findall(prompt)
     if "bad_tests" in switches:
         cases = cases[:-1]  # one accepted case has no test method
+    checks = _CHECKS
+    imports = [
+        "from agents.excel_processor import read_sheets",
+        "from agents.upload_validator import validate",
+    ]
+    if enhance is not None:
+        from agents.da_enhance_build_script import criterion_test_parts
+
+        imports, checks = criterion_test_parts(enhance)
     lines = [
         "import time",
         "import unittest",
         "",
-        "from agents.excel_processor import read_sheets",
-        "from agents.upload_validator import validate",
+        *imports,
         "",
         "",
         "class ScriptedChecks(unittest.TestCase):",
@@ -184,7 +206,7 @@ def _scripted_tests(prompt: str, switches: frozenset[str]) -> str:
         lines += [
             f"    def {name}(self):",
             f'        """{expect.strip().rstrip(".")}."""',
-            sleep + "        " + _CHECKS[index % len(_CHECKS)],
+            sleep + "        " + checks[index % len(checks)],
             "",
         ]
     return "\n".join(lines) + "\n"

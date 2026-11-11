@@ -36,6 +36,12 @@ GREEN = {"SUCCESS", "NEUTRAL", "SKIPPED"}
 HOOKS_BROKEN_TITLE = "hooks cannot start: no worker was launched"
 AGENT_MODELS = {"chief": "sonnet", "spec-writer": "opus", "builder": "sonnet",
                 "status-digest": "haiku", "plan-reviewer": "sonnet", "code-reviewer": "sonnet"}
+# Phase A fix 5 (Gian, 10 Nov): from the weekly reset on Thu 12 Nov 19:00 SGT, the agents that
+# judge (spec writing and the two reviews) run on Fable. Builder, chief and digest stay as above,
+# because their long runs would use up the plan's Fable allowance quickly.
+FABLE_MODEL = "fable"
+FABLE_FROM = datetime(2026, 11, 12, 19, 0, tzinfo=usage_guard.SGT).timestamp()
+FABLE_AGENTS = ("spec-writer", "plan-reviewer", "code-reviewer")
 # Turns a worker may use (F7). A whole-phase builder needs far more than a chief step.
 AGENT_MAX_TURNS = {"chief": 60, "spec-writer": 80, "builder": 400, "status-digest": 20,
                    "plan-reviewer": 80, "code-reviewer": 80}
@@ -435,8 +441,16 @@ def save_worker_reply(agent: str, result: WorkerResult, now: float) -> Path | No
         return None
 
 
+def model_for(agent: str, now: float | None = None) -> str:
+    """The model one worker runs on. AS400 comparison: a job description picked by date."""
+    now = time.time() if now is None else now
+    if now >= FABLE_FROM and agent in FABLE_AGENTS:
+        return FABLE_MODEL
+    return AGENT_MODELS[agent]
+
+
 def worker_env(agent: str, base: dict | None = None, platform: str | None = None,
-               exists=os.path.exists) -> dict:
+               exists=os.path.exists, now: float | None = None) -> dict:
     """The environment a worker runs in.
 
     DA_PYTHON is the interpreter the hooks use. DA_AGENT tells the safety hook who is writing.
@@ -451,6 +465,11 @@ def worker_env(agent: str, base: dict | None = None, platform: str | None = None
         env["CLAUDE_CODE_USE_POWERSHELL_TOOL"] = "0"
         if not env.get("CLAUDE_CODE_GIT_BASH_PATH") and exists(GIT_BASH_DEFAULT):
             env["CLAUDE_CODE_GIT_BASH_PATH"] = GIT_BASH_DEFAULT
+    # Fix 5: the builder starts plan-reviewer and code-reviewer itself, as subagents. Their
+    # `model: sonnet` line would win, so FORCE makes every subagent of the builder use Fable.
+    if agent == "builder" and model_for("plan-reviewer", now) == FABLE_MODEL:
+        env["CLAUDE_CODE_SUBAGENT_MODEL"] = FABLE_MODEL
+        env["CLAUDE_CODE_SUBAGENT_MODEL_FORCE"] = "1"
     return env
 
 
@@ -531,7 +550,8 @@ def _take_worker_note() -> str:
 
 def _ledger(agent, stage, phase, five_before, weekly_before, after, outcome, now, tokens) -> None:
     ledger.add_line({
-        "phase": phase, "stage": stage, "model": AGENT_MODELS.get(agent, ""),
+        "phase": phase, "stage": stage,
+        "model": model_for(agent, now) if agent in AGENT_MODELS else "",
         "five_hour_before": five_before, "weekly_before": weekly_before,
         "five_hour_after": after.five_hour if after else None,
         "weekly_after": after.weekly if after else None,
@@ -781,7 +801,7 @@ def real_launcher(prompt: str, agent: str = "chief", platform: str | None = None
     # S5: the runner has no console, so on Windows its `claude` child would open a black window
     # (which could be closed by mistake). CREATE_NO_WINDOW keeps it hidden.
     extra = {"creationflags": CREATE_NO_WINDOW} if (platform or sys.platform) == "win32" else {}
-    done = subprocess.run(worker_command(prompt, agent, AGENT_MODELS[agent]), capture_output=True,
+    done = subprocess.run(worker_command(prompt, agent, model_for(agent)), capture_output=True,
                           text=True, env=worker_env(agent), cwd=ROOT, check=False, **extra)
     return WorkerResult(done.returncode, done.stdout, stderr=done.stderr)
 

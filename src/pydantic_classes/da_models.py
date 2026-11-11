@@ -53,15 +53,21 @@ STATUSES: tuple[str, ...] = (
 
 # The only moves allowed: the spec 3.1 table, plus the Discover moves of Phase 3 (spec section 2).
 ALLOWED_MOVES: dict[str, tuple[str, ...]] = {
-    STATUS_DRAFT: (STATUS_CLARIFICATION,),
-    STATUS_CLARIFICATION: (STATUS_DECISION_REQUIRED, STATUS_READY),
-    STATUS_DECISION_REQUIRED: (STATUS_CLARIFICATION,),
-    STATUS_READY: (STATUS_CONFIRMED, STATUS_CLARIFICATION, STATUS_DECISION_REQUIRED),
+    # Phase 9: Get help while finding the program (steps e_*) leaves from DRAFT.
+    STATUS_DRAFT: (STATUS_CLARIFICATION, STATUS_ESCALATION),
+    # Phase 9: a request switched from card 1 keeps its Understand status, so Get help at the
+    # Enhance steps (e_pick, e_stale, e_fresh) must leave from these three too.
+    STATUS_CLARIFICATION: (STATUS_DECISION_REQUIRED, STATUS_READY, STATUS_ESCALATION),
+    STATUS_DECISION_REQUIRED: (STATUS_CLARIFICATION, STATUS_ESCALATION),
+    STATUS_READY: (
+        STATUS_CONFIRMED, STATUS_CLARIFICATION, STATUS_DECISION_REQUIRED, STATUS_ESCALATION,
+    ),
     STATUS_CONFIRMED: (STATUS_SEARCHING,),
     STATUS_SEARCHING: (STATUS_SIMILAR_FOUND, STATUS_NO_MATCH),
     STATUS_SIMILAR_FOUND: (STATUS_DISCOVERY_CONFIRMED, STATUS_SEARCHING, STATUS_ESCALATION),
     STATUS_NO_MATCH: (STATUS_DISCOVERY_CONFIRMED, STATUS_SEARCHING, STATUS_ESCALATION),
-    STATUS_DISCOVERY_CONFIRMED: (STATUS_APPROACH_PROPOSED,),
+    # Phase 9: Get help during the safety net (steps s_*) leaves from DISCOVERY_CONFIRMED.
+    STATUS_DISCOVERY_CONFIRMED: (STATUS_APPROACH_PROPOSED, STATUS_ESCALATION),
     STATUS_APPROACH_PROPOSED: (STATUS_READY_TO_BUILD, STATUS_ESCALATION),
     # Phase 5 (Workspace): "Change the approach" and "Get help" from a blocked workspace check.
     # Phase 6 (Build): Build starts a build. The escalation inbox comes in Phase 10.

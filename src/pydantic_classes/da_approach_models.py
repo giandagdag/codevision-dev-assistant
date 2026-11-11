@@ -9,6 +9,7 @@ from typing import Annotated, Literal
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from pydantic_classes.da_discovery_models import DiscoveryResult
+from pydantic_classes.da_enhance_models import SafetyCase
 from pydantic_classes.da_models import REQUEST_ID_PATTERN, Request
 from pydantic_classes.da_request_record_models import (
     CRITERION_ID_PATTERN,
@@ -256,3 +257,6 @@ class ApproachView(BaseModel):
     failed_first_call: bool
     revision: int
     demo_mode: bool
+    # Phase 9: the accepted safety-net tests, shown read-only in the test plan ("Accepted in the
+    # safety net"). Empty for a new-program request.
+    safety_net_cases: list[SafetyCase] = Field(default_factory=list)

@@ -29,6 +29,7 @@ from configs.da_config import Settings
 from da_logging import get_logger
 from pydantic_classes.da_approach_models import ApproachDecision, ApproachReply, ApproachVersion
 from pydantic_classes.da_discovery_models import DiscoveryResult
+from pydantic_classes.da_enhance_models import SafetyCase
 from pydantic_classes.da_request_record_models import RequestRecord
 from pydantic_classes.da_rulebook_models import Charter, Policy
 
@@ -51,6 +52,10 @@ _PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
 _FENCED_REPLY = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 # A hit line in the prompt: "[3] path :: symbol (kind)".
 _HIT_LINE = re.compile(r"^\[(\d+)\] (\S+) :: (.*?) \(\w+\)$", re.MULTILINE)
+# A target line of the enhance section: "- Target (list it in files with action modify): path".
+_TARGET_LINE = re.compile(
+    r"^- Target \(list it in files with action modify\): (\S+)$", re.MULTILINE
+)
 NOT_JSON = object()
 
 CALL_RULES: dict[str, str] = {
@@ -79,6 +84,8 @@ class ApproachContext:
     previous: ApproachVersion | None = None
     decisions: list[ApproachDecision] = field(default_factory=list)
     change_text: str = ""
+    # Phase 9: the accepted safety-net cases (IDs and plain sentences only, never test code).
+    net_cases: list[SafetyCase] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -135,6 +142,18 @@ class ScriptedApproachClient:
             for item in self._entry["reuse_decisions"]
             if item["cite"] in numbers
         ]
+        targets = _TARGET_LINE.findall(prompt)
+        if targets:
+            # An enhance request: the plan changes the confirmed programs, each as `modify`.
+            entry["files"] = [
+                {
+                    "path": path,
+                    "action": "modify",
+                    "purpose": "Make the change inside the functions in scope.",
+                    "reuses": [],
+                }
+                for path in targets
+            ]
         if self._call == CHANGE and REVISION_MARKER in prompt:
             # A requirement revision after a build: the files the first build created are in his
             # folder now, so a real Generator plans them as `modify` (a `create` would be B4).
@@ -180,6 +199,7 @@ def build_prompt(call: str, context: ApproachContext) -> str:
         "record": context.record.model_dump_json(indent=2),
         "findings": format_findings(context.discovery),
         "hits": format_hits(context.discovery),
+        "enhance": format_enhance(context),
         "policy": format_policy(policy),
         "previous": _previous_section(context.previous),
         "decisions": _decisions_section(context.decisions),
@@ -212,6 +232,36 @@ def format_hits(discovery: DiscoveryResult) -> str:
         head = f"[{hit.hit_id}] {hit.source_path} :: {hit.symbol} ({hit.kind})"
         blocks.append(f"{head}\n    line: {hit.line_start}\n    {snippet}")
     return "\n".join(blocks) or "(no hits)"
+
+
+def format_enhance(context: ApproachContext) -> str:
+    """The extra prompt section of an enhance or fix request (spec section 9): the targets, the
+    functions in scope, who calls them, and the safety-net cases. Empty for a new program."""
+    record = context.record
+    if record.kind == "new":
+        return ""
+    lines = ["", "## The existing program being changed", ""]
+    lines += [f"- Target (list it in files with action modify): {path}" for path in record.targets]
+    scope = ", ".join(record.functions_in_scope) or "(none named)"
+    lines.append(f"- Functions in scope (the only ones that may change): {scope}")
+    impact = context.discovery.impact
+    if impact is not None and impact.available:
+        for row in impact.rows:
+            lines.append(
+                f"- Caller [{row.kind}] {row.caller_path} :: {row.caller_function} "
+                f"(line {row.line}) uses {row.function_in_scope}"
+            )
+        if impact.more:
+            lines.append(f"- ...and {impact.more} more callers")
+    elif impact is not None:
+        lines.append("- Callers: could not be checked (the reference copy was not readable)")
+    for case in context.net_cases:
+        change = f"expected to change ({case.expected_to_change})" if case.expected_to_change else (
+            "must still pass"
+        )
+        lines.append(f"- Safety-net test {case.id}: {case.today_behaviour} [{change}]")
+    lines.append("")
+    return "\n".join(lines)
 
 
 def format_policy(policy: Policy) -> str:
@@ -300,7 +350,9 @@ def parse_reply(
         return None, [
             f"The reply has the wrong shape: {line}" for line in describe_validation_error(error)
         ]
-    return reply, find_approach_problems(reply, context.policy, context.discovery, answered, call)
+    return reply, find_approach_problems(
+        reply, context.policy, context.discovery, answered, call, context.record.targets
+    )
 
 
 def load_json(text: str):

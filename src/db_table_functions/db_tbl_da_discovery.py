@@ -20,6 +20,7 @@ from db_table_functions.db_tbl_da_understand import (
     ensure_understand_tables,
 )
 from pydantic_classes.da_discovery_models import DiscoveryResult, Finding, SearchHit
+from pydantic_classes.da_enhance_models import ImpactResult
 
 # The triggers are SQLite-only: CodeVision's database will need its own equivalent.
 _CREATE_TABLES_SQL = """
@@ -68,6 +69,16 @@ def ensure_discovery_tables(conn: sqlite3.Connection) -> None:
     # These tables point at da_requests, which the Understand tables set up first.
     ensure_understand_tables(conn)
     conn.executescript(_CREATE_TABLES_SQL)
+    _add_impact_column(conn)
+
+
+def _add_impact_column(conn: sqlite3.Connection) -> None:
+    """Phase 9: da_discovery_results gets a nullable `impact` column (JSON). An older database
+    gets it here. The append-only trigger only blocks UPDATE, so ALTER is fine. Old rows read as
+    no impact."""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(da_discovery_results)")}
+    if "impact" not in columns:
+        conn.execute("ALTER TABLE da_discovery_results ADD COLUMN impact TEXT")
 
 
 def insert_result(conn: sqlite3.Connection, result: DiscoveryResult, now: datetime) -> None:
@@ -76,8 +87,8 @@ def insert_result(conn: sqlite3.Connection, result: DiscoveryResult, now: dateti
         conn.execute(
             "INSERT INTO da_discovery_results (request_id, round, record_version,"
             " rulebook_version, search_provider, queries, hits, findings, limitations,"
-            " summary_source, model, hint, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " summary_source, model, hint, created_at, impact)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 result.request_id,
                 result.round,
@@ -92,6 +103,7 @@ def insert_result(conn: sqlite3.Connection, result: DiscoveryResult, now: dateti
                 result.model,
                 result.hint,
                 to_db_time(now),
+                result.impact.model_dump_json() if result.impact else None,
             ),
         )
     except sqlite3.IntegrityError as error:
@@ -190,5 +202,6 @@ def _to_result(row: sqlite3.Row) -> DiscoveryResult:
         summary_source=row["summary_source"],
         model=row["model"],
         hint=row["hint"],
+        impact=ImpactResult.model_validate_json(row["impact"]) if row["impact"] else None,
         created_at=datetime.fromisoformat(row["created_at"]),
     )

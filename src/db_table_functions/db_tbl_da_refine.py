@@ -136,6 +136,16 @@ class RefineError(UnderstandError):
 def ensure_refine_tables(conn: sqlite3.Connection) -> None:
     """Called by ensure_build_tables, after da_requests exists."""
     conn.executescript(_CREATE_TABLES_SQL)
+    _add_net_columns(conn)
+
+
+def _add_net_columns(conn: sqlite3.Connection) -> None:
+    """Phase 9: da_test_sets records which methods are safety-net and which are expected to
+    change. An older database gets the two columns here; old rows read as none."""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(da_test_sets)")}
+    for name in ("net_methods", "expected_to_change_methods"):
+        if name not in columns:
+            conn.execute(f"ALTER TABLE da_test_sets ADD COLUMN {name} TEXT NOT NULL DEFAULT '[]'")
 
 
 # --- the working state ---
@@ -334,7 +344,8 @@ def next_test_set_version(conn: sqlite3.Connection, request_id: str) -> int:
 def insert_test_set(conn: sqlite3.Connection, item: TestSet, now: datetime) -> TestSet:
     conn.execute(
         "INSERT INTO da_test_sets (request_id, test_set_version, approach_version, added_case_ids,"
-        " text, fingerprint, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        " text, fingerprint, created_at, net_methods, expected_to_change_methods)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             item.request_id,
             item.test_set_version,
@@ -343,6 +354,8 @@ def insert_test_set(conn: sqlite3.Connection, item: TestSet, now: datetime) -> T
             item.text,
             item.fingerprint,
             to_db_time(now),
+            json.dumps(item.net_methods),
+            json.dumps(item.expected_to_change_methods),
         ),
     )
     return item.model_copy(update={"created_at": now})
@@ -360,6 +373,8 @@ def read_test_sets(conn: sqlite3.Connection, request_id: str) -> list[TestSet]:
             added_case_ids=json.loads(row["added_case_ids"]),
             text=row["text"],
             fingerprint=row["fingerprint"],
+            net_methods=json.loads(row["net_methods"]),
+            expected_to_change_methods=json.loads(row["expected_to_change_methods"]),
             created_at=datetime.fromisoformat(row["created_at"]),
         )
         for row in rows

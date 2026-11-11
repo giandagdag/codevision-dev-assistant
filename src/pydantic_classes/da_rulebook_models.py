@@ -85,6 +85,18 @@ class FlagReviewZone(_RulebookPart):
     path_patterns: list[str] = Field(min_length=1)
 
 
+class Capability(_RulebookPart):
+    """A business area in the catalog (Phase 9, D-B): files that match its patterns belong to it,
+    and the named senior signs off changes there. Like an application owner list on the AS400."""
+
+    name: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+    # A role or person label, text only (made up here; the real list is work fact WF-2).
+    named_senior: str = Field(min_length=1)
+    # Matched by plain code against the whole lower-case path (fnmatch), never by the AI.
+    path_patterns: list[str] = Field(min_length=1)
+
+
 # Starter values for the Phase 4 policy fields (made up; the real values are set at work). A
 # rulebook version saved before Phase 4 has none of them, so each field defaults to these.
 DEFAULT_ALLOWED_FOLDERS = [
@@ -139,6 +151,15 @@ DEFAULT_REFINE_MAX_PER_REQUEST = 5
 DEFAULT_REFINE_LANE_MAX_ATTEMPTS = 2
 DEFAULT_REFINE_REPRO_MAX_ATTEMPTS = 2
 DEFAULT_REFINE_CONFLICT_CONTEXT_LINES = 3
+# Phase 9 (Enhance), spec section 13. Made-up starter values; real ones are set at work.
+DEFAULT_ENHANCE_NAME_TOP_K = 5
+DEFAULT_ENHANCE_MEANING_TOP_K = 3
+DEFAULT_ENHANCE_FIND_MAX_ROUNDS = 3
+DEFAULT_ENHANCE_MAX_KEEP_ITEMS = 8
+DEFAULT_SAFETY_NET_MAX_TESTS = 20
+DEFAULT_SAFETY_NET_MAX_ATTEMPTS = 2
+DEFAULT_SAFETY_NET_MAX_CORRECTIONS = 2
+DEFAULT_IMPACT_MAX_CALLERS = 30
 DEFAULT_BUILD_BLOCKED_IMPORTS = [
     "subprocess",
     "socket",
@@ -228,6 +249,19 @@ class Policy(_RulebookPart):
     refine_conflict_context_lines: int = Field(
         default=DEFAULT_REFINE_CONFLICT_CONTEXT_LINES, ge=0, le=10
     )
+    # Phase 9 (Enhance), spec section 13. Bounds keep a typo from making a loop endless.
+    enhance_name_top_k: int = Field(default=DEFAULT_ENHANCE_NAME_TOP_K, ge=1, le=20)
+    enhance_meaning_top_k: int = Field(default=DEFAULT_ENHANCE_MEANING_TOP_K, ge=1, le=20)
+    enhance_find_max_rounds: int = Field(default=DEFAULT_ENHANCE_FIND_MAX_ROUNDS, ge=1, le=10)
+    enhance_max_keep_items: int = Field(default=DEFAULT_ENHANCE_MAX_KEEP_ITEMS, ge=1, le=20)
+    safety_net_max_tests: int = Field(default=DEFAULT_SAFETY_NET_MAX_TESTS, ge=1, le=50)
+    safety_net_max_attempts: int = Field(default=DEFAULT_SAFETY_NET_MAX_ATTEMPTS, ge=1, le=5)
+    safety_net_max_corrections: int = Field(
+        default=DEFAULT_SAFETY_NET_MAX_CORRECTIONS, ge=0, le=5
+    )
+    impact_max_callers: int = Field(default=DEFAULT_IMPACT_MAX_CALLERS, ge=1, le=200)
+    # The catalog (D-B). Empty for a rulebook saved before Phase 9.
+    capabilities: list[Capability] = Field(default_factory=list)
 
     @field_validator("new_file_name_pattern")
     @classmethod

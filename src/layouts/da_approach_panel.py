@@ -333,8 +333,41 @@ def _test_plan(view: ApproachView):
                 id="da-test-cover",
             ),
             legend,
+            *_safety_net_section(view),
         ]
     )
+
+
+def _safety_net_section(view: ApproachView) -> list:
+    """Phase 9 (spec section 9): the accepted safety-net tests, read-only, in their own section."""
+    if not view.safety_net_cases:
+        return []
+    rows = [
+        dmc.TableTr(
+            [
+                dmc.TableTd(dmc.Text(case.id, size="xs", ff="monospace")),
+                dmc.TableTd(dmc.Text(case.today_behaviour, size="xs")),
+                dmc.TableTd(
+                    dmc.Text(
+                        f"Expected to change ({case.expected_to_change})"
+                        if case.expected_to_change
+                        else "Must still pass",
+                        size="xs",
+                    )
+                ),
+            ]
+        )
+        for case in view.safety_net_cases
+    ]
+    head = dmc.TableThead(
+        dmc.TableTr(
+            [dmc.TableTh("Test"), dmc.TableTh("Today's behaviour"), dmc.TableTh("After the change")]
+        )
+    )
+    return [
+        dmc.Text("Accepted in the safety net", size="sm", fw=600, mt="md", id="da-net-title"),
+        dmc.Table([head, dmc.TableTbody(rows)], id="da-net-table"),
+    ]
 
 
 # --- the gate ---

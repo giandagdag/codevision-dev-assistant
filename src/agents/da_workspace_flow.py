@@ -192,6 +192,8 @@ def judge_facts(
     now = now or datetime.now(UTC)
     snap = _snapshot(settings, request_id, base_revision)
     _require_step(snap, "start", "ws_blocked", "ws_ready", "ws_fallback")
+    if snap.step == "start":
+        _refuse_if_main_changed(settings, request_id, now)
     result, job = _evaluate(snap, facts, request_id)
     if result.passed:
         return Judgement(job, get_workspace_view(settings, request_id))
@@ -199,6 +201,19 @@ def judge_facts(
         tx = _begin(conn, request_id, base_revision, now)
         _save_blocked(tx, snap, facts, result, "picker", base_revision)
     return Judgement(None, get_workspace_view(settings, request_id))
+
+
+def _refuse_if_main_changed(settings, request_id: str, now: datetime) -> None:
+    """Phase 9 (spec section 5, step 8): at the first workspace check of an Enhance request, a
+    target whose `main` version changed since Find shows the freshness banner again. A request
+    that is not an Enhance request is not touched."""
+    # Imported here: the Enhance flow is only needed by Enhance requests.
+    from agents.da_enhance_flow import recheck_main
+    from agents.da_main_source import stale_message
+
+    result = recheck_main(settings, request_id, now)
+    if result is not None:
+        raise WorkspaceError(stale_message(result))
 
 
 def save_check(
