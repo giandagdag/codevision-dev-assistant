@@ -25,6 +25,13 @@ from agents import da_refine_lanes as lanes
 from agents import da_refine_owntest as owntest
 from agents import da_refine_picks as picks
 from agents import da_refine_revision as revision
+from agents.da_discover_flow import (
+    CONFIRM_OPTION,
+    ESCALATE_OPTION,
+    HINT_OPTION,
+    HINT_QUESTION,
+    get_discovery_view,
+)
 from agents.da_refine_hooks import STEP_REQ_APPROACH, STEP_REQ_FINDINGS
 from agents.da_refine_screen import RefineBox, get_refine_box
 from configs.da_config import ConfigError
@@ -87,7 +94,13 @@ LANE_STEPS: dict[str, tuple[str, list[tuple[str, str]], str, str]] = {
         lanes.CORRECT_LABEL,
     ),
     lanes.STEP_REQ_DISCOVER: ("Discover on the new version.", [("discover", "Try again")], "", ""),
-    STEP_REQ_FINDINGS: ("Check the findings.", [("findings_ok", "Findings look right")], "", ""),
+    # F4: the three Phase 3 buttons. Something's missing is the text box (Send); the cap is below.
+    STEP_REQ_FINDINGS: (
+        "Check the findings.",
+        [("findings_ok", CONFIRM_OPTION), ("findings_escalate", ESCALATE_OPTION)],
+        HINT_QUESTION,
+        HINT_OPTION,
+    ),
     STEP_REQ_APPROACH: (
         "Planning the changed request.", [("rev_approach", "Try again")], "", ""
     ),
@@ -170,6 +183,8 @@ def get_refine_bar(settings, request_id: str) -> RefineBox:
         )
     if step == lanes.STEP_LANE_CHOICE:
         return _lane_choice_bar(state, rev)
+    if step == STEP_REQ_FINDINGS:
+        return _findings_bar(settings, request_id, rev)
     if step in LANE_STEPS:
         return _lane_bar(step, request.status, rev)
     mode = workspace.mode if workspace else "picker"
@@ -239,6 +254,21 @@ def _lane_choice_bar(state, rev: int) -> RefineBox:
     return RefineBox(
         offered=True, lane=True, note=note, refine_revision=rev,
         buttons=[*buttons, ("cancel", lanes.CANCEL_LABEL)],
+    )
+
+
+def _findings_bar(settings, request_id: str, rev: int) -> RefineBox:
+    """The findings step after a revision: the Phase 3 buttons and the Phase 3 round cap."""
+    view = get_discovery_view(settings, request_id)
+    note, buttons, prompt, send = LANE_STEPS[STEP_REQ_FINDINGS]
+    if not view.can_hint:
+        note = view.cap_message or note
+        prompt = ""
+    else:
+        note = f"{note} Round {view.rounds_used} of {view.max_rounds}."
+    return RefineBox(
+        offered=True, lane=True, note=note, buttons=list(buttons), refine_revision=rev,
+        text_open=bool(prompt), placeholder=prompt, send_label=send, step=STEP_REQ_FINDINGS,
     )
 
 
@@ -321,6 +351,9 @@ def _send(call: _Call) -> Outcome:
         lanes.revise(s, r, rr, correction=call.text)
     elif step == lanes.STEP_BUG:
         bug.start_repro(s, r, rr, description=call.text)
+    elif step == STEP_REQ_FINDINGS:
+        revision.add_findings_hint(s, r, rr, call.text)
+        return Outcome()
     elif step == lanes.STEP_START:
         lanes.suggest(s, r, call.text, rr)
     else:
@@ -445,6 +478,7 @@ HANDLERS: dict[str, Callable[[_Call], Outcome]] = {
     "confirm_v2": _confirm_v2,
     "discover": _plain(revision.run_discover),
     "findings_ok": _findings_ok,
+    "findings_escalate": _plain(help_.escalate_findings),
     "rev_approach": _plain(revision.start_revision_approach),
     "approach_change": _plain(approach.start_approach_change),
     "switch": _switch,

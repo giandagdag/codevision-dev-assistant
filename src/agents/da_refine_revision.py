@@ -31,7 +31,7 @@ from agents.da_approach_flow import (
     _Turn,
     _write_transaction,
 )
-from agents.da_discover_flow import confirm_discovery, start_discovery
+from agents.da_discover_flow import add_hint_and_search, confirm_discovery, start_discovery
 from agents.da_llm_client import LLMClient
 from agents.da_refine_hooks import (
     STEP_REQ_APPROACH,
@@ -99,6 +99,25 @@ def run_discover(
         settings, request_id, base_revision, STEP_REQ_FINDINGS, "revision_discover_done", now,
         FINDINGS_LINE,
     )
+
+
+def add_findings_hint(
+    settings,
+    request_id: str,
+    base_revision: int,
+    hint: str,
+    client: LLMClient | None = None,
+    index: SearchIndex | None = None,
+    now: datetime | None = None,
+) -> RefineState:
+    """✏️ Something's missing at the findings step (F4): the Phase 3 hint round, with its round cap
+    (a refused round raises the Phase 3 message). The lane stays at the findings step."""
+    now = now or datetime.now(UTC)
+    state = _check_step(settings, request_id, base_revision, STEP_REQ_FINDINGS)
+    add_hint_and_search(
+        settings, request_id, hint, _discovery_revision(settings, request_id), client, index, now
+    )
+    return state
 
 
 def confirm_findings(

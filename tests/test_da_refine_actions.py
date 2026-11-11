@@ -46,7 +46,7 @@ EXPECTED = {
     "req_revise": ["revise", "cancel"],
     "req_checkpoint": ["confirm_v2", "cancel"],
     "req_discover": ["discover"],
-    "req_findings": ["findings_ok"],
+    "req_findings": ["findings_ok", "findings_escalate"],
     "req_approach": ["rev_approach"],
     "approach_start": ["approach_change", "cancel"],
     "approach_refused": ["switch", "cancel"],
@@ -71,7 +71,7 @@ def test_each_lane_step_offers_its_buttons_and_get_help_while_a_lane_is_open(ste
 def test_text_box_opens_only_for_a_correction_and_the_bug_description():
     for step in EXPECTED:
         box = actions._lane_bar(step, "REVISION_IN_PROGRESS", 1)
-        assert box.text_open == (step in ("req_checkpoint", "bug_start"))
+        assert box.text_open == (step in ("req_checkpoint", "bug_start", "req_findings"))
     assert actions._lane_bar("req_checkpoint", "REVISION_IN_PROGRESS", 1).send_label == (
         lanes.CORRECT_LABEL
     )

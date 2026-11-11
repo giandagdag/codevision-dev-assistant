@@ -991,9 +991,10 @@ def discover_buttons(view: DiscoveryView) -> list[tuple[str, str]]:
 def _discover_composer(view: DiscoveryView, refine: RefineBox | None = None) -> dmc.Box:
     """The bottom of the chat in Discover. The text box, Send and Skip always exist (the
     callbacks name them). Send is the hint button while a hint can be given. In a Refine
-    lane the Refine buttons replace the Discover ones and no hint is given."""
+    lane the Refine buttons replace the Discover ones; the hint box follows the Refine bar."""
     status = view.request.status
-    can_hint = view.can_hint and refine is None
+    # F4: in a lane the Refine bar says whether the hint box is open (the Phase 3 round cap).
+    can_hint = view.can_hint if refine is None else refine.text_open
     controls = dmc.Box(
         [
             dmc.Textarea(

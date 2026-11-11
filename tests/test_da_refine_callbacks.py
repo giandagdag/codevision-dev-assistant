@@ -156,9 +156,10 @@ def test_the_requirement_lane_shows_refine_buttons_on_the_discover_screen(settin
     click(settings, tree, "confirm_v2")  # Discover runs by itself on the new version
 
     tree = draw(request_id)
-    assert refine_keys(tree) == ["findings_ok"]  # on the Discover screen, status SIMILAR_FOUND
+    # On the Discover screen, status SIMILAR_FOUND: the three Phase 3 buttons (F4)
+    assert refine_keys(tree) == ["findings_ok", "findings_escalate"]
     assert state_of(tree)["refine"] is True and state_of(tree)["discover"] is True
-    assert by_id(tree, cb.TEXT_ID).disabled  # no hint in a lane
+    assert not by_id(tree, cb.TEXT_ID).disabled  # "Something's missing" is the text box + Send
 
     click(settings, tree, "findings_ok")  # the revision approach starts by itself
 
