@@ -9,6 +9,7 @@ import dash_mantine_components as dmc
 from dash import dcc, html
 from dash_iconify import DashIconify
 
+from agents.da_check_words import CHECK_KIND, CHECK_PILL
 from agents.da_discover_flow import (
     CONFIRM_OPTION,
     ESCALATE_OPTION,
@@ -625,7 +626,7 @@ def render_approach_workspace(
         return _workspace(
             title=view.request.title,
             request_id=view.request.request_id,
-            status=view.request.status,
+            status=_pill_status(view.request.status, build if building else None),
             demo_mode=view.demo_mode,
             messages=[parts.chat_bubble(message) for message in view.messages],
             composer=_approach_composer(view, workspace, build if building else None, refine),
@@ -756,6 +757,15 @@ def _hidden_reconnect(workspace: WorkspaceView | None):
     return button
 
 
+def _pill_status(status: str, build: BuildView | None) -> str:
+    """F6: while a check run is running the pill says TESTING. Screen only: the status stays
+    BUILDING inside the system."""
+    running = build is not None and build.polling  # polling is true exactly while a run runs
+    if running and build.run is not None and build.run.kind == CHECK_KIND:
+        return CHECK_PILL
+    return status
+
+
 def _build_bar(
     build: BuildView, workspace: WorkspaceView | None = None, refine: RefineBox | None = None
 ) -> dmc.Box:
@@ -787,7 +797,7 @@ def _build_bar(
         download = ws_button_id("build_download", "bar")
         shown.append(parts.choice_button("Download ZIP", download, parts.PRIMARY))
     status = dmc.Alert(
-        display_status(build.request_status),
+        display_status(_pill_status(build.request_status, build)),
         color="red" if build.request_status == "NOT_PASSING" else "blue",
         variant="light",
         mb="xs",

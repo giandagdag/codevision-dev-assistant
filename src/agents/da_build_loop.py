@@ -40,6 +40,7 @@ from agents.da_build_flow import (
     _require_request,
     _write,
 )
+from agents.da_check_words import testing_files_line
 from agents.da_enhance_build_checks import (
     STILL_OLD,
     ExpectedOutcome,
@@ -888,7 +889,8 @@ class _Run:
         }
         with self._turn() as tx:
             tx.set(step="b_running", current_round=0)
-            self._note(tx, f"Checking your {len(texts)} edited file(s)", "done")
+            edited = sum(1 for path in texts if self._edited_by_him(tx.conn, path))
+            self._note(tx, testing_files_line(len(texts), edited), "done")
             for path, text in texts.items():
                 saved = insert_build_file(
                     tx.conn,
@@ -908,6 +910,14 @@ class _Run:
         layer_a = self._layer_a(texts, contract, [])
         layer_b = self._layer_b(tests) if layer_a.ok else None
         self._record_round(1, layer_a, layer_b, contract, tests)
+
+    def _edited_by_him(self, conn, path: str) -> bool:
+        """F9: the newest known text of the file differs from the last one the app wrote."""
+        versions = read_file_versions(conn, self.request_id, path)
+        written = [v for v in versions if v.kind == "written"]
+        if not versions:
+            return False
+        return not written or versions[-1].fingerprint != written[-1].fingerprint
 
     def _finish_check_failed(self, last: RoundRecord) -> str:
         """Layer A or B failed: Not passing, with the failure report. No Generator, no fix round."""

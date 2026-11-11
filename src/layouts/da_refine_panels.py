@@ -5,6 +5,7 @@ Presentation only (rule R12): the numbers come from `da_refine_screen.VersionHis
 
 import dash_mantine_components as dmc
 
+from agents.da_check_words import CHECK_KIND, check_version_name
 from agents.da_refine_screen import VersionHistory
 from pydantic_classes.da_refine_models import CriterionChange, RecordDiff
 
@@ -12,6 +13,13 @@ HISTORY_ID = "da-record-history"
 APPROACH_LIST_ID = "da-approach-versions"
 HISTORY_TITLE = "Version history"
 APPROACH_TITLE = "Approach versions"
+
+
+def version_name(row) -> str:
+    """The name of one Versions row: a check run reads "Test run N (your edits)" (F6)."""
+    if row.kind == CHECK_KIND:
+        return check_version_name(row.build_number)
+    return f"Build {row.build_number} ({row.kind})"
 
 
 def _parts(item: dict[str, str] | None) -> str:
@@ -158,7 +166,7 @@ def refine_build_blocks(panel) -> list:
     if panel.versions:
         rows = [
             dmc.Text(
-                f"Build {v.build_number} ({v.kind}): {v.label}, {', '.join(v.files)}"
+                f"{version_name(v)}: {v.label}, {', '.join(v.files)}"
                 + (" (last tested)" if v.is_last_tested else ""),
                 size="sm",
             )

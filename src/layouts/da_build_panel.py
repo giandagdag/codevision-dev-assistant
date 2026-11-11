@@ -7,6 +7,7 @@ decided (BuildView) into components. Nothing here judges code, runs a test or wr
 import dash_mantine_components as dmc
 from dash import dcc
 
+from agents.da_check_words import CHECK_BOX_TITLE, CHECK_KIND
 from layouts.da_tester_panel import layer_c_state, tester_lines, tester_report
 from pydantic_classes.da_build_models import (
     BuildView,
@@ -351,14 +352,16 @@ def _your_turn() -> dmc.Paper:
 def _this_build(view: BuildView) -> dmc.Paper:
     run = view.run
     minutes, seconds = divmod(view.seconds_taken, 60)
+    check = run.kind == CHECK_KIND  # F6: a test run has no rounds line
     lines = [
-        f"Rounds used: {run.rounds_used} of {view.max_rounds}",
+        *([] if check else [f"Rounds used: {run.rounds_used} of {view.max_rounds}"]),
         f"Tests passing: {view.tests_passing or '-'}",
         f"Time taken: {minutes}:{seconds:02d}",
         *tester_lines(view),
     ]
+    title = CHECK_BOX_TITLE if check else "This build"
     return dmc.Paper(
-        [dmc.Text("This build", fw=600, size="sm"), *[dmc.Text(t, size="sm") for t in lines]],
+        [dmc.Text(title, fw=600, size="sm"), *[dmc.Text(t, size="sm") for t in lines]],
         p="sm",
         withBorder=True,
         id=SUMMARY_ID,
