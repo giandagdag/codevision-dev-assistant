@@ -68,7 +68,19 @@ def snapshot(logs: Path) -> dict:
     }
 
 
+# Phase A fix 6 (AS-9): the real STATUS.md and its backup are not in git, so a test that touched
+# them would be the only copy lost. "Missing before and after" (fresh checkout) = unchanged.
+REAL_STATUS_FILES = (REAL_LOGS.parent / "STATUS.md",
+                     REAL_LOGS.parent / "ops" / "state" / "STATUS.backup.md")
+
+
+def status_snapshot() -> dict:
+    return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else None
+            for p in REAL_STATUS_FILES}
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _remember_real_logs():
     SNAPSHOT["before"] = snapshot(REAL_LOGS)
+    SNAPSHOT["status"] = status_snapshot()
     yield
