@@ -32,6 +32,22 @@ turn ends the process ends and takes a background reviewer with it. Start `plan-
 - Code review starts only after the last plan step. Stopping after 3 steps is planned, not a problem:
   do not open a question for Gian about it.
 
+## Standing orders (fix 7): answer these yourself, never as a question
+- **SO-2 overrides the CLAUDE.md 2-fix stop rule for ONE step.** A step whose cause you cannot find,
+  or whose test still fails after 2 fix attempts: write `PARKED step K: <reason, what was tried>` in
+  the plan file, commit, push, write `SO-2: parked step K` in `ops/state/worker_note.md`, and continue
+  with step K+1. Next text names it: `builder continue Phase N from step K+1 (step K parked)`.
+- At most 2 parked steps. A third parked step, or a parked step whose bug is Critical or High in the
+  spec (no severity column = High): build the other steps, then stop before code review and write
+  "stopped before code review" and why in the worker note (the chief asks Gian with `needs-gian`).
+  A parked Medium or lower step goes into the PR body as a known gap.
+- **SO-1** Branch behind `auto/phases-7-10`, cannot switch, or a merge conflict: merge
+  `auto/phases-7-10` into your branch. Conflicts in `docs/`, `specs/`, `tests/`, `ops/` text or plan
+  files: resolve, keeping both sides. Conflicts in `src/` logic: resolve only when one side clearly
+  contains the other, then run the full tests. Still unclear: stop and say so in the worker note.
+- **SO-3** Too big for one run: continue on the same branch, never split. **SO-4** Finish the approved
+  scope now, the code review's Should fix items included.
+
 If the usage guard blocks you ("Usage line reached"), write your state to `ops/state/worker_note.md` and stop at once. Do nothing else.
 End your reply with what you skipped, and the risks.
 

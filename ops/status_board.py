@@ -309,6 +309,7 @@ class Inputs:
     overall: int = 0
     stall: str | None = None  # why the last idle tick found the team stalled
     warnings: list[str] = field(default_factory=list)
+    later: list[Issue] = field(default_factory=list)  # fix 7: `gian-later`, never blocks
 
 
 def _cut(text: str, limit: int) -> str:
@@ -377,6 +378,8 @@ def _credits_row(usage) -> str:
 
 def build_body(i: Inputs) -> str:
     out = [top_line(i), f"Updated {_clock(i.now)}"]
+    if i.later:  # fix 7: shown, but never WAITING FOR YOU (the team keeps working)
+        out.append(f"📌 For you later: {len(i.later)}")
     out += [f"> ⚠️ {w}" for w in i.warnings]
     out += ["", "| Progress | |", "|---|---|"]
     if i.facts is None:
@@ -394,6 +397,8 @@ def build_body(i: Inputs) -> str:
         out.append(_credits_row(i.usage))
     out += ["", "### Waiting for you"]
     out += [f"- {x.link()}" for x in i.needs_gian] or ["None."]
+    out += ["", "### For you later (does not block)"]
+    out += [f"- {x.link()}" for x in i.later] or ["None."]
     out += ["", "### Needs the work laptop (does not block)"]
     out += [f"- {x.link()}" for x in i.needs_work] or ["None."]
     out += ["", "### Next step (from STATUS.md)", _cut(i.next_text, NEXT_CUT) or "none"]
@@ -467,6 +472,14 @@ def _issues(gh: Gh, label: str) -> list[Issue]:
             for x in json.loads(raw) if isinstance(x, dict)]
 
 
+def _later(gh: Gh) -> list[Issue]:
+    """Fix 7: the `gian-later` list is nice to have, so a failed read shows none, never no board."""
+    try:
+        return _issues(gh, "gian-later")
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def _warnings(git: Git) -> list[str]:
     """Unpushed commits left by a finished worker (fix 3, F3), counted again now."""
     try:
@@ -491,7 +504,7 @@ def gather(result: str, gh: Gh, alive=None, git: Git = run_git, now: float | Non
     return Inputs(result, now, next_text, log, read_running(alive, now), usage, fresh,
                   _issues(gh, "needs-gian"), _issues(gh, "needs-work-test"), branch, commits,
                   facts, merged, overall, stall.read_stall() if result == "idle" else None,
-                  _warnings(git))
+                  _warnings(git), _later(gh))
 
 
 # ---- writing the issue ----
