@@ -27,6 +27,7 @@ turn ends the process ends and takes a background reviewer with it. Start `plan-
   `.venv/Scripts/python ops/chief_tick.py next "builder continue Phase N from step K"` (K = the next
   step to build; plain text, no quotes inside, no `;` `&` `|` `>`) and stop. Never hand-edit the
   `- Next:` line in STATUS.md: there must be exactly one.
+- STATUS.md is not in git (fix 6). Never add or commit it.
 - Started a run with steps left over from before? Continue from step K and still stop after 3.
 - Code review starts only after the last plan step. Stopping after 3 steps is planned, not a problem:
   do not open a question for Gian about it.

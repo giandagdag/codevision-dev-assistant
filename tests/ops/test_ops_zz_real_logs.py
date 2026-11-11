@@ -4,11 +4,15 @@ The file name starts with `zz` so it runs after the other ops tests. The snapsho
 at the start of the pytest session (see conftest).
 """
 
-from tests.ops.conftest import REAL_LOGS, SNAPSHOT, snapshot
+from tests.ops.conftest import REAL_LOGS, SNAPSHOT, snapshot, status_snapshot
 
 
 def test_as8_real_ledger_and_worker_folder_are_unchanged():
     assert snapshot(REAL_LOGS) == SNAPSHOT["before"]
+
+
+def test_fix6_as9_real_status_md_and_its_backup_are_unchanged():
+    assert status_snapshot() == SNAPSHOT["status"]
 
 
 def test_the_snapshot_notices_a_new_ledger_row_and_a_new_reply_file(tmp_path):
