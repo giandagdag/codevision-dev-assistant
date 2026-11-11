@@ -324,6 +324,18 @@ def test_fx_7_escalate_ends_in_escalation_required_with_the_open_item(settings):
     assert "🙋 Escalate to a senior developer" in chat(settings, request_id, "developer")
 
 
+def test_fx_7_the_send_and_escalate_keys_reach_the_engine(settings):
+    from agents import da_refine_actions as actions
+    from agents.da_discover_flow import get_discovery_view
+
+    request_id, _ = at_findings(settings)
+    actions.perform_refine(settings, "send", request_id, rev(settings, request_id), "csv export")
+    assert get_discovery_view(settings, request_id).rounds_used == 3
+
+    actions.perform_refine(settings, "findings_escalate", request_id, rev(settings, request_id))
+    assert request_status(settings, request_id) == "ESCALATION_REQUIRED"
+
+
 def test_fx_7_escalate_is_refused_outside_the_findings_step(settings):
     from agents import da_refine_help as help_
 

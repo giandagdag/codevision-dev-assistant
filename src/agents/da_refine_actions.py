@@ -65,7 +65,7 @@ LABELS = {
     "discover": "Try again",
     "rev_approach": "Try again",
     "approach_change": "Try again",
-    "findings_ok": "Findings look right",
+    "findings_ok": CONFIRM_OPTION,
     "bug_fix": "Start the fix",
     "help": "Get help",
     "apply": picks.APPLY_LABEL,

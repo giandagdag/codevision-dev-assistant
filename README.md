@@ -566,6 +566,10 @@ local fixes must survive. It starts at `b_written` (READY_FOR_REVIEW or NOT_PASS
 - **Versions.** Summary shows record versions with diffs, Approach lists its versions with their
   source, Tests marks cases New, Bug or Yours, Build lists builds ("Refine 2: bug").
 - **Get help** is offered in every lane step. A stale window is refused on every action.
+- **Findings after a revision (fix 1, F4).** When Discover has run again on the new record version
+  you get the same three buttons as Phase 3: **Findings look right**, **Something's missing**
+  (type a hint, same 3-round limit counted over the whole request) and **Escalate to a senior
+  developer** (ESCALATION_REQUIRED, open item `Escalated in Refine: Discover`).
 - **Smoke check.** Items 27 (bug lane to a fix build) and 28 (requirement lane to a revision
   approach) run with the fake provider. With the scripted fake code the fix build ends
   **Not passing** (10 of 11 tests): the script does not really fix the bug. That is expected.
