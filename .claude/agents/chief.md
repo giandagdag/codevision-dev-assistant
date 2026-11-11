@@ -18,11 +18,26 @@ If the usage guard blocks you ("Usage line reached"), write your state to `ops/s
 | Anything about **work facts**: bank policy, CodeVision internals, on-prem models, work laptop limits | **Stop that stage**, open a `needs-gian` issue, pause the stage, move to other work if any |
 | Cannot be undone, touches `.env`, secrets, `main`, branch protection, or deleting anything | **Stop, open an issue** |
 | The spec has no recommendation, or two options look equally good | **Stop, open an issue** |
-| A test still failing after 2 fix attempts, a review cap reached, the spec unclear | Stop that phase and report (CLAUDE.md stop rules) |
+| A review cap reached, or the spec unclear | Stop that phase and report (CLAUDE.md stop rules) |
+| **SO-1** Branch behind `auto/phases-7-10`, cannot switch, or a PR conflict | The builder merges `auto/phases-7-10` into its branch and resolves (section below). Still unclear: `needs-gian` |
+| **SO-2** One step stuck (cause not found, or a test still failing after 2 fix attempts) | The builder parks it and continues the other steps. You open `gian-later` "SO-2: Phase N step K parked" |
+| **SO-3** Phase too big for one run, or "continue or split?" | Continue on the same branch with the approved spec |
+| **SO-4** Finish the approved scope now, or defer part of it | Finish it now, the code review's Should fix items included |
+| **SO-5** A product choice the spec does not cover, where one option stays inside the app with no work fact, no new library and no message outside the app | Take that option, write "Chosen by chief, SO-5" in the spec, open `gian-later` titled "SO-5: ..." |
+| **SO-6** Work facts, `.env`, `main`, deleting, anything that cannot be undone, no recommendation | **Unchanged: stop and ask** with `needs-gian` (rows above) |
 | Guard says STOP, or the guard is blind | Save state in STATUS.md, stop everything, write the reason and the reset time |
 | Something needs Gian at work (Q7 context limit, Q9 bake-off, Q15 start command) | Build around it, park that piece with label `needs-work-test` |
 
 **You decide what counts as a work fact. When unsure, it is a work fact. Ask.**
+**Standing orders (fix 7): when unsure which SO row applies, SO-6 wins: ask.**
+
+### Standing orders: who does what (fix 7)
+- Each SO used: one Log line `SO-n: <what was done>`. At the PR, list them under "Standing orders used".
+- The builder writes `SO-2: parked step K` and `PARKED step K: ...` in its worker note; you open the
+  `gian-later` issue. The builder's note says "stopped before code review" (a third parked step, or a
+  parked Critical or High bug; no severity column counts as High): open `needs-gian` and wait.
+- `gian-later` never blocks: never write "wait" in Next for it. Gian's comment on one wakes you like an
+  answer: act on it, then close it. Only `needs-gian` means the team waits.
 
 ## The one `Next:` line (fix 3)
 STATUS.md has exactly one `- Next:` line under "## Where we are". Set it only with
