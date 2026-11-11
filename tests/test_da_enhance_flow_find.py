@@ -339,6 +339,22 @@ def test_9_3_switch_keeps_the_number_sets_kind_enhance_and_lists_the_offered_fil
     assert flow._first_developer_text(settings, request_id).startswith("limits_expiry_report")
 
 
+def test_9_45_get_help_works_at_e_pick_after_a_switch_from_card_1(settings, card_1):
+    """Code review round 2: a switched request keeps card 1's status, and Get help still works."""
+    from agents.da_enhance_help import request_help
+    from db_table_functions.da_db import open_db
+    from db_table_functions.db_tbl_da_requests import read_request
+
+    request_id = card_1.request.request_id
+    view = flow.switch_to_enhance(settings, request_id, card_1.revision)
+    assert view.step == "e_pick"
+
+    request_help(settings, request_id, view.revision)
+
+    with open_db(settings.db_path) as conn:
+        assert read_request(conn, request_id).status == "ESCALATION_REQUIRED"
+
+
 def test_9_4_no_this_is_new_is_audited_and_the_offer_never_comes_again(
     settings, card_1, monkeypatch, index
 ):

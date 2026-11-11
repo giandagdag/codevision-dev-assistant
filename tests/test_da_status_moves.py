@@ -67,6 +67,10 @@ SPEC_TABLE = {
     # Phase 9, Enhance: Get help at the Find steps and at the safety-net steps.
     ("DRAFT", "ESCALATION_REQUIRED"),
     ("DISCOVERY_CONFIRMED", "ESCALATION_REQUIRED"),
+    # Phase 9 code review round 2: a request switched from card 1 keeps its Understand status.
+    ("CLARIFICATION_IN_PROGRESS", "ESCALATION_REQUIRED"),
+    ("DECISION_REQUIRED", "ESCALATION_REQUIRED"),
+    ("READY_FOR_CONFIRMATION", "ESCALATION_REQUIRED"),
 }
 
 # Every real move: 17 x 17 statuses minus the 17 "same status" pairs.
