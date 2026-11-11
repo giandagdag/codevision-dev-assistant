@@ -9,6 +9,7 @@ import dash_mantine_components as dmc
 from dash import dcc, html
 from dash_iconify import DashIconify
 
+from agents.da_check_words import CHECK_KIND, CHECK_PILL
 from agents.da_discover_flow import (
     CONFIRM_OPTION,
     ESCALATE_OPTION,
@@ -17,6 +18,8 @@ from agents.da_discover_flow import (
     HINT_QUESTION,
     outcome_status,
 )
+from agents.da_refine_hooks import STEP_REQ_APPROACH, STEP_REQ_FINDINGS
+from agents.da_refine_lanes import STEP_APPROACH, STEP_REQ_CHECKPOINT
 from agents.da_refine_screen import RefineBox, RefineBuildPanel, VersionHistory
 from agents.da_understand_checks import MAX_MESSAGE_LENGTH
 from agents.da_understand_flow import (
@@ -575,6 +578,20 @@ def render_discover_workspace(
     )
 
 
+# F3: the right-panel tab a Refine step is about. A running build or check run keeps the Build tab.
+REFINE_STEP_TABS = {
+    STEP_REQ_CHECKPOINT: "summary",
+    STEP_REQ_FINDINGS: "discovery",
+    STEP_REQ_APPROACH: "approach",
+    STEP_APPROACH: "approach",
+}
+
+
+def refine_step_tab(refine: RefineBox | None) -> str | None:
+    """The tab to open for the Refine step on screen, or None (then the Build tab as before)."""
+    return REFINE_STEP_TABS.get(refine.step) if refine is not None else None
+
+
 def render_approach_workspace(
     understand: UnderstandView,
     discovery: DiscoveryView,
@@ -609,6 +626,8 @@ def render_approach_workspace(
         }
         if building:
             state["build"] = True
+            # The step drawn on screen: poll_build redraws only when the server step differs.
+            state["build_step"] = build.state.step
         if refine is not None and refine.offered:
             # Send and the Refine buttons are Refine's now; they carry the Refine revision.
             state["refine"], state["refine_revision"] = True, refine.refine_revision
@@ -623,7 +642,7 @@ def render_approach_workspace(
         return _workspace(
             title=view.request.title,
             request_id=view.request.request_id,
-            status=view.request.status,
+            status=_pill_status(view.request.status, build if building else None),
             demo_mode=view.demo_mode,
             messages=[parts.chat_bubble(message) for message in view.messages],
             composer=_approach_composer(view, workspace, build if building else None, refine),
@@ -645,7 +664,7 @@ def render_approach_workspace(
             ),
             tests=tests_tab(build) if building else None,
             poll=poll_interval(build) if building else None,
-            open_tab="build" if building else None,
+            open_tab=refine_step_tab(refine) or ("build" if building else None),
             code_written=building and any(row.status == "Written" for row in build.rows),
         )
     return _workspace(
@@ -754,6 +773,15 @@ def _hidden_reconnect(workspace: WorkspaceView | None):
     return button
 
 
+def _pill_status(status: str, build: BuildView | None) -> str:
+    """F6: while a check run is running the pill says TESTING. Screen only: the status stays
+    BUILDING inside the system."""
+    running = build is not None and build.polling  # polling is true exactly while a run runs
+    if running and build.run is not None and build.run.kind == CHECK_KIND:
+        return CHECK_PILL
+    return status
+
+
 def _build_bar(
     build: BuildView, workspace: WorkspaceView | None = None, refine: RefineBox | None = None
 ) -> dmc.Box:
@@ -769,15 +797,21 @@ def _build_bar(
         for key, label in [*([] if lane else build.browser_buttons), *extra_browser]
     ]
     # Position in this list is the button id (P19) for the Build buttons.
-    shown += [
-        parts.choice_button(
-            label,
-            {"type": CHOICE_TYPE, "index": number},
-            parts.SECONDARY if key == "help" else parts.NORMAL,
+    build_buttons = [
+        (
+            key,
+            parts.choice_button(
+                label,
+                {"type": CHOICE_TYPE, "index": number},
+                parts.SECONDARY if key == "help" else parts.NORMAL,
+            ),
         )
         for number, (key, label) in enumerate([] if lane else build.buttons)
     ]
+    # F8: Get help comes last, after the Refine buttons (Check my edits, Restore or Undo).
+    shown += [button for key, button in build_buttons if key != "help"]
     shown += refine_buttons(refine) if offered else []
+    shown += [button for key, button in build_buttons if key == "help"]
     reconnect = _hidden_reconnect(workspace)
     if reconnect is not None:
         shown.append(reconnect)
@@ -785,7 +819,7 @@ def _build_bar(
         download = ws_button_id("build_download", "bar")
         shown.append(parts.choice_button("Download ZIP", download, parts.PRIMARY))
     status = dmc.Alert(
-        display_status(build.request_status),
+        display_status(_pill_status(build.request_status, build)),
         color="red" if build.request_status == "NOT_PASSING" else "blue",
         variant="light",
         mb="xs",
@@ -815,6 +849,7 @@ def refine_buttons(refine: RefineBox) -> list:
             else parts.SECONDARY
             if key == "help"
             else parts.NORMAL,
+            disabled=key in refine.disabled_keys,
         )
         for key, label in refine.buttons
     ]
@@ -956,9 +991,10 @@ def discover_buttons(view: DiscoveryView) -> list[tuple[str, str]]:
 def _discover_composer(view: DiscoveryView, refine: RefineBox | None = None) -> dmc.Box:
     """The bottom of the chat in Discover. The text box, Send and Skip always exist (the
     callbacks name them). Send is the hint button while a hint can be given. In a Refine
-    lane the Refine buttons replace the Discover ones and no hint is given."""
+    lane the Refine buttons replace the Discover ones; the hint box follows the Refine bar."""
     status = view.request.status
-    can_hint = view.can_hint and refine is None
+    # F4: in a lane the Refine bar says whether the hint box is open (the Phase 3 round cap).
+    can_hint = view.can_hint if refine is None else refine.text_open
     controls = dmc.Box(
         [
             dmc.Textarea(

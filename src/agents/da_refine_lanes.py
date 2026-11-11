@@ -349,12 +349,33 @@ def revise(
         return _save(tx, base_revision)
 
 
+def criterion_words(item: dict[str, str] | None) -> str:
+    """One criterion in full: Given, When, Then."""
+    if not item:
+        return ""
+    given, when, then = (item.get(key, "") for key in ("given", "when", "then"))
+    return f"Given {given}, when {when}, then {then}"
+
+
+def _criterion_lines(item) -> list[str]:
+    """F2: every added, changed or removed criterion with its full text (changed: old and new)."""
+    if item.change == "added":
+        return [f"- {item.id} is added: {criterion_words(item.new)}."]
+    if item.change == "removed":
+        return [f"- {item.id} is removed. It was: {criterion_words(item.old)}."]
+    return [
+        f"- {item.id} changes.",
+        f"  Before: {criterion_words(item.old)}.",
+        f"  After: {criterion_words(item.new)}.",
+    ]
+
+
 def checkpoint_text(diff: RecordDiff) -> str:
     """The checkpoint in words: what changed from vN to v(N+1)."""
     lines = [f"Here is what changes in version {diff.to_version}:"]
     lines += [f"- {item.field} changes." for item in diff.fields]
-    verbs = {"added": "is added", "changed": "changes", "removed": "is removed"}
-    lines += [f"- {item.id} {verbs[item.change]}." for item in diff.criteria]
+    for item in diff.criteria:
+        lines += _criterion_lines(item)
     lines.append(f"Press {CONFIRM_V2_LABEL}, or {CANCEL_REVISION_LABEL}, or type a correction.")
     return "\n".join(lines)
 

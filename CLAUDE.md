@@ -45,8 +45,8 @@ Stop, push the work so far to the phase branch, and tell Gian what you need when
   you did not see.
 
 ## Current phase
-Phase 9: Enhance, run by the agent team (`docs/automation.md`). Spec `specs/phase-9-enhance.md` v1.0, plan `specs/phase-9-plan.md`, branch `auto/phase-9`, merged into `auto/phases-7-10` by the chief. Next: Phase 10 (Review my code, Handoff).
-(Phases 0 to 6 and Phase A are merged into `main`; Phases 7, 8 and Phase A fixes 1 to 4 are in `auto/phases-7-10`; their specs stay in `specs/`.)
+Phase 8 fix 1 (issue 46): spec `specs/phase-8-fix-1.md` v1.1, plan `specs/phase-8-fix-1-plan.md`, branch `phase-8-fix-1`, built on Phase 9. Next: Phase 10 (Review my code, Handoff).
+(Phases 0 to 6 and Phase A are merged into `main`; Phases 7 to 9 and Phase A fixes 1 to 4 are in `auto/phases-7-10`; their specs stay in `specs/`.)
 
 Phases 4 onwards were redesigned on 31 Oct 2026 (LLM writes 100% of the code, built-in testing,
 laptop workspace). Source of truth: `specs/redesign-2026-10-31.md`.

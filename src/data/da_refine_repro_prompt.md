@@ -43,6 +43,12 @@ def test_{{method_prefix}}<short words>(self):
     """<one sentence saying what is expected>"""
     <the checks>
 
+If (and only if) the developer's text is too vague to turn into one test, reply with exactly this
+instead, and nothing else (the question is at most 200 characters):
+
+VAGUE
+<one question that would make the case clear>
+
 Rules:
 - One method only, written at column 0 here (it is placed inside the test class for you).
 - Name it `test_{{method_prefix}}<short words>` in lower case words joined with underscores.

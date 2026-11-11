@@ -5,13 +5,21 @@ Presentation only (rule R12): the numbers come from `da_refine_screen.VersionHis
 
 import dash_mantine_components as dmc
 
-from agents.da_refine_screen import VersionHistory
+from agents.da_check_words import CHECK_KIND, check_version_name
+from agents.da_refine_screen import DRAFT_TAG_WORDS, VersionHistory
 from pydantic_classes.da_refine_models import CriterionChange, RecordDiff
 
 HISTORY_ID = "da-record-history"
 APPROACH_LIST_ID = "da-approach-versions"
 HISTORY_TITLE = "Version history"
 APPROACH_TITLE = "Approach versions"
+
+
+def version_name(row) -> str:
+    """The name of one Versions row: a check run reads "Test run N (your edits)" (F6)."""
+    if row.kind == CHECK_KIND:
+        return check_version_name(row.build_number)
+    return f"Build {row.build_number} ({row.kind})"
 
 
 def _parts(item: dict[str, str] | None) -> str:
@@ -43,18 +51,52 @@ def _diff_block(diff: RecordDiff) -> dmc.Box:
     return dmc.Box(lines)
 
 
-def version_history_blocks(history: VersionHistory | None) -> list:
-    """Empty list when the record has only one version."""
-    if history is None or not history.diffs:
+DRAFT_ID = "da-record-draft"
+DRAFT_COLOURS = {"new": "green", "changed": "orange", "removed": "red"}
+
+
+def draft_blocks(history: VersionHistory | None) -> list:
+    """F2: the draft v(N+1) criteria with their tags, before Confirm. Empty with no draft."""
+    if history is None or not history.draft:
         return []
-    return [
-        dmc.Stack(
-            [dmc.Text(HISTORY_TITLE, fw=600), *[_diff_block(d) for d in history.diffs]],
-            gap="xs",
-            id=HISTORY_ID,
-            mt="md",
+    rows = [_draft_row(row, history.draft_version) for row in history.draft]
+    title = f"Draft version {history.draft_version} (not saved yet)"
+    return [dmc.Stack([dmc.Text(title, fw=600), *rows], gap="xs", id=DRAFT_ID, mt="md")]
+
+
+def _draft_row(row, version: int) -> dmc.Box:
+    struck = {"textDecoration": "line-through"}
+    head = [dmc.Text(row.criterion_id, fw=600, size="sm")]
+    if row.tag:
+        label = DRAFT_TAG_WORDS[row.tag].format(n=version)
+        head.append(dmc.Badge(label, color=DRAFT_COLOURS[row.tag], variant="light"))
+    body = []
+    if row.old_text:
+        body.append(dmc.Text(row.old_text, size="sm", c="dimmed", style=struck))
+    body.append(dmc.Text(row.text, size="sm", style=struck if row.tag == "removed" else None))
+    return dmc.Box(
+        [dmc.Group(head, gap="xs"), *body],
+        p="xs",
+        bg="yellow.1" if row.tag in ("new", "changed") else None,
+    )
+
+
+def version_history_blocks(history: VersionHistory | None) -> list:
+    """The draft (at the checkpoint) and the version diffs. Empty when the record has only one
+    version and no draft."""
+    if history is None:
+        return []
+    blocks = draft_blocks(history)
+    if history.diffs:
+        blocks.append(
+            dmc.Stack(
+                [dmc.Text(HISTORY_TITLE, fw=600), *[_diff_block(d) for d in history.diffs]],
+                gap="xs",
+                id=HISTORY_ID,
+                mt="md",
+            )
         )
-    ]
+    return blocks
 
 
 TAG_ID = "da-refine-tag"
@@ -158,7 +200,7 @@ def refine_build_blocks(panel) -> list:
     if panel.versions:
         rows = [
             dmc.Text(
-                f"Build {v.build_number} ({v.kind}): {v.label}, {', '.join(v.files)}"
+                f"{version_name(v)}: {v.label}, {', '.join(v.files)}"
                 + (" (last tested)" if v.is_last_tested else ""),
                 size="sm",
             )

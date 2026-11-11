@@ -20,6 +20,7 @@ from pathlib import Path
 from agents.da_approach_checks import normalise_path
 from agents.da_approach_flow import CAP_MESSAGE, CHANGE_APPROACH_OPTION, HELP_BUTTON, TEXT_PROMPTS
 from agents.da_build_checks import case_ids_from_method, find_test_methods
+from agents.da_check_words import CHECK_BANNER, CHECK_CANCEL_LABEL, CHECK_KIND
 from agents.da_workspace_checks import (
     FactsProblem,
     build_write_job,
@@ -671,7 +672,7 @@ def _view(
     tests = _test_rows(cases, test_code, results)
     rows = _build_rows(approach, code or {}, known or {}, state)
     capped = bool(approach_state and approach_state.change_count >= MAX_CHANGES)
-    server, browser = _build_buttons(state, capped)
+    server, browser = _build_buttons(state, capped, is_check_run(run))
     last = rounds[-1] if rounds else None
     kind, text = _banner(
         state, status, run, last, len(cases), policy.build_max_rounds, stopped_path
@@ -769,11 +770,16 @@ def _build_rows(approach, code, known, state) -> list[BuildFileRow]:
     return rows
 
 
-def _build_buttons(state: BuildState, capped: bool):
+def is_check_run(run) -> bool:
+    """True for a check run (Check my edits): the screen then says "test", not "build"."""
+    return run is not None and run.kind == CHECK_KIND
+
+
+def _build_buttons(state: BuildState, capped: bool, check_run: bool = False):
     """(server buttons, browser buttons) for one build step (spec section 1 table)."""
     step = state.step
     if step in RUNNING_STEPS:
-        return [(STOP_KEY, STOP_LABEL)], []
+        return [(STOP_KEY, CHECK_CANCEL_LABEL if check_run else STOP_LABEL)], []
     if step == "b_interrupted":
         return [
             (TRY_AGAIN_KEY, TRY_AGAIN_LABEL),
@@ -792,6 +798,8 @@ def _build_buttons(state: BuildState, capped: bool):
 
 def _banner(state, status, run, last, cases: int, limit: int, stopped_path: str):
     step = state.step
+    if step in RUNNING_STEPS and is_check_run(run):
+        return "blue", CHECK_BANNER  # F6: one test pass, no "Round 1 of 3"
     if step in RUNNING_STEPS:
         if last is not None and not (last.layer_a.ok and last.layer_b and last.layer_b.ok):
             return "red", _failed_banner(last, cases, limit)

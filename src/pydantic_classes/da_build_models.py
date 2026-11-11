@@ -270,6 +270,8 @@ class TestRow(BaseModel):
     description: str
     # The newest result of this test: pass, fail, error, skipped, or "" when it has not run.
     result: str = ""
+    # Phase 8 fix 1 (F1): a new case waiting for his choice; shown in orange, not a result.
+    pending: str = ""
 
 
 class BuildFileRow(BaseModel):

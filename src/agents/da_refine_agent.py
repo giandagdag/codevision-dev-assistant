@@ -64,7 +64,8 @@ NO_CASE_NOTE = "The reply must have a CASE part and a METHOD part, exactly as sh
 # Test-only switches for the fake provider (add to the Phase 6 and 7 ones in da_build_agent):
 #   lane_unusable            the lane reply is not JSON, every time
 #   lane_bug_no_criterion    the lane reply says bug with no criterion
-#   repro_passes_today       the repro test passes on today's code (does not show the bug)
+#   vague                    the own-test reply is VAGUE plus a question (Add a test case)
+#   repro_passes_today      the repro test passes on today's code (does not show the bug)
 #   approach_changes_criterion  the approach-lane reply would change a criterion (step 8)
 #   conflict                 the rebuild's edit block overlaps his lines (step 10)
 
@@ -90,6 +91,8 @@ class ReproReply:
     given: str
     expect: str
     method: str
+    # Own test only (F1b): the Tester found the case too vague and asks one question instead.
+    question: str = ""
 
 
 # --- prompts ---
@@ -223,6 +226,10 @@ def write_repro_test(
     prefix = f"test_{case_id.lower().replace('-', '')}_{criterion_id.lower().replace('-', '')}_"
 
     def check(text: str):
+        if own_test:
+            question = parse_vague_reply(text)
+            if question:
+                return ReproReply(criterion_id, "", "", "", question), []
         reply, problems = parse_repro_reply(text, criterion_id, prefix)
         return (reply, []) if reply else (None, problems)
 
@@ -235,6 +242,19 @@ def write_repro_test(
         policy.refine_repro_max_attempts,
         policy.tester_max_prompt_chars,
     )
+
+
+VAGUE_MAX_CHARS = 200
+_VAGUE = re.compile(r"^\s*VAGUE\s*\n(?P<question>.+?)\s*$", re.DOTALL)
+
+
+def parse_vague_reply(text: str) -> str:
+    """F1b: `VAGUE` on the first line and one question after it (up to 200 characters; a longer one
+    is cut). Returns the question, or "" when the reply is not a VAGUE reply."""
+    found = _VAGUE.match(text)
+    if not found:
+        return ""
+    return " ".join(found.group("question").split())[:VAGUE_MAX_CHARS]
 
 
 _CASE_PART = re.compile(
@@ -355,6 +375,9 @@ def scripted_refine_reply(prompt: str, switches: frozenset[str] | None = None) -
         return _scripted_lane(prompt, switches)
     if re.search(rf"^{re.escape(REVISION_MARKER)}$", prompt, re.MULTILINE):
         return _scripted_revision()
+    own = re.search(rf"^{re.escape(OWN_TEST_MARKER)}$", prompt, re.MULTILINE)
+    if own and "vague" in switches:
+        return "VAGUE\nWhat exactly should happen to the file after it is uploaded?"
     return _scripted_repro(prompt, switches)
 
 

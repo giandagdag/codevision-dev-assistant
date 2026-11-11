@@ -7,6 +7,7 @@ decided (BuildView) into components. Nothing here judges code, runs a test or wr
 import dash_mantine_components as dmc
 from dash import dcc
 
+from agents.da_check_words import CHECK_BOX_TITLE, CHECK_KIND
 from layouts.da_tester_panel import layer_c_state, tester_lines, tester_report
 from pydantic_classes.da_build_models import (
     BuildView,
@@ -61,8 +62,10 @@ RESULT_COLOUR = {"pass": "green", "fail": "red", "error": "red", "skipped": "gra
 
 
 def poll_interval(view: BuildView) -> dcc.Interval:
-    """Asks the page to redraw every 3 seconds while the build runs; off at every other step."""
-    return dcc.Interval(id=POLL_ID, interval=POLL_MS, disabled=not view.polling)
+    """Asks the page to check the build every 3 seconds, whatever the step. Always drawn on: the
+    browser can keep a stale `disabled` value from an earlier redraw (bug B6), so the callback
+    (`poll_build`) decides whether to redraw, not this flag. `view` is kept for the callers."""
+    return dcc.Interval(id=POLL_ID, interval=POLL_MS, disabled=False)
 
 
 def build_tab(view: BuildView, edit_hint: str = "", refine_blocks: list | None = None) -> list:
@@ -349,14 +352,16 @@ def _your_turn() -> dmc.Paper:
 def _this_build(view: BuildView) -> dmc.Paper:
     run = view.run
     minutes, seconds = divmod(view.seconds_taken, 60)
+    check = run.kind == CHECK_KIND  # F6: a test run has no rounds line
     lines = [
-        f"Rounds used: {run.rounds_used} of {view.max_rounds}",
+        *([] if check else [f"Rounds used: {run.rounds_used} of {view.max_rounds}"]),
         f"Tests passing: {view.tests_passing or '-'}",
         f"Time taken: {minutes}:{seconds:02d}",
         *tester_lines(view),
     ]
+    title = CHECK_BOX_TITLE if check else "This build"
     return dmc.Paper(
-        [dmc.Text("This build", fw=600, size="sm"), *[dmc.Text(t, size="sm") for t in lines]],
+        [dmc.Text(title, fw=600, size="sm"), *[dmc.Text(t, size="sm") for t in lines]],
         p="sm",
         withBorder=True,
         id=SUMMARY_ID,
@@ -371,12 +376,14 @@ def _test_row(item: TestRow) -> dmc.TableTr:
             dmc.TableTd(dmc.Text(name, size="xs", fw=600)),
             dmc.TableTd(dmc.Text(item.criterion_id, size="xs")),
             dmc.TableTd(dmc.Text(item.description, size="xs")),
-            dmc.TableTd(
-                dmc.Text(
-                    RESULT_TEXT.get(item.result, item.result),
-                    size="xs",
-                    c=RESULT_COLOUR.get(item.result),
-                )
-            ),
+            dmc.TableTd(_result_cell(item)),
         ]
+    )
+
+
+def _result_cell(item: TestRow) -> dmc.Text:
+    if item.pending:
+        return dmc.Text(item.pending, size="xs", c="orange")
+    return dmc.Text(
+        RESULT_TEXT.get(item.result, item.result), size="xs", c=RESULT_COLOUR.get(item.result)
     )

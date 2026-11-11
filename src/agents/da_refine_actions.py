@@ -25,6 +25,13 @@ from agents import da_refine_lanes as lanes
 from agents import da_refine_owntest as owntest
 from agents import da_refine_picks as picks
 from agents import da_refine_revision as revision
+from agents.da_discover_flow import (
+    CONFIRM_OPTION,
+    ESCALATE_OPTION,
+    HINT_OPTION,
+    HINT_QUESTION,
+    get_discovery_view,
+)
 from agents.da_refine_hooks import STEP_REQ_APPROACH, STEP_REQ_FINDINGS
 from agents.da_refine_screen import RefineBox, get_refine_box
 from configs.da_config import ConfigError
@@ -58,7 +65,7 @@ LABELS = {
     "discover": "Try again",
     "rev_approach": "Try again",
     "approach_change": "Try again",
-    "findings_ok": "Findings look right",
+    "findings_ok": CONFIRM_OPTION,
     "bug_fix": "Start the fix",
     "help": "Get help",
     "apply": picks.APPLY_LABEL,
@@ -87,7 +94,13 @@ LANE_STEPS: dict[str, tuple[str, list[tuple[str, str]], str, str]] = {
         lanes.CORRECT_LABEL,
     ),
     lanes.STEP_REQ_DISCOVER: ("Discover on the new version.", [("discover", "Try again")], "", ""),
-    STEP_REQ_FINDINGS: ("Check the findings.", [("findings_ok", "Findings look right")], "", ""),
+    # F4: the three Phase 3 buttons. Something's missing is the text box (Send); the cap is below.
+    STEP_REQ_FINDINGS: (
+        "Check the findings.",
+        [("findings_ok", CONFIRM_OPTION), ("findings_escalate", ESCALATE_OPTION)],
+        HINT_QUESTION,
+        HINT_OPTION,
+    ),
     STEP_REQ_APPROACH: (
         "Planning the changed request.", [("rev_approach", "Try again")], "", ""
     ),
@@ -170,6 +183,8 @@ def get_refine_bar(settings, request_id: str) -> RefineBox:
         )
     if step == lanes.STEP_LANE_CHOICE:
         return _lane_choice_bar(state, rev)
+    if step == STEP_REQ_FINDINGS:
+        return _findings_bar(settings, request_id, rev)
     if step in LANE_STEPS:
         return _lane_bar(step, request.status, rev)
     mode = workspace.mode if workspace else "picker"
@@ -203,19 +218,29 @@ def _restore_buttons(settings, request_id: str, state, box: RefineBox):
     versions = rflow.list_versions(settings, request_id)
     others = [v for v in versions if not v.is_last_tested]
     tested = next((v.build_number for v in versions if v.is_last_tested), 0)
-    if pick == tested:
+    # F5: a re-scan found edits no run has tested, so the last tested set can be put back too.
+    undo = bool(tested) and rflow.has_untested_edits(settings, request_id)
+    if pick == tested and not undo:
         pick = 0  # the restore is done: the choice is used up
     cancel = ("restore_cancel", lanes.CANCEL_LABEL)
-    if pick == -1 and others:
+    if pick == -1 and (others or undo):
         listed = [(f"restore_pick:{v.build_number}", f"Restore build {v.build_number}")
                   for v in reversed(others[-5:])]
+        if undo:
+            listed.insert(0, (f"restore_pick:{tested}", rflow.undo_label(tested)))
         box.note = "Pick the build to go back to."
         return [*listed, cancel], []
     if pick > 0:
         box.note = f"Restore build {pick}: read the chat, then press the button."
         box.restore_build = pick
         return [cancel], [("restore_go", f"Restore build {pick}")]
-    # Always offered (spec row 8-1); with no earlier build the click says so.
+    if others:
+        return [(rflow.RESTORE_KEY, rflow.RESTORE_LABEL)], []
+    if undo:  # only the tested set exists: one click, same restore write and warning
+        return [(f"restore_pick:{tested}", rflow.undo_label(tested))], []
+    # Nothing to go back to: shown greyed with the reason (F5). The server guard text stays.
+    box.disabled_keys.append(rflow.RESTORE_KEY)
+    box.note = rflow.NOTHING_TO_RESTORE_LINE
     return [(rflow.RESTORE_KEY, rflow.RESTORE_LABEL)], []
 
 
@@ -232,6 +257,21 @@ def _lane_choice_bar(state, rev: int) -> RefineBox:
     )
 
 
+def _findings_bar(settings, request_id: str, rev: int) -> RefineBox:
+    """The findings step after a revision: the Phase 3 buttons and the Phase 3 round cap."""
+    view = get_discovery_view(settings, request_id)
+    note, buttons, prompt, send = LANE_STEPS[STEP_REQ_FINDINGS]
+    if not view.can_hint:
+        note = view.cap_message or note
+        prompt = ""
+    else:
+        note = f"{note} Round {view.rounds_used} of {view.max_rounds}."
+    return RefineBox(
+        offered=True, lane=True, note=note, buttons=list(buttons), refine_revision=rev,
+        text_open=bool(prompt), placeholder=prompt, send_label=send, step=STEP_REQ_FINDINGS,
+    )
+
+
 def _lane_bar(step: str, status: str, rev: int) -> RefineBox:
     note, buttons, prompt, send = LANE_STEPS[step]
     buttons = list(buttons)
@@ -239,7 +279,7 @@ def _lane_bar(step: str, status: str, rev: int) -> RefineBox:
         buttons.append(("help", LABELS["help"]))
     return RefineBox(
         offered=True, lane=True, note=note, buttons=buttons, refine_revision=rev,
-        text_open=bool(prompt), placeholder=prompt, send_label=send or "Send",
+        text_open=bool(prompt), placeholder=prompt, send_label=send or "Send", step=step,
     )
 
 
@@ -311,6 +351,9 @@ def _send(call: _Call) -> Outcome:
         lanes.revise(s, r, rr, correction=call.text)
     elif step == lanes.STEP_BUG:
         bug.start_repro(s, r, rr, description=call.text)
+    elif step == STEP_REQ_FINDINGS:
+        revision.add_findings_hint(s, r, rr, call.text)
+        return Outcome()
     elif step == lanes.STEP_START:
         lanes.suggest(s, r, call.text, rr)
     else:
@@ -435,6 +478,7 @@ HANDLERS: dict[str, Callable[[_Call], Outcome]] = {
     "confirm_v2": _confirm_v2,
     "discover": _plain(revision.run_discover),
     "findings_ok": _findings_ok,
+    "findings_escalate": _plain(help_.escalate_findings),
     "rev_approach": _plain(revision.start_revision_approach),
     "approach_change": _plain(approach.start_approach_change),
     "switch": _switch,

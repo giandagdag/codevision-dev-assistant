@@ -96,7 +96,7 @@ def test_after_the_build_the_poll_is_off_and_the_page_asks_for_the_automatic_wri
 
     tree = draw(request_id)
 
-    assert by_id(tree, bp.POLL_ID).disabled is True
+    assert by_id(tree, bp.POLL_ID).disabled is False  # always on (B6); poll_build decides
     assert "Built, not written yet. Open this request with your workspace allowed." in all_text(
         by_id(tree, bp.BANNER_ID)
     )
@@ -229,7 +229,7 @@ def test_a_paused_build_draws_try_again_stop_and_get_help_with_the_poll_off(
     tree = draw(request_id)
 
     assert labels(tree, page.CHOICE_TYPE) == ["Resume build", "Cancel build", "Get help"]
-    assert by_id(tree, bp.POLL_ID).disabled is True
+    assert by_id(tree, bp.POLL_ID).disabled is False  # always on (B6); poll_build decides
     assert "The build paused:" in all_text(by_id(tree, bp.BANNER_ID))
 
 
@@ -295,11 +295,41 @@ def test_an_old_window_or_a_missing_button_is_refused_with_the_stale_message(set
 
 
 def test_the_poll_redraws_only_for_a_build_page(settings, ready):
-    assert cb.poll_build(1, {"build": True, "request_id": "x"}, 7) == 8
+    request_id, _ = ready
+    start(settings, request_id)  # b_running
+    assert cb.poll_build(1, {"build": True, "request_id": request_id}, 7) == 8
     for args in ((0, {"build": True}, 1), (1, {}, 1), (1, None, 1), (None, {"build": True}, 1)):
         with pytest.raises(PreventUpdate):
             cb.poll_build(*args)
     assert isinstance(StaleRevisionError, type) and pick and good_folder  # imports in use
+
+
+def test_the_page_state_carries_the_drawn_build_step(settings, ready):
+    request_id, _ = ready
+    start(settings, request_id)
+
+    assert by_id(draw(request_id), page.STATE_ID).data["build_step"] == "b_running"
+
+
+def test_the_poll_redraws_a_finished_build_once_then_stops(settings, ready):
+    request_id, _ = ready
+    start(settings, request_id)
+    drawn = by_id(draw(request_id), page.STATE_ID).data  # drawn while running
+    loop.run_build(settings, request_id)  # the run ends behind the page
+    assert cb.poll_build(1, drawn, 0) == 1  # step changed: redraw
+
+    redrawn = by_id(draw(request_id), page.STATE_ID).data
+    with pytest.raises(PreventUpdate):
+        cb.poll_build(1, redrawn, 1)  # unchanged and not running: quiet
+
+
+def test_poll_decision_running_changed_unchanged_and_no_build():
+    assert cb.poll_needs_redraw("b_running", "b_running") is True  # running: always
+    assert cb.poll_needs_redraw("b_round_failed", None) is True
+    assert cb.poll_needs_redraw("b_done", "b_running") is True  # changed
+    assert cb.poll_needs_redraw("b_done", "b_done") is False  # unchanged
+    assert cb.poll_needs_redraw("start", None) is False  # no build
+    assert cb.poll_needs_redraw(None, "b_done") is False
 
 
 # --- Phase 6 fixes, section 6 ---

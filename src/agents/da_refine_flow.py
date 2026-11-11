@@ -15,7 +15,6 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from agents.da_build_flow import (
-    STARTED_MESSAGE,
     BuildTx,
     _approach_of,
     _check_revision,
@@ -29,6 +28,7 @@ from agents.da_build_flow import (
     get_state,
     planned_paths_of,
 )
+from agents.da_check_words import CHECK_CHAT_LINE
 from agents.da_refine_merge import build_restore_set, side_by_side
 from agents.da_workspace_checks import (
     FactsProblem,
@@ -70,6 +70,14 @@ from pydantic_classes.da_workspace_models import (
 )
 
 RESTORE_KEY, RESTORE_LABEL = "restore", "Restore an earlier version"
+NOTHING_TO_RESTORE_LINE = "Nothing to restore yet: there is only one tested version."
+
+
+def undo_label(build_number: int) -> str:
+    """F5: the last tested set, offered when a re-scan found edits that are not tested."""
+    return f"Undo my edits (back to build {build_number})"
+
+
 DOWNLOAD_RESCAN_LABEL = "Upload folder to re-scan"
 UPLOAD_BEFORE_DOWNLOAD_LINE = (
     "Upload your folder before every new download, so I never overwrite your edits."
@@ -158,6 +166,18 @@ def changed_paths(conn: sqlite3.Connection, request_id: str, state: BuildState) 
     return found
 
 
+def has_untested_edits(settings, request_id: str) -> bool:
+    """True when a re-scan found edits that no run has tested yet (F5: Undo my edits)."""
+    with open_db(settings.db_path) as conn:
+        ensure_build_tables(conn)
+        ensure_workspace_tables(conn)
+        conn.execute("BEGIN")
+        state = read_build_state(conn, request_id)
+        if state is None or state.build_number == 0:
+            return False
+        return bool(changed_paths(conn, request_id, state))
+
+
 def get_edit_view(settings, request_id: str) -> EditView:
     """The changed files side by side. Empty when nothing changed or the request has no build."""
     with open_db(settings.db_path) as conn:
@@ -218,7 +238,7 @@ def start_check(
         tx.audit("developer", "check_run_started", {"build": number})
         came_from = request.status
         tx.move_to(STATUS_BUILDING)
-        tx.say("assistant", STARTED_MESSAGE)
+        tx.say("assistant", CHECK_CHAT_LINE)  # F6: reads as testing, not building
         tx.set(
             build_number=number,
             step="b_running",

@@ -277,3 +277,69 @@ def test_a_stale_window_is_refused(settings):
 
     with pytest.raises(StaleRevisionError):
         revision.run_discover(settings, request_id, old)
+
+
+# --- FX-7: the three Phase 3 buttons at the findings step (F4) ---
+
+
+def test_fx_7_something_is_missing_runs_the_next_round_within_the_cap(settings):
+    from agents import da_refine_actions as actions
+    from agents.da_discover_flow import get_discovery_view
+
+    request_id, _ = at_findings(settings)
+    # Rounds count for the whole request: round 1 was the first Discover, round 2 the revision's.
+    assert get_discovery_view(settings, request_id).rounds_used == 2
+    bar = actions.get_refine_bar(settings, request_id)
+    assert [key for key, _ in bar.buttons] == ["findings_ok", "findings_escalate"]
+    assert bar.text_open and "Round 2 of 3" in bar.note
+
+    now_rev = rev(settings, request_id)
+    state = revision.add_findings_hint(settings, request_id, now_rev, "csv export")
+
+    assert state.step == "req_findings"
+    view = get_discovery_view(settings, request_id)
+    assert view.rounds_used == 3 and view.result.hint == "csv export"
+    capped = actions.get_refine_bar(settings, request_id)  # round 3 of 3 used: no more hints
+    assert not capped.text_open and "all 3 search rounds" in capped.note
+    with pytest.raises(Exception, match="limit of 3"):
+        revision.add_findings_hint(settings, request_id, rev(settings, request_id), "one more")
+    revision.confirm_findings(settings, request_id, rev(settings, request_id))  # still allowed
+
+
+def test_fx_7_escalate_ends_in_escalation_required_with_the_open_item(settings):
+    from agents import da_refine_help as help_
+
+    request_id, _ = at_findings(settings)
+
+    state = help_.escalate_findings(settings, request_id, rev(settings, request_id))
+
+    assert state.step == "escalated"
+    assert request_status(settings, request_id) == "ESCALATION_REQUIRED"
+    with open_db(settings.db_path) as conn:
+        assert read_approach_state(conn, request_id).open_item == "Escalated in Refine: Discover"
+        assert [r.result for r in read_refines(conn, request_id)][-1] == "escalated"
+    event = events_of(settings, request_id, "discovery_escalated")[-1]
+    assert event.details["open_item"] == "Escalated in Refine: Discover"
+    assert event.details["round"] == 2
+    assert "🙋 Escalate to a senior developer" in chat(settings, request_id, "developer")
+
+
+def test_fx_7_the_send_and_escalate_keys_reach_the_engine(settings):
+    from agents import da_refine_actions as actions
+    from agents.da_discover_flow import get_discovery_view
+
+    request_id, _ = at_findings(settings)
+    actions.perform_refine(settings, "send", request_id, rev(settings, request_id), "csv export")
+    assert get_discovery_view(settings, request_id).rounds_used == 3
+
+    actions.perform_refine(settings, "findings_escalate", request_id, rev(settings, request_id))
+    assert request_status(settings, request_id) == "ESCALATION_REQUIRED"
+
+
+def test_fx_7_escalate_is_refused_outside_the_findings_step(settings):
+    from agents import da_refine_help as help_
+
+    request_id, _ = at_v2(settings)  # Discover has not run yet
+
+    with pytest.raises(RefineError):
+        help_.escalate_findings(settings, request_id, rev(settings, request_id))

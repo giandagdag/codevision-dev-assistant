@@ -664,12 +664,24 @@ def perform_finding_action(settings: Settings, index: str, reasons: dict, state,
     return (refresh or 0) + 1, ""
 
 
+def poll_needs_redraw(server_step: str | None, drawn_step: str | None) -> bool:
+    """Redraw while a build step is running, or when the server step is not the one on screen.
+    No build (no step, or `start`) never redraws. The Interval is always on (bug B6), so this
+    decision, not the Interval's `disabled` flag, keeps a finished page from redrawing forever."""
+    if not server_step or server_step == "start":
+        return False
+    return server_step in build_flow.RUNNING_STEPS or server_step != drawn_step
+
+
 def poll_build(n_intervals, state, refresh):
-    """Every 3 seconds while a build runs: redraw, so the progress list is current. The page
-    asks again only while the Interval is on; the redraw switches it off when the build ends."""
+    """Every 3 seconds: redraw when the build is running or its step changed since the draw."""
     writing_net = bool(state) and state.get("enhance") == "s_writing"  # Phase 9: net being written
     if not n_intervals or not state or not (state.get("build") or writing_net):
         raise PreventUpdate
+    if not writing_net:
+        server_step = build_flow.get_state(get_settings(), state.get("request_id")).step
+        if not poll_needs_redraw(server_step, state.get("build_step")):
+            raise PreventUpdate
     return (refresh or 0) + 1
 
 
