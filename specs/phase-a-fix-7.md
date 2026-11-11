@@ -1,6 +1,6 @@
 # Phase A fix 7: standing orders (the team answers the usual blockers itself)
 
-Version 0.9 DRAFT, 11 Nov 2026 (SGT). Waiting for Gian to choose D-A to D-E (section 5).
+Version 1.0 APPROVED, 11 Nov 2026 (19:57 SGT). Gian chose option 1 for D-A to D-E (section 5).
 Written in the project chat after #51. Gian: "Can't we automate this? I usually follow through your
 instructions for such blockers." He chose standing orders now, a cloud troubleshooter maybe later.
 Branch `phase-a-fix-7` (from `auto/phases-7-10`). PR into `auto/phases-7-10`; **Gian merges it**
@@ -53,7 +53,7 @@ When unsure which row applies, SO-6 wins: ask.
 - `gian-later` issues never make the tick return `waiting` and never count for the stall alarm.
 - No change to the guard, usage stop lines, or who merges what.
 
-## 5. Choices (D-x). Recommended: option 1 for all
+## 5. Choices (D-x). DECIDED: option 1 for all (Gian, 11 Nov 19:57)
 
 ### D-A Where the standing orders live
 1. **Rows in the existing decision table in `chief.md`, plus 3 lines in `builder.md`.** One place, read every run anyway.
