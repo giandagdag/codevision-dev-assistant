@@ -208,6 +208,27 @@ or later; check with `claude --version`; an older one ignores FORCE and the revi
 sonnet). FORCE puts every subagent of the builder on Fable, not only the two reviewers. The
 ledger's `model` column shows the worker's own model (a builder row says sonnet).
 
+## Standing orders (Phase A fix 7, 11 Nov)
+AS400 comparison: a reply list (WRKRPYLE). Known messages get their standing answer, so the job
+does not sit in MSGW waiting for you.
+
+| # | The team does by itself | Was a question like |
+|---|---|---|
+| SO-1 | Branch out of date, cannot switch, PR conflict: merge `auto/phases-7-10` in and resolve | #36, #48 |
+| SO-2 | One step stuck after 2 tries: park it, keep building the rest, tell you (`gian-later`) | #51 |
+| SO-3 | Phase too big for one run: continue on the same spec | #31 |
+| SO-4 | Finish the approved scope now, Should fix items included | #33 |
+| SO-5 | Small product choice the spec misses: take the in-app option, tell you (`gian-later`) | #40 |
+| SO-6 | Work facts, `.env`, `main`, deleting, anything final: **still asks you** (`needs-gian`) | |
+
+A parked Critical or High bug, or a third parked step, still stops the team before code review and
+asks you. Every standing order used is a `SO-n:` Log line and is listed in the PR body.
+
+**Two labels:**
+- `needs-gian`: the team waits for you (board: WAITING FOR YOU).
+- `gian-later`: the team keeps working; the board shows "📌 For you later". To overrule, comment on
+  the issue: your comment wakes the chief like any answer.
+
 ## How questions reach you
 One GitHub issue per question, label `needs-gian` (or `needs-work-test` for things that need the
 work laptop). You get a phone notification and answer in a comment. The chief reads it on its next wake-up.
