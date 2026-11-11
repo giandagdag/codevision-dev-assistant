@@ -171,7 +171,7 @@ def _add_problem(args: list[str], cwd: Path) -> str | None:
     Every word after `add` is checked, flags included, so `git add -- STATUS.md` is caught too.
     """
     for w in args:
-        if w == "--force" or (w.startswith("-") and not w.startswith("--") and "f" in w[1:]):
+        if w.startswith("--fo") or (w.startswith("-") and not w.startswith("--") and "f" in w[1:]):
             return "git add --force is not allowed"
         if not w.startswith("-") and _resolve(w, cwd) == STATUS_FILE.resolve():
             return "STATUS.md is not in git (Phase A fix 6)"

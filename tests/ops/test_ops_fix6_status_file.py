@@ -72,6 +72,15 @@ def test_as4_missing_file_comes_back_from_the_backup(tmp_path):
     assert "STATUS.md restored from backup" in text
 
 
+def test_a_broken_file_never_replaces_a_good_backup(tmp_path):
+    f = tmp_path / "laptop-STATUS.md"
+    f.write_text(BODY, encoding="utf-8")
+    c.backup_status(f, NOW)
+    f.write_text("", encoding="utf-8")
+    c.backup_status(f, NOW)
+    assert c.backup_path().read_text(encoding="utf-8") == BODY
+
+
 def test_as5_missing_file_and_no_backup_comes_from_the_template(tmp_path):
     f = tmp_path / "laptop-STATUS.md"  # conftest already made tmp_path/STATUS.md
     c.ensure_status(f, NOW)
@@ -143,7 +152,8 @@ def bash(command):
 
 @pytest.mark.parametrize("command", [
     "git add STATUS.md", "git add ./STATUS.md", "git add -- STATUS.md", "git -C . add STATUS.md",
-    "git add src/da_x.py STATUS.md", "git add -f x.py", "git add --force x.py", "git add -fA",
+    "git add src/da_x.py STATUS.md", "git add -f x.py", "git add --force x.py",
+    "git add --forc x.py", "git add -fA",
 ])
 def test_as7_status_md_and_force_add_are_refused(worker, command):
     assert s.check(bash(command))

@@ -227,10 +227,13 @@ def ensure_status(status_file: Path, now: float) -> None:
 def backup_status(status_file: Path, now: float) -> None:
     """Save STATUS.md whole-or-nothing (temp file, then replace). Never changes the tick result."""
     try:
+        text = status_file.read_text(encoding="utf-8")
+        if not stall.next_lines(text):
+            return  # empty or broken file: keep the last good backup (code review, Should fix)
         backup = backup_path()
         backup.parent.mkdir(parents=True, exist_ok=True)
         temp = backup.with_suffix(".tmp")
-        temp.write_text(status_file.read_text(encoding="utf-8"), encoding="utf-8")
+        temp.write_text(text, encoding="utf-8")
         os.replace(temp, backup)
     except OSError as problem:
         status_board.log_failure(problem, now)
