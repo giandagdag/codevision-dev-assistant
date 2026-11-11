@@ -70,6 +70,14 @@ from pydantic_classes.da_workspace_models import (
 )
 
 RESTORE_KEY, RESTORE_LABEL = "restore", "Restore an earlier version"
+NOTHING_TO_RESTORE_LINE = "Nothing to restore yet: there is only one tested version."
+
+
+def undo_label(build_number: int) -> str:
+    """F5: the last tested set, offered when a re-scan found edits that are not tested."""
+    return f"Undo my edits (back to build {build_number})"
+
+
 DOWNLOAD_RESCAN_LABEL = "Upload folder to re-scan"
 UPLOAD_BEFORE_DOWNLOAD_LINE = (
     "Upload your folder before every new download, so I never overwrite your edits."
@@ -156,6 +164,18 @@ def changed_paths(conn: sqlite3.Connection, request_id: str, state: BuildState) 
         elif newest.fingerprint != base.fingerprint:
             found.append(path)
     return found
+
+
+def has_untested_edits(settings, request_id: str) -> bool:
+    """True when a re-scan found edits that no run has tested yet (F5: Undo my edits)."""
+    with open_db(settings.db_path) as conn:
+        ensure_build_tables(conn)
+        ensure_workspace_tables(conn)
+        conn.execute("BEGIN")
+        state = read_build_state(conn, request_id)
+        if state is None or state.build_number == 0:
+            return False
+        return bool(changed_paths(conn, request_id, state))
 
 
 def get_edit_view(settings, request_id: str) -> EditView:

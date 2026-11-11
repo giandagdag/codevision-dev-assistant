@@ -203,19 +203,29 @@ def _restore_buttons(settings, request_id: str, state, box: RefineBox):
     versions = rflow.list_versions(settings, request_id)
     others = [v for v in versions if not v.is_last_tested]
     tested = next((v.build_number for v in versions if v.is_last_tested), 0)
-    if pick == tested:
+    # F5: a re-scan found edits no run has tested, so the last tested set can be put back too.
+    undo = bool(tested) and rflow.has_untested_edits(settings, request_id)
+    if pick == tested and not undo:
         pick = 0  # the restore is done: the choice is used up
     cancel = ("restore_cancel", lanes.CANCEL_LABEL)
-    if pick == -1 and others:
+    if pick == -1 and (others or undo):
         listed = [(f"restore_pick:{v.build_number}", f"Restore build {v.build_number}")
                   for v in reversed(others[-5:])]
+        if undo:
+            listed.insert(0, (f"restore_pick:{tested}", rflow.undo_label(tested)))
         box.note = "Pick the build to go back to."
         return [*listed, cancel], []
     if pick > 0:
         box.note = f"Restore build {pick}: read the chat, then press the button."
         box.restore_build = pick
         return [cancel], [("restore_go", f"Restore build {pick}")]
-    # Always offered (spec row 8-1); with no earlier build the click says so.
+    if others:
+        return [(rflow.RESTORE_KEY, rflow.RESTORE_LABEL)], []
+    if undo:  # only the tested set exists: one click, same restore write and warning
+        return [(f"restore_pick:{tested}", rflow.undo_label(tested))], []
+    # Nothing to go back to: shown greyed with the reason (F5). The server guard text stays.
+    box.disabled_keys.append(rflow.RESTORE_KEY)
+    box.note = rflow.NOTHING_TO_RESTORE_LINE
     return [(rflow.RESTORE_KEY, rflow.RESTORE_LABEL)], []
 
 

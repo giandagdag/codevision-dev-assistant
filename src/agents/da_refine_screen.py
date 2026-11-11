@@ -71,6 +71,8 @@ class RefineBox:
     lane: bool = False
     # The build the browser button "Restore build N" would put back (0 = none chosen yet).
     restore_build: int = 0
+    # Buttons drawn greyed (F5: Restore with nothing to restore). No click reaches the server.
+    disabled_keys: list[str] = field(default_factory=list)
 
 
 def make_refine_box(

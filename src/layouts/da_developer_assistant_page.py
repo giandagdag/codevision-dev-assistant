@@ -781,15 +781,21 @@ def _build_bar(
         for key, label in [*([] if lane else build.browser_buttons), *extra_browser]
     ]
     # Position in this list is the button id (P19) for the Build buttons.
-    shown += [
-        parts.choice_button(
-            label,
-            {"type": CHOICE_TYPE, "index": number},
-            parts.SECONDARY if key == "help" else parts.NORMAL,
+    build_buttons = [
+        (
+            key,
+            parts.choice_button(
+                label,
+                {"type": CHOICE_TYPE, "index": number},
+                parts.SECONDARY if key == "help" else parts.NORMAL,
+            ),
         )
         for number, (key, label) in enumerate([] if lane else build.buttons)
     ]
+    # F8: Get help comes last, after the Refine buttons (Check my edits, Restore or Undo).
+    shown += [button for key, button in build_buttons if key != "help"]
     shown += refine_buttons(refine) if offered else []
+    shown += [button for key, button in build_buttons if key == "help"]
     reconnect = _hidden_reconnect(workspace)
     if reconnect is not None:
         shown.append(reconnect)
@@ -827,6 +833,7 @@ def refine_buttons(refine: RefineBox) -> list:
             else parts.SECONDARY
             if key == "help"
             else parts.NORMAL,
+            disabled=key in refine.disabled_keys,
         )
         for key, label in refine.buttons
     ]
