@@ -609,6 +609,8 @@ def render_approach_workspace(
         }
         if building:
             state["build"] = True
+            # The step drawn on screen: poll_build redraws only when the server step differs.
+            state["build_step"] = build.state.step
         if refine is not None and refine.offered:
             # Send and the Refine buttons are Refine's now; they carry the Refine revision.
             state["refine"], state["refine_revision"] = True, refine.refine_revision

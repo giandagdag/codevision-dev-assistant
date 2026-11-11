@@ -61,8 +61,10 @@ RESULT_COLOUR = {"pass": "green", "fail": "red", "error": "red", "skipped": "gra
 
 
 def poll_interval(view: BuildView) -> dcc.Interval:
-    """Asks the page to redraw every 3 seconds while the build runs; off at every other step."""
-    return dcc.Interval(id=POLL_ID, interval=POLL_MS, disabled=not view.polling)
+    """Asks the page to check the build every 3 seconds, whatever the step. Always drawn on: the
+    browser can keep a stale `disabled` value from an earlier redraw (bug B6), so the callback
+    (`poll_build`) decides whether to redraw, not this flag. `view` is kept for the callers."""
+    return dcc.Interval(id=POLL_ID, interval=POLL_MS, disabled=False)
 
 
 def build_tab(view: BuildView, edit_hint: str = "", refine_blocks: list | None = None) -> list:
