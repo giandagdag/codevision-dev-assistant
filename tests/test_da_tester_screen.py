@@ -81,6 +81,22 @@ def test_the_tests_tab_shows_the_label_seven_checks_and_findings_by_severity(set
     assert "fake" in all_text(tree).lower()  # the model name is shown
 
 
+def test_fx12_findings_table_has_five_columns_and_a_dimmed_detail_line(settings, request_id):
+    built(settings, request_id)
+
+    table = by_id(draw(request_id), tp.FINDINGS_ID)
+
+    heads = [all_text(th) for th in components(table, "TableTh")]
+    assert heads == ["ID", "Severity", "Where", "Message", "Action"]
+    first_row = components(table, "TableTr")[1]
+    cells = components(first_row, "TableTd")
+    assert len(cells) == 5
+    assert cells[0].children.style == tp.ID_STYLE  # F-1 stays on one line
+    assert cells[2].children.style == tp.WHERE_STYLE  # a long path wraps
+    detail = all_text(cells[3])
+    assert "Check " in detail and "Cites: " in detail
+
+
 def test_7_22_a_should_fix_has_accept_and_a_greyed_fix_it(settings, request_id):
     built(settings, request_id)
 

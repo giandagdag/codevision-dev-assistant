@@ -40,6 +40,8 @@ CHECK_STATE_TEXT = {
     "warning": "Warning",
     "not_run": "Not run",
 }
+ID_STYLE = {"whiteSpace": "nowrap"}  # F7: F-12 never breaks across two lines
+WHERE_STYLE = {"overflowWrap": "anywhere"}  # F7: a long path wraps instead of widening the table
 CHECK_STATE_COLOUR = {"passed": "green", "failed": "red", "warning": "yellow", "not_run": "gray"}
 
 
@@ -148,7 +150,7 @@ def _checks_table(report: TesterView) -> dmc.Table:
 
 
 def _findings_table(rows: list[FindingRow], can_act: bool, can_fix: bool) -> dmc.Table:
-    heads = ("ID", "Severity", "Check", "Where", "Cites", "Message", "Action")
+    heads = ("ID", "Severity", "Where", "Message", "Action")
     head = dmc.TableThead(dmc.TableTr([dmc.TableTh(t) for t in heads]))
     body = [_finding_row(row, can_act, can_fix) for row in rows]
     return dmc.Table([head, dmc.TableTbody(body)], id=FINDINGS_ID, withTableBorder=True)
@@ -157,18 +159,19 @@ def _findings_table(rows: list[FindingRow], can_act: bool, can_fix: bool) -> dmc
 def _finding_row(row: FindingRow, can_act: bool, can_fix: bool) -> dmc.TableTr:
     item = row.finding
     where = f"{item.file}:{item.line}" if item.file else "-"
+    # F7: the check number and the cited rule sit under the message as one dimmed line.
+    detail = f"Check {item.check} · Cites: {item.cites or '-'}"
     message = [dmc.Text(item.message, size="xs")]
     if item.quote:
         message.append(dmc.Text(item.quote, size="xs", ff="monospace", c=da_styles.MUTED))
+    message.append(dmc.Text(detail, size="xs", c=da_styles.MUTED))
     return dmc.TableTr(
         [
-            dmc.TableTd(dmc.Text(item.finding_id, size="xs", fw=600)),
+            dmc.TableTd(dmc.Text(item.finding_id, size="xs", fw=600, style=ID_STYLE)),
             dmc.TableTd(
                 dmc.Text(SEVERITY_TEXT[item.severity], size="xs", c=SEVERITY_COLOUR[item.severity])
             ),
-            dmc.TableTd(dmc.Text(str(item.check), size="xs")),
-            dmc.TableTd(dmc.Text(where, size="xs", ff="monospace")),
-            dmc.TableTd(dmc.Text(item.cites or "-", size="xs")),
+            dmc.TableTd(dmc.Text(where, size="xs", ff="monospace", style=WHERE_STYLE)),
             dmc.TableTd(dmc.Stack(message, gap=2)),
             dmc.TableTd(_actions(row, can_act, can_fix)),
         ]
