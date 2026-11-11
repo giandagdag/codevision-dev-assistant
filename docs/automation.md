@@ -10,7 +10,7 @@ AS400 comparison: a job schedule entry wakes a small job every 30 minutes. It ch
 | Quiet runner | `ops/quiet.py`, `ops/quiet_hook.py` | Short summary of pytest, ruff, git status/diff/log. Full output in `logs/quiet/` |
 | Safety hook | `ops/safety_hook.py` | No push to `main`, no force push, no `.env`, no deleting outside `logs/` and `ops/state/` |
 | Chief and team | `.claude/agents/chief.md` and others, `ops/chief_tick.py` | The decision rule and the wake-up job |
-| Memory | `STATUS.md` | The chief's whole memory (max 60 lines, has a `Usage:` line, exactly one `- Next:` line) |
+| Memory | `STATUS.md` | The chief's whole memory (max 60 lines, has a `Usage:` line, exactly one `- Next:` line). On the laptop only, not in git (fix 6) |
 | Ledger | `logs/usage-ledger.csv` | One line per worker run (stays on the laptop) |
 
 All three hooks only act inside workers (`DA_WORKER=1`). Your own sessions are never blocked.
@@ -207,6 +207,28 @@ their models. The builder starts the two reviewers itself, so after that time it
 or later; check with `claude --version`; an older one ignores FORCE and the reviews stay on
 sonnet). FORCE puts every subagent of the builder on Fable, not only the two reviewers. The
 ledger's `model` column shows the worker's own model (a builder row says sonnet).
+
+## STATUS.md lives on the laptop only (Phase A fix 6, 11 Nov)
+AS400 comparison: the chief's data area used to sit inside the source file, so every change of
+library complained "member in use". Now it is a plain object on the machine.
+
+- `STATUS.md` is in `.gitignore`. Git never saves it, so it can never block `git switch` again
+  (the 11 Nov #48 problem). Your phone view is still the Team status issue.
+- After every wake the tick saves a copy to `ops/state/STATUS.backup.md`.
+- If `STATUS.md` is missing when the tick wakes, it comes back from that backup. No backup: a fresh
+  one is made from `ops/STATUS.template.md` (its `Next: none` makes the stall alarm tell you).
+  The Log says which one happened.
+- The safety hook refuses `git add STATUS.md` and `git add --force` for workers.
+
+**One-time switch-over on the laptop** (at home, no worker running), in PowerShell in the project folder:
+1. `copy STATUS.md ops\state\STATUS.backup.md`
+2. `git checkout -- STATUS.md`
+3. `git switch auto/phases-7-10` then `git pull`
+4. `copy ops\state\STATUS.backup.md STATUS.md`
+5. Check: `git status` does not list `STATUS.md`, and it still has your `- Next:` line.
+
+Old branches (`auto/phase-8`, `auto/phase-9`, `phase-8-fix-1`) still hold a saved copy. Switching to
+one of them is refused until `auto/phases-7-10` is merged into it.
 
 ## How questions reach you
 One GitHub issue per question, label `needs-gian` (or `needs-work-test` for things that need the
