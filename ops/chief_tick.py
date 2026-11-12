@@ -51,7 +51,10 @@ FABLE_MODEL = "fable"
 FABLE_FROM = datetime(2026, 11, 12, 19, 0, tzinfo=usage_guard.SGT).timestamp()
 FABLE_UNTIL = datetime(2026, 11, 17, 12, 0, tzinfo=usage_guard.SGT).timestamp()
 FABLE_BAR_STOP = 90.0
-FABLE_AGENTS = ("spec-writer", "plan-reviewer", "code-reviewer", "builder")
+# Fix 5d (12 Nov 22:45, project chat with Gian's authority): the first Fable run (Phase 11 spec)
+# used 63% of a 5-hour window on its own. A Fable builder would get one run per window, so the
+# builder goes back to sonnet; the judges stay on Fable. Add "builder" here to switch it back.
+FABLE_AGENTS = ("spec-writer", "plan-reviewer", "code-reviewer")
 # Turns a worker may use (F7). A whole-phase builder needs far more than a chief step.
 AGENT_MAX_TURNS = {"chief": 60, "spec-writer": 80, "builder": 400, "status-digest": 20,
                    "plan-reviewer": 80, "code-reviewer": 80}

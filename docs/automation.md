@@ -205,7 +205,9 @@ spec-writer, plan-reviewer and code-reviewer run on `fable`; chief, builder and 
 their models. Fix 5c (12 Nov, Gian): the builder runs on `fable` too, but only during the Fable 5.2
 launch offer (Pro: Fable inside the weekly limit until 17 Nov 15:59 SGT). New Fable launches stop at
 17 Nov 12:00 SGT (`FABLE_UNTIL`) or when the Fable bar reaches 90% (`FABLE_BAR_STOP`); then every
-agent goes back to its own model, because Fable on Pro is paid credits after the offer. The builder starts the two reviewers itself, so after that time its worker gets
+agent goes back to its own model, because Fable on Pro is paid credits after the offer.
+Fix 5d (12 Nov night): the builder is back on sonnet (one Fable spec run used 63% of a 5-hour
+window); the judges keep Fable inside the same window and bar limits. The builder starts the two reviewers itself, so after that time its worker gets
 `CLAUDE_CODE_SUBAGENT_MODEL=fable` and `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` (Claude Code 2.1.257
 or later; check with `claude --version`; an older one ignores FORCE and the reviews stay on
 sonnet). FORCE puts every subagent of the builder on Fable, not only the two reviewers. The
