@@ -613,6 +613,30 @@ pill shows the step (`e_find` to `s_accepted`).
   program, a tick list is shown at once with the Best match ticked (same result, one click less).
   The real-browser test 9-50 is written and skipped until a browser is available.
 
+## How Phase 11a works
+
+Phase 11a is the first part of the **Admin console** (the `/admin` page, menu entry **Admin**).
+AS400 picture: a maintenance screen for the system's control data, with a journal of every change.
+Spec `specs/phase-11-admin-console.md`, plan `specs/phase-11a-plan.md`.
+
+- **Who may open it.** `DA_ADMIN_IDS` is a comma list of user IDs (empty = nobody).
+  `DA_ADMIN_SOURCE` is `env` (the default) or `codevision` (a placeholder that says no until wired).
+  Anyone else sees one plain refusal line and no rulebook data.
+- **Tabs.** Eight tabs. Built here: **Project charter**, **Build and test**, **Version history**.
+  The others say "Comes in 11b" or "Comes in 11c".
+- **Edit, Save, Cancel.** Edit turns the tab into a form (lists are tables with Add row and Remove).
+  Save needs a change note and writes a new rulebook version; Cancel writes nothing. A stale save
+  names the newer version; every problem is listed at once; an unchanged form says "No changes".
+- **Version history.** Newest first, with the areas each version touched, the requests pinned to
+  it, **What changed** between two versions (plain code, no AI) and **Restore** (a new version,
+  note pre-filled "Restored from v<n>").
+- **Retired fields.** `default_level`, `max_level`, `max_review_rounds` and the never-generate
+  zones are gone from screens and new versions; old versions still load. Triggers are now five.
+- **Model per role.** `generator_model` and `tester_model` in Build and test win over `.env` for
+  requests pinned to that version (empty = use `.env`).
+- **Smoke check** items 31 to 33 (form save, restore, one changed path). Not yet: Overview,
+  metrics, work-test doc (11c) and the other tabs (11b).
+
 ## Notes for the move to CodeVision
 
 - **The audit-table triggers are SQLite-only.** The append-only guarantee comes from two SQLite
