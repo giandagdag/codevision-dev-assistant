@@ -1365,7 +1365,17 @@ class _Run:
         return self.request_id.lower().replace("-", "_")
 
     def client(self, role: str):
+        # The model per role comes from the request's pinned rulebook version (Phase 11, D-G), so a
+        # request keeps its models like it keeps its rules. Empty = the .env model, and then the
+        # factory is called exactly as before.
+        model = self._pinned_model(role)
+        if model:
+            return self.client_factory(self.settings, role, model=model)
         return self.client_factory(self.settings, role)
+
+    def _pinned_model(self, role: str) -> str:
+        policy = get_rulebook_for_request(self.settings.db_path, self.request_id).rulebook.policy
+        return policy.tester_model if role == "tester" else policy.generator_model
 
     def _alive(self) -> None:
         """Stop quietly if the developer pressed Stop since the last step."""

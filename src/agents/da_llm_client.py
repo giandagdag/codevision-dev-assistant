@@ -258,8 +258,12 @@ def _read_reply(response: requests.Response, fallback_model: str) -> LLMReply:
     )
 
 
-def get_llm_client(role: Role, settings: Settings | None = None) -> LLMClient:
-    """Return the client for the active provider, set up for this role."""
+def get_llm_client(role: Role, settings: Settings | None = None, model: str = "") -> LLMClient:
+    """Return the client for the active provider, set up for this role.
+
+    model is the Admin's model name for the role, taken from the request's pinned rulebook
+    version (Phase 11, D-G). Empty means use the .env model. The fake provider ignores it.
+    """
     if role not in ROLES:
         raise ValueError(f"Role '{role}' is not known. Use one of: {', '.join(ROLES)}.")
     settings = settings or load_settings()
@@ -268,9 +272,9 @@ def get_llm_client(role: Role, settings: Settings | None = None) -> LLMClient:
     if provider == "fake":
         client = FakeLLMClient(role)
     elif provider == "claude":
-        client = _make_claude_client(role, settings)
+        client = _make_claude_client(role, settings, model)
     elif provider == "onprem":
-        client = _make_onprem_client(settings, role)
+        client = _make_onprem_client(settings, role, model)
     else:
         # load_settings already blocks this; kept so a hand-built Settings cannot slip through.
         raise ConfigError(f"DA_LLM_PROVIDER '{provider}' is not supported.")
@@ -279,7 +283,7 @@ def get_llm_client(role: Role, settings: Settings | None = None) -> LLMClient:
     return client
 
 
-def _make_claude_client(role: Role, settings: Settings) -> ClaudeLLMClient:
+def _make_claude_client(role: Role, settings: Settings, admin_model: str = "") -> ClaudeLLMClient:
     if not settings.anthropic_api_key:
         raise ConfigError(
             "ANTHROPIC_API_KEY is missing. Add it to your .env file, "
@@ -294,6 +298,7 @@ def _make_claude_client(role: Role, settings: Settings) -> ClaudeLLMClient:
         model_setting = "DA_CLAUDE_TESTER_MODEL or DA_CLAUDE_GENERATOR_MODEL"
     else:
         model = settings.claude_reviewer_model
+    model = admin_model or model
     if not model:
         raise ConfigError(
             f"{model_setting} is missing. Add the Claude model name for the {role} role "
@@ -302,7 +307,9 @@ def _make_claude_client(role: Role, settings: Settings) -> ClaudeLLMClient:
     return ClaudeLLMClient(model=model, api_key=settings.anthropic_api_key)
 
 
-def _make_onprem_client(settings: Settings, role: Role = "generator") -> OnPremLLMClient:
+def _make_onprem_client(
+    settings: Settings, role: Role = "generator", admin_model: str = ""
+) -> OnPremLLMClient:
     # One model for all roles, except a Tester model when one is set (Phase 4).
     required = (("DA_ONPREM_URL", settings.onprem_url), ("DA_ONPREM_MODEL", settings.onprem_model))
     for name, value in required:
@@ -319,7 +326,8 @@ def _make_onprem_client(settings: Settings, role: Role = "generator") -> OnPremL
         )
     if verify is False:
         logger.warning("Certificate check is OFF. Use only for the prototype.")
-    return OnPremLLMClient(settings, settings.onprem_tester_model if role == "tester" else "")
+    env_model = settings.onprem_tester_model if role == "tester" else ""
+    return OnPremLLMClient(settings, admin_model or env_model)
 
 
 def _import_anthropic():

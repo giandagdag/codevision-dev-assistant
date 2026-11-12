@@ -110,11 +110,13 @@ def _fit_plan_to_prompt(entry: dict, prompt: str) -> dict:
     return {**entry, "cases": cases}
 
 
-def get_tester_client(settings: Settings, step: str) -> LLMClient:
-    """The scripted client for the fake provider, otherwise the tester role."""
+def get_tester_client(settings: Settings, step: str, model: str = "") -> LLMClient:
+    """The scripted client for the fake provider, otherwise the tester role.
+
+    model is the Admin's Tester model from the pinned rulebook (empty = the .env model)."""
     if settings.llm_provider == "fake":
         return ScriptedTesterClient(step)
-    return get_llm_client("tester", settings)
+    return get_llm_client("tester", settings, model)
 
 
 # --- prompts ---

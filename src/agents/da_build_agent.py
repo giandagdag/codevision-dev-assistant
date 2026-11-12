@@ -262,11 +262,13 @@ class ScriptedBuildClient:
         return LLMReply(text=scripted_build_reply(prompt), provider="fake", model=self.model)
 
 
-def get_build_client(settings: Settings, role: str) -> LLMClient:
-    """The scripted client for the fake provider, otherwise the generator or tester role."""
+def get_build_client(settings: Settings, role: str, model: str = "") -> LLMClient:
+    """The scripted client for the fake provider, otherwise the generator or tester role.
+
+    model is the Admin's name for the role from the pinned rulebook (empty = the .env model)."""
     if settings.llm_provider == "fake":
         return ScriptedBuildClient(role)
-    return get_llm_client(role, settings)  # type: ignore[arg-type]
+    return get_llm_client(role, settings, model)  # type: ignore[arg-type]
 
 
 # --- prompts ---
