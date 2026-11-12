@@ -142,12 +142,22 @@ def test_admin_callbacks_import_nothing_from_the_developer_callbacks():
 
 
 def test_only_the_storage_file_writes_sql_against_the_rulebook_table():
-    allowed = {"db_tbl_da_rulebook.py", "db_tbl_da_requests.py"}
-    for path in (SRC / "layouts", SRC / "callbacks", SRC / "agents"):
-        for file in path.rglob("da_admin*.py"):
-            assert "da_rulebook_versions" not in file.read_text(encoding="utf-8"), file
-    assert allowed  # the storage layer is the only place that may name the table
+    for file in _admin_files():
+        assert "da_rulebook_versions" not in file.read_text(encoding="utf-8"), file
     assert da_admin_page.ADMIN_PATH == "/admin"
+
+
+def _admin_files():
+    for path in (SRC / "layouts", SRC / "callbacks", SRC / "agents"):
+        yield from path.rglob("da_admin*.py")
+
+
+def test_the_console_makes_no_ai_call():
+    banned = ("get_llm_client", "get_build_client", "get_tester_client", ".complete(")
+    for file in _admin_files():
+        text = file.read_text(encoding="utf-8")
+        for word in banned:
+            assert word not in text, (file, word)
 
 
 def test_refusal_page_builds():

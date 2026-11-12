@@ -193,17 +193,30 @@ def problem_notice(problems: list[str]):
     )
 
 
-def message_notice(message: str, color: str = "yellow", reload_tab: str | None = None):
+def message_notice(
+    message: str,
+    color: str = "yellow",
+    reload_tab: str | None = None,
+    newest: int | None = None,
+):
     parts: list = [dmc.Text(message, size="sm")]
     if reload_tab:
+        label = f"Reload v{newest}" if newest else "Reload"
         parts.append(
-            dmc.Button("Reload", id=act_id(reload_tab, ACTION_RELOAD), size="xs", mt="xs")
+            dmc.Button(label, id=act_id(reload_tab, ACTION_RELOAD), size="xs", mt="xs")
         )
     return dmc.Alert(parts, color=color, mb="sm")
 
 
 def saved_notice(version_number: int, warnings: list[str]):
-    parts = [dmc.Text(f"Saved as v{version_number}", size="sm", fw=600)]
+    parts = [
+        dmc.Text(
+            f"Saved as v{version_number}. New requests use it from now; "
+            "requests in progress keep their version.",
+            size="sm",
+            fw=600,
+        )
+    ]
     parts += [dmc.Text(f"Warning: {line}", size="sm") for line in warnings]
     return dmc.Alert(parts, color="green", mb="sm")
 
@@ -558,7 +571,8 @@ def _restore_dialog(number: int):
 
 
 def _compare_picker(numbers: list[str], diff):
-    first = numbers[-2] if len(numbers) > 1 else (numbers[0] if numbers else None)
+    # Newest first: the default compares the newest version with the one before it.
+    first = numbers[1] if len(numbers) > 1 else (numbers[0] if numbers else None)
     parts: list = [
         dmc.Group(
             [

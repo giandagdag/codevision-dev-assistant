@@ -69,6 +69,7 @@ def test_save_with_a_note_shows_the_green_line_and_the_new_version(
 
     assert editing is False
     assert "Saved as v2" in all_text(content)
+    assert "requests in progress keep their version" in all_text(content)
     assert get_active_version(settings.db_path).rulebook.policy.build_max_rounds == 4
 
 

@@ -7,7 +7,8 @@ tests call without Dash; the Dash wrappers at the bottom only read ids and value
 
 from functools import lru_cache
 
-from dash import ALL, Input, Output, State, ctx
+import dash_mantine_components as dmc
+from dash import ALL, Input, Output, State, ctx, html
 from dash.exceptions import PreventUpdate
 
 from agents.da_admin_access import is_admin
@@ -58,7 +59,11 @@ from layouts.da_admin_page import (
     tab_button_id,
     tab_content,
 )
+from styles import da_styles
 
+NO_RULEBOOK_MESSAGE = (
+    "No rulebook has been published yet. Run the loader (smoke check or app start-up) first."
+)
 LOCATION_ID = "url"  # the same dcc.Location the home shell draws (spec D-B)
 DEV_WRAP_ID = "da-dev-wrap"
 
@@ -91,7 +96,9 @@ def admin_content(settings: Settings, pathname: str | None):
         return refusal_page()
     active = get_active_version(settings.db_path)
     if active is None:
-        return refusal_page()
+        return html.Div(
+            dmc.Text(NO_RULEBOOK_MESSAGE, c=da_styles.MUTED), style=da_styles.PAGE
+        )
     return admin_page(active, build_timeline(settings.db_path))
 
 
@@ -187,7 +194,7 @@ def _save(settings, tab, form, note, base_version, active):
     if result.kind == RESULT_PROBLEMS:
         notice = problem_notice(result.problems)
     elif result.kind == RESULT_STALE:
-        notice = message_notice(result.message, reload_tab=tab)
+        notice = message_notice(result.message, reload_tab=tab, newest=result.newest_version)
     else:
         notice = message_notice(result.message)
     return tab_content(tab, base, editable=True, draft=form, notice=[notice]), True
