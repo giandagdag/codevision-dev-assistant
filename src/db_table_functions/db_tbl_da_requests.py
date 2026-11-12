@@ -177,6 +177,23 @@ def list_my_requests(db_path: Path, developer_id: str) -> list[Request]:
     return [Request(**dict(row)) for row in rows]
 
 
+def list_pinned_request_ids(db_path: Path) -> dict[int, list[str]]:
+    """For each rulebook version, the IDs of the requests pinned to it (read only).
+
+    Used by the Admin console's Version history. A version nobody is pinned to is not listed.
+    """
+    with open_db(db_path) as conn:
+        ensure_request_tables(conn)
+        rows = conn.execute(
+            "SELECT rulebook_version, request_id FROM da_requests"
+            " WHERE rulebook_version IS NOT NULL ORDER BY request_id"
+        ).fetchall()
+    pinned: dict[int, list[str]] = {}
+    for row in rows:
+        pinned.setdefault(row["rulebook_version"], []).append(row["request_id"])
+    return pinned
+
+
 def get_rulebook_for_request(db_path: Path, request_id: str) -> RulebookVersion:
     """Return the rulebook version this request is pinned to. It never changes once set."""
     request = get_request(db_path, request_id)
