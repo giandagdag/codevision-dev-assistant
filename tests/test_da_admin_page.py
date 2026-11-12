@@ -124,12 +124,14 @@ def test_no_screen_shows_a_retired_field(published_rulebook):
 def test_the_table_helper_adds_row_and_remove_only_in_edit_mode():
     rows = [{"term": "Batch", "meaning": "Jobs"}]
 
-    read = all_text(list_table("t", ("term", "meaning"), rows, editable=False))
-    edit = all_text(list_table("t", ("term", "meaning"), rows, editable=True))
+    read = all_text(list_table("charter", "t", ("term", "meaning"), rows, editable=False))
+    edit = all_text(list_table("charter", "t", ("term", "meaning"), rows, editable=True))
 
     assert "Add row" not in read and "Remove" not in read
     assert "Add row" in edit and "Remove" in edit
-    assert "Nothing here yet." in all_text(list_table("t", ("term",), [], editable=False))
+    assert "Nothing here yet." in all_text(
+        list_table("charter", "t", ("term",), [], editable=False)
+    )
 
 
 def test_admin_callbacks_import_nothing_from_the_developer_callbacks():

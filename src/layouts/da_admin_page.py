@@ -1,12 +1,19 @@
-"""What is on the Admin console screen (Phase 11a): the 8 tabs and the read views.
+"""What is on the Admin console screen (Phase 11a): the 8 tabs, the read views and the edit forms.
 
 Presentation only (rule R12), like a display file (DDS) in RPG: it says where each field goes, not
 what it means. Rules about what is allowed live in the Phase 1 models and in
 agents/da_admin_forms.py.
+
+Ids the callbacks read back (all dictionaries, CodeVision's habit for repeated components):
+  adm-field  one value per plain input   {"type","tab","name"}
+  adm-switch one per trigger switch      {"type","tab","name"}
+  adm-cell   one per table cell          {"type","tab","table","row","col"}
+  adm-add / adm-remove  table buttons    {"type","tab","table","index"}
+  adm-act    Edit, Save, Cancel, Reload  {"type","tab","action"}
 """
 
 import dash_mantine_components as dmc
-from dash import html
+from dash import dcc, html
 
 from agents.da_admin_access import NOT_ADMIN_MESSAGE
 from agents.da_admin_forms import ADVANCED_LIMIT_FIELDS, CORE_BUILD_FIELDS, field_bounds
@@ -42,6 +49,7 @@ ADMIN_TABS: tuple[tuple[str, str, str], ...] = (
     (TAB_BUILD, "Build and test", "11a"),
     (TAB_HISTORY, "Version history", "11a"),
 )
+EDITABLE_TABS = (TAB_CHARTER, TAB_BUILD)
 
 CHARTER_LISTS: tuple[tuple[str, str], ...] = (
     ("in_scope", "In scope"),
@@ -60,6 +68,26 @@ TRIGGER_LABELS = {
 
 ZONE_COLUMNS = ("name", "description", "examples", "path_patterns")
 GLOSSARY_COLUMNS = ("term", "meaning")
+# Tables with one column hold a list of plain strings. Their one column is called "text".
+TEXT_COLUMN = "text"
+ACTION_EDIT = "edit"
+ACTION_SAVE = "save"
+ACTION_CANCEL = "cancel"
+ACTION_RELOAD = "reload"
+NOTE_ID_NAME = "note"
+BASE_STORE_TYPE = "adm-base"
+
+
+def tab_button_id(tab: str) -> dict:
+    return {"type": "adm-tab", "tab": tab}
+
+
+def body_id(tab: str) -> str:
+    return f"adm-body-{tab}"
+
+
+def act_id(tab: str, action: str) -> dict:
+    return {"type": "adm-act", "tab": tab, "action": action}
 
 
 def admin_page(version: RulebookVersion) -> html.Div:
@@ -69,7 +97,12 @@ def admin_page(version: RulebookVersion) -> html.Div:
             dmc.Title("Admin console", order=3, c=da_styles.NAVY),
             dmc.Tabs(
                 [
-                    dmc.TabsList([dmc.TabsTab(label, value=tab) for tab, label, _ in ADMIN_TABS]),
+                    dmc.TabsList(
+                        [
+                            dmc.TabsTab(label, value=tab, id=tab_button_id(tab))
+                            for tab, label, _ in ADMIN_TABS
+                        ]
+                    ),
                     *[
                         dmc.TabsPanel(_tab_body(tab, version), value=tab, pt="md")
                         for tab, _, _ in ADMIN_TABS
@@ -99,30 +132,94 @@ def version_line(version: RulebookVersion) -> dmc.Text:
 
 
 def _tab_body(tab: str, version: RulebookVersion):
-    if tab == TAB_CHARTER:
-        return charter_view(version)
-    if tab == TAB_BUILD:
-        return build_view(version)
+    if tab in EDITABLE_TABS:
+        return html.Div(tab_content(tab, version), id=body_id(tab))
     if tab == TAB_HISTORY:
         return dmc.Text("Version history loads here.", c=da_styles.MUTED)
     phase = next(built for name, _, built in ADMIN_TABS if name == tab)
     return dmc.Text(f"Comes in {phase}.", c=da_styles.MUTED)
 
 
+def tab_content(
+    tab: str,
+    version: RulebookVersion,
+    editable: bool = False,
+    draft: dict | None = None,
+    notice: list | None = None,
+):
+    """One editable tab: notice lines, the view or the form, and the buttons that fit the mode."""
+    view = charter_view if tab == TAB_CHARTER else build_view
+    return html.Div(
+        [
+            *(notice or []),
+            view(version, editable, draft),
+            _buttons(tab, version, editable),
+            dcc.Store(id={"type": BASE_STORE_TYPE, "tab": tab}, data=version.version_number),
+        ]
+    )
+
+
+def _buttons(tab: str, version: RulebookVersion, editable: bool):
+    if not editable:
+        return dmc.Button("Edit", id=act_id(tab, ACTION_EDIT), mt="md")
+    return dmc.Stack(
+        [
+            dmc.TextInput(
+                label="Change note (required)",
+                id={"type": "adm-field", "tab": tab, "name": NOTE_ID_NAME},
+                value="",
+            ),
+            dmc.Group(
+                [
+                    dmc.Button("Save", id=act_id(tab, ACTION_SAVE)),
+                    dmc.Button("Cancel", id=act_id(tab, ACTION_CANCEL), variant="default"),
+                ]
+            ),
+        ],
+        mt="md",
+        gap="xs",
+    )
+
+
+def problem_notice(problems: list[str]):
+    return dmc.Alert(
+        [dmc.Text("The rulebook was not saved. Please fix these problems:", size="sm", fw=600)]
+        + [dmc.Text(f"- {line}", size="sm") for line in problems],
+        color="red",
+        mb="sm",
+    )
+
+
+def message_notice(message: str, color: str = "yellow", reload_tab: str | None = None):
+    parts: list = [dmc.Text(message, size="sm")]
+    if reload_tab:
+        parts.append(
+            dmc.Button("Reload", id=act_id(reload_tab, ACTION_RELOAD), size="xs", mt="xs")
+        )
+    return dmc.Alert(parts, color=color, mb="sm")
+
+
+def saved_notice(version_number: int, warnings: list[str]):
+    parts = [dmc.Text(f"Saved as v{version_number}", size="sm", fw=600)]
+    parts += [dmc.Text(f"Warning: {line}", size="sm") for line in warnings]
+    return dmc.Alert(parts, color="green", mb="sm")
+
+
 # --- Shared list table (zones, protected files, glossary, charter lists; 11b reuses it) ---
 
 
-def list_table(table_id: str, columns: tuple[str, ...], rows: list[dict], editable: bool):
+def list_table(
+    tab: str, table_id: str, columns: tuple[str, ...], rows: list[dict], editable: bool
+):
     """A table drawn from column names. Read mode is plain text; edit mode adds Add row and Remove.
 
-    Edit cells carry pattern-matching ids {"type": "<table_id>-cell", "row": i, "col": name} so the
-    callbacks can read them back.
+    Edit cells carry pattern-matching ids so the callbacks can read them back.
     """
     head = dmc.TableThead(
         dmc.TableTr([dmc.TableTh(col.replace("_", " ").capitalize()) for col in columns])
     )
     body = dmc.TableTbody(
-        [_table_row(table_id, columns, i, row, editable) for i, row in enumerate(rows)]
+        [_table_row(tab, table_id, columns, i, row, editable) for i, row in enumerate(rows)]
     )
     parts: list = [dmc.Table([head, body], withTableBorder=True, withColumnBorders=True)]
     if not rows:
@@ -131,16 +228,16 @@ def list_table(table_id: str, columns: tuple[str, ...], rows: list[dict], editab
         parts.append(
             dmc.Button(
                 "Add row",
-                id={"type": f"{table_id}-add", "index": 0},
+                id={"type": "adm-add", "tab": tab, "table": table_id, "index": 0},
                 variant="default",
                 size="xs",
                 mt="xs",
             )
         )
-    return html.Div(parts, id=f"{table_id}-table")
+    return html.Div(parts)
 
 
-def _table_row(table_id, columns, index, row, editable):
+def _table_row(tab, table_id, columns, index, row, editable):
     cells = []
     for col in columns:
         value = _cell_text(row.get(col, ""))
@@ -149,7 +246,13 @@ def _table_row(table_id, columns, index, row, editable):
                 dmc.TableTd(
                     dmc.Textarea(
                         value=value,
-                        id={"type": f"{table_id}-cell", "row": index, "col": col},
+                        id={
+                            "type": "adm-cell",
+                            "tab": tab,
+                            "table": table_id,
+                            "row": index,
+                            "col": col,
+                        },
                         autosize=True,
                         minRows=1,
                         size="xs",
@@ -163,7 +266,7 @@ def _table_row(table_id, columns, index, row, editable):
             dmc.TableTd(
                 dmc.Button(
                     "Remove",
-                    id={"type": f"{table_id}-remove", "index": index},
+                    id={"type": "adm-remove", "tab": tab, "table": table_id, "index": index},
                     variant="subtle",
                     color="red",
                     size="xs",
@@ -178,30 +281,60 @@ def _cell_text(value) -> str:
     return "\n".join(value) if isinstance(value, list) else str(value)
 
 
+def _text_rows(items) -> list[dict]:
+    return [{TEXT_COLUMN: item} for item in items]
+
+
+def _draft(draft: dict | None, key: str, default):
+    return default if draft is None or key not in draft else draft[key]
+
+
 # --- Project charter ---
 
 
-def charter_view(version: RulebookVersion, editable: bool = False):
+def charter_view(version: RulebookVersion, editable: bool = False, draft: dict | None = None):
     charter = version.rulebook.charter
+    purpose = _draft(draft, "purpose", charter.purpose)
     return html.Div(
         [
             version_line(version),
             _charter_size(charter),
-            _section("Purpose", dmc.Text(charter.purpose, size="sm")),
+            _section("Purpose", _purpose(purpose, editable)),
             *[
-                _section(label, _text_list(name, getattr(charter, name), editable))
+                _section(
+                    label,
+                    list_table(
+                        TAB_CHARTER,
+                        name,
+                        (TEXT_COLUMN,),
+                        _text_rows(_draft(draft, name, getattr(charter, name))),
+                        editable,
+                    ),
+                )
                 for name, label in CHARTER_LISTS
             ],
             _section(
                 "Glossary",
                 list_table(
-                    "charter-glossary",
+                    TAB_CHARTER,
+                    "glossary",
                     GLOSSARY_COLUMNS,
-                    [entry.model_dump() for entry in charter.glossary],
+                    _draft(draft, "glossary", [entry.model_dump() for entry in charter.glossary]),
                     editable,
                 ),
             ),
         ]
+    )
+
+
+def _purpose(purpose: str, editable: bool):
+    if not editable:
+        return dmc.Text(purpose, size="sm")
+    return dmc.Textarea(
+        value=purpose,
+        id={"type": "adm-field", "tab": TAB_CHARTER, "name": "purpose"},
+        autosize=True,
+        minRows=2,
     )
 
 
@@ -216,26 +349,23 @@ def _charter_size(charter: Charter):
     )
 
 
-def _text_list(name: str, items: list[str], editable: bool):
-    rows = [{"text": item} for item in items]
-    return list_table(f"charter-{name}", ("text",), rows, editable)
-
-
 # --- Build and test ---
 
 
-def build_view(version: RulebookVersion, editable: bool = False):
+def build_view(version: RulebookVersion, editable: bool = False, draft: dict | None = None):
     policy = version.rulebook.policy
     return html.Div(
         [
             version_line(version),
-            _section("Limits", _number_fields(policy, CORE_BUILD_FIELDS)),
+            _section("Limits", _number_fields(policy, CORE_BUILD_FIELDS, editable, draft)),
             dmc.Accordion(
                 [
                     dmc.AccordionItem(
                         [
                             dmc.AccordionControl("Advanced limits"),
-                            dmc.AccordionPanel(_number_fields(policy, ADVANCED_LIMIT_FIELDS)),
+                            dmc.AccordionPanel(
+                                _number_fields(policy, ADVANCED_LIMIT_FIELDS, editable, draft)
+                            ),
                         ],
                         value="advanced",
                     )
@@ -246,28 +376,30 @@ def build_view(version: RulebookVersion, editable: bool = False):
                 "Model per role",
                 dmc.Stack(
                     [
-                        _labelled("Generator model", policy.generator_model or "(use .env)"),
-                        _labelled("Tester model", policy.tester_model or "(use .env)"),
+                        _model_field(policy, "generator_model", "Generator model", editable, draft),
+                        _model_field(policy, "tester_model", "Tester model", editable, draft),
                     ],
                     gap=2,
                 ),
             ),
-            _section("Escalation triggers", _triggers(policy)),
+            _section("Escalation triggers", _triggers(policy, editable, draft)),
             _section(
                 "Flag-for-review zones",
                 list_table(
-                    "build-zones",
+                    TAB_BUILD,
+                    "zones",
                     ZONE_COLUMNS,
-                    [zone.model_dump() for zone in policy.flag_review_zones],
+                    _draft(draft, "zones", [z.model_dump() for z in policy.flag_review_zones]),
                     editable,
                 ),
             ),
             _section(
                 "Protected files",
                 list_table(
-                    "build-protected",
-                    ("pattern",),
-                    [{"pattern": item} for item in policy.protected_files],
+                    TAB_BUILD,
+                    "protected_files",
+                    (TEXT_COLUMN,),
+                    _text_rows(_draft(draft, "protected_files", policy.protected_files)),
                     editable,
                 ),
             ),
@@ -275,27 +407,48 @@ def build_view(version: RulebookVersion, editable: bool = False):
     )
 
 
-def _number_fields(policy: Policy, names: tuple[str, ...]):
-    return dmc.Stack(
-        [_labelled(name, str(getattr(policy, name)), field_bounds(name)) for name in names], gap=2
+def _number_fields(policy: Policy, names: tuple[str, ...], editable: bool, draft: dict | None):
+    return dmc.Stack([_number_field(policy, n, editable, draft) for n in names], gap=2)
+
+
+def _number_field(policy: Policy, name: str, editable: bool, draft: dict | None):
+    value = str(_draft(draft, name, getattr(policy, name)))
+    hint = field_bounds(name)
+    if not editable:
+        return dmc.Text(f"{name}: {value}" + (f"   (allowed: {hint})" if hint else ""), size="sm")
+    return dmc.TextInput(
+        label=name,
+        description=f"allowed: {hint}" if hint else None,
+        value=value,
+        id={"type": "adm-field", "tab": TAB_BUILD, "name": name},
+        size="xs",
     )
 
 
-def _labelled(label: str, value: str, hint: str = ""):
-    text = f"{label}: {value}" + (f"   (allowed: {hint})" if hint else "")
-    return dmc.Text(text, size="sm")
+def _model_field(policy: Policy, name: str, label: str, editable: bool, draft: dict | None):
+    value = _draft(draft, name, getattr(policy, name))
+    if not editable:
+        return dmc.Text(f"{label}: {value or '(use .env)'}", size="sm")
+    return dmc.TextInput(
+        label=label,
+        description="empty = use the model from .env",
+        value=value,
+        id={"type": "adm-field", "tab": TAB_BUILD, "name": name},
+        size="xs",
+    )
 
 
-def _triggers(policy: Policy):
+def _triggers(policy: Policy, editable: bool, draft: dict | None):
+    chosen = _draft(draft, "triggers", {t.name: t.on for t in policy.escalation_triggers})
     return dmc.Stack(
         [
             dmc.Switch(
-                label=TRIGGER_LABELS.get(trigger.name, trigger.name),
-                checked=trigger.on,
-                disabled=True,
-                id={"type": "build-trigger", "name": trigger.name},
+                label=TRIGGER_LABELS.get(name, name),
+                checked=bool(on),
+                disabled=not editable,
+                id={"type": "adm-switch", "tab": TAB_BUILD, "name": name},
             )
-            for trigger in policy.escalation_triggers
+            for name, on in chosen.items()
         ],
         gap=4,
     )
