@@ -346,7 +346,7 @@ def test_launch_starts_one_named_worker_and_writes_a_ledger_line(status_file, is
                           lambda: usage(), FakeGh(), launcher, status_file, NOW, ok_hooks)
     assert out == "ran" and seen == ["spec-writer"]
     row = (isolated / "ledger.csv").read_text(encoding="utf-8").splitlines()[1]
-    assert ",7,spec,fable," in row  # NOW is in 2027, after the fix 5 Fable switch
+    assert ",7,spec,opus," in row  # NOW is in 2027, after the fix 5c Fable offer ended
 
 
 # ---- Phase A fix 5: Fable for the judging agents from Thu 12 Nov 19:00 SGT ----
@@ -356,9 +356,9 @@ def test_fix5_fable_starts_at_the_thursday_reset_for_the_judging_agents_only():
     assert c.FABLE_FROM == 1794481200.0  # 12 Nov 2026 19:00 SGT = 11:00 UTC
     for agent in c.AGENT_MODELS:
         assert c.model_for(agent, before) == c.AGENT_MODELS[agent]
-    for agent in ("spec-writer", "plan-reviewer", "code-reviewer"):
-        assert c.model_for(agent, after) == "fable"
-    for agent in ("chief", "builder", "status-digest"):
+    for agent in ("spec-writer", "plan-reviewer", "code-reviewer", "builder"):
+        assert c.model_for(agent, after, fable_bar=0.0) == "fable"
+    for agent in ("chief", "status-digest"):
         assert c.model_for(agent, after) == c.AGENT_MODELS[agent]
 
 
@@ -566,3 +566,31 @@ def test_real_launcher_uses_the_worker_env(monkeypatch):
     monkeypatch.setattr(c.subprocess, "run", fake_run)
     result = c.real_launcher("hi", "builder")
     assert seen["env"]["DA_AGENT"] == "builder" and result.stderr == "warn"
+
+
+def test_fix5c_fable_ends_with_the_launch_offer_and_the_fable_bar():
+    inside = c.FABLE_UNTIL - 60
+    assert c.FABLE_UNTIL == 1794888000.0  # 17 Nov 2026 12:00 SGT = 04:00 UTC
+    assert c.model_for("builder", inside, fable_bar=None) == "fable"  # bar unknown: date rules
+    assert c.model_for("builder", inside, fable_bar=89.0) == "fable"
+    assert c.model_for("builder", inside, fable_bar=90.0) == "sonnet"  # bar nearly full
+    assert c.model_for("code-reviewer", inside, fable_bar=95.0) == "sonnet"
+    assert c.model_for("spec-writer", inside, fable_bar=95.0) == "opus"
+    for agent in c.AGENT_MODELS:  # offer over: every agent back to its own model
+        assert c.model_for(agent, c.FABLE_UNTIL, fable_bar=0.0) == c.AGENT_MODELS[agent]
+    after = c.worker_env("builder", {}, "linux", lambda p: False, now=c.FABLE_UNTIL)
+    assert "CLAUDE_CODE_SUBAGENT_MODEL" not in after
+
+
+def test_fix5c_fable_bar_is_read_from_the_raw_usage_reading(tmp_path):
+    raw = tmp_path / "usage_raw.json"
+    raw.write_text(json.dumps({"limits": [
+        {"kind": "weekly_all", "percent": 3, "scope": None},
+        {"kind": "weekly_scoped", "percent": 42, "scope": {"model": {"display_name": "Fable"}}},
+    ]}), encoding="utf-8")
+    assert c.fable_bar_percent(raw) == 42.0
+    raw.write_text("not json", encoding="utf-8")
+    assert c.fable_bar_percent(raw) is None
+    assert c.fable_bar_percent(tmp_path / "missing.json") is None
+    raw.write_text(json.dumps({"limits": [{"kind": "weekly_all", "percent": 3}]}), encoding="utf-8")
+    assert c.fable_bar_percent(raw) is None

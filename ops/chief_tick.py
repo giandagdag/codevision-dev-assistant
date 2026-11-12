@@ -39,11 +39,19 @@ HOOKS_BROKEN_TITLE = "hooks cannot start: no worker was launched"
 AGENT_MODELS = {"chief": "sonnet", "spec-writer": "opus", "builder": "sonnet",
                 "status-digest": "haiku", "plan-reviewer": "sonnet", "code-reviewer": "sonnet"}
 # Phase A fix 5 (Gian, 10 Nov): from the weekly reset on Thu 12 Nov 19:00 SGT, the agents that
-# judge (spec writing and the two reviews) run on Fable. Builder, chief and digest stay as above,
-# because their long runs would use up the plan's Fable allowance quickly.
+# judge (spec writing and the two reviews) run on Fable.
+# Fix 5c (Gian, 12 Nov): the builder runs on Fable too, but only inside the Fable 5.2 launch offer
+# (Pro plan: Fable included in the weekly limit 9 Nov to 16 Nov 23:59 PT = 17 Nov 15:59 SGT,
+# up to 50% of the week). After the offer Fable on Pro is paid credits, so every agent goes back to
+# AGENT_MODELS. FABLE_UNTIL stops new Fable launches 4 hours early, so a run started on Fable
+# finishes inside the offer. FABLE_BAR_STOP: the Fable bar on Settings > Usage at or above this %
+# also means "back to AGENT_MODELS" (Gian can press the Fable reset to refill it).
+# AS400 comparison: a job description with a start date, an end date and a pool limit.
 FABLE_MODEL = "fable"
 FABLE_FROM = datetime(2026, 11, 12, 19, 0, tzinfo=usage_guard.SGT).timestamp()
-FABLE_AGENTS = ("spec-writer", "plan-reviewer", "code-reviewer")
+FABLE_UNTIL = datetime(2026, 11, 17, 12, 0, tzinfo=usage_guard.SGT).timestamp()
+FABLE_BAR_STOP = 90.0
+FABLE_AGENTS = ("spec-writer", "plan-reviewer", "code-reviewer", "builder")
 # Turns a worker may use (F7). A whole-phase builder needs far more than a chief step.
 AGENT_MAX_TURNS = {"chief": 60, "spec-writer": 80, "builder": 400, "status-digest": 20,
                    "plan-reviewer": 80, "code-reviewer": 80}
@@ -491,11 +499,34 @@ def save_worker_reply(agent: str, result: WorkerResult, now: float) -> Path | No
         return None
 
 
-def model_for(agent: str, now: float | None = None) -> str:
+_UNREAD = object()
+
+
+def fable_bar_percent(raw_path: Path | None = None) -> float | None:
+    """The Fable bar (% of the Fable allowance used) from the last usage reading, or None.
+
+    It is the `weekly_scoped` limit whose scope model is "Fable" in ops/state/usage_raw.json.
+    Anything missing or damaged gives None (the date window still applies).
+    """
+    path = raw_path or usage_guard.state_path().parent / "usage_raw.json"
+    try:
+        limits = json.loads(path.read_text(encoding="utf-8")).get("limits") or []
+        for item in limits:
+            model = ((item.get("scope") or {}).get("model") or {})
+            if item.get("kind") == "weekly_scoped" and model.get("display_name") == "Fable":
+                return float(item["percent"])
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return None
+    return None
+
+
+def model_for(agent: str, now: float | None = None, fable_bar=_UNREAD) -> str:
     """The model one worker runs on. AS400 comparison: a job description picked by date."""
     now = time.time() if now is None else now
-    if now >= FABLE_FROM and agent in FABLE_AGENTS:
-        return FABLE_MODEL
+    if agent in FABLE_AGENTS and FABLE_FROM <= now < FABLE_UNTIL:
+        bar = fable_bar_percent() if fable_bar is _UNREAD else fable_bar
+        if bar is None or bar < FABLE_BAR_STOP:
+            return FABLE_MODEL
     return AGENT_MODELS[agent]
 
 
