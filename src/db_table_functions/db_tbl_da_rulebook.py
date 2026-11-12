@@ -22,6 +22,7 @@ from pydantic_classes.da_rulebook_models import (
     format_rule_id,
     kind_of_rule_id,
     rule_id_number,
+    without_retired_fields,
 )
 
 logger = get_logger(__name__)
@@ -128,6 +129,8 @@ def save_new_version(
     in the meantime, the save is refused so their work is not silently overwritten (rule R4).
     """
     _check_saved_by_and_note(saved_by, note)
+    # A new version never carries the retired fields, even when it was edited from an old one.
+    rulebook = without_retired_fields(rulebook)
     with open_db(db_path) as conn:
         ensure_rulebook_tables(conn)
         begin_write(conn)
@@ -173,16 +176,16 @@ def restore_version(
             raise RulebookError(
                 f"v{number} is already the active version, so there is nothing to restore."
             )
+        # The copy is the new shape: five triggers (mapped on load) and no retired fields.
+        restored = without_retired_fields(source.rulebook)
         # Old versions passed these checks when saved, but check again in case the rules
         # have tightened since. The restore is refused rather than bringing back a bad rulebook.
-        _refuse_if_problems(
-            find_rulebook_problems(source.rulebook) + _ids_not_handed_out(conn, source.rulebook)
-        )
-        _refuse_if_unchanged(source.rulebook, active)
+        _refuse_if_problems(find_rulebook_problems(restored) + _ids_not_handed_out(conn, restored))
+        _refuse_if_unchanged(restored, active)
         version = _insert_version(
             conn,
             active.version_number + 1,
-            source.rulebook,
+            restored,
             saved_by,
             note,
             now,
@@ -262,7 +265,9 @@ def _refuse_if_problems(problems: list[str]) -> None:
 
 
 def _refuse_if_unchanged(rulebook: Rulebook, active: RulebookVersion) -> None:
-    if rulebook == active.rulebook:
+    # Compare without the retired fields, so an old-shape active version does not make an
+    # unchanged form look like a change.
+    if rulebook == without_retired_fields(active.rulebook):
         raise RulebookError(
             f"No changes to save. The rulebook is the same as the active version "
             f"v{active.version_number}."

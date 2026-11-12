@@ -8,29 +8,47 @@ the whole list at once instead of fixing one error per attempt.
 import re
 from typing import Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_serializer,
+)
 
 RuleKind = Literal["judgement", "ui_convention"]
 Severity = Literal["must_fix", "should_fix", "fyi"]
 Level = Literal["L0", "L1", "L2", "L3"]
 CharterStatus = Literal["green", "amber", "red"]
 
-# Lowest to highest, so a level's position says how high it is.
-LEVELS: tuple[str, ...] = ("L0", "L1", "L2", "L3")
-LOCKED_LEVEL = "L3"
-
 RULE_ID_PREFIXES: dict[str, str] = {"judgement": "CV-PY", "ui_convention": "CV-UI"}
 # Three or more digits, so rule 1000 still fits.
 RULE_ID_PATTERN = r"^CV-(PY|UI)-\d{3,}$"
 
 MAX_JUDGEMENT_RULES = 10
-MIN_REVIEW_ROUNDS = 1
-MAX_REVIEW_ROUNDS = 5
 
+# The five fixed escalation triggers (redesign 5.11). Phase 10 acts on them; Admin only turns them
+# on or off.
 ESCALATION_TRIGGER_NAMES: tuple[str, ...] = (
-    "max_rounds_with_must_fix_open",
+    "cap_hit_twice",
     "out_of_scope",
-    "developer_disputes_finding",
+    "dispute",
+    "tester_unable_twice",
+    "get_help",
+)
+# Names used before Phase 11 and the new name each one becomes when an old version is loaded.
+OLD_TRIGGER_NAMES: dict[str, str] = {
+    "max_rounds_with_must_fix_open": "cap_hit_twice",
+    "developer_disputes_finding": "dispute",
+}
+# Fields the redesign removed. Old saved versions still hold them, so they stay on the model as
+# optional; saves leave them out.
+RETIRED_POLICY_FIELDS: tuple[str, ...] = (
+    "default_level",
+    "max_level",
+    "never_generate_zones",
+    "max_review_rounds",
 )
 
 CHARTER_CHARACTER_LIMIT = 6000
@@ -201,12 +219,18 @@ class EscalationTrigger(_RulebookPart):
 
 
 class Policy(_RulebookPart):
-    default_level: Level
-    max_level: Level
-    never_generate_zones: list[NeverGenerateZone]
-    # A plain whole number here; the 1 to 5 range is checked by find_rulebook_problems.
-    max_review_rounds: int
+    # Retired by Phase 11 (spec section 9): nothing reads them. They stay optional so an old saved
+    # version still loads, and are left out of every new save (see _drop_empty_retired_fields).
+    default_level: Level | None = None
+    max_level: Level | None = None
+    never_generate_zones: list[NeverGenerateZone] = Field(default_factory=list)
+    max_review_rounds: int | None = None
     escalation_triggers: list[EscalationTrigger]
+    # Phase 11 (Admin console). Empty model name = use the .env model for that role (D-G).
+    generator_model: str = ""
+    tester_model: str = ""
+    # Days an Unassigned file may wait before the Overview turns red (used by Phase 11c).
+    admin_unassigned_stale_days: int = Field(default=14, ge=1, le=365)
     # Phase 4 (Approach), spec section 7. Defaults keep older rulebook versions loadable.
     allowed_folders: list[str] = Field(default_factory=lambda: list(DEFAULT_ALLOWED_FOLDERS))
     new_file_name_pattern: str = DEFAULT_NEW_FILE_NAME_PATTERN
@@ -262,6 +286,30 @@ class Policy(_RulebookPart):
     impact_max_callers: int = Field(default=DEFAULT_IMPACT_MAX_CALLERS, ge=1, le=200)
     # The catalog (D-B). Empty for a rulebook saved before Phase 9.
     capabilities: list[Capability] = Field(default_factory=list)
+
+    @field_validator("escalation_triggers")
+    @classmethod
+    def _map_old_triggers(cls, triggers: list[EscalationTrigger]) -> list[EscalationTrigger]:
+        # D-K: an old version holds three triggers under old names. Map them, then add any of the
+        # five that is missing as "on", so every loaded version has the same shape. Unknown or
+        # repeated names are left alone for find_rulebook_problems to report.
+        mapped = [
+            EscalationTrigger(name=OLD_TRIGGER_NAMES.get(item.name, item.name), on=item.on)
+            for item in triggers
+        ]
+        present = {item.name for item in mapped}
+        for name in ESCALATION_TRIGGER_NAMES:
+            if name not in present:
+                mapped.append(EscalationTrigger(name=name, on=True))
+        return mapped
+
+    @model_serializer(mode="wrap")
+    def _drop_empty_retired_fields(self, handler):
+        data = handler(self)
+        for name in RETIRED_POLICY_FIELDS:
+            if not data.get(name):
+                data.pop(name, None)
+        return data
 
     @field_validator("new_file_name_pattern")
     @classmethod
@@ -319,12 +367,28 @@ def kind_of_rule_id(rule_id: str) -> str:
 def find_rulebook_problems(rulebook: Rulebook) -> list[str]:
     """Return every rule R3 problem in plain words. An empty list means the rulebook is fine."""
     return [
-        *_level_problems(rulebook.policy),
         *_judgement_count_problems(rulebook.rules),
-        *_review_round_problems(rulebook.policy),
         *_trigger_problems(rulebook.policy),
+        *_zone_name_problems(rulebook.policy),
         *_rule_id_problems(rulebook.rules),
     ]
+
+
+def without_retired_fields(rulebook: Rulebook) -> Rulebook:
+    """A copy of the rulebook with the retired Policy fields emptied (spec section 9).
+
+    Used by save and restore, so a new version never carries them, even when the version it
+    was made from is an old one.
+    """
+    policy = rulebook.policy.model_copy(
+        update={
+            "default_level": None,
+            "max_level": None,
+            "never_generate_zones": [],
+            "max_review_rounds": None,
+        }
+    )
+    return rulebook.model_copy(update={"policy": policy})
 
 
 def check_charter_size(charter: Charter) -> CharterSize:
@@ -359,22 +423,6 @@ def _charter_text_length(charter: Charter) -> int:
     return sum(len(text) for text in texts)
 
 
-def _level_problems(policy: Policy) -> list[str]:
-    problems = []
-    if LEVELS.index(policy.default_level) > LEVELS.index(policy.max_level):
-        problems.append(
-            f"The default level {policy.default_level} is higher than "
-            f"the max level {policy.max_level}."
-        )
-    for label, level in (("default level", policy.default_level), ("max level", policy.max_level)):
-        if level == LOCKED_LEVEL:
-            problems.append(
-                f"The {label} is {LOCKED_LEVEL}, which is locked for the pilot. "
-                "Use L0, L1, or L2."
-            )
-    return problems
-
-
 def _judgement_count_problems(rules: list[Rule]) -> list[str]:
     count = sum(1 for rule in rules if rule.kind == "judgement")
     if count > MAX_JUDGEMENT_RULES:
@@ -384,26 +432,27 @@ def _judgement_count_problems(rules: list[Rule]) -> list[str]:
     return []
 
 
-def _review_round_problems(policy: Policy) -> list[str]:
-    rounds = policy.max_review_rounds
-    if not MIN_REVIEW_ROUNDS <= rounds <= MAX_REVIEW_ROUNDS:
-        return [
-            f"Max review rounds is {rounds}. "
-            f"It must be a whole number from {MIN_REVIEW_ROUNDS} to {MAX_REVIEW_ROUNDS}."
-        ]
-    return []
-
-
 def _trigger_problems(policy: Policy) -> list[str]:
     names = [trigger.name for trigger in policy.escalation_triggers]
     # Same names, each exactly once, in any order.
     if sorted(names) != sorted(ESCALATION_TRIGGER_NAMES):
         return [
-            "The escalation triggers must be exactly these 3, each listed once: "
-            f"{', '.join(ESCALATION_TRIGGER_NAMES)}. "
+            f"The escalation triggers must be exactly these {len(ESCALATION_TRIGGER_NAMES)}, "
+            f"each listed once: {', '.join(ESCALATION_TRIGGER_NAMES)}. "
             f"Found: {', '.join(names) or 'none'}."
         ]
     return []
+
+
+def _zone_name_problems(policy: Policy) -> list[str]:
+    problems = []
+    seen: set[str] = set()
+    for zone in policy.flag_review_zones:
+        key = zone.name.strip().lower()
+        if key in seen:
+            problems.append(f"Flag-for-review zone '{zone.name}' is listed more than once.")
+        seen.add(key)
+    return problems
 
 
 def _rule_id_problems(rules: list[Rule]) -> list[str]:
