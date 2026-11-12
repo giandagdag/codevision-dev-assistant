@@ -16,6 +16,7 @@ import dash_mantine_components as dmc
 from dash import dcc, html
 
 from agents.da_admin_access import NOT_ADMIN_MESSAGE
+from agents.da_admin_diff import text_line_diff
 from agents.da_admin_forms import ADVANCED_LIMIT_FIELDS, CORE_BUILD_FIELDS, field_bounds
 from pydantic_classes.da_rulebook_models import (
     Charter,
@@ -90,7 +91,7 @@ def act_id(tab: str, action: str) -> dict:
     return {"type": "adm-act", "tab": tab, "action": action}
 
 
-def admin_page(version: RulebookVersion) -> html.Div:
+def admin_page(version: RulebookVersion, history_rows=()) -> html.Div:
     """The console: 8 tabs, Overview first. 11b and 11c tabs show a plain "comes later" line."""
     return html.Div(
         [
@@ -104,7 +105,9 @@ def admin_page(version: RulebookVersion) -> html.Div:
                         ]
                     ),
                     *[
-                        dmc.TabsPanel(_tab_body(tab, version), value=tab, pt="md")
+                        dmc.TabsPanel(
+                            _tab_body(tab, version, history_rows), value=tab, pt="md"
+                        )
                         for tab, _, _ in ADMIN_TABS
                     ],
                 ],
@@ -131,11 +134,11 @@ def version_line(version: RulebookVersion) -> dmc.Text:
     )
 
 
-def _tab_body(tab: str, version: RulebookVersion):
+def _tab_body(tab: str, version: RulebookVersion, rows=()):
     if tab in EDITABLE_TABS:
         return html.Div(tab_content(tab, version), id=body_id(tab))
     if tab == TAB_HISTORY:
-        return dmc.Text("Version history loads here.", c=da_styles.MUTED)
+        return html.Div(history_view(rows), id=body_id(TAB_HISTORY))
     phase = next(built for name, _, built in ADMIN_TABS if name == tab)
     return dmc.Text(f"Comes in {phase}.", c=da_styles.MUTED)
 
@@ -452,6 +455,145 @@ def _triggers(policy: Policy, editable: bool, draft: dict | None):
         ],
         gap=4,
     )
+
+
+# --- Version history ---
+
+HIST_TYPE = "adm-hist"
+HIST_PICK_TYPE = "adm-hist-pick"
+HIST_COMPARE = "compare"
+HIST_RESTORE = "restore"
+HIST_CONFIRM = "confirm"
+HIST_CANCEL = "cancel"
+
+
+def hist_id(action: str, version: int = 0) -> dict:
+    return {"type": HIST_TYPE, "action": action, "version": version}
+
+
+def pick_id(name: str) -> dict:
+    return {"type": HIST_PICK_TYPE, "name": name}
+
+
+def history_view(rows, diff=None, restore_target: int | None = None, notice=None):
+    """Timeline (newest first), the "what changed" picker and, when asked, the Restore dialog.
+
+    `diff` is (from_number, to_number, RulebookDiff) or None.
+    """
+    numbers = [str(row.version_number) for row in rows]
+    return html.Div(
+        [
+            *(notice or []),
+            *([_restore_dialog(restore_target)] if restore_target else []),
+            dmc.Stack([_timeline_row(row) for row in rows], gap="xs"),
+            _section("What changed", _compare_picker(numbers, diff)),
+        ]
+    )
+
+
+def _timeline_row(row):
+    saved = row.saved_at.strftime("%Y-%m-%d %H:%M")
+    head = f"v{row.version_number}  {saved}  {row.saved_by}"
+    if row.is_active:
+        head += "  (active)"
+    lines = [dmc.Text(head, fw=600, size="sm"), dmc.Text(row.change_note, size="sm")]
+    if row.restored_from is not None:
+        lines.append(dmc.Text(f"Restored from v{row.restored_from}", size="xs", c=da_styles.MUTED))
+    if row.areas:
+        lines.append(dmc.Text("Touched: " + ", ".join(row.areas), size="xs", c=da_styles.MUTED))
+    lines.append(_pinned(row))
+    if not row.is_active:
+        lines.append(
+            dmc.Button(
+                "Restore",
+                id=hist_id(HIST_RESTORE, row.version_number),
+                size="xs",
+                variant="default",
+            )
+        )
+    return html.Div(lines, style=da_styles.PANEL_SECTION)
+
+
+def _pinned(row):
+    count = row.pinned_count
+    if not count:
+        return dmc.Text("No requests pinned", size="xs", c=da_styles.MUTED)
+    label = f"{count} request{'s' if count != 1 else ''} pinned"
+    return dmc.Accordion(
+        [
+            dmc.AccordionItem(
+                [
+                    dmc.AccordionControl(label),
+                    dmc.AccordionPanel(dmc.Text(", ".join(row.pinned_request_ids), size="xs")),
+                ],
+                value="pinned",
+            )
+        ],
+        value=None,
+    )
+
+
+def _restore_dialog(number: int):
+    return dmc.Alert(
+        [
+            dmc.Text(f"Restore v{number} as a new version?", size="sm", fw=600),
+            dmc.TextInput(
+                label="Change note (required)",
+                id=pick_id("note"),
+                value=f"Restored from v{number}",
+            ),
+            dmc.Group(
+                [
+                    dmc.Button("Restore", id=hist_id(HIST_CONFIRM, number), size="xs"),
+                    dmc.Button(
+                        "Cancel", id=hist_id(HIST_CANCEL, number), size="xs", variant="default"
+                    ),
+                ],
+                mt="xs",
+            ),
+        ],
+        color="blue",
+        mb="sm",
+    )
+
+
+def _compare_picker(numbers: list[str], diff):
+    first = numbers[-2] if len(numbers) > 1 else (numbers[0] if numbers else None)
+    parts: list = [
+        dmc.Group(
+            [
+                dmc.Select(label="From", data=numbers, value=first, id=pick_id("from"), w=100),
+                dmc.Select(
+                    label="To",
+                    data=numbers,
+                    value=numbers[0] if numbers else None,
+                    id=pick_id("to"),
+                    w=100,
+                ),
+                dmc.Button("Compare", id=hist_id(HIST_COMPARE), size="xs"),
+            ],
+            align="flex-end",
+        )
+    ]
+    if diff is not None:
+        parts.append(_diff_lines(*diff))
+    return html.Div(parts)
+
+
+def _diff_lines(old_number: int, new_number: int, diff):
+    title = dmc.Text(f"What changed v{old_number} to v{new_number}", size="sm", fw=600, mt="sm")
+    if diff.is_empty:
+        return html.Div([title, dmc.Text("No changes.", size="sm")])
+    lines: list = [title]
+    for path, value in diff.added.items():
+        lines.append(dmc.Text(f"+ {path}: {value}", size="xs"))
+    for path, value in diff.removed.items():
+        lines.append(dmc.Text(f"- {path}: {value}", size="xs"))
+    for path, (old, new) in diff.changed.items():
+        lines.append(dmc.Text(f"~ {path}: {old} -> {new}", size="xs"))
+        for line in text_line_diff(old, new):
+            lines.append(dmc.Text(line, size="xs", style={"whiteSpace": "pre-wrap"}))
+    return html.Div(lines)
 
 
 def _section(title: str, body):

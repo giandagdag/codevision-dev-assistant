@@ -11,6 +11,7 @@ from dash import ALL, Input, Output, State, ctx
 from dash.exceptions import PreventUpdate
 
 from agents.da_admin_access import is_admin
+from agents.da_admin_diff import build_timeline, diff_rulebooks
 from agents.da_admin_forms import (
     RESULT_PROBLEMS,
     RESULT_SAVED,
@@ -18,7 +19,12 @@ from agents.da_admin_forms import (
     save_from_form,
 )
 from configs.da_config import Settings, load_settings
-from db_table_functions.db_tbl_da_rulebook import get_active_version, get_version
+from db_table_functions.db_tbl_da_rulebook import (
+    RulebookError,
+    get_active_version,
+    get_version,
+    restore_version,
+)
 from layouts.da_admin_page import (
     ACTION_CANCEL,
     ACTION_EDIT,
@@ -27,16 +33,24 @@ from layouts.da_admin_page import (
     ADMIN_CONTENT_ID,
     ADMIN_PATH,
     ADMIN_TABS,
+    ADMIN_TABS_ID,
     BASE_STORE_TYPE,
     EDITABLE_TABS,
     GLOSSARY_COLUMNS,
+    HIST_COMPARE,
+    HIST_CONFIRM,
+    HIST_PICK_TYPE,
+    HIST_RESTORE,
+    HIST_TYPE,
     NOTE_ID_NAME,
     TAB_BUILD,
     TAB_CHARTER,
+    TAB_HISTORY,
     TEXT_COLUMN,
     ZONE_COLUMNS,
     admin_page,
     body_id,
+    history_view,
     message_notice,
     problem_notice,
     refusal_page,
@@ -78,7 +92,7 @@ def admin_content(settings: Settings, pathname: str | None):
     active = get_active_version(settings.db_path)
     if active is None:
         return refusal_page()
-    return admin_page(active)
+    return admin_page(active, build_timeline(settings.db_path))
 
 
 def developer_page_style(pathname: str | None) -> dict:
@@ -179,6 +193,47 @@ def _save(settings, tab, form, note, base_version, active):
     return tab_content(tab, base, editable=True, draft=form, notice=[notice]), True
 
 
+# --- Version history ---
+
+
+def history_content(settings: Settings, diff=None, restore_target=None, notice=None):
+    return history_view(build_timeline(settings.db_path), diff, restore_target, notice)
+
+
+def run_history_action(
+    settings: Settings, action: dict, from_number, to_number, note: str | None
+):
+    """One click on the Version history tab. Writes only on a confirmed Restore."""
+    name = action["action"]
+    number = action.get("version") or 0
+    if name == HIST_RESTORE:
+        return history_content(settings, restore_target=number)
+    if name == HIST_COMPARE:
+        return history_content(settings, diff=_compare(settings, from_number, to_number))
+    if name == HIST_CONFIRM:
+        return _restore(settings, number, note)
+    return history_content(settings)  # Cancel, or anything else: back to the plain timeline
+
+
+def _compare(settings: Settings, from_number, to_number):
+    old = get_version(settings.db_path, int(from_number)) if from_number else None
+    new = get_version(settings.db_path, int(to_number)) if to_number else None
+    if old is None or new is None:
+        return None
+    return old.version_number, new.version_number, diff_rulebooks(old.rulebook, new.rulebook)
+
+
+def _restore(settings: Settings, number: int, note: str | None):
+    try:
+        version = restore_version(settings.db_path, number, settings.developer_id, note or "")
+    except RulebookError as error:
+        # The Phase 1 refusal text, shown as it is.
+        notice = message_notice(str(error), color="red")
+        return history_content(settings, restore_target=number, notice=[notice])
+    notice = saved_notice(version.version_number, [])
+    return history_content(settings, notice=[notice])
+
+
 def tabs_disabled(editing_tab: str | None) -> list[bool]:
     """While one tab is edited the others are greyed out, in the order of ADMIN_TABS."""
     return [editing_tab is not None and name != editing_tab for name, _, _ in ADMIN_TABS]
@@ -198,6 +253,41 @@ def register_da_admin_page_callbacks(app) -> None:
 
     for tab in EDITABLE_TABS:
         _register_tab(app, tab)
+    _register_history(app)
+
+
+def _register_history(app) -> None:
+    history_body = body_id(TAB_HISTORY)
+
+    @app.callback(
+        Output(history_body, "children", allow_duplicate=True),
+        Input(ADMIN_TABS_ID, "value"),
+        prevent_initial_call=True,
+    )
+    def refresh_on_open(tab):
+        # A save on another tab adds a version, so rebuild the timeline whenever the tab opens.
+        settings = get_admin_settings()
+        if tab != TAB_HISTORY or not is_admin(settings, settings.developer_id):
+            raise PreventUpdate
+        return history_content(settings)
+
+    @app.callback(
+        Output(history_body, "children", allow_duplicate=True),
+        Input({"type": HIST_TYPE, "action": ALL, "version": ALL}, "n_clicks"),
+        State({"type": HIST_PICK_TYPE, "name": ALL}, "value"),
+        prevent_initial_call=True,
+    )
+    def on_history_click(_clicks, _picks):
+        settings = get_admin_settings()
+        triggered = ctx.triggered_id
+        if not isinstance(triggered, dict) or not ctx.triggered[0]["value"]:
+            raise PreventUpdate
+        if not is_admin(settings, settings.developer_id):
+            raise PreventUpdate
+        picks = {item["id"]["name"]: item.get("value") for item in ctx.states_list[0]}
+        return run_history_action(
+            settings, triggered, picks.get("from"), picks.get("to"), picks.get("note")
+        )
 
 
 def _register_tab(app, tab: str) -> None:
