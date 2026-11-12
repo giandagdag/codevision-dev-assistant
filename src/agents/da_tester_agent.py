@@ -116,6 +116,8 @@ def get_tester_client(settings: Settings, step: str, model: str = "") -> LLMClie
     model is the Admin's Tester model from the pinned rulebook (empty = the .env model)."""
     if settings.llm_provider == "fake":
         return ScriptedTesterClient(step)
+    if not model:  # keep the two-argument call when nothing is pinned
+        return get_llm_client("tester", settings)
     return get_llm_client("tester", settings, model)
 
 
