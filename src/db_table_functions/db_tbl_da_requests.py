@@ -44,6 +44,15 @@ CREATE TABLE IF NOT EXISTS da_request_counters (
 
 def ensure_request_tables(conn: sqlite3.Connection) -> None:
     conn.executescript(_CREATE_TABLES_SQL)
+    _add_follows_column(conn)
+
+
+def _add_follows_column(conn: sqlite3.Connection) -> None:
+    """Phase 10: a follow-up request points back to the handed-off one. CREATE TABLE IF NOT EXISTS
+    does not change a table that already exists, so an older database gets the column here."""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(da_requests)")}
+    if "follows_request_id" not in columns:
+        conn.execute("ALTER TABLE da_requests ADD COLUMN follows_request_id TEXT")
 
 
 class RequestNotFoundError(Exception):
@@ -71,7 +80,11 @@ def create_request(
 
 
 def insert_request(
-    conn: sqlite3.Connection, title: str, developer_id: str, now: datetime
+    conn: sqlite3.Connection,
+    title: str,
+    developer_id: str,
+    now: datetime,
+    follows_request_id: str | None = None,
 ) -> Request:
     """Save a new DRAFT request on the caller's connection, so it can share a transaction.
 
@@ -91,10 +104,12 @@ def insert_request(
         created_at=now,
         updated_at=now,
         rulebook_version=pinned_version,
+        follows_request_id=follows_request_id,
     )
     conn.execute(
         "INSERT INTO da_requests (request_id, title, developer_id, status, version,"
-        " created_at, updated_at, rulebook_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        " created_at, updated_at, rulebook_version, follows_request_id)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             request.request_id,
             request.title,
@@ -104,6 +119,7 @@ def insert_request(
             to_db_time(request.created_at),
             to_db_time(request.updated_at),
             request.rulebook_version,
+            request.follows_request_id,
         ),
     )
     return request

@@ -55,7 +55,7 @@ def test_time_without_time_zone_is_rejected():
         make_request(created_at=datetime(2026, 10, 25, 9, 30))
 
 
-@pytest.mark.parametrize("actor", ["developer", "system", "llm"])
+@pytest.mark.parametrize("actor", ["developer", "system", "llm", "senior"])
 def test_allowed_actors_are_accepted(actor):
     assert make_event(actor=actor).actor == actor
 

@@ -71,22 +71,40 @@ SPEC_TABLE = {
     ("CLARIFICATION_IN_PROGRESS", "ESCALATION_REQUIRED"),
     ("DECISION_REQUIRED", "ESCALATION_REQUIRED"),
     ("READY_FOR_CONFIRMATION", "ESCALATION_REQUIRED"),
+    # Phase 10: handoff, and a senior's Return (the code checks the STORED status; the table
+    # lists every status a request can be escalated from).
+    ("READY_FOR_REVIEW", "HANDED_OFF"),
+}
+# Return moves: ESCALATION_REQUIRED back to every status that has a move into it.
+SPEC_TABLE |= {
+    ("ESCALATION_REQUIRED", old) for old, new in list(SPEC_TABLE) if new == "ESCALATION_REQUIRED"
 }
 
-# Every real move: 17 x 17 statuses minus the 17 "same status" pairs.
+# Every real move: 18 x 18 statuses minus the 18 "same status" pairs.
 REAL_MOVES = list(permutations(STATUSES, 2))
 
 
-def test_there_are_272_real_moves():
-    assert len(REAL_MOVES) == 272
+def test_there_are_306_real_moves():
+    assert len(REAL_MOVES) == 306
 
 
 def test_confirmed_for_discovery_moves_only_to_searching():
     assert ALLOWED_MOVES["CONFIRMED_FOR_DISCOVERY"] == ("SEARCHING",)
 
 
-def test_final_statuses_have_no_moves_yet():
-    assert ALLOWED_MOVES["ESCALATION_REQUIRED"] == ()
+def test_handed_off_has_no_moves_out_and_only_the_developer_gets_in():
+    assert ALLOWED_MOVES["HANDED_OFF"] == ()
+    into = {old for old, targets in ALLOWED_MOVES.items() if "HANDED_OFF" in targets}
+    assert into == {"READY_FOR_REVIEW"}
+
+
+def test_escalation_moves_back_only_to_statuses_it_can_come_from_never_to_handed_off():
+    back = set(ALLOWED_MOVES["ESCALATION_REQUIRED"])
+    came_from = {old for old, targets in ALLOWED_MOVES.items() if "ESCALATION_REQUIRED" in targets}
+    assert back == came_from
+    assert "HANDED_OFF" not in back
+    assert "DRAFT" in back
+    assert "ESCALATION_REQUIRED" not in back
 
 
 def test_moves_out_of_ready_to_build():
@@ -115,11 +133,13 @@ def test_build_moves():
         "REVISION_IN_PROGRESS",
     }
     # READY_FOR_REVIEW also has "Run the Tester review again" (Phase 7, D-D).
+    # Phase 10 adds HANDED_OFF (the final check passed).
     assert set(ALLOWED_MOVES["READY_FOR_REVIEW"]) == {
         "BUILDING",
         "ESCALATION_REQUIRED",
         "TESTER_REVIEW",
         "REVISION_IN_PROGRESS",
+        "HANDED_OFF",
     }
 
 

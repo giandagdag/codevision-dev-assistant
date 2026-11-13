@@ -30,6 +30,8 @@ STATUS_NOT_PASSING = "NOT_PASSING"
 STATUS_TESTER_REVIEW = "TESTER_REVIEW"
 # Phase 8 (Refine), spec section 10: from the lane click until the lane hands over (D-A option 1).
 STATUS_REVISION = "REVISION_IN_PROGRESS"
+# Phase 10 (Handoff), spec section 3: the request is checked in and locked. No moves out.
+STATUS_HANDED_OFF = "HANDED_OFF"
 
 STATUSES: tuple[str, ...] = (
     STATUS_DRAFT,
@@ -49,6 +51,7 @@ STATUSES: tuple[str, ...] = (
     STATUS_NOT_PASSING,
     STATUS_TESTER_REVIEW,
     STATUS_REVISION,
+    STATUS_HANDED_OFF,
 )
 
 # The only moves allowed: the spec 3.1 table, plus the Discover moves of Phase 3 (spec section 2).
@@ -100,6 +103,7 @@ ALLOWED_MOVES: dict[str, tuple[str, ...]] = {
         STATUS_ESCALATION,
         STATUS_TESTER_REVIEW,
         STATUS_REVISION,
+        STATUS_HANDED_OFF,  # Phase 10: the developer's Ready for handoff, after the final check
     ),
     STATUS_NOT_PASSING: (STATUS_BUILDING, STATUS_ESCALATION, STATUS_REVISION),
     # Phase 8 (spec section 10). Requirement lane: Understand in revision mode (clarifying
@@ -116,9 +120,17 @@ ALLOWED_MOVES: dict[str, tuple[str, ...]] = {
         STATUS_ESCALATION,
     ),
     STATUS_ESCALATION: (),
+    STATUS_HANDED_OFF: (),  # Phase 10: locked for good (spec section 4)
 }
+# Phase 10 (spec section 3): a senior's Return sends the request back to where it came from. The
+# table lists every status a request can be escalated from; the escalation code checks that the
+# move is to the one STORED on the escalation row. Never to HANDED_OFF: only the developer hands
+# off.
+ALLOWED_MOVES[STATUS_ESCALATION] = tuple(
+    status for status, targets in ALLOWED_MOVES.items() if STATUS_ESCALATION in targets
+)
 
-Actor = Literal["developer", "system", "llm"]
+Actor = Literal["developer", "system", "llm", "senior"]
 
 
 class Request(BaseModel):
@@ -133,6 +145,8 @@ class Request(BaseModel):
     # The rulebook version number this request is pinned to. Set when the request is created
     # and never changed. Empty only for a request built outside create_request.
     rulebook_version: int | None = Field(default=None, ge=1)
+    # Phase 10: the request this one follows after a handoff (only a link, nothing is copied).
+    follows_request_id: str | None = Field(default=None, pattern=REQUEST_ID_PATTERN)
 
 
 class StatusMoveError(Exception):

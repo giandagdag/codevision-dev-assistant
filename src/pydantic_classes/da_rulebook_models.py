@@ -253,6 +253,11 @@ class Policy(_RulebookPart):
     tester_model: str = ""
     # Days an Unassigned file may wait before the Overview turns red (used by Phase 11c).
     admin_unassigned_stale_days: int = Field(default=14, ge=1, le=365)
+    # Phase 10 (spec section 12). Defaults keep older rulebook versions loadable.
+    # D-A: lock the developer's chat while an escalation is open.
+    escalation_lock_chat: bool = True
+    # Guard for the PR summary length: over it, the criteria list is cut to counts.
+    handoff_summary_max_chars: int = Field(default=6000, ge=500, le=50000)
     # Phase 4 (Approach), spec section 7. Defaults keep older rulebook versions loadable.
     allowed_folders: list[str] = Field(default_factory=lambda: list(DEFAULT_ALLOWED_FOLDERS))
     new_file_name_pattern: str = DEFAULT_NEW_FILE_NAME_PATTERN
