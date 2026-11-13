@@ -20,6 +20,7 @@ from db_table_functions.db_tbl_da_rulebook import get_active_version, list_versi
 from layouts.da_admin_page import (
     QUEUE_BUTTON_TYPE,
     TAB_CAPABILITY,
+    queue_block,
     queue_button_id,
     tab_content,
 )
@@ -263,6 +264,16 @@ def test_show_resolved_lists_who_and_when_and_hide_goes_back(make_settings, publ
     assert "src/x/zzz.py" in text and ADMIN in text and "Hide resolved" in text
     hidden = run_queue_action(settings, queue_button_id("hide_resolved"), {}, {}, 1)
     assert "Show resolved" in all_text(hidden)
+
+
+def test_hide_resolved_is_disabled_in_edit_mode():
+    queue = {"rows": [], "resolved": [], "dialog": None, "notice": []}
+
+    block = queue_block(queue, ["Uploads"], disabled=True)
+
+    hide_id = queue_button_id("hide_resolved")
+    buttons = [n for n in walk(block) if getattr(n, "id", None) == hide_id]
+    assert len(buttons) == 1 and buttons[0].disabled is True
 
 
 def test_no_retired_field_shows_on_the_catalog_tab(make_settings, published_rulebook):
