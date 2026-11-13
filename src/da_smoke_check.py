@@ -253,7 +253,7 @@ def _run_admin_11b_steps(db_path: Path) -> None:
             conn, "src/x/smoke_new.py", capability, request.request_id, datetime.now(UTC)
         )
     admin_settings = SimpleNamespace(db_path=db_path)
-    row = queue_rows(admin_settings)[0]
+    row = next(r for r in queue_rows(admin_settings) if r.path == "src/x/smoke_new.py")
     result = resolve_row(admin_settings, row.unassigned_id, "confirmed", capability, SAMPLE_ADMIN)
     if result.kind != "resolved" or queue_rows(admin_settings):
         raise RulebookError("The Unassigned queue row was not closed.")

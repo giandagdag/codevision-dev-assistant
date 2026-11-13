@@ -7,6 +7,7 @@ from agents.da_admin_forms import capability_rows
 from callbacks.screen_callbacks.da_admin_page_callbacks import (
     form_from_cells,
     queue_data,
+    queue_inputs_from_states,
     run_action,
     run_queue_action,
     tabs_disabled,
@@ -22,7 +23,7 @@ from layouts.da_admin_page import (
     queue_button_id,
     tab_content,
 )
-from tests.test_da_admin_page import all_text, walk
+from tests.test_da_admin_page import RETIRED, all_text, walk
 
 ADMIN = "admin-0001"
 TAB = TAB_CAPABILITY
@@ -267,6 +268,20 @@ def test_show_resolved_lists_who_and_when_and_hide_goes_back(make_settings, publ
 def test_no_retired_field_shows_on_the_catalog_tab(make_settings, published_rulebook):
     settings = settings_for(make_settings)
 
-    text = all_text(tab_content(TAB, published_rulebook, editable=True, queue=queue_data(settings)))
+    view = tab_content(TAB, published_rulebook, editable=True, queue=queue_data(settings))
 
-    assert "zone_hits" not in text and "retired" not in text
+    text = all_text(view).lower()
+    assert not any(word in text for word in RETIRED)
+
+
+def test_the_queue_wrapper_reads_picks_and_notes_from_three_states():
+    # Dash gives only the States, not the clicked button: picks, notes, base store.
+    states = [
+        [{"id": {"type": "adm-q-pick", "uid": 4}, "value": "Limits"}],
+        [{"id": {"type": "adm-q-note", "uid": 4}, "value": None}],
+        [{"id": {"type": "adm-base", "tab": "capability"}, "value": 1}],
+    ]
+
+    picks, notes = queue_inputs_from_states(states)
+
+    assert picks == {4: "Limits"} and notes == {4: ""}

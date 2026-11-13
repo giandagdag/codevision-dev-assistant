@@ -678,7 +678,11 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
         parts.append(_resolved_table(queue["resolved"]))
         parts.append(
             dmc.Button(
-                "Hide resolved", id=queue_button_id(Q_HIDE_RESOLVED), variant="default", size="xs"
+                "Hide resolved",
+                id=queue_button_id(Q_HIDE_RESOLVED),
+                variant="default",
+                size="xs",
+                disabled=disabled,
             )
         )
     return html.Div(parts, id=QUEUE_BLOCK_ID, style=da_styles.PANEL_SECTION)

@@ -460,6 +460,15 @@ def _register_history(app) -> None:
         )
 
 
+def queue_inputs_from_states(states_list: list) -> tuple[dict, dict]:
+    """Picks and notes by Unassigned ID from the queue callback's three States (picks, notes,
+    base store). The clicked button is an Input, so it is not in this list."""
+    pick_states, note_states, _base = states_list
+    picks = {item["id"]["uid"]: item.get("value") for item in pick_states}
+    notes = {item["id"]["uid"]: item.get("value") or "" for item in note_states}
+    return picks, notes
+
+
 def _register_queue(app) -> None:
     button = {"type": QUEUE_BUTTON_TYPE, "action": ALL, "uid": ALL, "cap": ALL, "state": ALL}
 
@@ -478,9 +487,7 @@ def _register_queue(app) -> None:
             raise PreventUpdate
         if not is_admin(settings, settings.developer_id):
             raise PreventUpdate
-        _button, pick_states, note_states, _base = ctx.states_list
-        picks = {item["id"]["uid"]: item.get("value") for item in pick_states}
-        notes = {item["id"]["uid"]: item.get("value") or "" for item in note_states}
+        picks, notes = queue_inputs_from_states(ctx.states_list)
         return run_queue_action(settings, triggered, picks, notes, base_version)
 
 

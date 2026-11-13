@@ -17,10 +17,9 @@ from layouts.da_admin_page import (
     tab_content,
 )
 from pydantic_classes.da_rulebook_models import MAX_JUDGEMENT_RULES
-from tests.test_da_admin_page import all_text, walk
+from tests.test_da_admin_page import RETIRED, all_text, walk
 
 ADMIN = "admin-0001"
-FORBIDDEN_WORDS = ("zone_hits", "retired")  # same spirit as 11-26: no retired field on screen
 
 
 def settings_for(make_settings):
@@ -52,6 +51,17 @@ def fields_of(content):
         if isinstance(ident, dict) and ident.get("type") == "adm-field":
             found.append({"id": ident, "value": getattr(item, "value", None)})
     return found
+
+
+def sample_rows(content):
+    """The Sonar sample table rows as lists of cell text: key, name, sonar severity, mapped."""
+    rows = []
+    for item in walk(content):
+        if type(item).__name__ == "TableTr":
+            texts = [str(getattr(cell.children, "children", "")) for cell in item.children]
+            if len(texts) == 4 and texts[0].startswith("py:"):
+                rows.append(texts)
+    return rows
 
 
 def rule_ids(rows):
@@ -120,8 +130,16 @@ def test_changing_the_map_changes_the_sample_list_to_fyi(make_settings, publishe
     full = {**form, "sonar_map": {**current_map, **form["sonar_map"]}}
     result = save_from_form(settings.db_path, TAB_CODING, full, 1, ADMIN, "MAJOR is for info")
     assert result.kind == RESULT_SAVED
-    read = all_text(tab_content(TAB_CODING, get_active_version(settings.db_path)))
-    assert "MAJOR: fyi" in read
+    saved_view = tab_content(TAB_CODING, get_active_version(settings.db_path))
+    assert "MAJOR: fyi" in all_text(saved_view)
+    # 11-15: the sample rows of the MAJOR checks now show fyi (the draft view shows it too).
+    for view in (saved_view, draft_view):
+        major_rows = [
+            cells
+            for cells in sample_rows(view)
+            if cells[2] == "MAJOR"
+        ]
+        assert major_rows and all(cells[3] == "fyi" for cells in major_rows)
 
 
 def test_edit_greys_the_other_tabs_for_both_new_tabs(make_settings, published_rulebook):
@@ -218,5 +236,5 @@ def test_cited_counts_reach_the_coding_tab_through_run_action(make_settings, pub
 
 def test_no_retired_field_shows_on_the_new_tabs(published_rulebook):
     for tab in (TAB_UI, TAB_CODING):
-        text = all_text(tab_content(tab, published_rulebook, editable=True))
-        assert not any(word in text for word in FORBIDDEN_WORDS)
+        text = all_text(tab_content(tab, published_rulebook, editable=True)).lower()
+        assert not any(word in text for word in RETIRED)
