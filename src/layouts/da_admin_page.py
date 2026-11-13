@@ -20,6 +20,7 @@ from agents.da_admin_diff import text_line_diff
 from agents.da_admin_forms import (
     ADVANCED_LIMIT_FIELDS,
     CORE_BUILD_FIELDS,
+    capability_rows,
     field_bounds,
     rule_counter_text,
 )
@@ -57,7 +58,7 @@ ADMIN_TABS: tuple[tuple[str, str, str], ...] = (
     (TAB_BUILD, "Build and test", "11a"),
     (TAB_HISTORY, "Version history", "11a"),
 )
-EDITABLE_TABS = (TAB_CHARTER, TAB_UI, TAB_CODING, TAB_BUILD)
+EDITABLE_TABS = (TAB_CHARTER, TAB_CAPABILITY, TAB_UI, TAB_CODING, TAB_BUILD)
 
 CHARTER_LISTS: tuple[tuple[str, str], ...] = (
     ("in_scope", "In scope"),
@@ -99,7 +100,10 @@ def act_id(tab: str, action: str) -> dict:
 
 
 def admin_page(
-    version: RulebookVersion, history_rows=(), cited: dict[str, int] | None = None
+    version: RulebookVersion,
+    history_rows=(),
+    cited: dict[str, int] | None = None,
+    queue: dict | None = None,
 ) -> html.Div:
     """The console: 8 tabs, Overview first. 11b and 11c tabs show a plain "comes later" line."""
     return html.Div(
@@ -115,7 +119,9 @@ def admin_page(
                     ),
                     *[
                         dmc.TabsPanel(
-                            _tab_body(tab, version, history_rows, cited), value=tab, pt="md"
+                            _tab_body(tab, version, history_rows, cited, queue),
+                            value=tab,
+                            pt="md",
                         )
                         for tab, _, _ in ADMIN_TABS
                     ],
@@ -145,9 +151,9 @@ def version_line(version: RulebookVersion, active: bool = True) -> dmc.Text:
     )
 
 
-def _tab_body(tab: str, version: RulebookVersion, rows=(), cited=None):
+def _tab_body(tab: str, version: RulebookVersion, rows=(), cited=None, queue=None):
     if tab in EDITABLE_TABS:
-        return html.Div(tab_content(tab, version, cited=cited), id=body_id(tab))
+        return html.Div(tab_content(tab, version, cited=cited, queue=queue), id=body_id(tab))
     if tab == TAB_HISTORY:
         return html.Div(history_view(rows), id=body_id(TAB_HISTORY))
     phase = next(built for name, _, built in ADMIN_TABS if name == tab)
@@ -162,12 +168,16 @@ def tab_content(
     notice: list | None = None,
     active: bool = True,
     cited: dict[str, int] | None = None,
+    queue: dict | None = None,
 ):
     """One editable tab: notice lines, the view or the form, and the buttons that fit the mode.
 
-    `cited` is {rule_id: count} for the Cited column of the rule tables (read only)."""
+    `cited` is {rule_id: count} for the Cited column of the rule tables (read only). `queue` is
+    the Unassigned queue data for the Capability catalog tab (see queue_block)."""
     if tab in (TAB_UI, TAB_CODING):
         body = rules_view(tab, version, editable, draft, active, cited or {})
+    elif tab == TAB_CAPABILITY:
+        body = catalog_view(version, editable, draft, active, queue)
     else:
         view = charter_view if tab == TAB_CHARTER else build_view
         body = view(version, editable, draft, active)
@@ -254,6 +264,7 @@ def list_table(
     editable: bool,
     kinds: dict | None = None,
     static: tuple[str, ...] = (),
+    movable: bool = False,
 ):
     """A table drawn from column names. Read mode is plain text; edit mode adds Add row and Remove.
 
@@ -267,7 +278,7 @@ def list_table(
     )
     body = dmc.TableTbody(
         [
-            _table_row(tab, table_id, columns, i, row, editable, kinds, static)
+            _table_row(tab, table_id, columns, i, row, editable, kinds, static, movable)
             for i, row in enumerate(rows)
         ]
     )
@@ -287,7 +298,7 @@ def list_table(
     return html.Div(parts)
 
 
-def _table_row(tab, table_id, columns, index, row, editable, kinds, static):
+def _table_row(tab, table_id, columns, index, row, editable, kinds, static, movable=False):
     cells = []
     for col in columns:
         value = _cell_text(row.get(col, ""))
@@ -312,17 +323,26 @@ def _table_row(tab, table_id, columns, index, row, editable, kinds, static):
         else:
             cells.append(dmc.TableTd(dmc.Text(value, size="sm", style={"whiteSpace": "pre-wrap"})))
     if editable:
-        cells.append(
-            dmc.TableTd(
-                dmc.Button(
-                    "Remove",
-                    id={"type": "adm-remove", "tab": tab, "table": table_id, "index": index},
-                    variant="subtle",
-                    color="red",
-                    size="xs",
-                )
+        buttons = [
+            dmc.Button(
+                "Remove",
+                id={"type": "adm-remove", "tab": tab, "table": table_id, "index": index},
+                variant="subtle",
+                color="red",
+                size="xs",
             )
-        )
+        ]
+        if movable:
+            for label, step in (("Move up", -1), ("Move down", 1)):
+                move_id = {
+                    "type": MOVE_TYPE,
+                    "tab": tab,
+                    "table": table_id,
+                    "index": index,
+                    "step": step,
+                }
+                buttons.append(dmc.Button(label, id=move_id, variant="default", size="xs"))
+        cells.append(dmc.TableTd(dmc.Group(buttons, gap="xs") if movable else buttons[0]))
     return dmc.TableTr(cells)
 
 
@@ -558,6 +578,208 @@ def _sonar_map(policy: Policy, editable: bool, draft: dict | None):
                 withTableBorder=True,
             ),
         ]
+    )
+
+
+# --- Capability catalog and the Unassigned queue (Phase 11b) ---
+
+CATALOG_TABLE = "capabilities"
+CATALOG_COLUMNS = ("name", "description", "named_senior", "backup_senior", "path_patterns")
+MOVE_TYPE = "adm-move"
+QUEUE_BUTTON_TYPE = "adm-q"
+QUEUE_PICK_TYPE = "adm-q-pick"
+QUEUE_NOTE_TYPE = "adm-q-note"
+QUEUE_BLOCK_ID = "adm-queue"
+Q_CONFIRM = "confirm"
+Q_MOVE = "move"
+Q_APPLY = "apply"
+Q_APPLY_PATTERN = "apply_pattern"
+Q_CANCEL = "cancel"
+Q_SHOW_RESOLVED = "show_resolved"
+Q_HIDE_RESOLVED = "hide_resolved"
+CATALOG_HINT = (
+    "First match wins: a file goes to the first capability in this list whose pattern matches. "
+    "Use Move up and Move down to change the order."
+)
+
+
+def queue_button_id(action: str, uid: int = 0, cap: str = "", state: str = "") -> dict:
+    # Every queue button has the same four keys so one callback pattern matches them all.
+    return {"type": QUEUE_BUTTON_TYPE, "action": action, "uid": uid, "cap": cap, "state": state}
+
+
+def catalog_view(
+    version: RulebookVersion,
+    editable: bool = False,
+    draft: dict | None = None,
+    active: bool = True,
+    queue: dict | None = None,
+):
+    """The catalog table (editable) with the Unassigned queue under it (read view only)."""
+    policy = version.rulebook.policy
+    rows = _draft(draft, CATALOG_TABLE, capability_rows(policy))
+    return html.Div(
+        [
+            version_line(version, active),
+            dmc.Text(CATALOG_HINT, size="xs", c=da_styles.MUTED),
+            list_table(
+                TAB_CAPABILITY, CATALOG_TABLE, CATALOG_COLUMNS, rows, editable, movable=True
+            ),
+            queue_block(queue, [c.name for c in policy.capabilities], disabled=editable),
+        ]
+    )
+
+
+def _waiting_text(row) -> str:
+    return row.waiting_since.strftime("%Y-%m-%d") if row.waiting_since else ""
+
+
+def queue_block(queue: dict | None, capability_names: list[str], disabled: bool = False):
+    """Open Unassigned files, what each would match today, and the buttons to resolve them.
+
+    `queue` is {"rows": [QueueRow], "resolved": [UnassignedFile] or None, "dialog": dict or None,
+    "notice": [component]}. While the catalog is edited the buttons are disabled (one change at
+    a time)."""
+    queue = queue or {"rows": [], "resolved": None, "dialog": None, "notice": []}
+    rows = queue["rows"]
+    parts: list = [
+        dmc.Text("Unassigned queue", fw=600, c=da_styles.NAVY, size="sm"),
+        *queue.get("notice", []),
+    ]
+    if queue.get("dialog"):
+        parts.append(_pattern_dialog(queue["dialog"]))
+    if rows:
+        header = ("Path", "Developer's pick", "Request", "Waiting since", "Would match", "")
+        parts.append(
+            dmc.Table(
+                [
+                    dmc.TableThead(dmc.TableTr([dmc.TableTh(h) for h in header])),
+                    dmc.TableTbody(
+                        [_queue_row(r, capability_names, disabled) for r in rows]
+                    ),
+                ],
+                withTableBorder=True,
+            )
+        )
+    else:
+        parts.append(dmc.Text("No Unassigned files are waiting.", style=da_styles.EMPTY_TEXT))
+    if queue.get("resolved") is None:
+        parts.append(
+            dmc.Button(
+                "Show resolved",
+                id=queue_button_id(Q_SHOW_RESOLVED),
+                variant="default",
+                size="xs",
+                mt="xs",
+                disabled=disabled,
+            )
+        )
+    else:
+        parts.append(_resolved_table(queue["resolved"]))
+        parts.append(
+            dmc.Button(
+                "Hide resolved", id=queue_button_id(Q_HIDE_RESOLVED), variant="default", size="xs"
+            )
+        )
+    return html.Div(parts, id=QUEUE_BLOCK_ID, style=da_styles.PANEL_SECTION)
+
+
+def _queue_row(row, capability_names: list[str], disabled: bool):
+    start = row.would_match or row.picked_capability
+    return dmc.TableTr(
+        [
+            dmc.TableTd(dmc.Text(row.path, size="sm")),
+            dmc.TableTd(dmc.Text(row.picked_capability, size="sm")),
+            dmc.TableTd(dmc.Text(row.request_id, size="sm")),
+            dmc.TableTd(dmc.Text(_waiting_text(row), size="sm")),
+            dmc.TableTd(dmc.Text(row.would_match or "(none)", size="sm")),
+            dmc.TableTd(
+                dmc.Group(
+                    [
+                        dmc.Button(
+                            "Confirm",
+                            id=queue_button_id(Q_CONFIRM, row.unassigned_id),
+                            size="xs",
+                            disabled=disabled,
+                        ),
+                        dmc.Select(
+                            data=capability_names,
+                            value=start if start in capability_names else None,
+                            id={"type": QUEUE_PICK_TYPE, "uid": row.unassigned_id},
+                            size="xs",
+                            w=150,
+                            disabled=disabled,
+                        ),
+                        dmc.Button(
+                            "Move to...",
+                            id=queue_button_id(Q_MOVE, row.unassigned_id),
+                            size="xs",
+                            variant="default",
+                            disabled=disabled,
+                        ),
+                    ],
+                    gap="xs",
+                )
+            ),
+        ]
+    )
+
+
+def _pattern_dialog(dialog: dict):
+    """Asked after Confirm or Move: close the row, and (if it helps) also add the path as a
+    pattern. dialog: uid, state, capability, path, offer (True when a pattern helps), reason."""
+    uid, state, cap = dialog["uid"], dialog["state"], dialog["capability"]
+    verb = "Confirm" if state == "confirmed" else f"Move to {cap}"
+    parts: list = [
+        dmc.Text(f"{verb}: {dialog['path']}", size="sm", fw=600),
+        dmc.TextInput(
+            label="Change note (needed only if you add the pattern)",
+            id={"type": QUEUE_NOTE_TYPE, "uid": uid},
+            value="",
+        ),
+    ]
+    buttons = []
+    if dialog["offer"]:
+        parts.insert(
+            1, dmc.Text(f"Also add this path as a pattern to '{cap}'? Next files then match.")
+        )
+        buttons.append(
+            dmc.Button(
+                "Add pattern and resolve",
+                id=queue_button_id(Q_APPLY_PATTERN, uid, cap, state),
+                size="xs",
+            )
+        )
+    else:
+        parts.insert(1, dmc.Text(dialog["reason"], size="sm"))
+    buttons.append(
+        dmc.Button(
+            "Resolve without pattern",
+            id=queue_button_id(Q_APPLY, uid, cap, state),
+            size="xs",
+            variant="default",
+        )
+    )
+    buttons.append(
+        dmc.Button(
+            "Cancel", id=queue_button_id(Q_CANCEL, uid), size="xs", variant="subtle"
+        )
+    )
+    return dmc.Alert([*parts, dmc.Group(buttons, mt="xs")], color="blue", mb="sm")
+
+
+def _resolved_table(rows):
+    if not rows:
+        return dmc.Text("Nothing resolved yet.", style=da_styles.EMPTY_TEXT)
+    header = ("Path", "State", "By", "When", "Moved to")
+    body = []
+    for row in rows:
+        when = row.resolved_at.strftime("%Y-%m-%d %H:%M") if row.resolved_at else ""
+        values = (row.path, row.state, row.resolved_by, when, row.resolved_capability)
+        body.append(dmc.TableTr([dmc.TableTd(dmc.Text(v, size="sm")) for v in values]))
+    return dmc.Table(
+        [dmc.TableThead(dmc.TableTr([dmc.TableTh(h) for h in header])), dmc.TableTbody(body)],
+        withTableBorder=True,
     )
 
 

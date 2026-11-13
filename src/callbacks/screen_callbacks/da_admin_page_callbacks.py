@@ -12,6 +12,12 @@ from dash import ALL, Input, Output, State, ctx, html
 from dash.exceptions import PreventUpdate
 
 from agents.da_admin_access import is_admin
+from agents.da_admin_catalog import (
+    pattern_offer,
+    queue_rows,
+    resolve_row,
+    resolved_rows,
+)
 from agents.da_admin_cited import cited_counts
 from agents.da_admin_diff import build_timeline, diff_rulebooks
 from agents.da_admin_forms import (
@@ -19,6 +25,7 @@ from agents.da_admin_forms import (
     RESULT_SAVED,
     RESULT_STALE,
     add_rule_row,
+    move_row,
     save_from_form,
 )
 from configs.da_config import Settings, load_settings
@@ -38,6 +45,8 @@ from layouts.da_admin_page import (
     ADMIN_TABS,
     ADMIN_TABS_ID,
     BASE_STORE_TYPE,
+    CATALOG_COLUMNS,
+    CATALOG_TABLE,
     EDITABLE_TABS,
     GLOSSARY_COLUMNS,
     GOLDEN_COLUMNS,
@@ -46,12 +55,22 @@ from layouts.da_admin_page import (
     HIST_PICK_TYPE,
     HIST_RESTORE,
     HIST_TYPE,
+    MOVE_TYPE,
     NOTE_ID_NAME,
+    Q_APPLY,
+    Q_APPLY_PATTERN,
+    Q_CONFIRM,
+    Q_MOVE,
+    Q_SHOW_RESOLVED,
+    QUEUE_BUTTON_TYPE,
+    QUEUE_NOTE_TYPE,
+    QUEUE_PICK_TYPE,
     RULE_COLUMNS,
     RULE_KIND_OF_TAB,
     RULES_TABLE,
     SONAR_FIELD_PREFIX,
     TAB_BUILD,
+    TAB_CAPABILITY,
     TAB_CHARTER,
     TAB_CODING,
     TAB_HISTORY,
@@ -89,12 +108,14 @@ TABLES: dict[str, tuple[str, ...]] = {
     TAB_BUILD: ("zones", "protected_files"),
     TAB_UI: (RULES_TABLE,),
     TAB_CODING: (RULES_TABLE, "approved_libraries", "blocked_imports", "golden_examples"),
+    TAB_CAPABILITY: (CATALOG_TABLE,),
 }
 TABLE_COLUMNS = {  # the rest hold one "text"
     "glossary": GLOSSARY_COLUMNS,
     "zones": ZONE_COLUMNS,
     RULES_TABLE: RULE_COLUMNS,
     "golden_examples": GOLDEN_COLUMNS,
+    CATALOG_TABLE: CATALOG_COLUMNS,
 }
 
 
@@ -115,7 +136,12 @@ def admin_content(settings: Settings, pathname: str | None):
         return html.Div(
             dmc.Text(NO_RULEBOOK_MESSAGE, c=da_styles.MUTED), style=da_styles.PAGE
         )
-    return admin_page(active, build_timeline(settings.db_path), cited_counts(settings.db_path))
+    return admin_page(
+        active,
+        build_timeline(settings.db_path),
+        cited_counts(settings.db_path),
+        queue_data(settings),
+    )
 
 
 def developer_page_style(pathname: str | None) -> dict:
@@ -203,13 +229,105 @@ def run_action(
         form = _with_new_row(form, action["table"])
     elif kind == "adm-remove":
         form = _without_row(form, action["table"], action["index"])
+    elif kind == MOVE_TYPE:
+        table = action["table"]
+        form = {**form, table: move_row(form.get(table, []), action["index"], action["step"])}
     return _content(settings, tab, base, editable=True, draft=form, notice=notice), True
 
 
 def _content(settings: Settings, tab: str, version, **kwargs):
     """tab_content, plus the Cited counts on the Coding tab (read from the Tester's findings)."""
     cited = cited_counts(settings.db_path) if tab == TAB_CODING else None
-    return tab_content(tab, version, cited=cited, **kwargs)
+    queue = queue_data(settings) if tab == TAB_CAPABILITY else None
+    return tab_content(tab, version, cited=cited, queue=queue, **kwargs)
+
+
+# --- Unassigned queue ---
+
+
+def queue_data(settings: Settings, show_resolved: bool = False, dialog=None, notice=None) -> dict:
+    """What the layout needs to draw the queue block."""
+    return {
+        "rows": queue_rows(settings),
+        "resolved": resolved_rows(settings) if show_resolved else None,
+        "dialog": dialog,
+        "notice": notice or [],
+    }
+
+
+def _queue_tab(settings: Settings, **kwargs):
+    active = get_active_version(settings.db_path)
+    return tab_content(TAB_CAPABILITY, active, queue=queue_data(settings, **kwargs))
+
+
+def run_queue_action(
+    settings: Settings,
+    action: dict,
+    picks: dict,
+    notes: dict,
+    base_version: int | None,
+):
+    """One click in the Unassigned queue. Returns the whole Capability catalog tab, redrawn.
+
+    `picks` is {unassigned_id: chosen capability}, `notes` {unassigned_id: change note}. Writes only
+    on Resolve (and, with the pattern, one new catalog version)."""
+    name, uid = action["action"], action["uid"]
+    if name == Q_SHOW_RESOLVED:
+        return _queue_tab(settings, show_resolved=True)
+    if name in (Q_CONFIRM, Q_MOVE):
+        return _start_resolve(settings, name, uid, picks)
+    if name in (Q_APPLY, Q_APPLY_PATTERN):
+        return _apply_resolve(settings, action, notes.get(uid, ""), base_version)
+    return _queue_tab(settings)  # Cancel, Hide resolved
+
+
+def _start_resolve(settings: Settings, name: str, uid: int, picks: dict):
+    row = next((r for r in queue_rows(settings) if r.unassigned_id == uid), None)
+    if row is None:
+        notice = [message_notice("That Unassigned row is not open any more.")]
+        return _queue_tab(settings, notice=notice)
+    state = "confirmed" if name == Q_CONFIRM else "changed"
+    capability = row.picked_capability if name == Q_CONFIRM else (picks.get(uid) or "")
+    if not capability:
+        return _queue_tab(settings, notice=[message_notice("Choose a capability first.")])
+    catalog = get_active_version(settings.db_path).rulebook.policy.capabilities
+    reason = pattern_offer(row.path, catalog, capability)
+    dialog = {
+        "uid": uid,
+        "state": state,
+        "capability": capability,
+        "path": row.path,
+        "offer": not reason,
+        "reason": reason,
+    }
+    return _queue_tab(settings, dialog=dialog)
+
+
+def _apply_resolve(settings: Settings, action: dict, note: str, base_version: int | None):
+    result = resolve_row(
+        settings,
+        action["uid"],
+        action["state"],
+        action["cap"],
+        settings.developer_id,
+        add_pattern=action["action"] == Q_APPLY_PATTERN,
+        note=note,
+        base_version=base_version,
+    )
+    if result.kind == "resolved":
+        text = "Resolved."
+        if result.new_version:
+            text += f" The catalog is now v{result.new_version}."
+        return _queue_tab(settings, notice=[message_notice(text, color="green")])
+    if result.stale:
+        # The catalog moved on since this screen was drawn: nothing was closed.
+        newest = get_active_version(settings.db_path).version_number
+        notice = message_notice(
+            result.message, reload_tab=TAB_CAPABILITY, newest=newest
+        )
+        return _queue_tab(settings, notice=[notice])
+    lines = result.problems or [result.message]
+    return _queue_tab(settings, notice=[problem_notice(lines)])
 
 
 def _with_new_rule(settings: Settings, tab: str, form: dict):
@@ -305,6 +423,7 @@ def register_da_admin_page_callbacks(app) -> None:
     for tab in EDITABLE_TABS:
         _register_tab(app, tab)
     _register_history(app)
+    _register_queue(app)
 
 
 def _register_history(app) -> None:
@@ -341,6 +460,30 @@ def _register_history(app) -> None:
         )
 
 
+def _register_queue(app) -> None:
+    button = {"type": QUEUE_BUTTON_TYPE, "action": ALL, "uid": ALL, "cap": ALL, "state": ALL}
+
+    @app.callback(
+        Output(body_id(TAB_CAPABILITY), "children", allow_duplicate=True),
+        Input(button, "n_clicks"),
+        State({"type": QUEUE_PICK_TYPE, "uid": ALL}, "value"),
+        State({"type": QUEUE_NOTE_TYPE, "uid": ALL}, "value"),
+        State({"type": BASE_STORE_TYPE, "tab": TAB_CAPABILITY}, "data"),
+        prevent_initial_call=True,
+    )
+    def on_queue_click(_clicks, _picks, _notes, base_version):
+        settings = get_admin_settings()
+        triggered = ctx.triggered_id
+        if not isinstance(triggered, dict) or not ctx.triggered[0]["value"]:
+            raise PreventUpdate
+        if not is_admin(settings, settings.developer_id):
+            raise PreventUpdate
+        _button, pick_states, note_states, _base = ctx.states_list
+        picks = {item["id"]["uid"]: item.get("value") for item in pick_states}
+        notes = {item["id"]["uid"]: item.get("value") or "" for item in note_states}
+        return run_queue_action(settings, triggered, picks, notes, base_version)
+
+
 def _register_tab(app, tab: str) -> None:
     def pattern(kind, *keys):
         return {"type": kind, "tab": tab, **{key: ALL for key in keys}}
@@ -354,13 +497,14 @@ def _register_tab(app, tab: str) -> None:
         Input(pattern("adm-act", "action"), "n_clicks"),
         Input(pattern("adm-add", "table", "index"), "n_clicks"),
         Input(pattern("adm-remove", "table", "index"), "n_clicks"),
+        Input(pattern(MOVE_TYPE, "table", "index", "step"), "n_clicks"),
         State(pattern("adm-cell", "table", "row", "col"), "value"),
         State(pattern("adm-field", "name"), "value"),
         State(pattern("adm-switch", "name"), "checked"),
         State({"type": BASE_STORE_TYPE, "tab": tab}, "data"),
         prevent_initial_call=True,
     )
-    def on_click(_acts, _adds, _removes, cells, fields, switches, base_version):
+    def on_click(_acts, _adds, _removes, _moves, cells, fields, switches, base_version):
         settings = get_admin_settings()
         triggered = ctx.triggered_id
         # Buttons that were just drawn also "trigger"; a real click has a click count.
