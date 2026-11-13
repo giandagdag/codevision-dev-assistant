@@ -209,6 +209,8 @@ class UnassignedFile(_Shape):
     state: UnassignedState = "open"
     resolved_by: str = ""
     resolved_at: AwareDatetime | None = None
+    # Phase 11b: the capability Admin moved the file to (state "changed"); empty otherwise.
+    resolved_capability: str = ""
     created_at: AwareDatetime | None = None
 
 

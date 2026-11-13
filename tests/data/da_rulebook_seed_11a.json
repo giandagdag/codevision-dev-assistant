@@ -1,0 +1,72 @@
+{
+  "charter": {
+    "purpose": "Help developers change the made-up Harbour Loans demo application safely: understand the change, reuse existing code, start from sound code, and get early review feedback.",
+    "in_scope": [
+      "Python Plotly Dash pages and callbacks for the Harbour Loans demo",
+      "Database helper functions under db_table_functions",
+      "Pydantic data shapes under pydantic_classes"
+    ],
+    "out_of_scope": [
+      "Login, passwords, and access control",
+      "Payment processing and money movement",
+      "Changes to shared infrastructure or deployment settings"
+    ],
+    "architecture_principles": [
+      "All database access goes through db_table_functions, never straight from a page.",
+      "Pages only show data and collect input; business decisions live in agents.",
+      "Every stored time is UTC with a time zone."
+    ],
+    "constraints": [
+      "Python 3.14 only, with pinned library versions.",
+      "No secrets in code, logs, or tests.",
+      "Generated code is a starting point and is always reviewed by a person."
+    ],
+    "glossary": [
+      {"term": "Request", "meaning": "One developer change, tracked from start to handoff."},
+      {"term": "Rulebook", "meaning": "The versioned house rules used for generation and review."},
+      {"term": "Pinned version", "meaning": "The rulebook version a request keeps until it finishes."}
+    ]
+  },
+  "rules": [
+    {
+      "rule_id": "CV-PY-001",
+      "title": "Error messages are plain sentences",
+      "kind": "judgement",
+      "tags": ["general"],
+      "severity": "should_fix",
+      "why": "Developers and Admins must understand what went wrong and how to fix it without reading a stack trace.",
+      "good_example": "raise ConfigError(\"DA_DB_PATH is empty. Set it in your .env file.\")",
+      "bad_example": "raise Exception(\"ERR_CFG_07\")",
+      "source": "Written by Admin"
+    },
+    {
+      "rule_id": "CV-UI-001",
+      "title": "Use Dash Mantine Components for form controls",
+      "kind": "ui_convention",
+      "tags": ["ui"],
+      "severity": "should_fix",
+      "why": "One component set keeps every page looking and behaving the same.",
+      "good_example": "dmc.TextInput(label=\"Loan amount\")",
+      "bad_example": "html.Input(type=\"text\")",
+      "source": "Written by Admin"
+    }
+  ],
+  "policy": {
+    "escalation_triggers": [
+      {"name": "cap_hit_twice", "on": true},
+      {"name": "out_of_scope", "on": true},
+      {"name": "dispute", "on": true},
+      {"name": "tester_unable_twice", "on": true},
+      {"name": "get_help", "on": true}
+    ],
+    "generator_model": "",
+    "tester_model": "",
+    "admin_unassigned_stale_days": 14,
+    "approved_libraries": ["pydantic", "dash", "requests"],
+    "build_blocked_imports": ["subprocess", "requests"],
+    "capabilities": [
+      {"name": "Limits", "description": "Customer limit set-up, expiry and reporting.", "named_senior": "Limits capability lead", "path_patterns": ["*limits*"]},
+      {"name": "Reports", "description": "Printed and on-screen management reports.", "named_senior": "Reports capability lead", "path_patterns": ["*report*"]}
+    ]
+  }
+}

@@ -111,7 +111,8 @@ CREATE TABLE IF NOT EXISTS da_unassigned_files (
     state            TEXT NOT NULL,
     resolved_by      TEXT NOT NULL,
     resolved_at      TEXT,
-    created_at       TEXT NOT NULL
+    created_at       TEXT NOT NULL,
+    resolved_capability TEXT
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS da_unassigned_one_open_per_path
@@ -139,6 +140,11 @@ class EnhanceError(UnderstandError):
 def ensure_enhance_tables(conn: sqlite3.Connection) -> None:
     """Called by ensure_build_tables, after da_requests exists."""
     conn.executescript(_CREATE_TABLES_SQL)
+    # Phase 11b: a database made before this column existed gets it added (nullable, so old rows
+    # stay valid). Like adding a field to a physical file with CHGPF.
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(da_unassigned_files)")}
+    if "resolved_capability" not in columns:
+        conn.execute("ALTER TABLE da_unassigned_files ADD COLUMN resolved_capability TEXT")
 
 
 # --- the working state ---
@@ -375,15 +381,23 @@ def add_unassigned(
 
 
 def resolve_unassigned(
-    conn: sqlite3.Connection, unassigned_id: int, state: str, resolved_by: str, now: datetime
+    conn: sqlite3.Connection,
+    unassigned_id: int,
+    state: str,
+    resolved_by: str,
+    now: datetime,
+    resolved_capability: str = "",
 ) -> None:
-    """Close an open row as `confirmed` or `changed`. Phase 11's Admin screen calls this."""
+    """Close an open row as `confirmed` or `changed`. Phase 11's Admin screen calls this.
+
+    resolved_capability is the capability Admin moved the file to (state `changed`); empty when
+    the developer's pick stands."""
     if state not in ("confirmed", "changed"):
         raise EnhanceError("An Unassigned row is resolved as confirmed or changed.")
     cursor = conn.execute(
-        "UPDATE da_unassigned_files SET state = ?, resolved_by = ?, resolved_at = ?"
-        " WHERE unassigned_id = ? AND state = 'open'",
-        (state, resolved_by, to_db_time(now), unassigned_id),
+        "UPDATE da_unassigned_files SET state = ?, resolved_by = ?, resolved_at = ?,"
+        " resolved_capability = ? WHERE unassigned_id = ? AND state = 'open'",
+        (state, resolved_by, to_db_time(now), resolved_capability or None, unassigned_id),
     )
     if cursor.rowcount != 1:
         raise EnhanceError("That Unassigned row is not open.")
@@ -393,6 +407,16 @@ def list_unassigned(conn: sqlite3.Connection, state: str = "open") -> list[Unass
     """Read only. Phase 11 shows this list to Admin."""
     rows = conn.execute(
         "SELECT * FROM da_unassigned_files WHERE state = ? ORDER BY unassigned_id", (state,)
+    ).fetchall()
+    return [_to_unassigned(row) for row in rows]
+
+
+def list_resolved(conn: sqlite3.Connection, limit: int = 50) -> list[UnassignedFile]:
+    """The last `limit` resolved rows (confirmed and changed), newest first. Read only."""
+    rows = conn.execute(
+        "SELECT * FROM da_unassigned_files WHERE state != 'open'"
+        " ORDER BY resolved_at DESC, unassigned_id DESC LIMIT ?",
+        (limit,),
     ).fetchall()
     return [_to_unassigned(row) for row in rows]
 
@@ -414,5 +438,6 @@ def _to_unassigned(row: sqlite3.Row) -> UnassignedFile:
         state=row["state"],
         resolved_by=row["resolved_by"],
         resolved_at=datetime.fromisoformat(resolved) if resolved else None,
+        resolved_capability=row["resolved_capability"] or "",
         created_at=datetime.fromisoformat(row["created_at"]),
     )

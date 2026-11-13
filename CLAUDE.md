@@ -45,7 +45,7 @@ Stop, push the work so far to the phase branch, and tell Gian what you need when
   you did not see.
 
 ## Current phase
-Phase 11a (Admin console, first part): spec `specs/phase-11-admin-console.md`, plan `specs/phase-11a-plan.md`, branch `auto/phase-11a`. Next: 11b, 11c, then Phase 10.
+Phase 11b (Admin console, second part): spec `specs/phase-11-admin-console.md`, plan `specs/phase-11b-plan.md`, branch `auto/phase-11b`. 11a is merged. Next: 11c, then Phase 10.
 (Phases 0 to 6 and Phase A are merged into `main`; Phases 7 to 9 and Phase A fixes 1 to 4 are in `auto/phases-7-10`; their specs stay in `specs/`.)
 
 Phases 4 onwards were redesigned on 31 Oct 2026 (LLM writes 100% of the code, built-in testing,
