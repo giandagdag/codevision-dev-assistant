@@ -58,7 +58,7 @@ ADMIN_TABS: tuple[tuple[str, str, str], ...] = (
     (TAB_BUILD, "Build and test", "11a"),
     (TAB_HISTORY, "Version history", "11a"),
 )
-EDITABLE_TABS = (TAB_CHARTER, TAB_CAPABILITY, TAB_UI, TAB_CODING, TAB_BUILD)
+EDITABLE_TABS = (TAB_CHARTER, TAB_REPO, TAB_CAPABILITY, TAB_UI, TAB_CODING, TAB_BUILD)
 
 CHARTER_LISTS: tuple[tuple[str, str], ...] = (
     ("in_scope", "In scope"),
@@ -106,6 +106,7 @@ def admin_page(
     queue: dict | None = None,
     overview=None,
     report=None,
+    server: list[tuple[str, str]] | None = None,
 ) -> html.Div:
     """The console: 8 tabs, Overview first. A tab not built yet shows a plain "comes later" line.
     `overview` and `report` (Phase 11c) fill the Overview tab; without them it says so."""
@@ -122,7 +123,9 @@ def admin_page(
                     ),
                     *[
                         dmc.TabsPanel(
-                            _tab_body(tab, version, history_rows, cited, queue, overview, report),
+                            _tab_body(
+                                tab, version, history_rows, cited, queue, overview, report, server
+                            ),
                             value=tab,
                             pt="md",
                         )
@@ -155,12 +158,20 @@ def version_line(version: RulebookVersion, active: bool = True) -> dmc.Text:
 
 
 def _tab_body(
-    tab: str, version: RulebookVersion, rows=(), cited=None, queue=None, overview=None, report=None
+    tab: str,
+    version: RulebookVersion,
+    rows=(),
+    cited=None,
+    queue=None,
+    overview=None,
+    report=None,
+    server=None,
 ):
     if tab == TAB_OVERVIEW and overview is not None and report is not None:
         return html.Div(overview_view(version, overview, report), id=body_id(TAB_OVERVIEW))
     if tab in EDITABLE_TABS:
-        return html.Div(tab_content(tab, version, cited=cited, queue=queue), id=body_id(tab))
+        content = tab_content(tab, version, cited=cited, queue=queue, server=server)
+        return html.Div(content, id=body_id(tab))
     if tab == TAB_HISTORY:
         return html.Div(history_view(rows), id=body_id(TAB_HISTORY))
     phase = next(built for name, _, built in ADMIN_TABS if name == tab)
@@ -176,12 +187,16 @@ def tab_content(
     active: bool = True,
     cited: dict[str, int] | None = None,
     queue: dict | None = None,
+    server: list[tuple[str, str]] | None = None,
 ):
     """One editable tab: notice lines, the view or the form, and the buttons that fit the mode.
 
     `cited` is {rule_id: count} for the Cited column of the rule tables (read only). `queue` is
-    the Unassigned queue data for the Capability catalog tab (see queue_block)."""
-    if tab in (TAB_UI, TAB_CODING):
+    the Unassigned queue data for the Capability catalog tab (see queue_block). `server` is the
+    read-only server settings list of the Repository and index tab."""
+    if tab == TAB_REPO:
+        body = repo_view(version, server, editable, draft, active)
+    elif tab in (TAB_UI, TAB_CODING):
         body = rules_view(tab, version, editable, draft, active, cited or {})
     elif tab == TAB_CAPABILITY:
         body = catalog_view(version, editable, draft, active, queue)
@@ -870,7 +885,9 @@ def _number_fields(policy: Policy, names: tuple[str, ...], editable: bool, draft
     return dmc.Stack([_number_field(policy, n, editable, draft) for n in names], gap=2)
 
 
-def _number_field(policy: Policy, name: str, editable: bool, draft: dict | None):
+def _number_field(
+    policy: Policy, name: str, editable: bool, draft: dict | None, tab: str = TAB_BUILD
+):
     value = str(_draft(draft, name, getattr(policy, name)))
     hint = field_bounds(name)
     label = NUMBER_LABELS.get(name, name)
@@ -880,8 +897,69 @@ def _number_field(policy: Policy, name: str, editable: bool, draft: dict | None)
         label=label,
         description=f"allowed: {hint}" if hint else None,
         value=value,
-        id={"type": "adm-field", "tab": TAB_BUILD, "name": name},
+        id={"type": "adm-field", "tab": tab, "name": name},
         size="xs",
+    )
+
+
+# --- Repository and index (Phase 11c, spec 11) ---
+
+REPO_LIST_TABLES = (
+    ("allowed_folders", "Allowed folders"),
+    ("workspace_markers", "Workspace markers"),
+)
+REPO_PATTERN = "new_file_name_pattern"
+REPO_SIZE = "workspace_max_file_kb"
+
+
+def repo_view(
+    version: RulebookVersion,
+    server: list[tuple[str, str]] | None,
+    editable: bool = False,
+    draft: dict | None = None,
+    active: bool = True,
+):
+    """Read-only server settings, then the four editable fields. `server` is (name, shown value)."""
+    policy = version.rulebook.policy
+    settings_lines = [
+        dmc.Text(f"{name}: {value}", size="sm") for name, value in (server or [])
+    ]
+    pattern = _draft(draft, REPO_PATTERN, policy.new_file_name_pattern)
+    if editable:
+        pattern_widget = dmc.TextInput(
+            label="New file name pattern (a regular expression)",
+            value=pattern,
+            id={"type": "adm-field", "tab": TAB_REPO, "name": REPO_PATTERN},
+            size="xs",
+        )
+    else:
+        pattern_widget = dmc.Text(f"New file name pattern: {pattern}", size="sm")
+    return html.Div(
+        [
+            version_line(version, active),
+            _section(
+                "Server settings (read only; they live in .env, not in the rulebook)",
+                dmc.Stack(settings_lines, gap=2),
+            ),
+            *[
+                _section(
+                    title,
+                    list_table(
+                        TAB_REPO,
+                        table,
+                        (TEXT_COLUMN,),
+                        _text_rows(_draft(draft, table, getattr(policy, table))),
+                        editable,
+                    ),
+                )
+                for table, title in REPO_LIST_TABLES
+            ],
+            _section("New file name pattern", pattern_widget),
+            _section(
+                "Largest file the laptop scan reads",
+                _number_field(policy, REPO_SIZE, editable, draft, TAB_REPO),
+            ),
+        ]
     )
 
 

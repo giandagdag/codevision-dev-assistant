@@ -29,7 +29,7 @@ from agents.da_admin_forms import (
     save_from_form,
 )
 from agents.da_admin_metrics import WINDOW_ALL, WINDOW_LABELS, health_report
-from agents.da_admin_overview import build_overview
+from agents.da_admin_overview import build_overview, server_settings_view
 from configs.da_config import Settings, load_settings
 from db_table_functions.db_tbl_da_rulebook import (
     RulebookError,
@@ -79,6 +79,7 @@ from layouts.da_admin_page import (
     TAB_CODING,
     TAB_HISTORY,
     TAB_OVERVIEW,
+    TAB_REPO,
     TAB_UI,
     TEXT_COLUMN,
     WINDOW_ID,
@@ -117,6 +118,7 @@ TABLES: dict[str, tuple[str, ...]] = {
     TAB_UI: (RULES_TABLE,),
     TAB_CODING: (RULES_TABLE, "approved_libraries", "blocked_imports", "golden_examples"),
     TAB_CAPABILITY: (CATALOG_TABLE,),
+    TAB_REPO: ("allowed_folders", "workspace_markers"),
 }
 TABLE_COLUMNS = {  # the rest hold one "text"
     "glossary": GLOSSARY_COLUMNS,
@@ -151,6 +153,7 @@ def admin_content(settings: Settings, pathname: str | None):
         queue_data(settings),
         build_overview(settings),
         health_report(settings.db_path, WINDOW_ALL),
+        server_settings_view(settings),
     )
 
 
@@ -266,7 +269,8 @@ def _content(settings: Settings, tab: str, version, **kwargs):
     """tab_content, plus the Cited counts on the Coding tab (read from the Tester's findings)."""
     cited = cited_counts(settings.db_path) if tab == TAB_CODING else None
     queue = queue_data(settings) if tab == TAB_CAPABILITY else None
-    return tab_content(tab, version, cited=cited, queue=queue, **kwargs)
+    server = server_settings_view(settings) if tab == TAB_REPO else None
+    return tab_content(tab, version, cited=cited, queue=queue, server=server, **kwargs)
 
 
 # --- Unassigned queue ---
