@@ -179,4 +179,10 @@ into a follow-up request, senior editing code, any new AI prompt, reopening HAND
 - `LastTestedKind` (`da_refine_models.py`) is `build`, `rebuild`, `check`, `restore`. `rebuild` is a
   build too: H4 reads its code rows like `build`. Step 1 confirms where `check` and `restore` leave their
   per-path fingerprints (`scanned` rows or restored build code rows) and writes it here.
+- Confirmed in step 2: `check` and `restore` runs also leave their tested text as `code` rows of the
+  last tested build (`da_refine_tested.last_tested_build`; same read as `changed_paths` in
+  `da_refine_flow.py`). So `get_last_tested_fingerprints` reads `read_latest_code` of that build, with
+  the current build as fallback when no Refine row exists. No `scanned` read is needed for H4.
+- A fixed finding is one the newest review no longer lists, so `findings_check` takes the newest
+  review's kept rows with their state. `overruled` is a state string only (step 8 adds the action).
 - Header note: 11c is in this branch; if it is merged differently the chief rebases before step 10a.

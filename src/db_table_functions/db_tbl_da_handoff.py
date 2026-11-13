@@ -114,6 +114,29 @@ def insert_handoff(conn: sqlite3.Connection, item: HandoffRow, now: datetime) ->
     return item.model_copy(update={"created_at": now})
 
 
+# --- the last tested fingerprints (spec H4) ---
+
+
+def get_last_tested_fingerprints(conn: sqlite3.Connection, request_id: str) -> dict[str, str]:
+    """Path -> fingerprint of the code the last tested run tested.
+
+    Confirmed in the code (Phase 8): every kind (build, rebuild, check, restore) leaves its tested
+    text as `code` rows of the last tested build, so one read covers all of them. A request with no
+    Refine yet has no tested row, and then the current build is the last tested one."""
+    # Local imports: db_tbl_da_build imports this file at the top, so a top import would be a loop.
+    from db_table_functions.db_tbl_da_build import read_build_state, read_latest_code
+    from db_table_functions.db_tbl_da_refine import read_tested
+
+    build = read_tested(conn, request_id)["last_tested_build"]
+    if not build:
+        state = read_build_state(conn, request_id)
+        build = state.build_number if state else 0
+    if not build:
+        return {}
+    code = read_latest_code(conn, request_id, build)
+    return {path: item.fingerprint for path, item in code.items()}
+
+
 def read_handoff(conn: sqlite3.Connection, request_id: str) -> HandoffRow | None:
     row = conn.execute("SELECT * FROM da_handoffs WHERE request_id = ?", (request_id,)).fetchone()
     return HandoffRow.model_validate(dict(row)) if row else None
