@@ -173,6 +173,24 @@ def _refuse_stopped(decision, usage, status_file, gh, as_of) -> None:
             "needs-gian", gh)
 
 
+def close_guard_blind(gh: Gh, as_of: str) -> None:
+    """Fix 5f: a 'guard blind' issue closes itself once the usage reads again.
+
+    One failed read (13 Nov 18:21) left the issue open, so the board stayed red while the team
+    worked. A gh failure here is ignored: closing is housekeeping, never a reason to stop.
+    """
+    try:
+        open_ones = json.loads(gh(["issue", "list", "--label", "needs-gian", "--state", "open",
+                                   "--json", "number,title", "--limit", "100"]) or "[]")
+        for item in open_ones:
+            if item.get("title") == GUARD_BLIND_TITLE:
+                gh(["issue", "close", str(item["number"]), "--comment",
+                    f"The usage was read again at {as_of}, so the guard works. "
+                    "Closed by the tick (Phase A fix 5f)."])
+    except Exception:  # noqa: BLE001 - housekeeping only
+        return
+
+
 def _refuse_hooks(problem, status_file, gh, as_of) -> None:
     status.add_log(status_file, f"{as_of}: hooks cannot start ({problem}); no worker launched")
     open_gian_issue(HOOKS_BROKEN_TITLE,
@@ -568,6 +586,7 @@ def _check_guard_and_hooks(reader, gh, status_file, now, preflight):
     if not decision.go:
         _refuse_stopped(decision, usage, status_file, gh, as_of)
         return None, "stopped"
+    close_guard_blind(gh, as_of)
     problem = preflight()
     if problem:
         _refuse_hooks(problem, status_file, gh, as_of)

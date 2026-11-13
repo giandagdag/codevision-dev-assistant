@@ -637,6 +637,30 @@ Spec `specs/phase-11-admin-console.md`, plan `specs/phase-11a-plan.md`.
 - **Smoke check** items 31 to 33 (form save, restore, one changed path). Not yet: Overview,
   metrics, work-test doc (11c) and the other tabs (11b).
 
+## How Phase 11b works
+
+Phase 11b is the second part of the **Admin console**: three more tabs, built on the 11a pattern
+(Edit, change note, Save writes a new rulebook version). Plan `specs/phase-11b-plan.md`.
+
+- **UI standards** and **Coding standards.** One table row per rule (ID, title, tags, severity,
+  why, good and bad example, source). **Add row** hands out the next rule ID at once; the number
+  stays used up even after Cancel (AS400 picture: a number from a data area is never given back).
+  At 10 judgement rules Add row shows a message instead. Tags are one per line. Coding standards
+  also holds the approved libraries, the blocked imports, a **SonarQube severity map** (five
+  dropdowns, plus a made-up read-only sample list) and **Golden examples** (stored only, no AI call
+  reads them). A read-only **Cited** column counts the Tester findings that were kept.
+- **Library on both lists.** The Coding save is refused and names the library. `requests` was in
+  both default lists; it is now only blocked (Build already blocked it).
+- **Capability catalog.** Name, description, named senior, backup senior and path patterns. First
+  match wins, so **Move up** and **Move down** change the order. A pattern that cannot match any
+  allowed folder gives a warning, not a refusal.
+- **Unassigned queue** (under the catalog). Each open file shows its path, the developer's pick, the
+  request, how long it waits and what it would match today. **Confirm** keeps the pick; **Move to...**
+  closes it as changed and stores the capability. Both offer to add the path as a pattern (needs a
+  change note); no offer when a capability already matches. **Show resolved** lists the last 50.
+- **Smoke check** items 34 to 36 (a UI rule through the form, Cited counts, one queue row confirmed).
+  Not yet: Overview, metrics, Repository and index, work-test doc (11c).
+
 ## Notes for the move to CodeVision
 
 - **The audit-table triggers are SQLite-only.** The append-only guarantee comes from two SQLite

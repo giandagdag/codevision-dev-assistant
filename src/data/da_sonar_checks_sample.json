@@ -1,0 +1,9 @@
+[
+  {"key": "py:S1481", "name": "Unused local variables should be removed", "severity": "MINOR"},
+  {"key": "py:S1192", "name": "String literals should not be duplicated", "severity": "MINOR"},
+  {"key": "py:S3776", "name": "Cognitive complexity of functions should not be too high", "severity": "CRITICAL"},
+  {"key": "py:S5332", "name": "Using clear-text protocols is security-sensitive", "severity": "BLOCKER"},
+  {"key": "py:S107", "name": "Functions should not have too many parameters", "severity": "MAJOR"},
+  {"key": "py:S1135", "name": "Track uses of TODO tags", "severity": "INFO"},
+  {"key": "py:S125", "name": "Sections of code should not be commented out", "severity": "MAJOR"}
+]

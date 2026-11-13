@@ -111,8 +111,20 @@ class Capability(_RulebookPart):
     description: str = Field(min_length=1)
     # A role or person label, text only (made up here; the real list is work fact WF-2).
     named_senior: str = Field(min_length=1)
+    # Phase 11b: who signs off when the named senior is away. Empty for versions saved before.
+    backup_senior: str = ""
     # Matched by plain code against the whole lower-case path (fnmatch), never by the AI.
     path_patterns: list[str] = Field(min_length=1)
+
+
+class GoldenExample(_RulebookPart):
+    """A model piece of code Admin keeps as a good example. Stored only in Phase 11: it is not
+    sent to any AI call yet (decision D-H)."""
+
+    title: str = Field(min_length=1)
+    tags: list[str] = Field(default_factory=list)
+    code: str = Field(min_length=1)
+    why: str = ""
 
 
 # Starter values for the Phase 4 policy fields (made up; the real values are set at work). A
@@ -135,6 +147,7 @@ DEFAULT_PROTECTED_FILES = [
     "src/web/web_server.py",
     "src/callbacks/universal_callbacks.py",
 ]
+# "requests" is not listed: Build blocks it and "blocked wins", so listing it here only disagreed.
 DEFAULT_APPROVED_LIBRARIES = [
     "pydantic",
     "dash",
@@ -142,7 +155,6 @@ DEFAULT_APPROVED_LIBRARIES = [
     "dash_iconify",
     "flask",
     "plotly",
-    "requests",
     "pandas",
     "openpyxl",
 ]
@@ -192,6 +204,16 @@ DEFAULT_BUILD_BLOCKED_IMPORTS = [
     "webbrowser",
 ]
 DEFAULT_BUILD_SANDBOX_EXCLUDE = [".env", "*.db", ".git", "*.key", "*.pem"]
+# Phase 11b: SonarQube severities (fixed) mapped to our three. Made-up defaults. Admin edits only
+# the right-hand side; the keys are checked on save.
+SONAR_SEVERITY_KEYS: tuple[str, ...] = ("BLOCKER", "CRITICAL", "MAJOR", "MINOR", "INFO")
+DEFAULT_SONAR_SEVERITY_MAP: dict[str, str] = {
+    "BLOCKER": "must_fix",
+    "CRITICAL": "must_fix",
+    "MAJOR": "should_fix",
+    "MINOR": "fyi",
+    "INFO": "fyi",
+}
 
 
 def _default_zones() -> list[FlagReviewZone]:
@@ -286,6 +308,11 @@ class Policy(_RulebookPart):
     impact_max_callers: int = Field(default=DEFAULT_IMPACT_MAX_CALLERS, ge=1, le=200)
     # The catalog (D-B). Empty for a rulebook saved before Phase 9.
     capabilities: list[Capability] = Field(default_factory=list)
+    # Phase 11b (D-F). Keys are checked by find_rulebook_problems, so a wrong key is reported in
+    # plain words with the other problems.
+    sonar_severity_map: dict[str, Severity] = Field(
+        default_factory=lambda: dict(DEFAULT_SONAR_SEVERITY_MAP)
+    )
 
     @field_validator("escalation_triggers")
     @classmethod
@@ -326,6 +353,8 @@ class Rulebook(_RulebookPart):
     charter: Charter
     rules: list[Rule]
     policy: Policy
+    # Phase 11b (D-H): stored only, not sent to any AI call. Empty for older versions.
+    golden_examples: list[GoldenExample] = Field(default_factory=list)
 
 
 class RulebookVersion(BaseModel):
@@ -370,6 +399,8 @@ def find_rulebook_problems(rulebook: Rulebook) -> list[str]:
         *_judgement_count_problems(rulebook.rules),
         *_trigger_problems(rulebook.policy),
         *_zone_name_problems(rulebook.policy),
+        *_capability_problems(rulebook.policy),
+        *_sonar_map_problems(rulebook.policy),
         *_rule_id_problems(rulebook.rules),
     ]
 
@@ -452,6 +483,30 @@ def _zone_name_problems(policy: Policy) -> list[str]:
         if key in seen:
             problems.append(f"Flag-for-review zone '{zone.name}' is listed more than once.")
         seen.add(key)
+    return problems
+
+
+def _capability_problems(policy: Policy) -> list[str]:
+    problems = []
+    seen: set[str] = set()
+    for capability in policy.capabilities:
+        key = capability.name.strip().lower()
+        if key in seen:
+            problems.append(f"Capability '{capability.name}' is listed more than once.")
+        seen.add(key)
+        if any(not pattern.strip() for pattern in capability.path_patterns):
+            problems.append(f"Capability '{capability.name}' has an empty path pattern.")
+    return problems
+
+
+def _sonar_map_problems(policy: Policy) -> list[str]:
+    keys = set(policy.sonar_severity_map)
+    problems = []
+    for key in SONAR_SEVERITY_KEYS:
+        if key not in keys:
+            problems.append(f"The SonarQube severity map is missing the key {key}.")
+    for key in sorted(keys - set(SONAR_SEVERITY_KEYS)):
+        problems.append(f"The SonarQube severity map has an unknown key {key}.")
     return problems
 
 

@@ -20,7 +20,11 @@ from pydantic_classes.da_rulebook_models import Rulebook
 LONG_TEXT_LIMIT = 200
 
 # The keys that name a list item, tried in this order.
-_ITEM_KEYS = ("rule_id", "name", "term")
+_ITEM_KEYS = ("rule_id", "name", "term", "title")
+
+# The catalog is read top to bottom and the first match wins, so its order is part of its meaning.
+# Names are the keys of the diff (a reorder alone would show nothing), so one entry holds the order.
+CATALOG_ORDER_PATH = "policy.capabilities.order"
 
 AREA_CHARTER = "Project charter"
 AREA_REPOSITORY = "Repository and index"
@@ -73,6 +77,9 @@ class TimelineRow:
 def flatten_rulebook(rulebook: Rulebook) -> dict[str, Any]:
     flat: dict[str, Any] = {}
     _flatten(rulebook.model_dump(mode="json"), "", flat)
+    names = [capability.name for capability in rulebook.policy.capabilities]
+    if names:
+        flat[CATALOG_ORDER_PATH] = " > ".join(names)
     return flat
 
 

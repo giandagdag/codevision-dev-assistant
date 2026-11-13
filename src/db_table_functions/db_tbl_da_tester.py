@@ -116,6 +116,17 @@ def ensure_tester_tables(conn: sqlite3.Connection) -> None:
     conn.executescript(_CREATE_TABLES_SQL)
 
 
+def count_kept_cites(conn: sqlite3.Connection) -> dict[str, int]:
+    """How often each rule ID was cited by a kept finding (rejected findings do not count).
+
+    Read only. The Admin console shows it in the "Cited" column (Phase 11b)."""
+    rows = conn.execute(
+        "SELECT cites, COUNT(*) AS total FROM da_tester_findings"
+        " WHERE kept = 1 AND cites <> '' GROUP BY cites"
+    ).fetchall()
+    return {row["cites"]: row["total"] for row in rows}
+
+
 # --- reviews ---
 
 
