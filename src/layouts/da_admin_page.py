@@ -24,6 +24,7 @@ from agents.da_admin_forms import (
     field_bounds,
     rule_counter_text,
 )
+from agents.da_admin_metrics import WINDOW_ALL, WINDOW_LABELS
 from agents.da_admin_sonar import SAMPLE_BANNER, sample_with_mapping
 from pydantic_classes.da_rulebook_models import (
     SONAR_SEVERITY_KEYS,
@@ -878,6 +879,7 @@ NUMBER_LABELS = {
     "build_max_rounds": "Max fix rounds",
     "build_test_timeout_seconds": "Test time limit (seconds)",
     "max_files": "Max files per request",
+    "workspace_max_file_kb": "Largest file the scan reads (KB)",
 }
 
 
@@ -1215,17 +1217,14 @@ def _attention_list(items):
     )
 
 
-def health_block(report, window: str = "all"):
+def health_block(report, window: str = WINDOW_ALL):
     """The window chooser plus the numbers. The chooser re-draws only the part inside adm-health."""
     return html.Div(
         [
             dmc.SegmentedControl(
                 id=WINDOW_ID,
                 value=window,
-                data=[
-                    {"value": "30d", "label": "Last 30 days"},
-                    {"value": "all", "label": "All time"},
-                ],
+                data=[{"value": key, "label": label} for key, label in WINDOW_LABELS.items()],
             ),
             html.Div(health_numbers(report), id=HEALTH_ID),
         ]

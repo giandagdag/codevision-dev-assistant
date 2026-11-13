@@ -12,6 +12,7 @@ import sqlite3
 # Audit event types that mean "the developer pressed Get help" (screens write different ones).
 STATUS_EVENT = "status_changed"
 HELP_EVENTS = ("escalated", "discovery_escalated")
+DISPUTE_EVENT = "finding_disputed"  # a dispute escalates too, but it is not a Get help
 BUILD_KINDS = ("build", "rebuild")  # a "check" run has no Generator, so no first round to judge
 
 
@@ -57,26 +58,25 @@ def highest_record_versions(conn: sqlite3.Connection, since: str | None) -> list
     return [row["top"] for row in rows]
 
 
-def scanned_file_counts(conn: sqlite3.Connection, since: str | None) -> tuple[int, int]:
-    """(distinct request+path pairs scanned, distinct requests with at least one)."""
+def scanned_file_pairs(conn: sqlite3.Connection, since: str | None) -> list[sqlite3.Row]:
+    """Distinct (request, path) pairs scanned in the window (the laptop scan of developer edits)."""
     clause, params = _window("created_at", since)
-    row = conn.execute(
-        "SELECT COUNT(DISTINCT request_id || char(31) || path) AS files,"
-        " COUNT(DISTINCT request_id) AS requests FROM da_workspace_files"
+    return conn.execute(
+        "SELECT DISTINCT request_id, path FROM da_workspace_files"
         f" WHERE kind = 'scanned'{clause}",
         params,
-    ).fetchone()
-    return row["files"], row["requests"]
+    ).fetchall()
 
 
 def help_event_rows(conn: sqlite3.Connection, since: str | None) -> list[sqlite3.Row]:
-    """Audit rows that may be a Get help: the status moves and the escalation events."""
+    """Audit rows that may be a Get help: the status moves, the escalation events and disputes
+    (a dispute also escalates, so the caller must be able to tell the two apart)."""
     clause, params = _window("timestamp", since)
-    marks = ", ".join("?" for _ in HELP_EVENTS)
+    marks = ", ".join("?" for _ in (*HELP_EVENTS, DISPUTE_EVENT))
     return conn.execute(
         "SELECT request_id, event_type, details FROM da_audit_events"
         f" WHERE (event_type = ? OR event_type IN ({marks})){clause}",
-        (STATUS_EVENT, *HELP_EVENTS, *params),
+        (STATUS_EVENT, *HELP_EVENTS, DISPUTE_EVENT, *params),
     ).fetchall()
 
 

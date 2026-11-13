@@ -16,7 +16,8 @@ write down why, and the system keeps every earlier version you can compare or re
 1. Open **Command Prompt** and go to the Developer Assistant folder.
 2. Run the smoke check: `.venv\Scripts\python src\da_smoke_check.py`. Items 31 to 39 must print, then
    `Smoke check passed.`
-3. Start the app and open `/admin` (the path may differ at work, see WF-6).
+3. Start the app with `.venv\Scripts\python src\web\da_home_web_server.py` and open `/admin` (the
+   path may differ at work, see WF-6).
 
 ## WF-1: one shared database
 

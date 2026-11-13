@@ -24,6 +24,7 @@ from db_table_functions.da_db import open_db, to_db_time
 from db_table_functions.db_tbl_da_audit import ensure_audit_table
 from db_table_functions.db_tbl_da_build import ensure_build_tables
 from db_table_functions.db_tbl_da_metrics import (
+    DISPUTE_EVENT,
     STATUS_EVENT,
     closed_build_rows,
     help_event_rows,
@@ -31,7 +32,7 @@ from db_table_functions.db_tbl_da_metrics import (
     kept_findings_by_check_and_severity,
     request_rows,
     review_counts,
-    scanned_file_counts,
+    scanned_file_pairs,
 )
 from db_table_functions.db_tbl_da_tester import count_kept_cites
 from db_table_functions.db_tbl_da_workspace import ensure_workspace_tables
@@ -47,6 +48,7 @@ NO_DATA = "No data yet"
 NO_DATA_PHASE_10 = "No data yet (comes with Phase 10)"
 GET_HELP_LABEL = "Get help only; the other four triggers come with Phase 10"
 ESCALATION_STATUS = "ESCALATION_REQUIRED"
+DISPUTE_OPEN_ITEM = "Disputed Must fix"  # start of the open item a dispute writes (da_tester_flow)
 REQUEST_KINDS = ("new", "enhance", "fix")
 SEVERITY_ORDER = ("must_fix", "should_fix", "fyi")
 RULES_CITED_SHOWN = 5
@@ -115,7 +117,7 @@ def health_report(
         requests = request_rows(conn, since)
         builds = closed_build_rows(conn, since)
         versions = highest_record_versions(conn, since)
-        files, edited_requests = scanned_file_counts(conn, since)
+        pairs = scanned_file_pairs(conn, since)
         help_rows = help_event_rows(conn, since)
         findings = kept_findings_by_check_and_severity(conn, since)
         reviews, unable = review_counts(conn, since)
@@ -127,7 +129,7 @@ def health_report(
         first_round_pass=_pass_rate(builds),
         fix_rounds=_fix_rounds(builds),
         revisions=_revisions(versions),
-        files_edited=_files_edited(files, edited_requests, request_total),
+        files_edited=_files_edited(pairs, {row["request_id"] for row in requests}),
         escalations=_escalations(help_rows, request_total),
         handoffs=Metric("Handoffs", None, NO_DATA_PHASE_10),
         findings_by_check=_findings_by_check(findings),
@@ -200,29 +202,42 @@ def _revisions(versions: list[int]) -> Metric:
     return Metric(label, average, f"{average:.1f} per request")
 
 
-def _files_edited(files: int, edited_requests: int, request_total: int) -> Metric:
+def _files_edited(pairs, request_ids: set[str]) -> Metric:
+    # Only requests created in the window, so the share can never go over 100%.
     label = "Files edited by developers"
-    if not request_total:
+    if not request_ids:
         return _no_data(label)
-    share = 100 * edited_requests / request_total
-    text = f"{files} files; {edited_requests} of {request_total} requests ({share:.0f}%)"
-    return Metric(label, files, text)
+    files = [row for row in pairs if row["request_id"] in request_ids]
+    edited_requests = len({row["request_id"] for row in files})
+    share = 100 * edited_requests / len(request_ids)
+    text = f"{len(files)} files; {edited_requests} of {len(request_ids)} requests ({share:.0f}%)"
+    return Metric(label, len(files), text)
 
 
-def _is_get_help(row) -> bool:
-    if row["event_type"] != STATUS_EVENT:
-        return True  # escalated / discovery_escalated
+def _details(row) -> dict:
     try:
-        return json.loads(row["details"]).get("to") == ESCALATION_STATUS
-    except (ValueError, AttributeError):
+        details = json.loads(row["details"])
+    except (TypeError, ValueError):
+        return {}
+    return details if isinstance(details, dict) else {}
+
+
+def _is_get_help(row, disputed: set[str]) -> bool:
+    if row["event_type"] == DISPUTE_EVENT:
         return False
+    details = _details(row)
+    if row["event_type"] == STATUS_EVENT:
+        # A dispute also moves the request to ESCALATION_REQUIRED: not a Get help.
+        return details.get("to") == ESCALATION_STATUS and row["request_id"] not in disputed
+    return not str(details.get("open_item", "")).startswith(DISPUTE_OPEN_ITEM)
 
 
 def _escalations(help_rows, request_total: int) -> Metric:
     label = "Escalations"
-    if not request_total:
+    if not request_total and not help_rows:
         return _no_data(label)
-    count = len({row["request_id"] for row in help_rows if _is_get_help(row)})
+    disputed = {row["request_id"] for row in help_rows if row["event_type"] == DISPUTE_EVENT}
+    count = len({row["request_id"] for row in help_rows if _is_get_help(row, disputed)})
     return Metric(label, count, str(count), note=GET_HELP_LABEL)
 
 

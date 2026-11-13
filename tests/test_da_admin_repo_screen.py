@@ -46,7 +46,7 @@ def test_read_view_shows_server_settings_and_the_four_fields(make_settings, publ
         "Allowed folders",
         "Workspace markers",
         "New file name pattern",
-        "workspace_max_file_kb",
+        "Largest file the scan reads (KB)",
     ):
         assert word in text
     assert "Showing v1 (active)" in text  # 11-3

@@ -7,7 +7,11 @@ from pathlib import Path
 import pytest
 
 from agents import da_approach_flow as approach_flow
+from agents import da_build_agent as build_agent
+from agents import da_build_flow as build_flow
+from agents import da_build_loop as build_loop
 from agents import da_enhance_flow as enhance
+from agents import da_tester_flow as tester_flow
 from agents.da_admin_metrics import (
     GET_HELP_LABEL,
     NO_DATA,
@@ -39,6 +43,7 @@ from pydantic_classes.da_build_models import (
     TestOutcome,
 )
 from tests.da_approach_play import at_review, discovery_confirmed_id
+from tests.da_build_play import ready_with_workspace
 
 pytestmark = pytest.mark.usefixtures("published_rulebook")
 
@@ -273,6 +278,51 @@ def test_11_41_get_help_from_approach_counts_once_not_twice(db_path, make_settin
     approach_flow.request_help(settings, request_id, view.revision)  # writes status AND event
 
     assert health_report(db_path, WINDOW_ALL).escalations.value == 1
+
+
+def test_a_dispute_is_not_a_get_help_but_a_get_help_next_to_it_still_counts(
+    db_path, make_settings, monkeypatch
+):
+    settings = make_settings()
+    disputed_id = ready_with_workspace(settings)[0]
+    monkeypatch.setattr(build_agent, "FAKE_SWITCHES", frozenset({"review_must_fix_always"}))
+    build_flow.start_build(settings, disputed_id, build_flow.get_revision(settings, disputed_id))
+    assert build_loop.run_build(settings, disputed_id) == "done"
+    view = tester_flow.get_tester_view(settings, disputed_id)
+    must = next(r.finding.finding_id for r in view.rows if r.finding.severity == "must_fix")
+    tester_flow.dispute_finding(
+        settings, disputed_id, build_flow.get_revision(settings, disputed_id), must, "It is fine"
+    )
+
+    assert health_report(db_path, WINDOW_ALL).escalations.value == 0  # a dispute only
+
+    helped = enhance.start_enhance_request(settings)
+    enhance_help(settings, helped.request_id, helped.revision)
+
+    assert health_report(db_path, WINDOW_ALL).escalations.value == 1
+
+
+def test_get_help_shows_even_when_no_request_was_created_in_the_window(db_path, make_settings):
+    settings = make_settings()
+    old = enhance.start_enhance_request(settings)
+    enhance_help(settings, old.request_id, old.revision)  # the help event is stamped now
+    sql(db_path, "UPDATE da_requests SET created_at = ?", (to_db_time(NOW - timedelta(days=400)),))
+
+    report = health_report(db_path, WINDOW_30_DAYS, datetime.now(UTC))
+
+    assert report.requests.text == NO_DATA  # the request itself is older than the window
+    assert report.escalations.value == 1  # but the help was pressed inside it
+
+
+def test_a_recent_scan_on_an_old_request_never_makes_the_share_pass_100(db_path):
+    old = new_request(db_path, NOW - timedelta(days=40))
+    fresh = new_request(db_path, NOW)
+    add_scanned(db_path, old, "a.py", when=NOW)
+    add_scanned(db_path, fresh, "b.py", when=NOW)
+
+    report = health_report(db_path, WINDOW_30_DAYS, NOW)
+
+    assert report.files_edited.text == "1 files; 1 of 1 requests (100%)"
 
 
 def test_another_status_move_is_not_a_get_help(db_path):
