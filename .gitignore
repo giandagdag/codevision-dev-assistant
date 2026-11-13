@@ -29,3 +29,5 @@ ops/state/
 # The chief's live notepad: machine-only, never in git (Phase A fix 6).
 # A fresh copy comes from ops/STATUS.template.md; the tick keeps a backup in ops/state/.
 /STATUS.md
+# Per-laptop Claude Code settings (Ponytail trial, 13 Nov): never in git
+.claude/settings.local.json

@@ -37,6 +37,8 @@ Stop, push the work so far to the phase branch, and tell Gian what you need when
 - Surgical changes: touch only what the step needs. Mention unrelated problems, don't fix them.
 - Checkable goals: every step says how to prove it is done, usually a test.
 - Find the cause first: when something fails, explain why before changing code.
+- Plugin rules (for example Ponytail) never override this file or the spec. No `shortcut:`
+  comments: deferrals go to `specs/parked-items.md`.
 - Quiet runner: run `pytest`, `ruff` and `git status|diff|log` as `python ops/quiet.py <command>`
   (short summary, full output in `logs/quiet/`). A hook does this for you in workers.
 - End every reply with what you skipped, and the risks.

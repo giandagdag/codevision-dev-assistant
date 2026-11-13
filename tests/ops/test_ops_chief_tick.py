@@ -591,3 +591,24 @@ def test_fix5c_fable_bar_is_read_from_the_raw_usage_reading(tmp_path):
     assert c.fable_bar_percent(tmp_path / "missing.json") is None
     raw.write_text(json.dumps({"limits": [{"kind": "weekly_all", "percent": 3}]}), encoding="utf-8")
     assert c.fable_bar_percent(raw) is None
+
+
+def test_fix5f_a_guard_blind_issue_closes_itself_when_the_usage_reads_again():
+    calls = []
+
+    def gh(args):
+        calls.append(args)
+        if args[:2] == ["issue", "list"]:
+            return json.dumps([{"number": 67, "title": c.GUARD_BLIND_TITLE},
+                               {"number": 58, "title": "Phase 11 WF-1: shared database"}])
+        return ""
+    c.close_guard_blind(gh, "13 Nov 18:51 SGT")
+    closed = [a for a in calls if a[:2] == ["issue", "close"]]
+    assert [a[2] for a in closed] == ["67"]  # only the guard issue, never a real question
+
+
+def test_fix5f_a_gh_failure_while_closing_is_ignored():
+    def gh(args):
+        raise RuntimeError("gh down")
+    c.close_guard_blind(gh, "now")  # no exception
+
