@@ -13,16 +13,31 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from agents.da_approach_checks import library_name
 from db_table_functions.db_tbl_da_rulebook import (
     RulebookError,
     StaleSaveError,
     get_version,
+    next_rule_id,
     save_new_version,
 )
-from pydantic_classes.da_rulebook_models import Charter, Policy, Rulebook
+from pydantic_classes.da_rulebook_models import (
+    MAX_JUDGEMENT_RULES,
+    Charter,
+    GoldenExample,
+    Policy,
+    Rule,
+    Rulebook,
+    find_rulebook_problems,
+)
 
 TAB_CHARTER = "charter"
 TAB_BUILD = "build"
+TAB_UI = "ui"
+TAB_CODING = "coding"
+# The rule table each rule tab edits (the kind is fixed by the tab).
+KIND_OF_TAB = {TAB_UI: "ui_convention", TAB_CODING: "judgement"}
+_RULE_TEXT_FIELDS = ("title", "why", "good_example", "bad_example", "source")
 
 RESULT_SAVED = "saved"
 RESULT_PROBLEMS = "problems"
@@ -85,12 +100,27 @@ def field_bounds(field_name: str) -> str:
     return ""
 
 
+class FormError(ValueError):
+    """A form value that cannot become a rulebook part. Carries every problem in plain words."""
+
+    def __init__(self, problems: list[str]):
+        super().__init__("; ".join(problems))
+        self.problems = problems
+
+
 def rulebook_from_form(base: Rulebook, tab: str, form: dict) -> Rulebook:
-    """The rulebook with this tab's form values applied. Raises ValidationError on bad values."""
+    """The rulebook with this tab's form values applied.
+
+    Raises ValidationError or FormError on bad values."""
     if tab == TAB_CHARTER:
         return base.model_copy(update={"charter": _charter_from_form(base.charter, form)})
     if tab == TAB_BUILD:
         return base.model_copy(update={"policy": _policy_from_build_form(base.policy, form)})
+    if tab == TAB_UI:
+        rules = _rules_from_form(base.rules, "ui_convention", form)
+        return base.model_copy(update={"rules": rules})
+    if tab == TAB_CODING:
+        return _coding_from_form(base, form)
     raise ValueError(f"Unknown tab '{tab}'.")
 
 
@@ -105,6 +135,14 @@ def save_from_form(
         edited = rulebook_from_form(base.rulebook, tab, form)
     except ValidationError as error:
         return SaveResult(RESULT_PROBLEMS, problems=_plain_errors(error))
+    except FormError as error:
+        return SaveResult(RESULT_PROBLEMS, problems=error.problems)
+    tab_problems = _tab_problems(tab, edited)
+    if tab_problems:
+        # The whole list at once: this tab's checks plus the Phase 1 checks (spec 11-14).
+        return SaveResult(
+            RESULT_PROBLEMS, problems=[*tab_problems, *find_rulebook_problems(edited)]
+        )
     try:
         saved = save_new_version(db_path, edited, base_version, user_id, note)
     except StaleSaveError as error:
@@ -190,6 +228,141 @@ def _clean_list(value) -> list[str]:
     """A list of words from a list, or from text with one item per line. Blank items are dropped."""
     items = value.splitlines() if isinstance(value, str) else value
     return [text for text in (str(item).strip() for item in items) if text]
+
+
+# --- UI standards and Coding standards (Phase 11b) ---
+
+
+@dataclass(frozen=True)
+class AddRowResult:
+    """What the Add row button on a rule table got: a new rule ID, or a message and no row."""
+
+    rule_id: str = ""
+    message: str = ""
+
+
+def add_rule_row(db_path: Path, kind: str, rows_now: int) -> AddRowResult:
+    """Hand out the next rule ID for a new row (spec 11-12), unless the judgement cap is reached.
+
+    The number is used up at once, even if Cancel follows (Phase 1 rule R7). rows_now is how many
+    rules of this kind the draft form holds, so the cap counts unsaved rows too (11-13)."""
+    if kind == "judgement" and rows_now >= MAX_JUDGEMENT_RULES:
+        return AddRowResult(
+            message=f"There are already {MAX_JUDGEMENT_RULES} judgement rules, the most the pilot "
+            "allows. Remove one before adding another."
+        )
+    return AddRowResult(rule_id=next_rule_id(db_path, kind))
+
+
+def rule_counter_text(kind: str, count: int) -> str:
+    """"7 of 10" for judgement rules; a plain count for UI rules, which have no cap."""
+    if kind == "judgement":
+        return f"{count} of {MAX_JUDGEMENT_RULES}"
+    return str(count)
+
+
+def _rules_from_form(current: list[Rule], kind: str, form: dict) -> list[Rule]:
+    """Replace the rules of this kind with the form rows. Rules of the other kind stay as they are.
+
+    A row that holds only its ID (Add row, nothing typed) is dropped; its ID stays used up."""
+    if "rules" not in form:
+        return list(current)
+    rows, problems = [], []
+    for row in form["rules"]:
+        rule_id = str(row.get("rule_id", "")).strip()
+        typed = {name: str(row.get(name, "")).strip() for name in _RULE_TEXT_FIELDS}
+        tags = _clean_list(row.get("tags", []))
+        severity = str(row.get("severity", "")).strip()
+        if not any(typed.values()) and not tags:
+            continue  # nothing typed: an untouched new row (or a blank one) is dropped
+        if not rule_id:
+            problems.append("A rule row has no rule ID. Use Add row to get one.")
+            continue
+        try:
+            rows.append(
+                Rule.model_validate(
+                    {"rule_id": rule_id, "kind": kind, "tags": tags, "severity": severity, **typed}
+                )
+            )
+        except ValidationError as error:
+            problems.extend(f"{rule_id} {line}" for line in _plain_errors(error))
+    if problems:
+        raise FormError(problems)
+    return _merge_rules(current, kind, rows)
+
+
+def _merge_rules(current: list[Rule], kind: str, rows: list[Rule]) -> list[Rule]:
+    # Keep each rule's place so an unchanged form gives an identical rulebook ("No changes").
+    queue = iter(rows)
+    merged = []
+    for rule in current:
+        if rule.kind != kind:
+            merged.append(rule)
+        elif (replacement := next(queue, None)) is not None:
+            merged.append(replacement)
+    merged.extend(queue)
+    return merged
+
+
+def _coding_from_form(base: Rulebook, form: dict) -> Rulebook:
+    data = base.policy.model_dump()
+    if "approved_libraries" in form:
+        data["approved_libraries"] = _clean_list(form["approved_libraries"])
+    if "blocked_imports" in form:
+        data["build_blocked_imports"] = _clean_list(form["blocked_imports"])
+    if "sonar_map" in form:
+        data["sonar_severity_map"] = {
+            str(key).strip(): str(value).strip() for key, value in form["sonar_map"].items()
+        }
+    update = {
+        "rules": _rules_from_form(base.rules, "judgement", form),
+        "policy": Policy.model_validate(data),
+    }
+    if "golden_examples" in form:
+        update["golden_examples"] = [
+            GoldenExample.model_validate(row) for row in _golden_rows(form["golden_examples"])
+        ]
+    return base.model_copy(update=update)
+
+
+def _golden_rows(rows: list[dict]) -> list[dict]:
+    cleaned = [
+        {
+            "title": str(row.get("title", "")).strip(),
+            "tags": _clean_list(row.get("tags", [])),
+            "code": str(row.get("code", "")).strip(),
+            "why": str(row.get("why", "")).strip(),
+        }
+        for row in rows
+    ]
+    return [row for row in cleaned if row["title"] or row["code"] or row["tags"] or row["why"]]
+
+
+def library_overlap_problems(policy: Policy) -> list[str]:
+    """A library on both the approved list and the blocked list (spec 11-14). "Blocked wins" in
+    Build, so the Admin must decide which list it belongs on. Compared the way Approach compares
+    names: lower case, "-" and "_" alike."""
+    blocked = {library_name(name) for name in policy.build_blocked_imports}
+    return [
+        f"Library '{name}' is on both the approved list and the blocked list. "
+        "Take it off one of them."
+        for name in policy.approved_libraries
+        if library_name(name) in blocked
+    ]
+
+
+def _tab_problems(tab: str, rulebook: Rulebook) -> list[str]:
+    """Checks that belong to one tab only, so they can never lock a save on another tab."""
+    if tab != TAB_CODING:
+        return []
+    titles: set[str] = set()
+    problems = library_overlap_problems(rulebook.policy)
+    for example in rulebook.golden_examples:
+        key = example.title.strip().lower()
+        if key in titles:
+            problems.append(f"Golden example '{example.title}' is listed more than once.")
+        titles.add(key)
+    return problems
 
 
 # --- Results ---

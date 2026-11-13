@@ -189,8 +189,8 @@ def test_an_old_database_without_the_column_gets_it(tmp_path):
             " created_at TEXT NOT NULL)"
         )
         conn.execute(
-            "INSERT INTO da_unassigned_files VALUES"
-            " (1, 'a.py', 'Limits', 'CVDA-2026-0001', 'open', '', NULL, '2026-11-01T09:00:00+00:00')"
+            "INSERT INTO da_unassigned_files VALUES (1, 'a.py', 'Limits', 'CVDA-2026-0001',"
+            " 'open', '', NULL, '2026-11-01T09:00:00+00:00')"
         )
         ensure_enhance_tables(conn)
 
