@@ -10,7 +10,7 @@ What the words mean (fixed in specs/phase-11c-plan.md):
   (layer A has no problems, and layer B ran, did not time out, had tests and none failed).
 - Fix rounds: rounds used minus the first one.
 - Get help: a request that moved to ESCALATION_REQUIRED, or has an escalation event (the Enhance
-  screen writes only the event).
+  screen writes only the event). A Tester dispute also escalates but is not a Get help: left out.
 """
 
 import json
@@ -48,7 +48,9 @@ NO_DATA = "No data yet"
 NO_DATA_PHASE_10 = "No data yet (comes with Phase 10)"
 GET_HELP_LABEL = "Get help only; the other four triggers come with Phase 10"
 ESCALATION_STATUS = "ESCALATION_REQUIRED"
-DISPUTE_OPEN_ITEM = "Disputed Must fix"  # start of the open item a dispute writes (da_tester_flow)
+# Start of the open item a dispute writes. Keep in step with DISPUTE_PREFIX in da_tester_flow.py;
+# the dispute test drives the real flow, so a reworded text fails there first.
+DISPUTE_OPEN_ITEM = "Disputed Must fix"
 REQUEST_KINDS = ("new", "enhance", "fix")
 SEVERITY_ORDER = ("must_fix", "should_fix", "fyi")
 RULES_CITED_SHOWN = 5
