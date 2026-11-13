@@ -6,8 +6,10 @@ Run: .venv\\Scripts\\python src\\da_smoke_check.py
 import sqlite3
 import sys
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 
 from agents import da_approach_flow as approach
 from agents import da_build_flow as build
@@ -19,6 +21,8 @@ from agents import da_refine_revision as refine_revision
 from agents import da_safety_net_flow as net_flow
 from agents import da_tester_flow as tester_flow
 from agents import da_workspace_flow as workspace
+from agents.da_admin_catalog import queue_rows, resolve_row
+from agents.da_admin_cited import cited_counts
 from agents.da_admin_diff import diff_rulebooks
 from agents.da_admin_forms import RESULT_SAVED, save_from_form
 from agents.da_discover_flow import confirm_discovery, start_discovery
@@ -37,15 +41,21 @@ from da_llm_ping import ping
 from da_load_starter_rulebook import load_starter_rulebook
 from db_table_functions.da_db import DatabaseBusyError, open_db
 from db_table_functions.db_tbl_da_audit import add_audit_event, list_audit_events
-from db_table_functions.db_tbl_da_build import read_rounds
-from db_table_functions.db_tbl_da_enhance import read_enhance_state, read_safety_nets
+from db_table_functions.db_tbl_da_build import ensure_build_tables, read_rounds
+from db_table_functions.db_tbl_da_enhance import (
+    add_unassigned,
+    read_enhance_state,
+    read_safety_nets,
+)
 from db_table_functions.db_tbl_da_requests import create_request, get_rulebook_for_request
 from db_table_functions.db_tbl_da_rulebook import (
     SEED_RULEBOOK_FILE,
     RulebookError,
+    get_active_version,
     get_version,
     list_versions,
     load_rulebook_file,
+    next_rule_id,
     publish_first_version,
     restore_version,
     save_new_version,
@@ -206,6 +216,48 @@ def _run_admin_steps(db_path: Path) -> None:
     if changes.paths != ["policy.build_max_rounds"]:
         raise RulebookError(f"Expected one changed path, got {changes.paths}")
     print(f"33. What changed v1 to v2: {', '.join(changes.paths)}")
+    _run_admin_11b_steps(db_path)
+
+
+def _run_admin_11b_steps(db_path: Path) -> None:
+    """Phase 11b: a rule through the form functions, Cited counts, one queue row (34 to 36)."""
+    active = get_active_version(db_path)
+    rows = [r.model_dump() for r in active.rulebook.rules if r.kind == "ui_convention"]
+    new_id = next_rule_id(db_path, "ui_convention")
+    rows.append(
+        {
+            "rule_id": new_id,
+            "title": "Show amounts with two decimals",
+            "tags": ["amounts"],
+            "severity": "fyi",
+            "why": "Made-up smoke rule: amounts are read faster with a fixed look.",
+            "good_example": "1,250.00",
+            "bad_example": "1250",
+            "source": "Smoke check",
+        }
+    )
+    saved = save_from_form(
+        db_path, "ui", {"rules": rows}, active.version_number, SAMPLE_ADMIN, "Smoke rule"
+    )
+    if saved.kind != RESULT_SAVED:
+        raise RulebookError(f"The UI standards form did not save: {saved.kind}")
+    print(f"34. UI rule {new_id} added through the form, saved as v{saved.version_number}")
+
+    print(f"35. Cited counts read from the findings table: {len(cited_counts(db_path))} rule(s)")
+
+    request = create_request(db_path, SAMPLE_TITLE, SAMPLE_DEVELOPER)
+    capability = get_active_version(db_path).rulebook.policy.capabilities[0].name
+    with open_db(db_path) as conn:
+        ensure_build_tables(conn)
+        add_unassigned(
+            conn, "src/x/smoke_new.py", capability, request.request_id, datetime.now(UTC)
+        )
+    admin_settings = SimpleNamespace(db_path=db_path)
+    row = queue_rows(admin_settings)[0]
+    result = resolve_row(admin_settings, row.unassigned_id, "confirmed", capability, SAMPLE_ADMIN)
+    if result.kind != "resolved" or queue_rows(admin_settings):
+        raise RulebookError("The Unassigned queue row was not closed.")
+    print(f"36. Unassigned row {row.path} confirmed by {SAMPLE_ADMIN}")
 
 
 def _run_understand_steps(db_path: Path, settings: Settings) -> None:
