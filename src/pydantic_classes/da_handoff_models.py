@@ -42,6 +42,56 @@ class Blocker(_Shape):
     text: str
 
 
+class CriterionFact(_Shape):
+    """One acceptance criterion with its test counts from the last tested run."""
+
+    criterion_id: str
+    tests: int = Field(default=0, ge=0)
+    passed: int = Field(default=0, ge=0)
+
+
+class FileFact(_Shape):
+    """One planned file in the PR summary."""
+
+    path: str
+    is_new: bool = False
+    hand_edited: bool = False
+
+
+class SummaryFacts(_Shape):
+    """Everything the PR summary needs, as plain data (spec section 5). One field group per line
+    of the summary. `gather_summary_facts` fills it from the tables; the builder only formats."""
+
+    request_id: str = Field(pattern=REQUEST_ID_PATTERN)
+    record_version: int = Field(default=1, ge=1)
+    summary: str = ""
+    kind: Literal["new", "enhance", "fix"] = "new"
+    capability: str = ""
+    named_senior: str = ""
+    capability_confirmed: bool = True
+    follows_request_id: str | None = None
+    criteria: list[CriterionFact] = Field(default_factory=list)
+    yours: int = Field(default=0, ge=0)  # tests the developer wrote
+    safety_net: int = Field(default=0, ge=0)  # Phase 9 safety-net tests
+    tester_label: str = ""
+    must_fixed: int = Field(default=0, ge=0)
+    should_fixed: int = Field(default=0, ge=0)
+    accepted: int = Field(default=0, ge=0)
+    fyi: int = Field(default=0, ge=0)
+    overruled: int = Field(default=0, ge=0)
+    overruled_by: str = ""
+    files: list[FileFact] = Field(default_factory=list)
+    reuses: list[str] = Field(default_factory=list)
+    decisions: list[str] = Field(default_factory=list)
+    accepted_risks: list[str] = Field(default_factory=list)
+    zones: list[str] = Field(default_factory=list)
+    gaps: list[str] = Field(default_factory=list)
+    impact_unchecked: bool = False
+    senior_involvement: list[str] = Field(default_factory=list)
+    build_number: int = Field(default=0, ge=0)
+    checked_on: str = ""
+
+
 class HandoffState(_Shape):
     """Handoff's own small state (da_handoff_state). Own revision, like the Refine state."""
 
