@@ -24,6 +24,7 @@ from agents.da_admin_forms import (
     field_bounds,
     rule_counter_text,
 )
+from agents.da_admin_metrics import WINDOW_ALL, WINDOW_LABELS
 from agents.da_admin_sonar import SAMPLE_BANNER, sample_with_mapping
 from pydantic_classes.da_rulebook_models import (
     SONAR_SEVERITY_KEYS,
@@ -58,7 +59,7 @@ ADMIN_TABS: tuple[tuple[str, str, str], ...] = (
     (TAB_BUILD, "Build and test", "11a"),
     (TAB_HISTORY, "Version history", "11a"),
 )
-EDITABLE_TABS = (TAB_CHARTER, TAB_CAPABILITY, TAB_UI, TAB_CODING, TAB_BUILD)
+EDITABLE_TABS = (TAB_CHARTER, TAB_REPO, TAB_CAPABILITY, TAB_UI, TAB_CODING, TAB_BUILD)
 
 CHARTER_LISTS: tuple[tuple[str, str], ...] = (
     ("in_scope", "In scope"),
@@ -104,8 +105,12 @@ def admin_page(
     history_rows=(),
     cited: dict[str, int] | None = None,
     queue: dict | None = None,
+    overview=None,
+    report=None,
+    server: list[tuple[str, str]] | None = None,
 ) -> html.Div:
-    """The console: 8 tabs, Overview first. 11b and 11c tabs show a plain "comes later" line."""
+    """The console: 8 tabs, Overview first. A tab not built yet shows a plain "comes later" line.
+    `overview` and `report` (Phase 11c) fill the Overview tab; without them it says so."""
     return html.Div(
         [
             dmc.Title("Admin console", order=3, c=da_styles.NAVY),
@@ -119,7 +124,9 @@ def admin_page(
                     ),
                     *[
                         dmc.TabsPanel(
-                            _tab_body(tab, version, history_rows, cited, queue),
+                            _tab_body(
+                                tab, version, history_rows, cited, queue, overview, report, server
+                            ),
                             value=tab,
                             pt="md",
                         )
@@ -151,9 +158,21 @@ def version_line(version: RulebookVersion, active: bool = True) -> dmc.Text:
     )
 
 
-def _tab_body(tab: str, version: RulebookVersion, rows=(), cited=None, queue=None):
+def _tab_body(
+    tab: str,
+    version: RulebookVersion,
+    rows=(),
+    cited=None,
+    queue=None,
+    overview=None,
+    report=None,
+    server=None,
+):
+    if tab == TAB_OVERVIEW and overview is not None and report is not None:
+        return html.Div(overview_view(version, overview, report), id=body_id(TAB_OVERVIEW))
     if tab in EDITABLE_TABS:
-        return html.Div(tab_content(tab, version, cited=cited, queue=queue), id=body_id(tab))
+        content = tab_content(tab, version, cited=cited, queue=queue, server=server)
+        return html.Div(content, id=body_id(tab))
     if tab == TAB_HISTORY:
         return html.Div(history_view(rows), id=body_id(TAB_HISTORY))
     phase = next(built for name, _, built in ADMIN_TABS if name == tab)
@@ -169,12 +188,16 @@ def tab_content(
     active: bool = True,
     cited: dict[str, int] | None = None,
     queue: dict | None = None,
+    server: list[tuple[str, str]] | None = None,
 ):
     """One editable tab: notice lines, the view or the form, and the buttons that fit the mode.
 
     `cited` is {rule_id: count} for the Cited column of the rule tables (read only). `queue` is
-    the Unassigned queue data for the Capability catalog tab (see queue_block)."""
-    if tab in (TAB_UI, TAB_CODING):
+    the Unassigned queue data for the Capability catalog tab (see queue_block). `server` is the
+    read-only server settings list of the Repository and index tab."""
+    if tab == TAB_REPO:
+        body = repo_view(version, server, editable, draft, active)
+    elif tab in (TAB_UI, TAB_CODING):
         body = rules_view(tab, version, editable, draft, active, cited or {})
     elif tab == TAB_CAPABILITY:
         body = catalog_view(version, editable, draft, active, queue)
@@ -856,6 +879,7 @@ NUMBER_LABELS = {
     "build_max_rounds": "Max fix rounds",
     "build_test_timeout_seconds": "Test time limit (seconds)",
     "max_files": "Max files per request",
+    "workspace_max_file_kb": "Largest file the scan reads (KB)",
 }
 
 
@@ -863,7 +887,9 @@ def _number_fields(policy: Policy, names: tuple[str, ...], editable: bool, draft
     return dmc.Stack([_number_field(policy, n, editable, draft) for n in names], gap=2)
 
 
-def _number_field(policy: Policy, name: str, editable: bool, draft: dict | None):
+def _number_field(
+    policy: Policy, name: str, editable: bool, draft: dict | None, tab: str = TAB_BUILD
+):
     value = str(_draft(draft, name, getattr(policy, name)))
     hint = field_bounds(name)
     label = NUMBER_LABELS.get(name, name)
@@ -873,8 +899,69 @@ def _number_field(policy: Policy, name: str, editable: bool, draft: dict | None)
         label=label,
         description=f"allowed: {hint}" if hint else None,
         value=value,
-        id={"type": "adm-field", "tab": TAB_BUILD, "name": name},
+        id={"type": "adm-field", "tab": tab, "name": name},
         size="xs",
+    )
+
+
+# --- Repository and index (Phase 11c, spec 11) ---
+
+REPO_LIST_TABLES = (
+    ("allowed_folders", "Allowed folders"),
+    ("workspace_markers", "Workspace markers"),
+)
+REPO_PATTERN = "new_file_name_pattern"
+REPO_SIZE = "workspace_max_file_kb"
+
+
+def repo_view(
+    version: RulebookVersion,
+    server: list[tuple[str, str]] | None,
+    editable: bool = False,
+    draft: dict | None = None,
+    active: bool = True,
+):
+    """Read-only server settings, then the four editable fields. `server` is (name, shown value)."""
+    policy = version.rulebook.policy
+    settings_lines = [
+        dmc.Text(f"{name}: {value}", size="sm") for name, value in (server or [])
+    ]
+    pattern = _draft(draft, REPO_PATTERN, policy.new_file_name_pattern)
+    if editable:
+        pattern_widget = dmc.TextInput(
+            label="New file name pattern (a regular expression)",
+            value=pattern,
+            id={"type": "adm-field", "tab": TAB_REPO, "name": REPO_PATTERN},
+            size="xs",
+        )
+    else:
+        pattern_widget = dmc.Text(f"New file name pattern: {pattern}", size="sm")
+    return html.Div(
+        [
+            version_line(version, active),
+            _section(
+                "Server settings (read only; they live in .env, not in the rulebook)",
+                dmc.Stack(settings_lines, gap=2),
+            ),
+            *[
+                _section(
+                    title,
+                    list_table(
+                        TAB_REPO,
+                        table,
+                        (TEXT_COLUMN,),
+                        _text_rows(_draft(draft, table, getattr(policy, table))),
+                        editable,
+                    ),
+                )
+                for table, title in REPO_LIST_TABLES
+            ],
+            _section("New file name pattern", pattern_widget),
+            _section(
+                "Largest file the laptop scan reads",
+                _number_field(policy, REPO_SIZE, editable, draft, TAB_REPO),
+            ),
+        ]
     )
 
 
@@ -1051,3 +1138,107 @@ def _section(title: str, body):
     return html.Div(
         [dmc.Text(title, fw=600, c=da_styles.NAVY, size="sm"), body], style=da_styles.PANEL_SECTION
     )
+
+
+# --- Overview (Phase 11c): rulebook areas, Needs attention, health numbers. Read only. ---
+
+HEALTH_ID = "adm-health"
+WINDOW_ID = "adm-window"
+GOTO_TYPE = "adm-goto"
+STATUS_COLORS = {"green": "green", "amber": "yellow", "red": "red"}
+
+
+def goto_id(tab: str, n: int) -> dict:
+    # n keeps every id unique; the callback reads only "tab" from the clicked button.
+    return {"type": GOTO_TYPE, "tab": tab, "n": n}
+
+
+def _tab_of_area(area: str) -> str:
+    return next(tab for tab, label, _ in ADMIN_TABS if label == area)
+
+
+def overview_view(version: RulebookVersion, overview, report, active: bool = True):
+    """The Overview tab. `overview` is an Overview (da_admin_overview), `report` a HealthReport."""
+    return html.Div(
+        [
+            version_line(version, active),
+            _section("Rulebook areas", _areas_table(overview.areas)),
+            _section("Needs attention", _attention_list(overview.attention)),
+            _section("Health numbers", health_block(report)),
+        ]
+    )
+
+
+def _areas_table(areas):
+    head = dmc.TableThead(
+        dmc.TableTr([dmc.TableTh(name) for name in ("Area", "Summary", "Status", "Last changed")])
+    )
+    rows = [
+        dmc.TableTr(
+            [
+                dmc.TableTd(
+                    dmc.Button(
+                        row.area,
+                        id=goto_id(_tab_of_area(row.area), 1000 + index),
+                        variant="subtle",
+                        size="xs",
+                    )
+                ),
+                dmc.TableTd(row.summary),
+                dmc.TableTd(dmc.Badge(row.status, color=STATUS_COLORS.get(row.status, "gray"))),
+                dmc.TableTd(row.last_changed),
+            ]
+        )
+        for index, row in enumerate(areas)
+    ]
+    return dmc.Table([head, dmc.TableTbody(rows)])
+
+
+def _attention_list(items):
+    if not items:
+        return dmc.Text("Nothing needs attention.", size="sm", c=da_styles.MUTED)
+    return dmc.Stack(
+        [
+            dmc.Group(
+                [
+                    dmc.Badge(item.level, color="red" if item.level == "red" else "yellow"),
+                    dmc.Text(item.text, size="sm"),
+                    dmc.Button(
+                        f"Open {item.area}",
+                        id=goto_id(_tab_of_area(item.area), index),
+                        variant="subtle",
+                        size="xs",
+                    ),
+                ]
+            )
+            for index, item in enumerate(items)
+        ],
+        gap="xs",
+    )
+
+
+def health_block(report, window: str = WINDOW_ALL):
+    """The window chooser plus the numbers. The chooser re-draws only the part inside adm-health."""
+    return html.Div(
+        [
+            dmc.SegmentedControl(
+                id=WINDOW_ID,
+                value=window,
+                data=[{"value": key, "label": label} for key, label in WINDOW_LABELS.items()],
+            ),
+            html.Div(health_numbers(report), id=HEALTH_ID),
+        ]
+    )
+
+
+def health_numbers(report):
+    lines = []
+    for metric in report.all_metrics:
+        parts = [dmc.Text(f"{metric.label}: {metric.text}", size="sm")]
+        if metric.items:
+            shown = ", ".join(f"{name} {count}" for name, count in metric.items)
+            parts.append(dmc.Text(shown, size="xs", c=da_styles.MUTED))
+        if metric.note:
+            parts.append(dmc.Text(metric.note, size="xs", c=da_styles.MUTED))
+        lines.append(html.Div(parts))
+    return dmc.Stack(lines, gap="xs")

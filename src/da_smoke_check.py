@@ -25,6 +25,8 @@ from agents.da_admin_catalog import queue_rows, resolve_row
 from agents.da_admin_cited import cited_counts
 from agents.da_admin_diff import diff_rulebooks
 from agents.da_admin_forms import RESULT_SAVED, save_from_form
+from agents.da_admin_metrics import WINDOW_ALL, health_report
+from agents.da_admin_overview import build_overview
 from agents.da_discover_flow import confirm_discovery, start_discovery
 from agents.da_llm_client import LLMClient, LLMClientError, get_llm_client
 from agents.da_search_index import FakeSearchIndex, IndexData, IndexPiece, search_safely
@@ -258,6 +260,27 @@ def _run_admin_11b_steps(db_path: Path) -> None:
     if result.kind != "resolved" or queue_rows(admin_settings):
         raise RulebookError("The Unassigned queue row was not closed.")
     print(f"36. Unassigned row {row.path} confirmed by {SAMPLE_ADMIN}")
+    _run_admin_11c_steps(db_path, admin_settings)
+
+
+def _run_admin_11c_steps(db_path: Path, admin_settings) -> None:
+    """Phase 11c: Repository form, Overview and health numbers, all plain code (37 to 39)."""
+    active = get_active_version(db_path)
+    policy = active.rulebook.policy
+    form = {"workspace_max_file_kb": str(policy.workspace_max_file_kb + 1)}
+    saved = save_from_form(db_path, "repo", form, active.version_number, SAMPLE_ADMIN, "Smoke repo")
+    if saved.kind != RESULT_SAVED:
+        raise RulebookError(f"The Repository form did not save: {saved.kind}")
+    print(f"37. Repository form saved v{saved.version_number}")
+
+    overview = build_overview(admin_settings)
+    print(
+        f"38. Overview: {len(overview.areas)} areas, "
+        f"{len(overview.attention)} line(s) in Needs attention"
+    )
+
+    report = health_report(db_path, WINDOW_ALL)
+    print(f"39. Health numbers: requests {report.requests.text}; handoffs {report.handoffs.text}")
 
 
 def _run_understand_steps(db_path: Path, settings: Settings) -> None:

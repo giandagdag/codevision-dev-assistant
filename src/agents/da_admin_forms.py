@@ -36,6 +36,7 @@ TAB_BUILD = "build"
 TAB_UI = "ui"
 TAB_CODING = "coding"
 TAB_CAPABILITY = "capability"
+TAB_REPO = "repo"
 # The rule table each rule tab edits (the kind is fixed by the tab).
 KIND_OF_TAB = {TAB_UI: "ui_convention", TAB_CODING: "judgement"}
 _RULE_TEXT_FIELDS = ("title", "why", "good_example", "bad_example", "source")
@@ -72,6 +73,10 @@ ADVANCED_LIMIT_FIELDS: tuple[str, ...] = (
     "admin_unassigned_stale_days",
 )
 _MODEL_FIELDS = ("generator_model", "tester_model")
+# Repository and index (Phase 11c): the four editable Policy fields (spec 11).
+REPO_LIST_FIELDS = ("allowed_folders", "workspace_markers")
+REPO_NUMBER_FIELD = "workspace_max_file_kb"
+REPO_PATTERN_FIELD = "new_file_name_pattern"
 _CHARTER_TEXT_LISTS = ("in_scope", "out_of_scope", "architecture_principles", "constraints")
 
 
@@ -124,6 +129,8 @@ def rulebook_from_form(base: Rulebook, tab: str, form: dict) -> Rulebook:
         return _coding_from_form(base, form)
     if tab == TAB_CAPABILITY:
         return base.model_copy(update={"policy": _policy_from_catalog_form(base.policy, form)})
+    if tab == TAB_REPO:
+        return base.model_copy(update={"policy": _policy_from_repo_form(base.policy, form)})
     raise ValueError(f"Unknown tab '{tab}'.")
 
 
@@ -199,6 +206,19 @@ def _policy_from_build_form(current: Policy, form: dict) -> Policy:
         data["flag_review_zones"] = _zone_rows(form["zones"])
     if "protected_files" in form:
         data["protected_files"] = _clean_list(form["protected_files"])
+    return Policy.model_validate(data)
+
+
+def _policy_from_repo_form(current: Policy, form: dict) -> Policy:
+    """Repository and index: only these four fields change; everything else is kept as it is."""
+    data = current.model_dump()
+    for name in REPO_LIST_FIELDS:
+        if name in form:
+            data[name] = _clean_list(form[name])
+    if REPO_PATTERN_FIELD in form:
+        data[REPO_PATTERN_FIELD] = str(form[REPO_PATTERN_FIELD] or "").strip()
+    if REPO_NUMBER_FIELD in form:
+        data[REPO_NUMBER_FIELD] = _number(form[REPO_NUMBER_FIELD])
     return Policy.model_validate(data)
 
 

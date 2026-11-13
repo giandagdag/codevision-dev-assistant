@@ -116,13 +116,16 @@ def ensure_tester_tables(conn: sqlite3.Connection) -> None:
     conn.executescript(_CREATE_TABLES_SQL)
 
 
-def count_kept_cites(conn: sqlite3.Connection) -> dict[str, int]:
+def count_kept_cites(conn: sqlite3.Connection, since: str | None = None) -> dict[str, int]:
     """How often each rule ID was cited by a kept finding (rejected findings do not count).
 
-    Read only. The Admin console shows it in the "Cited" column (Phase 11b)."""
+    Read only. The Admin console shows it in the "Cited" column (Phase 11b) and in "Rules cited"
+    on the Overview (Phase 11c). `since` is database time text; None means all time."""
+    window = "" if since is None else " AND created_at >= ?"
     rows = conn.execute(
         "SELECT cites, COUNT(*) AS total FROM da_tester_findings"
-        " WHERE kept = 1 AND cites <> '' GROUP BY cites"
+        f" WHERE kept = 1 AND cites <> ''{window} GROUP BY cites",
+        () if since is None else (since,),
     ).fetchall()
     return {row["cites"]: row["total"] for row in rows}
 
