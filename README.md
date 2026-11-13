@@ -634,8 +634,7 @@ Spec `specs/phase-11-admin-console.md`, plan `specs/phase-11a-plan.md`.
   zones are gone from screens and new versions; old versions still load. Triggers are now five.
 - **Model per role.** `generator_model` and `tester_model` in Build and test win over `.env` for
   requests pinned to that version (empty = use `.env`).
-- **Smoke check** items 31 to 33 (form save, restore, one changed path). Not yet: Overview,
-  metrics, work-test doc (11c) and the other tabs (11b).
+- **Smoke check** items 31 to 33 (form save, restore, one changed path).
 
 ## How Phase 11b works
 
@@ -659,7 +658,28 @@ Phase 11b is the second part of the **Admin console**: three more tabs, built on
   closes it as changed and stores the capability. Both offer to add the path as a pattern (needs a
   change note); no offer when a capability already matches. **Show resolved** lists the last 50.
 - **Smoke check** items 34 to 36 (a UI rule through the form, Cited counts, one queue row confirmed).
-  Not yet: Overview, metrics, Repository and index, work-test doc (11c).
+
+## How Phase 11c works
+
+Phase 11c finishes the **Admin console**: the Overview and the Repository and index tab. Plan
+`specs/phase-11c-plan.md`. Everything is plain code, no AI call, and the Overview only reads.
+
+- **Overview** (opens first). A table of the six rulebook areas (summary, a green, amber or red
+  badge, and which version last changed it), the **Needs attention** list (each line has an Open
+  button that jumps to the tab) and the **Health numbers**. Like the status panel on an AS400 menu.
+- **Health numbers** with a chooser **Last 30 days / All time** (default All time): requests by
+  kind, first-round pass rate, average fix rounds, revisions per request, files edited by developers,
+  Get help, Tester findings by check and by severity, Unable to assess, rules cited (top 5). A number
+  with no rows says **No data yet**, never 0. Handoffs says "No data yet (comes with Phase 10)".
+  Changing the chooser redraws only the numbers. The words are fixed in `specs/phase-11c-plan.md`
+  (for example, a closed build is a finished build or rebuild run).
+- **Repository and index.** Read-only **Server settings** from `.env` (the sandbox folder only says
+  set or not set, never the path), then four editable fields: allowed folders, workspace markers, the
+  new-file name pattern and the largest file the laptop scan reads. Same Edit, change note, Save
+  pattern as the other tabs; a pattern that does not compile is refused.
+- **Smoke check** items 37 to 39 (Repository form save, Overview, health numbers).
+- **Work test:** `docs/admin-work-test.md` (Command Prompt only, one test per open question WF-1 to
+  WF-8). Home check: run the app and open `127.0.0.1:8050/admin`.
 
 ## Notes for the move to CodeVision
 
