@@ -28,6 +28,8 @@ from agents.da_admin_forms import (
     move_row,
     save_from_form,
 )
+from agents.da_admin_metrics import WINDOW_ALL, WINDOW_LABELS, health_report
+from agents.da_admin_overview import build_overview
 from configs.da_config import Settings, load_settings
 from db_table_functions.db_tbl_da_rulebook import (
     RulebookError,
@@ -50,6 +52,8 @@ from layouts.da_admin_page import (
     EDITABLE_TABS,
     GLOSSARY_COLUMNS,
     GOLDEN_COLUMNS,
+    GOTO_TYPE,
+    HEALTH_ID,
     HIST_COMPARE,
     HIST_CONFIRM,
     HIST_PICK_TYPE,
@@ -74,13 +78,17 @@ from layouts.da_admin_page import (
     TAB_CHARTER,
     TAB_CODING,
     TAB_HISTORY,
+    TAB_OVERVIEW,
     TAB_UI,
     TEXT_COLUMN,
+    WINDOW_ID,
     ZONE_COLUMNS,
     admin_page,
     body_id,
+    health_numbers,
     history_view,
     message_notice,
+    overview_view,
     problem_notice,
     refusal_page,
     saved_notice,
@@ -141,7 +149,26 @@ def admin_content(settings: Settings, pathname: str | None):
         build_timeline(settings.db_path),
         cited_counts(settings.db_path),
         queue_data(settings),
+        build_overview(settings),
+        health_report(settings.db_path, WINDOW_ALL),
     )
+
+
+def overview_content(settings: Settings):
+    """The Overview tab body, recomputed (used when the tab opens). None without a rulebook."""
+    active = get_active_version(settings.db_path)
+    if active is None:
+        return None
+    return overview_view(
+        active, build_overview(settings), health_report(settings.db_path, WINDOW_ALL)
+    )
+
+
+def health_content(settings: Settings, window: str):
+    """Only the health numbers, for the chosen window (no Dash needed to call it)."""
+    if window not in WINDOW_LABELS:
+        window = WINDOW_ALL
+    return health_numbers(health_report(settings.db_path, window))
 
 
 def developer_page_style(pathname: str | None) -> dict:
@@ -424,6 +451,55 @@ def register_da_admin_page_callbacks(app) -> None:
         _register_tab(app, tab)
     _register_history(app)
     _register_queue(app)
+    _register_overview(app)
+
+
+def refresh_overview(settings: Settings, tab: str | None):
+    """A save on another tab changes the areas and the list, so redraw when the tab opens."""
+    if tab != TAB_OVERVIEW or not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    content = overview_content(settings)
+    if content is None:
+        raise PreventUpdate
+    return content.children
+
+
+def change_window(settings: Settings, window: str):
+    if not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    return health_content(settings, window)
+
+
+def _register_overview(app) -> None:
+    @app.callback(
+        Output(body_id(TAB_OVERVIEW), "children", allow_duplicate=True),
+        Input(ADMIN_TABS_ID, "value"),
+        prevent_initial_call=True,
+    )
+    def refresh_overview_on_open(tab):
+        return refresh_overview(get_admin_settings(), tab)
+
+    @app.callback(
+        Output(HEALTH_ID, "children"),
+        Input(WINDOW_ID, "value"),
+        prevent_initial_call=True,
+    )
+    def on_window_change(window):
+        return change_window(get_admin_settings(), window)
+
+    @app.callback(
+        Output(ADMIN_TABS_ID, "value", allow_duplicate=True),
+        Input({"type": GOTO_TYPE, "tab": ALL, "n": ALL}, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def open_tab(_clicks):
+        settings = get_admin_settings()
+        triggered = ctx.triggered_id
+        if not isinstance(triggered, dict) or not ctx.triggered[0]["value"]:
+            raise PreventUpdate
+        if not is_admin(settings, settings.developer_id):
+            raise PreventUpdate
+        return triggered["tab"]
 
 
 def _register_history(app) -> None:

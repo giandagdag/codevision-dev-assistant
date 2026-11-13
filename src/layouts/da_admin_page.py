@@ -104,8 +104,11 @@ def admin_page(
     history_rows=(),
     cited: dict[str, int] | None = None,
     queue: dict | None = None,
+    overview=None,
+    report=None,
 ) -> html.Div:
-    """The console: 8 tabs, Overview first. 11b and 11c tabs show a plain "comes later" line."""
+    """The console: 8 tabs, Overview first. A tab not built yet shows a plain "comes later" line.
+    `overview` and `report` (Phase 11c) fill the Overview tab; without them it says so."""
     return html.Div(
         [
             dmc.Title("Admin console", order=3, c=da_styles.NAVY),
@@ -119,7 +122,7 @@ def admin_page(
                     ),
                     *[
                         dmc.TabsPanel(
-                            _tab_body(tab, version, history_rows, cited, queue),
+                            _tab_body(tab, version, history_rows, cited, queue, overview, report),
                             value=tab,
                             pt="md",
                         )
@@ -151,7 +154,11 @@ def version_line(version: RulebookVersion, active: bool = True) -> dmc.Text:
     )
 
 
-def _tab_body(tab: str, version: RulebookVersion, rows=(), cited=None, queue=None):
+def _tab_body(
+    tab: str, version: RulebookVersion, rows=(), cited=None, queue=None, overview=None, report=None
+):
+    if tab == TAB_OVERVIEW and overview is not None and report is not None:
+        return html.Div(overview_view(version, overview, report), id=body_id(TAB_OVERVIEW))
     if tab in EDITABLE_TABS:
         return html.Div(tab_content(tab, version, cited=cited, queue=queue), id=body_id(tab))
     if tab == TAB_HISTORY:
@@ -1051,3 +1058,110 @@ def _section(title: str, body):
     return html.Div(
         [dmc.Text(title, fw=600, c=da_styles.NAVY, size="sm"), body], style=da_styles.PANEL_SECTION
     )
+
+
+# --- Overview (Phase 11c): rulebook areas, Needs attention, health numbers. Read only. ---
+
+HEALTH_ID = "adm-health"
+WINDOW_ID = "adm-window"
+GOTO_TYPE = "adm-goto"
+STATUS_COLORS = {"green": "green", "amber": "yellow", "red": "red"}
+
+
+def goto_id(tab: str, n: int) -> dict:
+    # n keeps every id unique; the callback reads only "tab" from the clicked button.
+    return {"type": GOTO_TYPE, "tab": tab, "n": n}
+
+
+def _tab_of_area(area: str) -> str:
+    return next(tab for tab, label, _ in ADMIN_TABS if label == area)
+
+
+def overview_view(version: RulebookVersion, overview, report, active: bool = True):
+    """The Overview tab. `overview` is an Overview (da_admin_overview), `report` a HealthReport."""
+    return html.Div(
+        [
+            version_line(version, active),
+            _section("Rulebook areas", _areas_table(overview.areas)),
+            _section("Needs attention", _attention_list(overview.attention)),
+            _section("Health numbers", health_block(report)),
+        ]
+    )
+
+
+def _areas_table(areas):
+    head = dmc.TableThead(
+        dmc.TableTr([dmc.TableTh(name) for name in ("Area", "Summary", "Status", "Last changed")])
+    )
+    rows = [
+        dmc.TableTr(
+            [
+                dmc.TableTd(
+                    dmc.Button(
+                        row.area,
+                        id=goto_id(_tab_of_area(row.area), 1000 + index),
+                        variant="subtle",
+                        size="xs",
+                    )
+                ),
+                dmc.TableTd(row.summary),
+                dmc.TableTd(dmc.Badge(row.status, color=STATUS_COLORS.get(row.status, "gray"))),
+                dmc.TableTd(row.last_changed),
+            ]
+        )
+        for index, row in enumerate(areas)
+    ]
+    return dmc.Table([head, dmc.TableTbody(rows)])
+
+
+def _attention_list(items):
+    if not items:
+        return dmc.Text("Nothing needs attention.", size="sm", c=da_styles.MUTED)
+    return dmc.Stack(
+        [
+            dmc.Group(
+                [
+                    dmc.Badge(item.level, color="red" if item.level == "red" else "yellow"),
+                    dmc.Text(item.text, size="sm"),
+                    dmc.Button(
+                        f"Open {item.area}",
+                        id=goto_id(_tab_of_area(item.area), index),
+                        variant="subtle",
+                        size="xs",
+                    ),
+                ]
+            )
+            for index, item in enumerate(items)
+        ],
+        gap="xs",
+    )
+
+
+def health_block(report, window: str = "all"):
+    """The window chooser plus the numbers. The chooser re-draws only the part inside adm-health."""
+    return html.Div(
+        [
+            dmc.SegmentedControl(
+                id=WINDOW_ID,
+                value=window,
+                data=[
+                    {"value": "30d", "label": "Last 30 days"},
+                    {"value": "all", "label": "All time"},
+                ],
+            ),
+            html.Div(health_numbers(report), id=HEALTH_ID),
+        ]
+    )
+
+
+def health_numbers(report):
+    lines = []
+    for metric in report.all_metrics:
+        parts = [dmc.Text(f"{metric.label}: {metric.text}", size="sm")]
+        if metric.items:
+            shown = ", ".join(f"{name} {count}" for name, count in metric.items)
+            parts.append(dmc.Text(shown, size="xs", c=da_styles.MUTED))
+        if metric.note:
+            parts.append(dmc.Text(metric.note, size="xs", c=da_styles.MUTED))
+        lines.append(html.Div(parts))
+    return dmc.Stack(lines, gap="xs")
