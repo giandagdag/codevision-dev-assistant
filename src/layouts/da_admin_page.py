@@ -124,10 +124,12 @@ def refusal_page() -> html.Div:
     return html.Div(dmc.Text(NOT_ADMIN_MESSAGE, c=da_styles.MUTED), style=da_styles.PAGE)
 
 
-def version_line(version: RulebookVersion) -> dmc.Text:
+def version_line(version: RulebookVersion, active: bool = True) -> dmc.Text:
     saved = version.saved_at.strftime("%Y-%m-%d %H:%M")
+    # After a stale save the form shows the version the Admin started from, which is not active.
+    state = "active" if active else "the version you started from"
     return dmc.Text(
-        f"Showing v{version.version_number} (active), saved by {version.saved_by} on {saved}: "
+        f"Showing v{version.version_number} ({state}), saved by {version.saved_by} on {saved}: "
         f"{version.change_note}",
         size="sm",
         c=da_styles.MUTED,
@@ -149,13 +151,14 @@ def tab_content(
     editable: bool = False,
     draft: dict | None = None,
     notice: list | None = None,
+    active: bool = True,
 ):
     """One editable tab: notice lines, the view or the form, and the buttons that fit the mode."""
     view = charter_view if tab == TAB_CHARTER else build_view
     return html.Div(
         [
             *(notice or []),
-            view(version, editable, draft),
+            view(version, editable, draft, active),
             _buttons(tab, version, editable),
             dcc.Store(id={"type": BASE_STORE_TYPE, "tab": tab}, data=version.version_number),
         ]
@@ -308,12 +311,17 @@ def _draft(draft: dict | None, key: str, default):
 # --- Project charter ---
 
 
-def charter_view(version: RulebookVersion, editable: bool = False, draft: dict | None = None):
+def charter_view(
+    version: RulebookVersion,
+    editable: bool = False,
+    draft: dict | None = None,
+    active: bool = True,
+):
     charter = version.rulebook.charter
     purpose = _draft(draft, "purpose", charter.purpose)
     return html.Div(
         [
-            version_line(version),
+            version_line(version, active),
             _charter_size(charter),
             _section("Purpose", _purpose(purpose, editable)),
             *[
@@ -368,11 +376,16 @@ def _charter_size(charter: Charter):
 # --- Build and test ---
 
 
-def build_view(version: RulebookVersion, editable: bool = False, draft: dict | None = None):
+def build_view(
+    version: RulebookVersion,
+    editable: bool = False,
+    draft: dict | None = None,
+    active: bool = True,
+):
     policy = version.rulebook.policy
     return html.Div(
         [
-            version_line(version),
+            version_line(version, active),
             _section("Limits", _number_fields(policy, CORE_BUILD_FIELDS, editable, draft)),
             dmc.Accordion(
                 [
@@ -423,6 +436,15 @@ def build_view(version: RulebookVersion, editable: bool = False, draft: dict | N
     )
 
 
+# Plain names for the three core limits (spec section 8, "Shown as").
+# Advanced limits keep their field names.
+NUMBER_LABELS = {
+    "build_max_rounds": "Max fix rounds",
+    "build_test_timeout_seconds": "Test time limit (seconds)",
+    "max_files": "Max files per request",
+}
+
+
 def _number_fields(policy: Policy, names: tuple[str, ...], editable: bool, draft: dict | None):
     return dmc.Stack([_number_field(policy, n, editable, draft) for n in names], gap=2)
 
@@ -430,10 +452,11 @@ def _number_fields(policy: Policy, names: tuple[str, ...], editable: bool, draft
 def _number_field(policy: Policy, name: str, editable: bool, draft: dict | None):
     value = str(_draft(draft, name, getattr(policy, name)))
     hint = field_bounds(name)
+    label = NUMBER_LABELS.get(name, name)
     if not editable:
-        return dmc.Text(f"{name}: {value}" + (f"   (allowed: {hint})" if hint else ""), size="sm")
+        return dmc.Text(f"{label}: {value}" + (f"   (allowed: {hint})" if hint else ""), size="sm")
     return dmc.TextInput(
-        label=name,
+        label=label,
         description=f"allowed: {hint}" if hint else None,
         value=value,
         id={"type": "adm-field", "tab": TAB_BUILD, "name": name},

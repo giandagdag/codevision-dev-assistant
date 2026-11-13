@@ -197,7 +197,11 @@ def _save(settings, tab, form, note, base_version, active):
         notice = message_notice(result.message, reload_tab=tab, newest=result.newest_version)
     else:
         notice = message_notice(result.message)
-    return tab_content(tab, base, editable=True, draft=form, notice=[notice]), True
+    is_active = base.version_number == active.version_number
+    return (
+        tab_content(tab, base, editable=True, draft=form, notice=[notice], active=is_active),
+        True,
+    )
 
 
 # --- Version history ---

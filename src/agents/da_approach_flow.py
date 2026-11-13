@@ -770,7 +770,7 @@ def _run_tester(
     """Save 2 of Accept approach, or the Write the test plan retry: the Tester's plan."""
     snap = _snapshot(settings, request_id, base_revision)
     decisions = snap.state.decisions
-    client, error = _tester_client(settings, PLAN_STEP, tester)
+    client, error = _tester_client(settings, request_id, PLAN_STEP, tester)
     revision = revision_plan_of(settings.db_path, request_id)
     # Approach lane: None = not that lane, True = same design decisions, so the plan is kept.
     lane_keeps = approach_lane_plan_of(settings.db_path, request_id)
@@ -863,7 +863,7 @@ def _draft_case(
         raise ApproachError(problem)
     _require_case_room(snap)
     typed = text.strip()
-    client, error = _tester_client(settings, CASE_STEP, tester)
+    client, error = _tester_client(settings, snap.request.request_id, CASE_STEP, tester)
     if client is None:
         raise ApproachError(f"The Tester could not be set up: {error} Nothing was saved.")
     result = draft_test_case(
@@ -1037,10 +1037,14 @@ def _generate(
 
 
 def _tester_client(
-    settings: Settings, step: str, client: LLMClient | None
+    settings: Settings, request_id: str, step: str, client: LLMClient | None
 ) -> tuple[LLMClient | None, str]:
     try:
-        return (client or get_tester_client(settings, step)), ""
+        if client:
+            return client, ""
+        # One request, one version: the Tester plans on the model pinned for this request (11-21).
+        model = _policy(settings, request_id).tester_model
+        return get_tester_client(settings, step, model), ""
     except (ConfigError, LLMClientError) as error:
         return None, str(error)
 

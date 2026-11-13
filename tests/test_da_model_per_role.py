@@ -6,6 +6,7 @@ complete() does), and complete() is never called here.
 
 from dataclasses import replace
 
+from agents.da_approach_flow import _tester_client
 from agents.da_build_agent import get_build_client
 from agents.da_build_loop import _Run
 from agents.da_llm_client import get_llm_client
@@ -69,6 +70,24 @@ def test_build_loop_reads_the_model_from_the_pinned_version(db_path, seed_rulebo
     _Run(settings, newer.request_id, factory, None).client("generator")
 
     assert calls == [("tester", ""), ("tester", "made-up-model"), ("generator", "")]
+
+
+def test_approach_tester_plans_on_the_pinned_model(db_path, seed_rulebook):
+    # 11-21: the Tester's plan step uses the same pinned name as its review in the build loop.
+    settings = replace(onprem_settings(), db_path=db_path)
+    publish_first_version(db_path, seed_rulebook, "admin-0001", "Starter rulebook")
+    older = create_request(db_path, "Older request", "dev-0001")
+    policy = seed_rulebook.policy.model_copy(update={"tester_model": "made-up-model"})
+    save_new_version(
+        db_path, seed_rulebook.model_copy(update={"policy": policy}), 1, "admin-0001", "Tester"
+    )
+    newer = create_request(db_path, "Newer request", "dev-0001")
+
+    old_client, _ = _tester_client(settings, older.request_id, "plan", None)
+    new_client, _ = _tester_client(settings, newer.request_id, "plan", None)
+
+    assert old_client.model == "env-tester"
+    assert new_client.model == "made-up-model"
 
 
 def test_the_fake_provider_ignores_the_name():

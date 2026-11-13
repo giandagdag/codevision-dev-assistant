@@ -100,7 +100,7 @@ def test_build_view_shows_limits_with_bounds_and_advanced_collapsed(published_ru
     view = build_view(published_rulebook)
 
     text = all_text(view)
-    assert "build_max_rounds: 3   (allowed: 1 to 5)" in text
+    assert "Max fix rounds: 3   (allowed: 1 to 5)" in text
     assert "Advanced limits" in text
     accordion = next(c for c in walk(view) if type(c).__name__ == "Accordion")
     assert accordion.value is None  # collapsed

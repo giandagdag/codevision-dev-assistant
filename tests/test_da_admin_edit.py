@@ -116,7 +116,9 @@ def test_a_stale_save_offers_reload_with_the_newer_version(make_settings, publis
 
     text = all_text(content)
     assert editing is True
-    assert "v2" in text and "Reload" in text
+    assert "Reload v2" in text
+    # The form still shows v1, which is no longer the active version.
+    assert "Showing v1 (the version you started from)" in text
 
     reloaded, editing = run_action(settings, "build", act("reload"), {}, "", 1)
     assert editing is False
