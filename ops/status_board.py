@@ -26,7 +26,10 @@ ROOT = Path(__file__).resolve().parent.parent
 TITLE = "🤖 Team status"
 LABEL = "team-status"
 MERGE_BASE = "auto/phases-7-10"
-PHASES = (7, 8, 9, 10)
+# Fix 5e (13 Nov): Phase 11 is built in three parts before Phase 10 (on hold), so the board
+# follows that order. A part is named like its branch and commits (auto/phase-11a,
+# "Phase 11a step 3").
+PHASES = (7, 8, 9, "11a", "11b", "11c", 10)
 HOUR = 3600
 USAGE_NOTE_AFTER = 600  # usage older than this gets "(as of HH:MM)" next to its bar
 NEXT_CUT, LINE_CUT = 300, 160
@@ -62,7 +65,7 @@ def bar(percent) -> str:
 @dataclass
 class PhaseFacts:
     """What the markers say about one phase. Missing or unreadable means 'not done'."""
-    phase: int
+    phase: int | str
     spec_approved: bool = False
     plan_exists: bool = False
     plan_approved: bool = False
@@ -128,7 +131,8 @@ def phase_progress(f: PhaseFacts) -> Progress:
 
 
 def overall_percent(merged_count: int, current: Progress | None) -> int:
-    """(merged phases x 100 + current phase %) / 4, rounded down. No current phase: all merged."""
+    """(merged phases x 100 + current phase %) / number of phases, rounded down.
+    No current phase: all merged."""
     if current is None:
         return 100
     return (merged_count * 100 + current.percent) // len(PHASES)
@@ -201,7 +205,12 @@ def _try(git: Git, args: list[str]) -> str | None:
         return None
 
 
-def phase_facts(phase: int, git: Git, root: Path = ROOT) -> PhaseFacts:
+def _spec_key(phase: int | str) -> str:
+    """The spec of a part is the spec of its phase: 11a, 11b and 11c share specs/phase-11-*.md."""
+    return re.match(r"\d+", str(phase)).group()
+
+
+def phase_facts(phase: int | str, git: Git, root: Path = ROOT) -> PhaseFacts:
     f = PhaseFacts(phase)
     mine = [f"auto/phase-{phase}", f"origin/auto/phase-{phase}"]
     bases = [MERGE_BASE, f"origin/{MERGE_BASE}"]
@@ -225,12 +234,13 @@ def phase_facts(phase: int, git: Git, root: Path = ROOT) -> PhaseFacts:
     spec_text = None
     for ref in live:
         listing = _try(git, ["ls-tree", "--name-only", ref, "specs/"])
-        names = _spec_names(listing.splitlines() if listing else [], phase)
+        names = _spec_names(listing.splitlines() if listing else [], _spec_key(phase))
         if names:
             spec_text = _try(git, ["show", f"{ref}:{names[0]}"])
             break
     if spec_text is None and (root / "specs").is_dir():
-        names = _spec_names([f"specs/{p.name}" for p in (root / "specs").iterdir()], phase)
+        names = _spec_names([f"specs/{p.name}" for p in (root / "specs").iterdir()],
+                            _spec_key(phase))
         spec_text = read(names[0]) if names else None
     f.spec_approved = bool(spec_text) and is_approved(spec_text)
     plan_text = read(f"specs/phase-{phase}-plan.md")
@@ -241,7 +251,15 @@ def phase_facts(phase: int, git: Git, root: Path = ROOT) -> PhaseFacts:
         re.search(r"plan-reviewer approved", s, flags=re.IGNORECASE) for s in subjects)
     f.step_done = highest_step(subjects, phase)
     f.step_label = highest_step_label(subjects, phase)
-    rounds = [s for s in subjects if re.search(r"code review round", s, flags=re.IGNORECASE)]
+    if f.plan_exists and f.step_done > 0:
+        # Building has started, so the chief applied the spec and the plan review passed: the
+        # team never builds before both (fix 5e: chief-applied drafts never say APPROVED).
+        f.spec_approved = f.plan_approved = True
+    # Fix 5e: only this phase's own review commits. The branch history also holds older phases
+    # and fixes ("Phase 9 ... code review round 3"), which made a new phase look reviewed.
+    own = re.compile(rf"\s*Phase {phase}(?!\w)(?! fix)", flags=re.IGNORECASE)
+    rounds = [s for s in subjects if own.match(s)
+              and re.search(r"code review round", s, flags=re.IGNORECASE)]
     f.review_rounds = len(rounds)
     f.last_review_clean = bool(rounds) and bool(re.search(r"0 must fix", rounds[0], re.IGNORECASE))
     local, remote = (_try(git, ["rev-parse", r]) for r in mine)
@@ -249,7 +267,7 @@ def phase_facts(phase: int, git: Git, root: Path = ROOT) -> PhaseFacts:
     return f
 
 
-def _spec_names(paths: list[str], phase: int) -> list[str]:
+def _spec_names(paths: list[str], phase: int | str) -> list[str]:
     """specs/phase-N-<name>.md that is not a plan, facts, fixes or review file."""
     names = [p.strip() for p in paths
              if re.fullmatch(rf"specs/phase-{phase}-[a-z0-9-]+\.md", p.strip())]
@@ -336,7 +354,11 @@ def top_line(i: Inputs) -> str:
     nxt = i.next_text.lower()
     # A "Team stalled" issue is the alarm itself, so it is shown as STALLED, not as a question.
     asked = [x for x in i.needs_gian if not stall.is_stall_title(x.title)]
-    if asked or "waiting for gian" in nxt:
+    # Fix 5e: open questions block the team only when the Next line says so, or when there is
+    # no next step and no worker. Otherwise the team keeps working and the questions are listed.
+    blocked = "waiting for gian" in nxt or (asked and _next_is_none(i.next_text)
+                                            and not i.running)
+    if blocked:
         count = f" ({len(asked)} open)" if asked else ""
         return f"## 🔴 WAITING FOR YOU{count}"
     if i.stall and i.result == "idle":
@@ -376,18 +398,28 @@ def _credits_row(usage) -> str:
             f"(team cap ${usage_guard.TEAM_CREDIT_CAP:.0f}) |")
 
 
+def _open_questions_note(i: Inputs) -> str | None:
+    asked = [x for x in i.needs_gian if not stall.is_stall_title(x.title)]
+    if not asked or top_line(i).startswith("## 🔴 WAITING FOR YOU"):
+        return None
+    return f"❓ Questions for you: {len(asked)} (they do not stop the team)"
+
+
 def build_body(i: Inputs) -> str:
     out = [top_line(i), f"Updated {_clock(i.now)}"]
+    note = _open_questions_note(i)
+    if note:
+        out.append(note)
     if i.later:  # fix 7: shown, but never WAITING FOR YOU (the team keeps working)
         out.append(f"📌 For you later: {len(i.later)}")
     out += [f"> ⚠️ {w}" for w in i.warnings]
     out += ["", "| Progress | |", "|---|---|"]
     if i.facts is None:
-        out.append(f"| Phases 7 to 10 | `{bar(100)}` 100% (all merged) |")
+        out.append(f"| Phases 7 to 11 | `{bar(100)}` 100% (all merged) |")
     else:
         progress = phase_progress(i.facts)
-        out.append(f"| Phases 7 to 10 | `{bar(i.overall)}` {i.overall}% "
-                   f"(Phase {i.facts.phase} of {PHASES[-1]}) |")
+        out.append(f"| Phases 7 to 11 | `{bar(i.overall)}` {i.overall}% "
+                   f"(now: Phase {i.facts.phase}; order {', '.join(map(str, PHASES))}) |")
         out.append(f"| Phase {i.facts.phase} | {progress.line()} |")
     five = i.usage.five_hour if i.usage else 0
     weekly = i.usage.weekly if i.usage else 0
@@ -395,7 +427,7 @@ def build_body(i: Inputs) -> str:
     out.append(_usage_row("Usage weekly", weekly, usage_guard.WEEKLY_STOP, i))
     if i.usage is not None:
         out.append(_credits_row(i.usage))
-    out += ["", "### Waiting for you"]
+    out += ["", "### Questions for you (block only when the top line says WAITING)"]
     out += [f"- {x.link()}" for x in i.needs_gian] or ["None."]
     out += ["", "### For you later (does not block)"]
     out += [f"- {x.link()}" for x in i.later] or ["None."]

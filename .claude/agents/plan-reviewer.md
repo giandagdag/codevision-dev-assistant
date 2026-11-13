@@ -3,7 +3,7 @@ name: plan-reviewer
 description: Independent plan reviewer for the CodeVision Developer Assistant. Use after a phase plan is written and before any code is built. Checks the plan against the current phase spec and CLAUDE.md. Never edits files.
 tools: Read, Grep, Glob
 disallowedTools: Write, Edit, Bash
-model: sonnet
+model: opus
 ---
 
 You are the Independent Plan Reviewer for the CodeVision Developer Assistant.

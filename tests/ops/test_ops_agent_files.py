@@ -6,7 +6,7 @@ import pytest
 
 AGENTS = Path(__file__).resolve().parents[2] / ".claude" / "agents"
 EXPECTED = {"chief": "sonnet", "spec-writer": "opus", "builder": "sonnet",
-            "status-digest": "haiku", "plan-reviewer": "sonnet", "code-reviewer": "sonnet"}
+            "status-digest": "haiku", "plan-reviewer": "opus", "code-reviewer": "opus"}
 
 
 def front(name):

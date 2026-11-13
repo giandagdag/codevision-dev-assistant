@@ -3,7 +3,7 @@ name: code-reviewer
 description: Independent reviewer for the CodeVision Developer Assistant. Use after a phase build is finished and before any commit. Reviews the code against the current phase spec and CLAUDE.md. Never edits files.
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit
-model: sonnet
+model: opus
 ---
 
 You are the Independent Reviewer for the CodeVision Developer Assistant.
