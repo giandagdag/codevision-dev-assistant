@@ -12,11 +12,13 @@ from dash import ALL, Input, Output, State, ctx, html
 from dash.exceptions import PreventUpdate
 
 from agents.da_admin_access import is_admin
+from agents.da_admin_cited import cited_counts
 from agents.da_admin_diff import build_timeline, diff_rulebooks
 from agents.da_admin_forms import (
     RESULT_PROBLEMS,
     RESULT_SAVED,
     RESULT_STALE,
+    add_rule_row,
     save_from_form,
 )
 from configs.da_config import Settings, load_settings
@@ -38,15 +40,22 @@ from layouts.da_admin_page import (
     BASE_STORE_TYPE,
     EDITABLE_TABS,
     GLOSSARY_COLUMNS,
+    GOLDEN_COLUMNS,
     HIST_COMPARE,
     HIST_CONFIRM,
     HIST_PICK_TYPE,
     HIST_RESTORE,
     HIST_TYPE,
     NOTE_ID_NAME,
+    RULE_COLUMNS,
+    RULE_KIND_OF_TAB,
+    RULES_TABLE,
+    SONAR_FIELD_PREFIX,
     TAB_BUILD,
     TAB_CHARTER,
+    TAB_CODING,
     TAB_HISTORY,
+    TAB_UI,
     TEXT_COLUMN,
     ZONE_COLUMNS,
     admin_page,
@@ -78,8 +87,15 @@ TABLES: dict[str, tuple[str, ...]] = {
         "glossary",
     ),
     TAB_BUILD: ("zones", "protected_files"),
+    TAB_UI: (RULES_TABLE,),
+    TAB_CODING: (RULES_TABLE, "approved_libraries", "blocked_imports", "golden_examples"),
 }
-TABLE_COLUMNS = {"glossary": GLOSSARY_COLUMNS, "zones": ZONE_COLUMNS}  # the rest hold one "text"
+TABLE_COLUMNS = {  # the rest hold one "text"
+    "glossary": GLOSSARY_COLUMNS,
+    "zones": ZONE_COLUMNS,
+    RULES_TABLE: RULE_COLUMNS,
+    "golden_examples": GOLDEN_COLUMNS,
+}
 
 
 @lru_cache(maxsize=1)
@@ -99,7 +115,7 @@ def admin_content(settings: Settings, pathname: str | None):
         return html.Div(
             dmc.Text(NO_RULEBOOK_MESSAGE, c=da_styles.MUTED), style=da_styles.PAGE
         )
-    return admin_page(active, build_timeline(settings.db_path))
+    return admin_page(active, build_timeline(settings.db_path), cited_counts(settings.db_path))
 
 
 def developer_page_style(pathname: str | None) -> dict:
@@ -122,6 +138,10 @@ def form_from_cells(tab: str, cells: list, fields: list, switches: list) -> tupl
         name = item["id"]["name"]
         if name == NOTE_ID_NAME:
             note = item.get("value") or ""
+        elif name.startswith(SONAR_FIELD_PREFIX):
+            form.setdefault("sonar_map", {})[name[len(SONAR_FIELD_PREFIX) :]] = (
+                item.get("value") or ""
+            )
         else:
             form[name] = item.get("value") or ""
     if switches:
@@ -170,17 +190,37 @@ def run_action(
     if kind == "adm-act":
         name = action["action"]
         if name == ACTION_EDIT:
-            return tab_content(tab, active, editable=True), True
+            return _content(settings, tab, active, editable=True), True
         if name in (ACTION_CANCEL, ACTION_RELOAD):
-            return tab_content(tab, active), False
+            return _content(settings, tab, active), False
         if name == ACTION_SAVE:
             return _save(settings, tab, form, note, base_version, active)
     base = get_version(settings.db_path, base_version or active.version_number) or active
-    if kind == "adm-add":
+    notice = None
+    if kind == "adm-add" and action["table"] == RULES_TABLE:
+        form, notice = _with_new_rule(settings, tab, form)
+    elif kind == "adm-add":
         form = _with_new_row(form, action["table"])
     elif kind == "adm-remove":
         form = _without_row(form, action["table"], action["index"])
-    return tab_content(tab, base, editable=True, draft=form), True
+    return _content(settings, tab, base, editable=True, draft=form, notice=notice), True
+
+
+def _content(settings: Settings, tab: str, version, **kwargs):
+    """tab_content, plus the Cited counts on the Coding tab (read from the Tester's findings)."""
+    cited = cited_counts(settings.db_path) if tab == TAB_CODING else None
+    return tab_content(tab, version, cited=cited, **kwargs)
+
+
+def _with_new_rule(settings: Settings, tab: str, form: dict):
+    """Add row on a rule table: take the next rule ID now (11-12), or the cap message (11-13)."""
+    rows = list(form.get(RULES_TABLE, []))
+    result = add_rule_row(settings.db_path, RULE_KIND_OF_TAB[tab], len(rows))
+    if result.message:
+        return {**form, RULES_TABLE: rows}, [message_notice(result.message)]
+    new = {col: "" for col in RULE_COLUMNS}
+    new["rule_id"] = result.rule_id
+    return {**form, RULES_TABLE: [*rows, new]}, None
 
 
 def _save(settings, tab, form, note, base_version, active):
@@ -189,7 +229,7 @@ def _save(settings, tab, form, note, base_version, active):
     if result.kind == RESULT_SAVED:
         saved = get_active_version(settings.db_path)
         notice = saved_notice(saved.version_number, result.warnings)
-        return tab_content(tab, saved, notice=[notice]), False
+        return _content(settings, tab, saved, notice=[notice]), False
     base = get_version(settings.db_path, base_number) or active
     if result.kind == RESULT_PROBLEMS:
         notice = problem_notice(result.problems)
@@ -199,7 +239,7 @@ def _save(settings, tab, form, note, base_version, active):
         notice = message_notice(result.message)
     is_active = base.version_number == active.version_number
     return (
-        tab_content(tab, base, editable=True, draft=form, notice=[notice], active=is_active),
+        _content(settings, tab, base, editable=True, draft=form, notice=[notice], active=is_active),
         True,
     )
 
