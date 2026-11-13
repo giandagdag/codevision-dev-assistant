@@ -219,6 +219,18 @@ def area_summaries(rulebook: Rulebook, open_unassigned: int) -> dict[str, str]:
     }
 
 
+def server_settings_view(settings) -> list[tuple[str, str]]:
+    """The read-only "Server settings" block of Repository and index (spec 11): .env name and the
+    value to show. The folder is only "set" or "not set": no path, no key, no secret."""
+    return [
+        ("DA_SEARCH_PROVIDER", str(settings.search_provider)),
+        ("DA_SEARCH_TOP_K", str(settings.search_top_k)),
+        ("DA_DISCOVERY_MAX_ROUNDS", str(settings.discovery_max_rounds)),
+        ("DA_MAIN_SOURCE", str(settings.main_source)),
+        ("DA_SANDBOX_SOURCE_DIR", "set" if settings.sandbox_source_dir else "not set"),
+    ]
+
+
 def last_changed(timeline: list[TimelineRow]) -> dict[str, str]:
     """For each area, the newest version that touched it (timeline rows are newest first)."""
     found: dict[str, str] = {}
