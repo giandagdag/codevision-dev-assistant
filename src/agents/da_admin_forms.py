@@ -35,6 +35,7 @@ TAB_CHARTER = "charter"
 TAB_BUILD = "build"
 TAB_UI = "ui"
 TAB_CODING = "coding"
+TAB_CAPABILITY = "capability"
 # The rule table each rule tab edits (the kind is fixed by the tab).
 KIND_OF_TAB = {TAB_UI: "ui_convention", TAB_CODING: "judgement"}
 _RULE_TEXT_FIELDS = ("title", "why", "good_example", "bad_example", "source")
@@ -121,6 +122,8 @@ def rulebook_from_form(base: Rulebook, tab: str, form: dict) -> Rulebook:
         return base.model_copy(update={"rules": rules})
     if tab == TAB_CODING:
         return _coding_from_form(base, form)
+    if tab == TAB_CAPABILITY:
+        return base.model_copy(update={"policy": _policy_from_catalog_form(base.policy, form)})
     raise ValueError(f"Unknown tab '{tab}'.")
 
 
@@ -149,9 +152,10 @@ def save_from_form(
         return SaveResult(RESULT_STALE, message=str(error), newest_version=_newest(error))
     except RulebookError as error:
         return _result_from_refusal(str(error))
-    return SaveResult(
-        RESULT_SAVED, version_number=saved.version_number, warnings=_warnings(edited)
-    )
+    warnings = _warnings(edited)
+    if tab == TAB_CAPABILITY:
+        warnings += pattern_warnings(edited.policy)
+    return SaveResult(RESULT_SAVED, version_number=saved.version_number, warnings=warnings)
 
 
 # --- Charter ---
@@ -363,6 +367,92 @@ def _tab_problems(tab: str, rulebook: Rulebook) -> list[str]:
             problems.append(f"Golden example '{example.title}' is listed more than once.")
         titles.add(key)
     return problems
+
+
+# --- Capability catalog (Phase 11b) ---
+
+_PATTERN_MARKS = "*?["
+
+
+def capability_rows(policy: Policy) -> list[dict]:
+    """The catalog as form rows (patterns as one-per-line text), in catalog order."""
+    return [
+        {
+            "name": c.name,
+            "description": c.description,
+            "named_senior": c.named_senior,
+            "backup_senior": c.backup_senior,
+            "path_patterns": "\n".join(c.path_patterns),
+        }
+        for c in policy.capabilities
+    ]
+
+
+def move_row(rows: list, index: int, step: int) -> list:
+    """A copy of the rows with row `index` moved up (step -1) or down (step +1). First match wins
+    in the catalog, so order matters. At either end nothing moves."""
+    target = index + step
+    if not (0 <= index < len(rows) and 0 <= target < len(rows)):
+        return list(rows)
+    moved = list(rows)
+    moved[index], moved[target] = moved[target], moved[index]
+    return moved
+
+
+def capabilities_without_backup(policy: Policy) -> list[str]:
+    """Names of capabilities with no backup senior. Phase 11c shows this on the Overview."""
+    return [c.name for c in policy.capabilities if not c.backup_senior.strip()]
+
+
+def _policy_from_catalog_form(current: Policy, form: dict) -> Policy:
+    data = current.model_dump()
+    if "capabilities" in form:
+        data["capabilities"] = _capability_form_rows(form["capabilities"])
+    return Policy.model_validate(data)
+
+
+def _capability_form_rows(rows: list[dict]) -> list[dict]:
+    cleaned = [
+        {
+            "name": str(row.get("name", "")).strip(),
+            "description": str(row.get("description", "")).strip(),
+            "named_senior": str(row.get("named_senior", "")).strip(),
+            "backup_senior": str(row.get("backup_senior", "")).strip(),
+            "path_patterns": _clean_list(row.get("path_patterns", [])),
+        }
+        for row in rows
+    ]
+    # A completely empty row (Add row, nothing typed) is dropped; a half-filled one is an error.
+    return [row for row in cleaned if any(row.values())]
+
+
+def pattern_warnings(policy: Policy) -> list[str]:
+    """A path pattern that cannot match any allowed folder (a warning, not a refusal).
+
+    A pattern starting with * or ? may match any root and never warns. Otherwise the text before
+    the first wildcard must start inside an allowed folder, or be the start of one's path."""
+    folders = [f.strip("/").lower() for f in policy.allowed_folders]
+    warnings = []
+    for capability in policy.capabilities:
+        for pattern in capability.path_patterns:
+            if not _can_match_a_folder(pattern, folders):
+                warnings.append(
+                    f"Capability '{capability.name}': pattern '{pattern}' cannot match any "
+                    "allowed folder."
+                )
+    return warnings
+
+
+def _can_match_a_folder(pattern: str, folders: list[str]) -> bool:
+    text = pattern.strip().lower()
+    if not text or text[0] in "*?":
+        return True
+    cut = next((i for i, ch in enumerate(text) if ch in _PATTERN_MARKS), len(text))
+    start = text[:cut]
+    return any(
+        start == folder or start.startswith(folder + "/") or folder.startswith(start)
+        for folder in folders
+    )
 
 
 # --- Results ---
