@@ -1,6 +1,8 @@
+import json
 import sqlite3
 from contextlib import closing
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -23,7 +25,13 @@ from db_table_functions.db_tbl_da_rulebook import (
     restore_version,
     save_new_version,
 )
-from pydantic_classes.da_rulebook_models import Rule, Rulebook
+from pydantic_classes.da_rulebook_models import (
+    ESCALATION_TRIGGER_NAMES,
+    RETIRED_POLICY_FIELDS,
+    Rule,
+    Rulebook,
+    without_retired_fields,
+)
 
 ADMIN = "admin-0001"
 T1 = datetime(2026, 10, 25, 9, 0, tzinfo=UTC)
@@ -82,10 +90,10 @@ def test_second_publish_is_refused(db_path, seed_rulebook, published_rulebook):
 
 def test_publish_with_problems_writes_nothing(db_path, seed_rulebook):
     bad = seed_rulebook.model_copy(
-        update={"policy": seed_rulebook.policy.model_copy(update={"max_review_rounds": 0})}
+        update={"rules": [*seed_rulebook.rules, seed_rulebook.rules[0]]}
     )
 
-    with pytest.raises(RulebookError, match="Max review rounds is 0"):
+    with pytest.raises(RulebookError, match="CV-PY-001 is used by more than one rule"):
         publish_first_version(db_path, bad, ADMIN, "Starter rulebook")
 
     assert list_versions(db_path) == []
@@ -189,7 +197,7 @@ def test_save_with_several_problems_lists_them_all_and_writes_nothing(
     db_path, seed_rulebook, published_rulebook
 ):
     bad_policy = seed_rulebook.policy.model_copy(
-        update={"default_level": "L3", "max_level": "L2", "max_review_rounds": 6}
+        update={"escalation_triggers": seed_rulebook.policy.escalation_triggers[:2]}
     )
     bad = seed_rulebook.model_copy(
         update={"policy": bad_policy, "rules": [*seed_rulebook.rules, seed_rulebook.rules[0]]}
@@ -200,9 +208,7 @@ def test_save_with_several_problems_lists_them_all_and_writes_nothing(
 
     message = str(refused.value)
     assert message.startswith("The rulebook was not saved. Please fix these problems:")
-    assert "higher than the max level" in message
-    assert "locked for the pilot" in message
-    assert "Max review rounds is 6" in message
+    assert "must be exactly these 5" in message
     assert "CV-PY-001 is used by more than one rule" in message
     assert len(list_versions(db_path)) == 1
 
@@ -247,6 +253,65 @@ def test_identical_rulebook_is_refused(db_path, seed_rulebook, published_ruleboo
         save_new_version(db_path, seed_rulebook, 1, ADMIN, "Nothing really")
 
     assert len(list_versions(db_path)) == 1
+
+
+# --- Phase 11: an old-shape active version (retired fields) ---
+
+
+def publish_old_shape(db_path):
+    old = load_rulebook_file(Path(__file__).parent / "data" / "da_rulebook_seed_phase1.json")
+    publish_first_version(db_path, old, ADMIN, "Old starter rulebook", now=T1)
+    return old
+
+
+def stored_policy_keys(db_path, number):
+    with closing(sqlite3.connect(db_path)) as conn:
+        row = conn.execute(
+            "SELECT rulebook FROM da_rulebook_versions WHERE version_number = ?", (number,)
+        ).fetchone()
+    return json.loads(row[0])["policy"]
+
+
+def test_old_shape_v1_keeps_its_retired_fields_in_the_store(db_path):
+    publish_old_shape(db_path)
+
+    assert stored_policy_keys(db_path, 1)["default_level"] == "L2"
+
+
+def test_save_from_an_old_shape_version_writes_no_retired_key(db_path):
+    old = publish_old_shape(db_path)
+    changed = old.model_copy(update={"policy": old.policy.model_copy(update={"max_files": 4})})
+
+    save_new_version(db_path, changed, 1, ADMIN, "Fewer files", now=T1)
+
+    saved = stored_policy_keys(db_path, 2)
+    assert all(name not in saved for name in RETIRED_POLICY_FIELDS)
+    assert [t["name"] for t in saved["escalation_triggers"]] == list(ESCALATION_TRIGGER_NAMES)
+
+
+def test_unchanged_form_from_an_old_shape_version_is_no_change(db_path):
+    old = publish_old_shape(db_path)
+
+    with pytest.raises(RulebookError, match="No changes to save"):
+        save_new_version(db_path, without_retired_fields(old), 1, ADMIN, "Nothing really")
+
+    assert len(list_versions(db_path)) == 1
+
+
+def test_restoring_an_old_shape_version_saves_the_new_shape(db_path):
+    old = publish_old_shape(db_path)
+    changed = old.model_copy(update={"policy": old.policy.model_copy(update={"max_files": 4})})
+    save_new_version(db_path, changed, 1, ADMIN, "Fewer files", now=T1)
+
+    v3 = restore_version(db_path, 1, ADMIN, now=T1)
+
+    saved = stored_policy_keys(db_path, 3)
+    assert all(name not in saved for name in RETIRED_POLICY_FIELDS)
+    assert len(saved["escalation_triggers"]) == 5
+    assert v3.restored_from == 1
+    assert v3.rulebook.policy.max_files == 5
+    # The old row itself is never rewritten (R1).
+    assert stored_policy_keys(db_path, 1)["default_level"] == "L2"
 
 
 # --- R6 and restore ---

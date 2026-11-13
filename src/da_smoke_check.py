@@ -19,6 +19,8 @@ from agents import da_refine_revision as refine_revision
 from agents import da_safety_net_flow as net_flow
 from agents import da_tester_flow as tester_flow
 from agents import da_workspace_flow as workspace
+from agents.da_admin_diff import diff_rulebooks
+from agents.da_admin_forms import RESULT_SAVED, save_from_form
 from agents.da_discover_flow import confirm_discovery, start_discovery
 from agents.da_llm_client import LLMClient, LLMClientError, get_llm_client
 from agents.da_search_index import FakeSearchIndex, IndexData, IndexPiece, search_safely
@@ -41,6 +43,7 @@ from db_table_functions.db_tbl_da_requests import create_request, get_rulebook_f
 from db_table_functions.db_tbl_da_rulebook import (
     SEED_RULEBOOK_FILE,
     RulebookError,
+    get_version,
     list_versions,
     load_rulebook_file,
     publish_first_version,
@@ -115,6 +118,7 @@ def run_smoke_check(settings: Settings) -> int:
             _run_discover_steps(Path(folder) / "smoke_understand.db", settings)
             _run_reveal_step(Path(folder) / "smoke_understand.db", settings)
             _run_approach_steps(Path(folder) / "smoke_understand.db", settings)
+            _run_admin_steps(Path(folder) / "smoke_admin.db")
     except (
         ConfigError,
         LLMClientError,
@@ -178,6 +182,30 @@ def _run_steps(db_path: Path, settings: Settings, client: LLMClient) -> None:
         f'8. v{v1.version_number} restored as v{v3.version_number} ("{v3.change_note}"); '
         f"versions, newest first: {listed}"
     )
+
+
+def _run_admin_steps(db_path: Path) -> None:
+    """Phase 11a: the Admin console's own functions, no screen (items 31 to 33)."""
+    seed = load_rulebook_file(SEED_RULEBOOK_FILE)
+    v1 = publish_first_version(db_path, seed, SAMPLE_ADMIN, "Starter rulebook from the seed file")
+    result = save_from_form(
+        db_path, "build", {"build_max_rounds": "4"}, v1.version_number, SAMPLE_ADMIN, "More rounds"
+    )
+    if result.kind != RESULT_SAVED:
+        raise RulebookError(f"The Build and test form did not save: {result.kind}")
+    print(f"31. Build and test form saved v{result.version_number} (build_max_rounds 4)")
+
+    restored = restore_version(db_path, v1.version_number, SAMPLE_ADMIN)
+    print(
+        f'32. v{v1.version_number} restored as v{restored.version_number} '
+        f'("{restored.change_note}")'
+    )
+
+    v2 = get_version(db_path, result.version_number)
+    changes = diff_rulebooks(v1.rulebook, v2.rulebook)
+    if changes.paths != ["policy.build_max_rounds"]:
+        raise RulebookError(f"Expected one changed path, got {changes.paths}")
+    print(f"33. What changed v1 to v2: {', '.join(changes.paths)}")
 
 
 def _run_understand_steps(db_path: Path, settings: Settings) -> None:

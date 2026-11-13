@@ -1,7 +1,12 @@
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
+from db_table_functions.db_tbl_da_rulebook import SEED_RULEBOOK_FILE, load_rulebook_file
 from pydantic_classes.da_rulebook_models import (
+    ESCALATION_TRIGGER_NAMES,
+    RETIRED_POLICY_FIELDS,
     Charter,
     EscalationTrigger,
     GlossaryEntry,
@@ -9,6 +14,7 @@ from pydantic_classes.da_rulebook_models import (
     Rulebook,
     check_charter_size,
     find_rulebook_problems,
+    without_retired_fields,
 )
 
 
@@ -54,10 +60,25 @@ def test_seed_rulebook_has_the_contents_the_spec_asks_for(seed_rulebook):
 
     assert kinds.count("judgement") == 5
     assert kinds.count("ui_convention") == 2
-    assert [zone.name for zone in policy.never_generate_zones] == ["Security", "Login"]
-    assert (policy.default_level, policy.max_level, policy.max_review_rounds) == ("L2", "L2", 3)
-    assert len(policy.escalation_triggers) == 3
+    assert [zone.name for zone in policy.flag_review_zones] == ["Security", "Login"]
+    # 11-27: no retired field; five triggers, all on; the new fields hold their defaults.
+    assert policy.default_level is None
+    assert policy.max_level is None
+    assert policy.max_review_rounds is None
+    assert policy.never_generate_zones == []
+    assert [trigger.name for trigger in policy.escalation_triggers] == list(
+        ESCALATION_TRIGGER_NAMES
+    )
     assert all(trigger.on for trigger in policy.escalation_triggers)
+    assert (policy.generator_model, policy.tester_model) == ("", "")
+    assert policy.admin_unassigned_stale_days == 14
+
+
+def test_seed_file_text_has_no_retired_field():
+    text = SEED_RULEBOOK_FILE.read_text(encoding="utf-8")
+
+    for name in RETIRED_POLICY_FIELDS:
+        assert f'"{name}"' not in text
 
 
 def test_seed_charter_is_green(seed_rulebook):
@@ -67,32 +88,13 @@ def test_seed_charter_is_green(seed_rulebook):
 # --- Rule R3 checks, one at a time ---
 
 
-def test_default_level_higher_than_max_is_a_problem(seed_rulebook):
-    rulebook = with_policy(seed_rulebook, default_level="L2", max_level="L1")
-
-    problems = find_rulebook_problems(rulebook)
-
-    assert problems == ["The default level L2 is higher than the max level L1."]
-
-
-def test_max_level_l3_is_locked(seed_rulebook):
-    problems = find_rulebook_problems(with_policy(seed_rulebook, max_level="L3"))
-
-    assert problems == [
-        "The max level is L3, which is locked for the pilot. Use L0, L1, or L2."
-    ]
-
-
-def test_default_level_l3_is_locked(seed_rulebook):
-    # Max is also L3 so "higher than max" cannot appear; both uses of L3 are reported.
-    problems = find_rulebook_problems(
-        with_policy(seed_rulebook, default_level="L3", max_level="L3")
+def test_retired_fields_are_no_longer_checked(seed_rulebook):
+    # Old values (a locked level, nine review rounds) are carried but never complained about.
+    rulebook = with_policy(
+        seed_rulebook, default_level="L3", max_level="L1", max_review_rounds=9
     )
 
-    assert problems == [
-        "The default level is L3, which is locked for the pilot. Use L0, L1, or L2.",
-        "The max level is L3, which is locked for the pilot. Use L0, L1, or L2.",
-    ]
+    assert find_rulebook_problems(rulebook) == []
 
 
 def test_ten_judgement_rules_are_allowed(seed_rulebook):
@@ -120,27 +122,25 @@ def test_ui_conventions_do_not_count_toward_the_judgement_cap(seed_rulebook):
     assert find_rulebook_problems(seed_rulebook.model_copy(update={"rules": rules})) == []
 
 
-@pytest.mark.parametrize("rounds", [0, 6, -1])
-def test_review_rounds_outside_1_to_5_is_a_problem(seed_rulebook, rounds):
-    problems = find_rulebook_problems(with_policy(seed_rulebook, max_review_rounds=rounds))
-
-    assert problems == [
-        f"Max review rounds is {rounds}. It must be a whole number from 1 to 5."
-    ]
-
-
-@pytest.mark.parametrize("rounds", [1, 5])
-def test_review_rounds_1_and_5_are_allowed(seed_rulebook, rounds):
-    assert find_rulebook_problems(with_policy(seed_rulebook, max_review_rounds=rounds)) == []
-
-
 def test_missing_trigger_is_a_problem(seed_rulebook):
+    # Built by hand: a loaded rulebook always has five, but a hand-built one may not.
     two = seed_rulebook.policy.escalation_triggers[:2]
 
     problems = find_rulebook_problems(with_policy(seed_rulebook, escalation_triggers=two))
 
     assert len(problems) == 1
-    assert "must be exactly these 3" in problems[0]
+    assert "must be exactly these 5" in problems[0]
+
+
+def test_two_zones_with_the_same_name_are_a_problem(seed_rulebook):
+    zones = seed_rulebook.policy.flag_review_zones
+    twin = zones[0].model_copy(update={"name": zones[0].name.upper()})
+
+    problems = find_rulebook_problems(
+        with_policy(seed_rulebook, flag_review_zones=[*zones, twin])
+    )
+
+    assert problems == [f"Flag-for-review zone '{zones[0].name.upper()}' is listed more than once."]
 
 
 def test_unknown_or_repeated_trigger_is_a_problem(seed_rulebook):
@@ -184,16 +184,79 @@ def test_rule_id_must_match_its_kind(seed_rulebook):
 
 
 def test_every_problem_is_listed_together(seed_rulebook):
+    # 11-7: two problems at once, both listed.
+    rules = [judgement_rule(n) for n in range(1, 12)]
     rulebook = with_policy(
-        seed_rulebook, default_level="L3", max_level="L2", max_review_rounds=9
+        seed_rulebook.model_copy(update={"rules": rules}),
+        escalation_triggers=seed_rulebook.policy.escalation_triggers[:4],
     )
 
     problems = find_rulebook_problems(rulebook)
 
-    assert len(problems) == 3
-    assert any("higher than" in problem for problem in problems)
-    assert any("locked for the pilot" in problem for problem in problems)
-    assert any("Max review rounds is 9" in problem for problem in problems)
+    assert len(problems) == 2
+    assert any("11 judgement rules" in problem for problem in problems)
+    assert any("must be exactly these 5" in problem for problem in problems)
+
+
+# --- Phase 11: old versions, trigger mapping, retired fields ---
+
+
+def old_shape_rulebook() -> Rulebook:
+    return load_rulebook_file(Path(__file__).parent / "data" / "da_rulebook_seed_phase1.json")
+
+
+def test_old_shape_version_loads_with_retired_fields_kept_but_unshown():
+    policy = old_shape_rulebook().policy
+
+    # The retired values are still there for the record; they are just not used or shown.
+    assert (policy.default_level, policy.max_review_rounds) == ("L2", 3)
+    assert [zone.name for zone in policy.never_generate_zones] == ["Security", "Login"]
+
+
+def test_old_shape_triggers_are_mapped_to_five_and_missing_ones_are_on():
+    triggers = {t.name: t.on for t in old_shape_rulebook().policy.escalation_triggers}
+
+    assert triggers == {
+        "cap_hit_twice": True,
+        "out_of_scope": False,
+        "dispute": True,
+        "tester_unable_twice": True,
+        "get_help": True,
+    }
+
+
+def test_old_shape_gets_the_phase_4_to_9_defaults():
+    policy = old_shape_rulebook().policy
+
+    assert policy.build_max_rounds == 3
+    assert policy.max_files == 5
+    assert policy.capabilities == []
+    assert [zone.name for zone in policy.flag_review_zones] == ["Security", "Login"]
+    assert find_rulebook_problems(old_shape_rulebook()) == []
+
+
+def test_saved_json_leaves_out_empty_retired_fields(seed_rulebook):
+    policy_json = seed_rulebook.model_dump(mode="json")["policy"]
+
+    for name in RETIRED_POLICY_FIELDS:
+        assert name not in policy_json
+
+
+def test_without_retired_fields_empties_an_old_shape_rulebook():
+    clean = without_retired_fields(old_shape_rulebook())
+
+    policy_json = clean.model_dump(mode="json")["policy"]
+    assert all(name not in policy_json for name in RETIRED_POLICY_FIELDS)
+    assert len(policy_json["escalation_triggers"]) == 5
+
+
+def test_build_max_rounds_9_is_refused_with_its_bound(seed_rulebook):
+    # 11-19: the bound (1 to 5) comes from the model.
+    data = seed_rulebook.model_dump(mode="json")
+    data["policy"]["build_max_rounds"] = 9
+
+    with pytest.raises(ValidationError, match="less than or equal to 5"):
+        Rulebook.model_validate(data)
 
 
 # --- Shape checks (Pydantic) ---

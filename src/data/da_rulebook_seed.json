@@ -107,26 +107,16 @@
     }
   ],
   "policy": {
-    "default_level": "L2",
-    "max_level": "L2",
-    "never_generate_zones": [
-      {
-        "name": "Security",
-        "description": "Encryption, key handling, and permission checks are written by people only.",
-        "examples": ["Encrypting a customer field", "Checking a user's role"]
-      },
-      {
-        "name": "Login",
-        "description": "Sign-in, sessions, and passwords are written by people only.",
-        "examples": ["Login page", "Session timeout handling"]
-      }
-    ],
-    "max_review_rounds": 3,
     "escalation_triggers": [
-      {"name": "max_rounds_with_must_fix_open", "on": true},
+      {"name": "cap_hit_twice", "on": true},
       {"name": "out_of_scope", "on": true},
-      {"name": "developer_disputes_finding", "on": true}
+      {"name": "dispute", "on": true},
+      {"name": "tester_unable_twice", "on": true},
+      {"name": "get_help", "on": true}
     ],
+    "generator_model": "",
+    "tester_model": "",
+    "admin_unassigned_stale_days": 14,
     "allowed_folders": ["src/configs", "src/agents", "src/pydantic_classes", "src/db_table_functions", "src/callbacks", "src/layouts", "src/styles", "src/web"],
     "new_file_name_pattern": "^[a-z][a-z0-9_]*\\.py$",
     "protected_files": [".env", "*/.env*", "src/configs/llm_config.py", "src/web/web_server.py", "src/callbacks/universal_callbacks.py"],

@@ -33,6 +33,10 @@ ALLOWED_MAIN_SOURCES = ("fake", "bitbucket")
 DEFAULT_MAIN_SOURCE = "fake"
 DEFAULT_FAKE_MAIN_DIR = "src/data/da_fake_main"
 
+# Admin console (Phase 11, spec section 3).
+ALLOWED_ADMIN_SOURCES = ("env", "codevision")
+DEFAULT_ADMIN_SOURCE = "env"
+
 
 class ConfigError(Exception):
     """A setup problem the developer can fix. The message says how."""
@@ -74,6 +78,10 @@ class Settings:
     # Phase 9: where the server reads a file as it is on Bitbucket main (home: a fake folder).
     main_source: str = DEFAULT_MAIN_SOURCE
     fake_main_dir: Path = PROJECT_ROOT / DEFAULT_FAKE_MAIN_DIR
+    # Phase 11: who may open the Admin console (WF-2 is open). "env" = the list below (home);
+    # "codevision" = a placeholder that lets nobody in until the work source is decided.
+    admin_source: str = DEFAULT_ADMIN_SOURCE
+    admin_ids: tuple[str, ...] = ()
 
 
 def load_settings(
@@ -132,7 +140,19 @@ def load_settings(
         main_source=_parse_main_source(read("DA_MAIN_SOURCE")),
         fake_main_dir=_parse_folder(read("DA_FAKE_MAIN_DIR"))
         or PROJECT_ROOT / DEFAULT_FAKE_MAIN_DIR,
+        admin_source=_parse_admin_source(read("DA_ADMIN_SOURCE")),
+        admin_ids=tuple(item.strip() for item in read("DA_ADMIN_IDS").split(",") if item.strip()),
     )
+
+
+def _parse_admin_source(raw: str) -> str:
+    source = raw.lower() or DEFAULT_ADMIN_SOURCE
+    if source not in ALLOWED_ADMIN_SOURCES:
+        raise ConfigError(
+            f"DA_ADMIN_SOURCE is '{source}', which is not allowed. "
+            f"Use one of: {', '.join(ALLOWED_ADMIN_SOURCES)}. Set it in your .env file."
+        )
+    return source
 
 
 def _read_auth_prefix(values: Mapping[str, str | None]) -> str:

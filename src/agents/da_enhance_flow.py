@@ -350,7 +350,9 @@ def start_understand(
     pinned = get_rulebook_for_request(settings.db_path, request_id)
     files = baseline_texts(settings, request_id)
     try:
-        client = client or get_build_client(settings, TODAY_ROLE)
+        client = client or get_build_client(
+            settings, TODAY_ROLE, pinned.rulebook.policy.generator_model
+        )
         drafted = draft_today(
             client, pinned.rulebook.charter.purpose, request_id,
             _first_developer_text(settings, request_id), files,

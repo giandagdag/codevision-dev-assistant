@@ -14,11 +14,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import dash_mantine_components as dmc  # noqa: E402
-from dash import Dash, dcc  # noqa: E402
+from dash import Dash, dcc, html  # noqa: E402
 from dash_iconify import DashIconify  # noqa: E402
 
 from agents.da_build_runner import recover_interrupted_builds  # noqa: E402
 from agents.da_safety_net_flow import recover_interrupted_safety_nets  # noqa: E402
+from callbacks.screen_callbacks.da_admin_page_callbacks import (  # noqa: E402
+    DEV_WRAP_ID,
+    register_da_admin_page_callbacks,
+)
 from callbacks.screen_callbacks.da_developer_assistant_page_callbacks import (  # noqa: E402
     get_settings,
     register_da_developer_assistant_page_callbacks,
@@ -26,6 +30,7 @@ from callbacks.screen_callbacks.da_developer_assistant_page_callbacks import (  
 from configs.da_config import ConfigError  # noqa: E402
 from db_table_functions.da_db import DatabaseBusyError  # noqa: E402
 from db_table_functions.db_tbl_da_rulebook import RulebookError, get_active_version  # noqa: E402
+from layouts.da_admin_page import ADMIN_CONTENT_ID, ADMIN_PATH  # noqa: E402
 from layouts.da_developer_assistant_page import LOCATION_ID, layout  # noqa: E402
 from styles import da_styles  # noqa: E402
 
@@ -37,6 +42,8 @@ PORT = 8050
 # menu is used.
 MENU_NAME = "Developer Assistant"
 MENU_ICON = "tabler:code"
+ADMIN_MENU_NAME = "Admin"
+ADMIN_MENU_ICON = "tabler:settings"
 
 
 def create_app() -> Dash:
@@ -52,7 +59,10 @@ def create_app() -> Dash:
                 dcc.Location(id=LOCATION_ID),
                 dmc.AppShellHeader(_header(), px="md"),
                 dmc.AppShellNavbar(_menu(), p="xs"),
-                dmc.AppShellMain(layout(), bg=da_styles.CANVAS),
+                dmc.AppShellMain(
+                    [html.Div(layout(), id=DEV_WRAP_ID), html.Div(id=ADMIN_CONTENT_ID)],
+                    bg=da_styles.CANVAS,
+                ),
             ],
             header={"height": 60},
             navbar={"width": 240, "breakpoint": "sm"},
@@ -60,6 +70,7 @@ def create_app() -> Dash:
         )
     )
     register_da_developer_assistant_page_callbacks(app)
+    register_da_admin_page_callbacks(app)
     return app
 
 
@@ -86,7 +97,12 @@ def _menu() -> list:
             leftSection=DashIconify(icon=MENU_ICON, width=20),
             active=True,
             href="/",
-        )
+        ),
+        dmc.NavLink(
+            label=ADMIN_MENU_NAME,
+            leftSection=DashIconify(icon=ADMIN_MENU_ICON, width=20),
+            href=ADMIN_PATH,
+        ),
     ]
 
 

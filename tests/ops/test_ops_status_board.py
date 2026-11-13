@@ -133,11 +133,11 @@ def test_bar_is_ten_characters_rounded_down():
     assert sb.bar(99.9) == "▓" * 9 + "░" and len(sb.bar(52)) == 10
 
 
-def test_as13_phase_8_reads_52_percent_and_overall_38(status_file):
+def test_as13_phase_8_reads_52_percent_and_overall_21(status_file):
     facts = sb.current_phase(phase8_git(), Path("/nonexistent"))
     merged, f, overall = facts
     progress = sb.phase_progress(f)
-    assert (merged, progress.percent, overall) == (1, 52, 38)
+    assert (merged, progress.percent, overall) == (1, 52, 21)  # (100 + 52) // 7 phases (fix 5e)
     assert progress.stage == "Build, step 3 of 6" and not progress.estimate
 
 
@@ -145,7 +145,7 @@ def test_as15_missing_plan_counts_zero_build_and_says_estimate():
     _, f, overall = sb.current_phase(phase8_git(plan=False), Path("/nonexistent"))
     progress = sb.phase_progress(f)
     assert progress.percent == 15 and progress.estimate  # spec only
-    assert progress.line().endswith("(estimate)") and overall == 28
+    assert progress.line().endswith("(estimate)") and overall == 16  # (100 + 15) // 7
 
 
 def test_a_brand_new_phase_is_a_plain_zero_not_an_estimate():
@@ -183,8 +183,34 @@ def test_code_review_is_five_per_round_and_full_only_when_pushed_and_clean():
 def test_not_approved_is_not_approved_and_all_merged_is_100():
     assert sb.is_approved("Status: APPROVED v1.0") and not sb.is_approved("Status: NOT APPROVED")
     assert not sb.is_approved("DRAFT")
-    git = FakeGit(merged={f"auto/phase-{n}" for n in (7, 8, 9, 10)})
-    assert sb.current_phase(git, Path("/nonexistent")) == (4, None, 100)
+    git = FakeGit(merged={f"auto/phase-{n}" for n in sb.PHASES})
+    assert sb.current_phase(git, Path("/nonexistent")) == (7, None, 100)
+
+
+def test_fix5e_phase_11a_reads_the_shared_phase_11_spec_and_counts_as_built():
+    assert sb.PHASES == (7, 8, 9, "11a", "11b", "11c", 10)
+    assert sb._spec_key("11a") == "11" and sb._spec_key(8) == "8"
+    assert sb.highest_step(["Phase 11a step 3: x", "Phase 11 step 9: y"], "11a") == 3
+    subjects = ["Phase 11a step 8: docs", "Phase 11a: code review round 1 fixes",
+                "Phase 9: reword (code review round 3)", "Phase 8 fix 1: code review round 1",
+                "Phase 11a step 1: plan"]
+
+    def git(args):
+        if args[0] == "log":
+            return "\n".join(subjects)
+        if args[:2] == ["ls-tree", "--name-only"]:
+            return "specs/phase-11-admin-console.md\nspecs/phase-11a-plan.md"
+        if args[0] == "show" and args[1].endswith("phase-11a-plan.md"):
+            return "## Steps\n" + "".join(f"{n}. s\n" for n in range(1, 9))
+        if args[0] == "show":
+            return "Status: DRAFT v0.1"
+        if args[0] in ("rev-parse",):
+            return "abc"
+        raise RuntimeError("not merged")
+    f = sb.phase_facts("11a", git, Path("/nonexistent"))
+    assert (f.review_rounds, f.step_done, f.steps_total) == (1, 8, 8)
+    assert f.spec_approved and f.plan_approved  # building started, so both were passed
+    assert sb.phase_progress(f).stage == "Code review"
 
 
 # ---- the top line: AS-1 to AS-6 ----
@@ -202,11 +228,28 @@ def test_a_dead_worker_is_not_shown_as_working(status_file):
     assert body.splitlines()[0].startswith("## 🔵 READY")
 
 
-def test_as2_an_open_needs_gian_issue_is_red_and_linked(status_file):
+def none_file(tmp_path):
+    f = tmp_path / "STATUS_none.md"
+    f.write_text("# STATUS\n## Where we are\n- Next: none\n## Log\n- one\n", encoding="utf-8")
+    return f
+
+
+def test_as2_an_open_needs_gian_issue_with_no_next_step_is_red_and_linked(tmp_path):
     gh = FakeGh(gian=[{"number": 5, "title": "Q: pick one", "url": "https://x.invalid/5"}])
-    body = build(gh=gh, status_file=status_file)
+    body = build(gh=gh, status_file=none_file(tmp_path))
     assert body.splitlines()[0].startswith("## 🔴 WAITING FOR YOU")
     assert "[#5](https://x.invalid/5) Q: pick one" in body
+
+
+def test_fix5e_open_questions_do_not_make_a_working_team_red(status_file):
+    gh = FakeGh(gian=[{"number": 5, "title": "Q: pick one", "url": "https://x.invalid/5"}])
+    body = build(gh=gh, status_file=status_file)  # Next: Phase 8 build, nobody running
+    assert body.splitlines()[0].startswith("## 🔵 READY")
+    assert "❓ Questions for you: 1 (they do not stop the team)" in body
+    assert "[#5](https://x.invalid/5) Q: pick one" in body
+    write_running()
+    first = build(gh=gh, status_file=status_file, alive=lambda pid: True).splitlines()[0]
+    assert first.startswith("## 🟢 WORKING: builder on Phase 7")
 
 
 def test_as3_next_line_waiting_for_gian_is_red(tmp_path):
@@ -260,7 +303,8 @@ def test_the_body_shows_progress_commits_and_cut_log_lines(tmp_path):
     f.write_text("# S\n- Next: Phase 8 build\n  continues here\n## Log\n- " + "x" * 400 + "\n",
                  encoding="utf-8")
     body = build(status_file=f, git=phase8_git())
-    assert "| Phases 7 to 10 | `▓▓▓░░░░░░░` 38% (Phase 8 of 10) |" in body
+    assert ("| Phases 7 to 11 | `▓▓░░░░░░░░` 21% (now: Phase 8; order 7, 8, 9, 11a, 11b, 11c, 10) |"
+            in body)
     assert "| Phase 8 | `▓▓▓▓▓░░░░░` 52% · Build, step 3 of 6 |" in body
     assert "Phase 8 build continues here" in body
     assert "### Latest commits on main\n- " in body and "Step 3/9: Layer C plain checks" in body
@@ -510,10 +554,10 @@ def test_stalled_outranks_idle_and_ready(tmp_path):
         assert first == "## 🔴 STALLED: no valid Next line"
 
 
-def test_waiting_for_you_outranks_stalled(status_file):
+def test_waiting_for_you_outranks_stalled(tmp_path):
     stall.save_stall(stall.NOT_FINISHED)
     gh = FakeGh(gian=[{"number": 5, "title": "Q", "url": "u"}])
-    assert build("idle", gh=gh, status_file=status_file).splitlines()[0].startswith(
+    assert build("idle", gh=gh, status_file=none_file(tmp_path)).splitlines()[0].startswith(
         "## 🔴 WAITING FOR YOU")
 
 
@@ -525,11 +569,11 @@ def test_when_every_open_needs_gian_issue_is_a_stall_issue_the_top_line_is_stall
 
 
 def test_a_real_question_next_to_a_stall_issue_is_waiting_for_you_with_the_right_count(
-        status_file):
+        tmp_path):
     stall.save_stall(stall.NO_NEXT)
     gh = FakeGh(gian=[{"number": 5, "title": "🔴 Team stalled: no valid Next line", "url": "u"},
                       {"number": 6, "title": "Q: which model?", "url": "u"}])
-    assert build("idle", gh=gh, status_file=status_file).splitlines()[0] == (
+    assert build("idle", gh=gh, status_file=none_file(tmp_path)).splitlines()[0] == (
         "## 🔴 WAITING FOR YOU (1 open)")
 
 

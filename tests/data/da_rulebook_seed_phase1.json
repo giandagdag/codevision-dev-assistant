@@ -1,0 +1,58 @@
+{
+  "charter": {
+    "purpose": "Help developers change the made-up Harbour Loans demo application safely.",
+    "in_scope": ["Python Plotly Dash pages and callbacks for the Harbour Loans demo"],
+    "out_of_scope": ["Login, passwords, and access control"],
+    "architecture_principles": ["All database access goes through db_table_functions."],
+    "constraints": ["Python 3.14 only, with pinned library versions."],
+    "glossary": [
+      {"term": "Request", "meaning": "One developer change, tracked from start to handoff."}
+    ]
+  },
+  "rules": [
+    {
+      "rule_id": "CV-PY-001",
+      "title": "Error messages are plain sentences",
+      "kind": "judgement",
+      "tags": ["general"],
+      "severity": "should_fix",
+      "why": "Developers must understand what went wrong without reading a stack trace.",
+      "good_example": "raise ConfigError(\"DA_DB_PATH is empty. Set it in your .env file.\")",
+      "bad_example": "raise Exception(\"ERR_CFG_07\")",
+      "source": "Written by Admin"
+    },
+    {
+      "rule_id": "CV-UI-001",
+      "title": "Use Dash Mantine Components for form controls",
+      "kind": "ui_convention",
+      "tags": ["ui"],
+      "severity": "should_fix",
+      "why": "One component set keeps every page looking and behaving the same.",
+      "good_example": "dmc.TextInput(label=\"Loan amount\")",
+      "bad_example": "html.Input(type=\"text\")",
+      "source": "Written by Admin"
+    }
+  ],
+  "policy": {
+    "default_level": "L2",
+    "max_level": "L2",
+    "never_generate_zones": [
+      {
+        "name": "Security",
+        "description": "Encryption, key handling, and permission checks are written by people only.",
+        "examples": ["Encrypting a customer field", "Checking a user's role"]
+      },
+      {
+        "name": "Login",
+        "description": "Sign-in, sessions, and passwords are written by people only.",
+        "examples": ["Login page", "Session timeout handling"]
+      }
+    ],
+    "max_review_rounds": 3,
+    "escalation_triggers": [
+      {"name": "max_rounds_with_must_fix_open", "on": true},
+      {"name": "out_of_scope", "on": false},
+      {"name": "developer_disputes_finding", "on": true}
+    ]
+  }
+}
