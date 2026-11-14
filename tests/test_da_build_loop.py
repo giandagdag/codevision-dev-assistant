@@ -325,6 +325,44 @@ def test_6_14_a_test_that_runs_out_of_time_is_named_and_the_round_fails(
 # --- not the code's fault: no round is used ---
 
 
+def test_b1_3_tests_that_never_report_pause_the_build_and_no_repair_round_is_used(
+    settings, request_id, monkeypatch
+):
+    real = loop.run_tests
+    drop = {"on": True}
+
+    def quiet_runner(*args, **kwargs):
+        result = real(*args, **kwargs)
+        if drop["on"]:  # the last 3 tests "never reported"
+            result.tests[-3:] = [
+                t.model_copy(update={"result": "not_proven", "message": ""})
+                for t in result.tests[-3:]
+            ]
+        return result
+
+    monkeypatch.setattr(loop, "run_tests", quiet_runner)
+    factory = RecordingFactory()
+
+    _, outcome = build(settings, request_id, factory)
+
+    assert outcome == "interrupted"
+    assert build_state(settings, request_id).step == "b_interrupted"
+    rounds = rounds_of(settings, request_id)
+    assert len(rounds) == 1 and len(rounds[0].layer_b.not_proven) == 3
+    assert not rounds[0].layer_b.ok and rounds[0].failure_report is not None
+    assert loop.NOT_PROVEN_TEXT in chat(settings, request_id, "assistant")
+    assert len(factory.code_calls()) == 2  # round 1 only: nobody was asked to fix anything
+
+    drop["on"] = False  # Run again: the same round is replaced, not a new round used
+    flow.try_again(settings, request_id, flow.get_revision(settings, request_id))
+    loop.run_build(settings, request_id, factory)
+
+    rows = rounds_of(settings, request_id)
+    assert rows[0].layer_b.not_proven  # the old row stays as the record (rounds are append-only)
+    assert rows[1].round == 2 and not rows[1].layer_b.not_proven
+    assert loop._rounds_used(rows[:1]) == 0
+
+
 def test_6_6_a_tester_that_misses_a_case_twice_means_unable_with_nothing_written(
     settings, request_id, monkeypatch
 ):
