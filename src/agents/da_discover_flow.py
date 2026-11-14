@@ -22,7 +22,7 @@ from agents.da_discover_agent import (
     summarise_hits,
 )
 from agents.da_discover_checks import hint_problem
-from agents.da_discover_queries import run_searches
+from agents.da_discover_queries import SearchRound, run_searches
 from agents.da_enhance_flow import impact_for_record
 from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
@@ -98,6 +98,12 @@ HINT_QUESTION = "What's missing? Name a feature, file or term."
 DEVELOPER_REQUEST = "developer request"
 # Said whenever a round used the made-up index (DA_SEARCH_PROVIDER=fake), also with a real AI.
 FAKE_INDEX_NOTICE = "Practice index (made-up code), not CodeVision."
+# B1 F7: at work (onprem) with the practice index, Discovery does not search at all.
+NO_INDEX_MESSAGE = (
+    "No CodeVision index is connected yet, so Discovery found nothing to reuse. "
+    "Ask your admin to set it up."
+)
+NO_INDEX_PROVIDER = "none"  # saved as the round's search provider: nothing was searched
 
 _OUTCOME_STATUSES = (STATUS_SIMILAR_FOUND, STATUS_NO_MATCH)
 _STARTABLE = (STATUS_CONFIRMED, STATUS_SEARCHING)
@@ -264,7 +270,11 @@ def _run_round(
     request, record, rounds = _read_for_round(settings, request_id, base_revision, hint)
     # Search and the AI call run with no database lock held.
     round_number = rounds + 1
-    searched = _search(settings, record, hint, index)
+    no_index = index is None and _no_index_at_work(settings)
+    if no_index:
+        searched = SearchRound(queries=[], hits=[], dropped=0)
+    else:
+        searched = _search(settings, record, hint, index)
     summary = _summarise(settings, record, searched.hits, hint, client)
     outcome = outcome_status(summary.findings)
     # Phase 9: who calls the functions being changed (None for a new-program request).
@@ -274,11 +284,14 @@ def _run_round(
         round=round_number,
         record_version=record.version,
         rulebook_version=request.rulebook_version or record.rulebook_version,
-        search_provider=settings.search_provider,
+        search_provider=NO_INDEX_PROVIDER if no_index else settings.search_provider,
         queries=[query.label() for query in searched.queries],
         hits=searched.hits,
         findings=summary.findings,
-        limitations=final_limitations(summary.limitations, outcome),
+        limitations=[
+            *([NO_INDEX_MESSAGE] if no_index else []),
+            *final_limitations(summary.limitations, outcome),
+        ],
         summary_source=summary.summary_source,
         model=summary.model,
         hint=hint,
@@ -301,6 +314,8 @@ def _run_round(
         if current.status != STATUS_SEARCHING:
             current = _move(conn, current, STATUS_SEARCHING, now)
         _say(conn, request_id, "assistant", SEARCHING_MESSAGE, now)
+        if no_index:
+            _say(conn, request_id, "assistant", NO_INDEX_MESSAGE, now)
         insert_result(conn, result, now)
         _move(conn, current, outcome, now)
         _audit(
@@ -363,6 +378,11 @@ def _read_for_round(
             "You can confirm the findings or escalate."
         )
     return request, record, rounds
+
+
+def _no_index_at_work(settings: Settings) -> bool:
+    """At work (the onprem AI) the made-up practice index must never answer silently (B1 F7)."""
+    return settings.llm_provider == "onprem" and settings.search_provider == "fake"
 
 
 def _search(settings: Settings, record: RequestRecord, hint: str, index: SearchIndex | None):

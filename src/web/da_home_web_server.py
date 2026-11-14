@@ -35,7 +35,11 @@ from configs.da_config import ConfigError  # noqa: E402
 from db_table_functions.da_db import DatabaseBusyError  # noqa: E402
 from db_table_functions.db_tbl_da_rulebook import RulebookError, get_active_version  # noqa: E402
 from layouts.da_admin_page import ADMIN_CONTENT_ID, ADMIN_PATH  # noqa: E402
-from layouts.da_developer_assistant_page import LOCATION_ID, layout  # noqa: E402
+from layouts.da_developer_assistant_page import (  # noqa: E402
+    DEMO_PAGE_BANNER,
+    LOCATION_ID,
+    layout,
+)
 from layouts.da_inbox_page import (  # noqa: E402
     BANNER_ID,
     INBOX_PATH,
@@ -56,6 +60,7 @@ ADMIN_MENU_NAME = "Admin"
 ADMIN_MENU_ICON = "tabler:settings"
 INBOX_MENU_NAME = "Inbox"
 INBOX_MENU_ICON = "tabler:inbox"
+DEMO_PAGE_BANNER_ID = "da-demo-page-banner"
 
 
 def create_app() -> Dash:
@@ -73,6 +78,7 @@ def create_app() -> Dash:
                 dmc.AppShellNavbar(_menu(), p="xs"),
                 dmc.AppShellMain(
                     [
+                        *_demo_banner(),
                         # Seniors only: filled by a callback, hidden at 0 (Phase 10 step 10b).
                         dmc.Alert(
                             id=BANNER_ID, color="orange", variant="light", m="md",
@@ -96,6 +102,16 @@ def create_app() -> Dash:
     # that goes to work never reads it (spec D-G).
     register_da_inbox_page_callbacks(app, identify=as_user, keep_query=keep_as)
     return app
+
+
+def _demo_banner() -> list:
+    """The fake AI means made-up data: say so on every page (B1 F7). Home shell only."""
+    if get_settings().llm_provider != "fake":
+        return []
+    banner = dmc.Alert(
+        DEMO_PAGE_BANNER, id=DEMO_PAGE_BANNER_ID, color="violet", variant="light", m="md"
+    )
+    return [banner]
 
 
 def as_user(search: str | None) -> str:

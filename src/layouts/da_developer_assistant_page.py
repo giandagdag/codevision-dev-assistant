@@ -106,6 +106,8 @@ ENHANCE_CARD_TEXT = (
 CODE_BANNER = "No code is written yet"
 CODE_WRITTEN_BANNER = "Code is written to your folder"
 DEMO_BANNER = "Demo mode: replies are scripted"
+# B1 F7: on every page of the home shell while the AI is the fake one.
+DEMO_PAGE_BANNER = "Demo mode: made-up data, not CodeVision."
 EMPTY_TEXT = "Waiting for your answer"
 OTHER_PLACEHOLDER = "Other, type here"
 CRITERIA_TITLE = "Acceptance criteria (each one gets tested)"
