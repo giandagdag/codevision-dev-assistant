@@ -77,8 +77,9 @@ def accept_finding(
     reason = _clean_reason(reason)
     with _report_turn(settings, request_id, base_revision, now) as (tx, review, actions):
         item = _finding(review, finding_id, "should_fix")
-        if tester.finding_state(item.finding_id, review.review_number, actions)[0] == "accepted":
-            raise BuildError(f"{finding_id} is already accepted.")
+        held = tester.finding_state(item.finding_id, review.review_number, actions)[0]
+        if held in ("accepted", "overruled"):
+            raise BuildError(f"{finding_id} is already {held}.")
         before = _label(review, actions)
         _record(tx, review, finding_id, "accepted", reason, actions)
         tx.audit("developer", "finding_accepted", {"finding": finding_id, "reason": reason})
@@ -158,7 +159,8 @@ def get_tester_view(settings, request_id: str) -> TesterView:
     for item in _sorted(review):
         if item.kept:
             acted, why = tester.finding_state(item.finding_id, review.review_number, actions)
-            rows.append(FindingRow(finding=item, state=acted, reason=why))
+            who = tester.finding_actor(item.finding_id, review.review_number, actions)
+            rows.append(FindingRow(finding=item, state=acted, reason=why, actor=who))
     finished = state.step in DONE_STEPS
     return TesterView(
         review=review,

@@ -121,7 +121,7 @@ def _add_reason(conn, open_row: EscalationRow, decision: TriggerDecision, now: d
 
 
 def _new_row(conn, request_id, from_status, decision, open_item, now) -> EscalationRow:
-    route = _route(conn, request_id)
+    route = route_request(conn, request_id)
     return EscalationRow(
         request_id=request_id,
         triggers=[decision.trigger],
@@ -136,7 +136,7 @@ def _new_row(conn, request_id, from_status, decision, open_item, now) -> Escalat
     )
 
 
-def _route(conn: sqlite3.Connection, request_id: str) -> Route:
+def route_request(conn: sqlite3.Connection, request_id: str) -> Route:
     """Section 8: capability from the confirmed target (enhancement) or the planned files, then the
     senior from the ACTIVE rulebook (a senior who left should not keep getting escalations)."""
     active = active_version_on(conn)

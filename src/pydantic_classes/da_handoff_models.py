@@ -18,6 +18,9 @@ LOCKED_MESSAGE = (
     "This request is handed off and locked. Start a new request for further changes; "
     "it will be linked to this one."
 )
+ABANDONED_MESSAGE = (
+    "A senior closed this request. It is locked. Start a new request for further changes."
+)
 ESCALATION_OPEN_MESSAGE = "A senior is looking at this request."
 
 

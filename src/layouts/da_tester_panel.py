@@ -54,11 +54,11 @@ def layer_c_state(view) -> tuple[str, str]:
         return "Waiting", "gray"
     if report.label == "Unable to assess":
         return "Unable to assess", "gray"
-    kept = [row.finding for row in report.rows]
-    if any(item.severity == "must_fix" for item in kept):
+    if any(r.finding.severity == "must_fix" and r.state != "overruled" for r in report.rows):
         return "Must fix found", "red"
     open_should = any(
-        r.finding.severity == "should_fix" and r.state != "accepted" for r in report.rows
+        r.finding.severity == "should_fix" and r.state not in ("accepted", "overruled")
+        for r in report.rows
     )
     if open_should or report.review.zone_warnings:
         return "Warnings", "yellow"
@@ -182,6 +182,9 @@ def _actions(row: FindingRow, can_act: bool, can_fix: bool):
     item = row.finding
     if item.severity == "fyi":
         return dmc.Text("-", size="xs")
+    if row.state == "overruled":  # Phase 10: a senior's decision, no button left to press
+        who = row.actor.removeprefix("senior:") or "a senior"
+        return dmc.Text(f"Overruled by {who}: {row.reason}", size="xs")
     if item.severity == "must_fix":
         if row.state == "disputed":
             return dmc.Text(f"Disputed: {row.reason}", size="xs")

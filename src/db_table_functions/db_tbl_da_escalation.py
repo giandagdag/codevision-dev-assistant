@@ -124,6 +124,19 @@ def read_open_escalation(conn: sqlite3.Connection, request_id: str) -> Escalatio
     return _row_from_db(row) if row else None
 
 
+def read_escalation(conn: sqlite3.Connection, escalation_id: int) -> EscalationRow | None:
+    row = conn.execute(
+        "SELECT * FROM da_escalations WHERE escalation_id = ?", (escalation_id,)
+    ).fetchone()
+    return _row_from_db(row) if row else None
+
+
+def list_escalations(conn: sqlite3.Connection) -> list[EscalationRow]:
+    """Every escalation of every request, newest first (the inbox list, spec section 9)."""
+    rows = conn.execute("SELECT * FROM da_escalations ORDER BY escalation_id DESC").fetchall()
+    return [_row_from_db(row) for row in rows]
+
+
 def read_escalations(conn: sqlite3.Connection, request_id: str) -> list[EscalationRow]:
     """Every escalation of the request, oldest first."""
     rows = conn.execute(

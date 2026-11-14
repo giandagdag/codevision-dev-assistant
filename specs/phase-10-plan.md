@@ -158,6 +158,12 @@ so a run can stop cleanly after any of them.
   from the developer page callbacks), `da_home_web_server.py` menu entry, `/inbox`, `?as=` switch in the
   home shell only. Composer waiting line, senior bubbles, pill "ESCALATION REQUIRED, with <label>",
   pills in My recent requests.
+- **Added 14 Nov (Gian): unread badge, no email or Teams.** The Inbox menu entry shows the count of
+  open rows for this senior (addressed to him as senior or backup, plus Unassigned rows): `Inbox (2)`,
+  plain `Inbox` at 0. Home shows a banner to seniors only: "You have 2 escalations waiting" with a
+  link to `/inbox`. Non-seniors see neither. One pure count function, plain code, no AI.
+  Tests 10-55 (count: 2 open rows -> `Inbox (2)`, 0 -> `Inbox`, closed rows not counted) and
+  10-56 (banner shown to a senior with open rows, hidden for a non-senior and at 0).
 
 ### Step 10c: Smoke, docs, finish
 - Smoke item (Dispute -> row -> overrule -> Return -> handoff, Handoffs 1, Escalations 1) 10-52, README,

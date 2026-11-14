@@ -60,3 +60,10 @@ real AI, Command Prompt only at work, "negative scenario" wording. Plain languag
 comparisons, ranked D-x options with one recommendation each, Given/When/Then, no em dashes.
 Build it on ONE branch, `auto/phase-10` (the status board tracks phase `10`). If it is large,
 order the plan steps so Handoff comes first and each run can stop cleanly; do not split branches.
+
+## Decision (Gian, 14 Nov 10:2x SGT, project chat)
+- The inbox stays **inside CodeVision only**: the `/inbox` page (D-G option 1). No email, no Teams,
+  ever for this initiative (WF-2 answered: a, inbox only). Not a tab in the Admin console; seniors
+  get no Admin rights.
+- **Add an unread badge**: count on the Inbox menu entry plus a Home banner for seniors. Built in
+  plan step 10b (tests 10-55, 10-56).

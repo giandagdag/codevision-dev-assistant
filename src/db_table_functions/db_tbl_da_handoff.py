@@ -16,8 +16,13 @@ from db_table_functions.db_tbl_da_understand import (
     StaleRevisionError,
     UnderstandError,
 )
-from pydantic_classes.da_handoff_models import LOCKED_MESSAGE, HandoffRow, HandoffState
-from pydantic_classes.da_models import STATUS_HANDED_OFF
+from pydantic_classes.da_handoff_models import (
+    ABANDONED_MESSAGE,
+    LOCKED_MESSAGE,
+    HandoffRow,
+    HandoffState,
+)
+from pydantic_classes.da_models import STATUS_ESCALATION, STATUS_HANDED_OFF
 
 _CREATE_TABLES_SQL = """
 CREATE TABLE IF NOT EXISTS da_handoff_state (
@@ -64,6 +69,22 @@ def refuse_if_locked(conn: sqlite3.Connection, request_id: str) -> None:
     ).fetchone()
     if row is not None and row["status"] == STATUS_HANDED_OFF:
         raise HandoffLockedError(LOCKED_MESSAGE)
+    if row is not None and row["status"] == STATUS_ESCALATION and _was_abandoned(conn, request_id):
+        raise HandoffLockedError(ABANDONED_MESSAGE)  # Phase 10 D-D: locked like HANDED_OFF
+
+
+def _was_abandoned(conn: sqlite3.Connection, request_id: str) -> bool:
+    """A senior closed the newest escalation with Abandon request (spec section 9)."""
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'da_escalations'"
+    ).fetchone()
+    if exists is None:
+        return False
+    row = conn.execute(
+        "SELECT outcome FROM da_escalations WHERE request_id = ? ORDER BY escalation_id DESC",
+        (request_id,),
+    ).fetchone()
+    return row is not None and row["outcome"] == "abandoned"
 
 
 def ensure_handoff_tables(conn: sqlite3.Connection) -> None:
