@@ -40,7 +40,7 @@ from agents.da_build_flow import (
     _require_request,
     _write,
 )
-from agents.da_check_words import testing_files_line
+from agents.da_check_words import NOT_PROVEN_TEXT, testing_files_line
 from agents.da_enhance_build_checks import (
     STILL_OLD,
     ExpectedOutcome,
@@ -150,11 +150,6 @@ logger = get_logger(__name__)
 FIXTURE_REFERENCE = PROJECT_ROOT / "tests" / "fixtures" / "da_reference_codevision"
 CONTRACT_FILE = "contract.json"
 TESTER_PAUSE = "The Tester review paused"
-# Fix B1 (F3): words for a run where frozen tests never reported (batch B2 reuses them).
-NOT_PROVEN_TEXT = (
-    "Some tests did not report a result. This is a problem in the Developer Assistant, "
-    "not in your code. Run the tests again, or Get help."
-)
 RERUN_STEPS = ("b_done", "b_written", "b_write_stopped")
 
 

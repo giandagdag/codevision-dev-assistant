@@ -11,6 +11,14 @@ CHECK_CHAT_LINE = "Testing your edits. This takes a few minutes. You can leave t
 CHECK_BANNER = "One test pass on your files (the AI changes nothing)."
 CHECK_CANCEL_LABEL = "Cancel test"
 CHECK_BOX_TITLE = "This test run"
+# Fix B1 (F3, F5): words for a failure that is the Developer Assistant's own (batch B2 reuses them).
+NOT_PROVEN_TEXT = (
+    "Some tests did not report a result. This is a problem in the Developer Assistant, "
+    "not in your code. Run the tests again, or Get help."
+)
+SYSTEM_HELP_LINE = "This looks like a problem in the Developer Assistant, not your code."
+SEND_TO_SENIOR_LABEL = "Send to my senior"
+SYSTEM_FAILURE_MESSAGES = (NOT_PROVEN_TEXT,)  # the paused-build messages that are the DA's fault
 
 
 def check_version_name(build_number: int) -> str:

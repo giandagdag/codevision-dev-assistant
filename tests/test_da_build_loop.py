@@ -5,7 +5,8 @@ import pytest
 from agents import da_build_agent as agent
 from agents import da_build_flow as flow
 from agents import da_build_loop as loop
-from pydantic_classes.da_build_models import LABEL_NOT_PASSING, LABEL_WITH_WARNINGS
+from agents.da_check_words import NOT_PROVEN_TEXT, SYSTEM_HELP_LINE
+from pydantic_classes.da_build_models import LABEL_NOT_PASSING, LABEL_WITH_WARNINGS, BuildState
 from tests.da_approach_play import events_of
 from tests.da_build_play import (
     CREATE,
@@ -361,6 +362,39 @@ def test_b1_3_tests_that_never_report_pause_the_build_and_no_repair_round_is_use
     assert rows[0].layer_b.not_proven  # the old row stays as the record (rounds are append-only)
     assert rows[1].round == 2 and not rows[1].layer_b.not_proven
     assert loop._rounds_used(rows[:1]) == 0
+
+
+def test_b1_6_get_help_after_not_proven_says_it_is_the_assistants_problem(
+    settings, request_id, monkeypatch
+):
+    real = loop.run_tests
+
+    def quiet_runner(*args, **kwargs):
+        result = real(*args, **kwargs)
+        result.tests[-1] = result.tests[-1].model_copy(update={"result": "not_proven"})
+        return result
+
+    monkeypatch.setattr(loop, "run_tests", quiet_runner)
+    build(settings, request_id, RecordingFactory())
+    state = build_state(settings, request_id)
+    assert flow.is_system_failure(state)
+    server, _ = flow._build_buttons(state, False)
+    assert (flow.HELP_KEY, "Send to my senior") in server
+
+    flow.request_help(settings, request_id, flow.get_revision(settings, request_id))
+
+    said = chat(settings, request_id, "assistant")
+    assert NOT_PROVEN_TEXT in said and SYSTEM_HELP_LINE in said
+    assert SYSTEM_HELP_LINE.startswith("This looks like a problem in the Developer Assistant")
+
+
+def test_b1_6_a_developer_caused_failure_keeps_the_old_get_help_words():
+    state = BuildState(
+        request_id="CVDA-2026-0001", step="b_interrupted", message="The server restarted."
+    )
+    server, _ = flow._build_buttons(state, False)
+    assert not flow.is_system_failure(state)
+    assert (flow.HELP_KEY, "Get help") in server
 
 
 def test_6_6_a_tester_that_misses_a_case_twice_means_unable_with_nothing_written(

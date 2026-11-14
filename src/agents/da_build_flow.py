@@ -20,7 +20,14 @@ from pathlib import Path
 from agents.da_approach_checks import normalise_path
 from agents.da_approach_flow import CAP_MESSAGE, CHANGE_APPROACH_OPTION, HELP_BUTTON, TEXT_PROMPTS
 from agents.da_build_checks import case_ids_from_method, find_test_methods
-from agents.da_check_words import CHECK_BANNER, CHECK_CANCEL_LABEL, CHECK_KIND
+from agents.da_check_words import (
+    CHECK_BANNER,
+    CHECK_CANCEL_LABEL,
+    CHECK_KIND,
+    SEND_TO_SENIOR_LABEL,
+    SYSTEM_FAILURE_MESSAGES,
+    SYSTEM_HELP_LINE,
+)
 from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import get_help
@@ -272,6 +279,11 @@ def try_again(
     return get_state(settings, request_id)
 
 
+def is_system_failure(state: BuildState) -> bool:
+    """True when the build paused because of the DA's own check, not the developer's code."""
+    return state.step == "b_interrupted" and state.message in SYSTEM_FAILURE_MESSAGES
+
+
 def request_help(
     settings, request_id: str, base_revision: int, now: datetime | None = None
 ) -> BuildState:
@@ -280,8 +292,11 @@ def request_help(
     with _turn(settings.db_path, request_id, base_revision, now) as tx:
         _require_step(tx.state, *HELP_STEPS)
         step = tx.state.step
-        tx.say("developer", HELP_BUTTON)
-        escalate(tx, f"{ESCALATED_PREFIX}{step}", {"step": step})
+        system = is_system_failure(tx.state)
+        tx.say("developer", SEND_TO_SENIOR_LABEL if system else HELP_BUTTON)
+        if system:  # F5: say whose fault it is before handing over
+            tx.say("assistant", SYSTEM_HELP_LINE)
+        escalate(tx, f"{ESCALATED_PREFIX}{step}", {"step": step, "system": system})
     return get_state(settings, request_id)
 
 
@@ -799,7 +814,7 @@ def _build_buttons(state: BuildState, capped: bool, check_run: bool = False):
         return [
             (TRY_AGAIN_KEY, TRY_AGAIN_LABEL),
             (STOP_KEY, STOP_LABEL),
-            (HELP_KEY, HELP_BUTTON),
+            (HELP_KEY, SEND_TO_SENIOR_LABEL if is_system_failure(state) else HELP_BUTTON),
         ], []
     if step == "b_unable":
         change = [] if capped else [(CHANGE_APPROACH_KEY, CHANGE_APPROACH_OPTION)]
