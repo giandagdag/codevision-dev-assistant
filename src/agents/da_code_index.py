@@ -6,9 +6,14 @@ Our code never logs the text it embeds (it may be work code).
 """
 
 import hashlib
+from pathlib import Path
 from typing import Protocol
 
 WORK_ONLY_MESSAGE = "This only works inside CodeVision at work."
+# Our own folder: we never read or change CodeVision's vector files.
+DEFAULT_INDEX_DIR = Path(__file__).resolve().parents[1] / "data" / "da_code_index"
+FAISS_NAME = "da_code_index.faiss"
+PIECES_NAME = "da_code_index.json"
 
 
 class Embedder(Protocol):
