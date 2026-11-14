@@ -9,6 +9,9 @@ from datetime import UTC, datetime
 
 from agents.da_approach_flow import HELP_BUTTON
 from agents.da_enhance_flow import EnhanceView, _load_state, _Tx, _view, _write_transaction
+from agents.da_escalation_flow import escalate as open_escalation
+from agents.da_escalation_flow import request_triggers
+from agents.da_escalation_triggers import get_help
 from db_table_functions.db_tbl_da_enhance import EnhanceError, save_enhance_state
 from db_table_functions.db_tbl_da_requests import read_request, update_request
 from pydantic_classes.da_models import (
@@ -59,11 +62,14 @@ def request_help(
             raise EnhanceError("Get help is not available at this point of the request.")
         tx = _Tx(conn, request_id, now)
         tx.say("developer", HELP_BUTTON)
-        tx.audit("developer", "escalated", {"step": state.step, "open_item": open_item})
-        update_request(conn, request_id, now=now, status=STATUS_ESCALATION)
-        tx.say("assistant", HELP_LINE)
-        save_enhance_state(
-            conn, state.model_copy(update={"step": "escalated", "open_item": open_item}),
-            base_revision, now,
-        )
+        decision = get_help(request_triggers(conn, request_id), "Enhance", state.step)
+        # D-I: with the switch off the button stays and nothing moves.
+        if not open_escalation(conn, request_id, decision, now, open_item).switched_off:
+            tx.audit("developer", "escalated", {"step": state.step, "open_item": open_item})
+            update_request(conn, request_id, now=now, status=STATUS_ESCALATION)
+            tx.say("assistant", HELP_LINE)
+            save_enhance_state(
+                conn, state.model_copy(update={"step": "escalated", "open_item": open_item}),
+                base_revision, now,
+            )
     return _view(settings, request_id)

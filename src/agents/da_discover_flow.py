@@ -24,6 +24,9 @@ from agents.da_discover_agent import (
 from agents.da_discover_checks import hint_problem
 from agents.da_discover_queries import run_searches
 from agents.da_enhance_flow import impact_for_record
+from agents.da_escalation_flow import escalate as open_escalation
+from agents.da_escalation_flow import request_triggers
+from agents.da_escalation_triggers import get_help
 from agents.da_impact import summary_line
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_search_index import (
@@ -188,22 +191,25 @@ def escalate_discovery(
         reason = latest.limitations[-1] if latest and latest.limitations else DEVELOPER_REQUEST
         open_item = f"Escalated in Discover: {reason}"[:300]
         _say(conn, request_id, "developer", ESCALATE_OPTION, now)
-        _audit(
-            conn,
-            request_id,
-            "developer",
-            "discovery_escalated",
-            {"round": latest.round if latest else 0, "open_item": open_item},
-            now,
-        )
-        _move(conn, request, STATUS_ESCALATION, now)
-        _say(
-            conn,
-            request_id,
-            "assistant",
-            "A senior developer will pick this up. (The escalations inbox comes in Phase 8.)",
-            now,
-        )
+        decision = get_help(request_triggers(conn, request_id), "Discover", reason)
+        # D-I: with the switch off the button stays and nothing moves.
+        if not open_escalation(conn, request_id, decision, now, open_item).switched_off:
+            _audit(
+                conn,
+                request_id,
+                "developer",
+                "discovery_escalated",
+                {"round": latest.round if latest else 0, "open_item": open_item},
+                now,
+            )
+            _move(conn, request, STATUS_ESCALATION, now)
+            _say(
+                conn,
+                request_id,
+                "assistant",
+                "A senior developer will pick this up. (The escalations inbox comes in Phase 8.)",
+                now,
+            )
     logger.info("Discovery escalated for %s", request_id)
     return get_discovery_view(settings, request_id)
 

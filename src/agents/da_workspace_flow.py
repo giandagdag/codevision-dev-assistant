@@ -18,6 +18,9 @@ from pathlib import Path
 
 from agents.da_approach_checks import normalise_path
 from agents.da_approach_flow import CAP_MESSAGE, CHANGE_APPROACH_OPTION, HELP_BUTTON, TEXT_PROMPTS
+from agents.da_escalation_flow import escalate as open_escalation
+from agents.da_escalation_flow import request_triggers
+from agents.da_escalation_triggers import get_help
 from agents.da_workspace_checks import (
     FactsProblem,
     build_write_job,
@@ -445,10 +448,14 @@ def request_help(
         approach_state = read_approach_state(conn, request_id)
         if approach_state is None:
             raise WorkspaceError("There is no approach to escalate.")
+        tx.say("developer", HELP_BUTTON)
+        decision = get_help(request_triggers(conn, request_id), "Workspace", snap.step)
+        if open_escalation(conn, request_id, decision, now, open_item).switched_off:
+            save_workspace_state(conn, snap.state, base_revision, now)  # D-I: nothing moves
+            return get_workspace_view(settings, request_id)
         approach_revision = approach_state.revision
         approach_state.step = "escalated"
         approach_state.open_item = open_item
-        tx.say("developer", HELP_BUTTON)
         tx.audit("developer", "escalated", {"step": snap.step, "open_item": open_item})
         tx.move_to(STATUS_ESCALATION)
         tx.say(

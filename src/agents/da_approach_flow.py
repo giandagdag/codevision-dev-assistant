@@ -41,6 +41,9 @@ from agents.da_approach_checks import (
     gate_problem_lines,
     limit_reason_problem,
 )
+from agents.da_escalation_flow import escalate as open_escalation
+from agents.da_escalation_flow import request_triggers
+from agents.da_escalation_triggers import get_help
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_refine_hooks import approach_lane_plan_of, finish_revision, revision_plan_of
 from agents.da_tester_agent import (
@@ -411,14 +414,16 @@ def request_help(
         step = turn.state.step
         open_item = f"{ESCALATED_PREFIX}{step}"
         turn.say("developer", HELP_BUTTON)
-        turn.state.open_item = open_item
-        turn.state.step = "escalated"
-        turn.audit("developer", "escalated", {"step": step, "open_item": open_item})
-        turn.move_to(STATUS_ESCALATION)
-        turn.say(
-            "assistant",
-            "A senior developer will pick this up. (The escalations inbox comes in Phase 10.)",
-        )
+        decision = get_help(request_triggers(turn.conn, request_id), "Approach", step)
+        if not open_escalation(turn.conn, request_id, decision, now, open_item).switched_off:
+            turn.state.open_item = open_item
+            turn.state.step = "escalated"
+            turn.audit("developer", "escalated", {"step": step, "open_item": open_item})
+            turn.move_to(STATUS_ESCALATION)
+            turn.say(
+                "assistant",
+                "A senior developer will pick this up. (The escalations inbox comes in Phase 10.)",
+            )
     return get_approach_view(settings, request_id)
 
 

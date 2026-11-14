@@ -21,6 +21,7 @@ from agents.da_escalation_triggers import (
 )
 from db_table_functions.db_tbl_da_audit import insert_audit_event
 from db_table_functions.db_tbl_da_escalation import (
+    ensure_escalation_table_in_transaction,
     insert_escalation,
     read_open_escalation,
     update_escalation,
@@ -72,6 +73,7 @@ def escalate(
     request = read_request(conn, request_id)
     if request is None or request.status == STATUS_HANDED_OFF:
         return EscalationResult()
+    ensure_escalation_table_in_transaction(conn)
     if decision.switched_off:
         return _switched_off(conn, request_id, decision, now)
     if not decision.fire:

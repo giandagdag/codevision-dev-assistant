@@ -46,6 +46,15 @@ def ensure_escalation_tables(conn: sqlite3.Connection) -> None:
     conn.executescript(_CREATE_SQL)
 
 
+def ensure_escalation_table_in_transaction(conn: sqlite3.Connection) -> None:
+    """The same tables, made INSIDE an open write transaction. `executescript` would end the
+    caller's transaction (it commits first), so the statements run one by one here. A flow that
+    never ran a build has no escalations table yet, and its Get help must still work."""
+    for statement in _CREATE_SQL.split(";"):
+        if statement.strip():
+            conn.execute(statement)
+
+
 def _row_from_db(row: sqlite3.Row) -> EscalationRow:
     data = json.loads(row["body"])
     data.update(

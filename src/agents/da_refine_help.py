@@ -9,6 +9,9 @@ from datetime import UTC, datetime
 
 from agents.da_approach_flow import HELP_BUTTON
 from agents.da_discover_flow import ESCALATE_OPTION
+from agents.da_escalation_flow import escalate as open_escalation
+from agents.da_escalation_flow import request_triggers
+from agents.da_escalation_triggers import get_help
 from agents.da_refine_hooks import STEP_REQ_FINDINGS
 from agents.da_refine_lanes import (
     STEP_LANE_CHOICE,
@@ -75,6 +78,9 @@ def _escalate(
         step = "Discover" if at_findings else state.step
         open_item = f"{ESCALATED_PREFIX}{step}"
         tx = RefineTx(conn, request, state, now)
+        decision = get_help(request_triggers(conn, request_id), "Refine", step)
+        if open_escalation(conn, request_id, decision, now, open_item).switched_off:
+            return state  # D-I: the button stays, nothing moves
         if at_findings:
             # The Discover tables exist: Discover has just run on this version.
             tx.say("developer", ESCALATE_OPTION)
