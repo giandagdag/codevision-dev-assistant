@@ -37,6 +37,10 @@ DEFAULT_FAKE_MAIN_DIR = "src/data/da_fake_main"
 ALLOWED_ADMIN_SOURCES = ("env", "codevision")
 DEFAULT_ADMIN_SOURCE = "env"
 
+# Senior inbox (Phase 10, spec section 9). Same switch as the Admin one.
+ALLOWED_SENIOR_SOURCES = ("env", "codevision")
+DEFAULT_SENIOR_SOURCE = "env"
+
 
 class ConfigError(Exception):
     """A setup problem the developer can fix. The message says how."""
@@ -82,6 +86,10 @@ class Settings:
     # "codevision" = a placeholder that lets nobody in until the work source is decided.
     admin_source: str = DEFAULT_ADMIN_SOURCE
     admin_ids: tuple[str, ...] = ()
+    # Phase 10: who may open the senior inbox. "env" = the list below plus every named or backup
+    # senior in the active catalog; "codevision" = placeholder until the work source (WF-1).
+    senior_source: str = DEFAULT_SENIOR_SOURCE
+    senior_ids: tuple[str, ...] = ()
 
 
 def load_settings(
@@ -142,7 +150,19 @@ def load_settings(
         or PROJECT_ROOT / DEFAULT_FAKE_MAIN_DIR,
         admin_source=_parse_admin_source(read("DA_ADMIN_SOURCE")),
         admin_ids=tuple(item.strip() for item in read("DA_ADMIN_IDS").split(",") if item.strip()),
+        senior_source=_parse_senior_source(read("DA_SENIOR_SOURCE")),
+        senior_ids=tuple(item.strip() for item in read("DA_SENIOR_IDS").split(",") if item.strip()),
     )
+
+
+def _parse_senior_source(raw: str) -> str:
+    source = raw.lower() or DEFAULT_SENIOR_SOURCE
+    if source not in ALLOWED_SENIOR_SOURCES:
+        raise ConfigError(
+            f"DA_SENIOR_SOURCE is '{source}', which is not allowed. "
+            f"Use one of: {', '.join(ALLOWED_SENIOR_SOURCES)}. Set it in your .env file."
+        )
+    return source
 
 
 def _parse_admin_source(raw: str) -> str:

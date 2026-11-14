@@ -11,6 +11,11 @@ from agents import da_tester_flow as tester_flow
 from agents import da_workspace_flow as workspace_flow
 from agents.da_handoff_facts import _accepted_approach
 from db_table_functions.da_db import open_db
+from db_table_functions.db_tbl_da_escalation import (
+    insert_escalation,
+    read_open_escalation,
+    update_escalation,
+)
 from db_table_functions.db_tbl_da_handoff import (
     HandoffLockedError,
     get_last_tested_fingerprints,
@@ -18,6 +23,7 @@ from db_table_functions.db_tbl_da_handoff import (
 )
 from db_table_functions.db_tbl_da_requests import get_request
 from db_table_functions.db_tbl_da_understand import StaleRevisionError
+from pydantic_classes.da_escalation_models import EscalationRow
 from pydantic_classes.da_handoff_models import LOCKED_MESSAGE
 from tests.da_build_play import chat, event_types, ready_with_workspace, request_status
 
@@ -219,14 +225,20 @@ def test_get_help_in_handoff_names_the_step(built):
 def test_an_open_escalation_blocks_handoff(built):
     settings, request_id = built
     with open_db(settings.db_path) as conn:
-        conn.execute(
-            "CREATE TABLE da_escalations (request_id TEXT, status TEXT)"
-        )
-        conn.execute("INSERT INTO da_escalations VALUES (?, 'open')", (request_id,))
-        conn.commit()
+        conn.execute("BEGIN")
+        row = EscalationRow(request_id=request_id, from_status="READY_FOR_REVIEW")
+        insert_escalation(conn, row, NOW)
 
     with pytest.raises(flow.HandoffError, match="A senior is looking"):
         flow.ready_for_handoff(settings, request_id, 0, NOW)
+
+    with open_db(settings.db_path) as conn:
+        conn.execute("BEGIN")
+        open_row = read_open_escalation(conn, request_id)
+        closed = open_row.model_copy(update={"outcome": "returned"})
+        update_escalation(conn, closed, open_row.revision, NOW)
+
+    assert flow.ready_for_handoff(settings, request_id, 0, NOW).step != "h_blocked_findings"
 
 
 def test_a_check_my_edits_run_hands_off_the_edited_text(built):

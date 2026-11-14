@@ -294,14 +294,15 @@ def _planned_paths(conn, request_id: str, expected: dict[str, str]) -> list[str]
 
 
 def _refuse_if_escalated(conn: sqlite3.Connection, request_id: str) -> None:
-    """H6: an open escalation blocks Handoff. The table arrives with the escalations inbox."""
+    """H6: an open escalation blocks Handoff. The table may not exist in a database made before
+    Phase 10 and not yet opened by a build, so look first."""
     exists = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'da_escalations'"
     ).fetchone()
     if exists is None:
         return
     row = conn.execute(
-        "SELECT 1 FROM da_escalations WHERE request_id = ? AND status = 'open'", (request_id,)
+        "SELECT 1 FROM da_escalations WHERE request_id = ? AND outcome = 'open'", (request_id,)
     ).fetchone()
     if row is not None:
         raise HandoffError(ESCALATION_OPEN_MESSAGE)
