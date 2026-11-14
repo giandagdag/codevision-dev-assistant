@@ -20,6 +20,7 @@ from agents import da_refine_bug as refine_bug
 from agents import da_refine_lanes as refine_lanes
 from agents import da_refine_revision as refine_revision
 from agents import da_safety_net_flow as net_flow
+from agents import da_senior_actions as senior
 from agents import da_tester_flow as tester_flow
 from agents import da_workspace_flow as workspace
 from agents.da_admin_catalog import queue_rows, resolve_row
@@ -29,8 +30,10 @@ from agents.da_admin_forms import RESULT_SAVED, save_from_form
 from agents.da_admin_metrics import WINDOW_ALL, health_report
 from agents.da_admin_overview import build_overview
 from agents.da_discover_flow import confirm_discovery, start_discovery
+from agents.da_inbox import inbox_rows
 from agents.da_llm_client import LLMClient, LLMClientError, get_llm_client
 from agents.da_search_index import FakeSearchIndex, IndexData, IndexPiece, search_safely
+from agents.da_senior_actions import get_chat_lock
 from agents.da_understand_flow import (
     ALWAYS_VISIBLE,
     PROCEED_OPTION,
@@ -51,7 +54,12 @@ from db_table_functions.db_tbl_da_enhance import (
     read_enhance_state,
     read_safety_nets,
 )
-from db_table_functions.db_tbl_da_requests import create_request, get_rulebook_for_request
+from db_table_functions.db_tbl_da_escalation import read_open_escalation
+from db_table_functions.db_tbl_da_requests import (
+    create_request,
+    get_rulebook_for_request,
+    read_request,
+)
 from db_table_functions.db_tbl_da_rulebook import (
     SEED_RULEBOOK_FILE,
     RulebookError,
@@ -649,6 +657,7 @@ def _run_handoff_step(settings: Settings, request_id: str, folder: FakeBrowserFo
                 row.finding.finding_id,
                 "Made-up reason: the team agreed to leave this as it is for now.",
             )
+    _run_escalation_step(settings, request_id)
     revision = handoff.get_handoff_view(settings, request_id).state.revision
     state = handoff.ready_for_handoff(settings, request_id, revision)
     if state.step != "h_checking":
@@ -667,6 +676,41 @@ def _run_handoff_step(settings: Settings, request_id: str, folder: FakeBrowserFo
         f"28b. Handoff: the folder matched the last test, the request is HANDED_OFF and locked, "
         f"and the PR summary has {len(text)} characters (no tests/ path)"
     )
+
+
+def _run_escalation_step(settings: Settings, request_id: str) -> None:
+    """Item 28a (Phase 10): the escalation round trip. The fake Tester finds no Must fix, so the
+    developer asks for help (Get help) instead of a Dispute; the row reaches the inbox, the senior
+    sends guidance and returns the request, and the chat lock lifts."""
+    revision = handoff.get_handoff_view(settings, request_id).state.revision
+    handoff.request_help(settings, request_id, revision)
+    inbox = inbox_rows(settings, "smoke-senior", mine=False)
+    if [row.request_id for row in inbox] != [request_id]:
+        raise UnderstandError(f"The inbox listed {[row.request_id for row in inbox]}.")
+    if not get_chat_lock(settings, request_id).locked:
+        raise UnderstandError("The developer's chat was not locked while the row was open.")
+    row = _open_row(settings, request_id)
+    senior.send_guidance(
+        settings, row.escalation_id, row.revision, "smoke-senior", "Made-up guidance: carry on."
+    )
+    row = _open_row(settings, request_id)
+    senior.close_escalation(
+        settings, row.escalation_id, row.revision, "smoke-senior", "returned", "Looks fine."
+    )
+    with open_db(settings.db_path) as conn:
+        status = read_request(conn, request_id).status
+    if status != "READY_FOR_REVIEW" or get_chat_lock(settings, request_id).locked:
+        raise UnderstandError(f"After the return the status was {status}.")
+    print(f"28a. Escalation: row in the inbox, guidance sent, returned to {status}, chat unlocked")
+
+
+def _open_row(settings: Settings, request_id: str):
+    """The request's open escalation row (it must still be open)."""
+    with open_db(settings.db_path) as conn:
+        row = read_open_escalation(conn, request_id)
+    if row is None:
+        raise UnderstandError("The escalation row was closed too early.")
+    return row
 
 
 def _write_built_files(settings: Settings, request_id: str, folder: FakeBrowserFolder) -> None:

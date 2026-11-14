@@ -681,7 +681,7 @@ Phase 11c finishes the **Admin console**: the Overview and the Repository and in
 - **Work test:** `docs/admin-work-test.md` (Command Prompt only, one test per open question WF-1 to
   WF-8). Home check: run the app and open `127.0.0.1:8050/admin`.
 
-## How Phase 10 works: Handoff (so far)
+## How Phase 10 works: Handoff
 
 Handoff is the last step of a request. It is plain code, with no AI call. Spec
 `specs/phase-10-handoff-escalations.md`, plan `specs/phase-10-plan.md`. AS400 picture: the
@@ -703,7 +703,34 @@ that was tested, and only then promotes it and locks it.
   or run, and the app never commits, pushes or opens a PR.
 - **Start a follow-up request** opens a new request that says "Follows CVDA-...". Nothing is copied.
 - **Smoke check** item 28b (Handoff of the built request, summary under the length guard).
-- Still to come in Phase 10: the escalations inbox (steps 6 to 10).
+
+## How Phase 10 works: Escalations inbox
+
+When a request needs a human, plain code opens **one row** for it (five triggers: the build stopped
+twice, out of scope, a Dispute, the Tester unable twice, or Get help; each can be switched off in
+Admin, Build and test). No AI call is involved. AS400 picture: a message on the help-desk queue.
+
+- **Who gets it.** The named senior of the request's capability in the active rulebook, else the
+  backup, else **Unassigned** (shown to every senior under "Nobody is named for this capability").
+- **The developer's side.** The status pill says "ESCALATION REQUIRED, with <label>". While a row is
+  open the composer is one line: "Waiting for your senior. Your chat is locked until <label>
+  replies." (a policy switch). Reading stays free. Lines from a senior have their own amber bubble.
+- **The Inbox** (`/inbox`, third menu entry). Only seniors (`DA_SENIOR_SOURCE=env`,
+  `DA_SENIOR_IDS`, plus any senior named in the catalog; `codevision` is a placeholder that lets
+  nobody in). The menu shows `Inbox (2)` and Home shows "You have 2 escalations waiting" to seniors
+  only; no email or Teams. The list has **Mine / All** and **Show closed**. Clicking a row shows the
+  developer's own page read-only (every button and text box removed) under the senior's four buttons.
+- **The four actions** (each one save, audited with the senior's ID, a chat line for the developer):
+  **Overrule a finding** (reason of 20+ characters, the label is worked out again), **Send guidance**
+  (goes once into the next AI call of the flow, and unlocks the chat), **Take over**, **Close**
+  (**Return to developer** to the status before, or **Abandon request**, which locks it; the pill then
+  says "Closed by senior").
+- **Home check.** Run with `DA_LLM_PROVIDER=fake`, `DA_SENIOR_IDS=senior-home-01` and
+  `DA_DEVELOPER_ID=dev-home-01`; press Get help on a request; open
+  `http://127.0.0.1:8050/inbox?as=senior-home-01` (the `?as=` switch exists in the home shell only).
+- **Smoke check** item 28a (Get help, inbox row, guidance, Return, chat unlocked). The fake Tester
+  finds no Must fix, so the smoke check uses Get help instead of a Dispute.
+- **Work test:** `docs/handoff-work-test.md` (Command Prompt only).
 
 ## Notes for the move to CodeVision
 
