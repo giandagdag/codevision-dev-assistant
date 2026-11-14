@@ -230,7 +230,8 @@ def _read_results(
                 )
             )
         return LayerBResult(
-            timed_out=True, running_test=running, output_cut=cut, output=output, tests=tests
+            timed_out=True, running_test=running, output_cut=cut, output=output, tests=tests,
+            strict=True,
         )
     error = ""
     if not tests and returncode not in (0, None):
@@ -251,7 +252,7 @@ def _read_results(
             for name in expected
             if name not in reported
         ]
-    return LayerBResult(output_cut=cut, output=output, tests=tests, error=error)
+    return LayerBResult(output_cut=cut, output=output, tests=tests, error=error, strict=True)
 
 
 def _read_outcomes(path: Path) -> list[TestOutcome]:

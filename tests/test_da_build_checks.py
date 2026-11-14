@@ -496,7 +496,8 @@ def test_a_skipped_or_unexpected_success_test_is_a_failure_in_the_report_and_cou
         tests=[
             outcome("test_t1_ac1_accepts_a_file", "pass"),
             outcome("test_t2_ac2_rejects_empty", "skipped"),
-        ]
+        ],
+        strict=True,
     )
 
     report = checks.build_failure_report(LayerAResult(), result, [], TEST_SOURCE, [MODIFY])

@@ -270,6 +270,11 @@ def get_search_index(settings: Settings, index_file: Path = FAKE_INDEX_FILE) -> 
     return FakeSearchIndex.from_file(index_file)
 
 
+def no_index_at_work(settings: Settings) -> bool:
+    """At work (onprem AI) the made-up practice index must never answer silently (B1 F7, P25)."""
+    return settings.llm_provider == "onprem" and settings.search_provider == "fake"
+
+
 def looks_secret(path: str) -> bool:
     """True for paths that look like secret or environment files (spec 3.1)."""
     lowered = path.lower().replace("\\", "/")

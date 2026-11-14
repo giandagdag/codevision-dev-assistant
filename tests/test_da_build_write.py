@@ -188,6 +188,25 @@ def test_6_25_a_new_file_the_developer_changed_is_patched_not_overwritten(settin
     assert folder.files[CREATE].startswith("# he made this file himself first\n")
 
 
+def test_b1_12_a_file_the_da_wrote_is_updated_in_place_by_a_revision_build(settings, built):
+    request_id, folder = built
+    folder.edit(MODIFY, ORIGINAL + "# his edit\n")  # stops the first write after CREATE
+    write_it(settings, request_id, folder)
+    written_text = folder.files[CREATE]
+    facts = facts_of(settings, request_id, folder)
+    factory = RecordingFactory()
+
+    flow.rebuild_after_stop(settings, request_id, facts, revision(settings, request_id))
+    assert loop.run_build(settings, request_id, factory) == "done"
+
+    prompt = [p for p in factory.code_calls() if f"File: {CREATE}" in p][0]
+    assert agent.MODIFY_RULES in prompt and written_text in prompt  # edit blocks on his file
+    job = flow.prepare_write(settings, request_id, revision(settings, request_id))
+    assert {f.path: f.expected for f in job.files}[CREATE] == fingerprint(written_text)
+    assert folder.run_job(job).stopped is None  # nothing blocked, nothing archived
+    assert not any("archive" in path or path.endswith(".bak") for path in folder.files)
+
+
 def test_the_server_refuses_a_report_that_names_a_file_outside_the_job(settings, built):
     request_id, folder = built
     job = flow.prepare_write(settings, request_id, revision(settings, request_id))

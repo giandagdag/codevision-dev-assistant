@@ -143,14 +143,21 @@ class LayerBResult(_Shape):
     output: str = ""
     tests: list[TestOutcome] = Field(default_factory=list)
     error: str = ""
+    # B1 P26: True for runs made since F1/F2 (a skip blocks a pass). A record saved earlier lacks
+    # the field, so it reads False and keeps the old rule: a skip did not block a pass.
+    strict: bool = False
 
     @property
     def passed(self) -> int:
         return sum(1 for item in self.tests if item.result == "pass")
 
     @property
+    def _blocking(self) -> tuple[str, ...]:
+        return NOT_PASSING if self.strict else ("fail", "error")
+
+    @property
     def failed(self) -> int:
-        return sum(1 for item in self.tests if item.result in NOT_PASSING)
+        return sum(1 for item in self.tests if item.result in self._blocking)
 
     @property
     def not_proven(self) -> list[str]:
@@ -164,7 +171,7 @@ class LayerBResult(_Shape):
             self.ran
             and not self.timed_out
             and bool(self.tests)
-            and all(item.result == "pass" for item in self.tests)
+            and not any(item.result in self._blocking + ("not_proven",) for item in self.tests)
         )
 
 

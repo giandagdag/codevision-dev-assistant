@@ -27,6 +27,20 @@ def test_b1_8_onprem_with_the_practice_index_searches_nothing_and_says_so(make_s
     assert NO_INDEX_MESSAGE in said
 
 
+def test_p25_enhance_at_work_with_the_practice_index_says_so_and_offers_nothing(make_settings):
+    from agents import da_enhance_flow as flow
+    from agents import da_understand_flow as understand
+    from db_table_functions.db_tbl_da_enhance import EnhanceError
+
+    work = make_settings(llm_provider="onprem", search_provider="fake")
+    started = flow.start_enhance_request(work)
+    with pytest.raises(EnhanceError, match="No CodeVision index"):
+        flow.find_program(work, started.request_id, "limits_expiry_report", started.revision)
+
+    view = understand.create_understand_request(work, "limits_expiry_report is wrong")
+    assert flow.maybe_offer_switch(work, view.request.request_id) is None
+
+
 def test_the_practice_index_still_answers_at_home(make_settings):
     settings = make_settings()
     view = start_discovery(settings, confirmed_id(settings), 0)

@@ -35,6 +35,7 @@ from agents.da_search_index import (
     SearchIndex,
     SearchNotConfiguredError,
     get_search_index,
+    no_index_at_work,
 )
 from configs.da_config import ConfigError, Settings
 from da_logging import get_logger
@@ -272,7 +273,7 @@ def _run_round(
     # Search and the AI call run with no database lock held.
     round_number = rounds + 1
     searched, no_index_text, notes = SearchRound(queries=[], hits=[], dropped=0), "", []
-    if index is None and _no_index_at_work(settings):
+    if index is None and no_index_at_work(settings):
         no_index_text = NO_INDEX_MESSAGE
     else:
         try:
@@ -386,11 +387,6 @@ def _read_for_round(
             "You can confirm the findings or escalate."
         )
     return request, record, rounds
-
-
-def _no_index_at_work(settings: Settings) -> bool:
-    """At work (the onprem AI) the made-up practice index must never answer silently (B1 F7)."""
-    return settings.llm_provider == "onprem" and settings.search_provider == "fake"
 
 
 def _search(settings: Settings, record: RequestRecord, hint: str, index: SearchIndex | None):
