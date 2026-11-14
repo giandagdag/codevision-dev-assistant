@@ -362,6 +362,8 @@ def test_b1_3_tests_that_never_report_pause_the_build_and_no_repair_round_is_use
     assert rows[0].layer_b.not_proven  # the old row stays as the record (rounds are append-only)
     assert rows[1].round == 2 and not rows[1].layer_b.not_proven
     assert loop._rounds_used(rows[:1]) == 0
+    # The shown "Round N of M" counts budget rounds: 1 here though the row number is 2.
+    assert loop._rounds_used(rows[:2]) == 1
 
 
 def test_b1_6_get_help_after_not_proven_says_it_is_the_assistants_problem(

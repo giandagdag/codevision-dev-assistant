@@ -491,6 +491,20 @@ def test_failure_report_for_the_developer_has_ids_tag_expected_and_message():
     assert "Traceback for T-2:" in generator and "  line a" in generator
 
 
+def test_a_skipped_or_unexpected_success_test_is_a_failure_in_the_report_and_counts():
+    result = LayerBResult(
+        tests=[
+            outcome("test_t1_ac1_accepts_a_file", "pass"),
+            outcome("test_t2_ac2_rejects_empty", "skipped"),
+        ]
+    )
+
+    report = checks.build_failure_report(LayerAResult(), result, [], TEST_SOURCE, [MODIFY])
+
+    assert [i.test_id for i in report.items] == ["T-2"] and result.failed == 1
+    assert checks.failing_tests(result) == ["test_t2_ac2_rejects_empty"]
+
+
 def test_failure_report_names_a_timeout_and_layer_a_problems():
     a = LayerAResult(problems=[LayerAProblem(code="A4", path=CREATE, text="Line 1: bad import")])
     b = LayerBResult(timed_out=True, running_test="test_t1_ac1_x")

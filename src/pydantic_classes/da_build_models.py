@@ -128,6 +128,10 @@ class TestOutcome(_Shape):
     traceback_tail: list[str] = Field(default_factory=list, max_length=20)
 
 
+# Every result that blocks a pass but was reported (Not proven is the app's problem, not these).
+NOT_PASSING = ("fail", "error", "skipped", "expected_failure", "unexpected_success")
+
+
 class LayerBResult(_Shape):
     # False when the sandbox could not run at all (not the code's fault: b_interrupted).
     ran: bool = True
@@ -146,8 +150,7 @@ class LayerBResult(_Shape):
 
     @property
     def failed(self) -> int:
-        bad = ("fail", "error", "unexpected_success")
-        return sum(1 for item in self.tests if item.result in bad)
+        return sum(1 for item in self.tests if item.result in NOT_PASSING)
 
     @property
     def not_proven(self) -> list[str]:

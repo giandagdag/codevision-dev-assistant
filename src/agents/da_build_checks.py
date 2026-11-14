@@ -24,6 +24,7 @@ from agents.da_workspace_checks import (
 from pydantic_classes.da_approach_models import TestCase
 from pydantic_classes.da_build_models import (
     LABEL_NOT_PASSING,
+    NOT_PASSING,
     Contract,
     ContractFile,
     ContractItem,
@@ -556,7 +557,7 @@ def parse_edit_blocks(text: str) -> list[FileEdit]:
 
 
 def failing_tests(result: LayerBResult) -> list[str]:
-    return [item.name for item in result.tests if item.result in ("fail", "error")]
+    return [item.name for item in result.tests if item.result in NOT_PASSING]
 
 
 def choose_files_to_fix(
@@ -583,7 +584,7 @@ def choose_files_to_fix(
 def _files_from_tracebacks(layer_b: LayerBResult | None, planned: list[str]) -> set[str]:
     named = set()
     for item in layer_b.tests if layer_b else []:
-        if item.result not in ("fail", "error"):
+        if item.result not in NOT_PASSING:
             continue
         for line in item.traceback_tail:
             match = _TRACE_FILE.search(line)
@@ -633,7 +634,7 @@ def build_failure_report(
         methods = {}
     items = []
     for item in layer_b.tests if layer_b else []:
-        if item.result not in ("fail", "error"):
+        if item.result not in NOT_PASSING:
             continue
         ids = case_ids_from_method(item.name)
         case = by_id.get(ids[0]) if ids else None

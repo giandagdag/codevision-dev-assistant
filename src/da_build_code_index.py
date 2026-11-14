@@ -109,6 +109,10 @@ def _save(out_dir: Path, source: Path, kept, vectors, now: datetime) -> None:
 def main() -> int:
     source = Path(os.environ.get("DA_CODE_INDEX_SOURCE") or Path(__file__).resolve().parent)
     out_dir = Path(os.environ.get("DA_CODE_INDEX_DIR") or DEFAULT_INDEX_DIR)
+    if "--fake" in sys.argv and os.environ.get("DA_LLM_PROVIDER") == "onprem":
+        # A made-up index at work would be used silently by the codevision search (F7).
+        print("--fake is for home only. At work, run it without --fake.")
+        return 1
     embedder = FakeEmbedder() if "--fake" in sys.argv else WorkEmbedder()
     try:
         summary = build_index(source, out_dir, embedder)

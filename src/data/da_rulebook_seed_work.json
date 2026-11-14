@@ -1,5 +1,5 @@
 {
-  "purpose": "Help developers change CodeVision, UOB's AI tool for modernizing legacy hostcentric applications, safely: understand the change, reuse existing code, start from sound code, and get early review feedback.",
+  "purpose": "Help developers change CodeVision, the bank's AI tool for modernizing legacy hostcentric applications, safely: understand the change, reuse existing code, start from sound code, and get early review feedback.",
   "in_scope": [
     "CodeVision Python Plotly Dash pages and callbacks",
     "Database helper functions under db_table_functions",

@@ -9,6 +9,10 @@ import hashlib
 from pathlib import Path
 from typing import Protocol
 
+from da_logging import get_logger
+
+logger = get_logger(__name__)
+
 WORK_ONLY_MESSAGE = "This only works inside CodeVision at work."
 # Our own folder: we never read or change CodeVision's vector files.
 DEFAULT_INDEX_DIR = Path(__file__).resolve().parents[1] / "data" / "da_code_index"
@@ -41,7 +45,11 @@ class WorkEmbedder:
             from agents.a_vector import create_embeddings
         except ImportError as error:
             raise RuntimeError(WORK_ONLY_MESSAGE) from error
-        result = create_embeddings(text)
-        if result is None:  # CodeVision gives None when every retry failed
+        try:
+            result = create_embeddings(text)
+            if result is None:  # CodeVision gives None when every retry failed
+                return None
+            return [float(value) for value in result[0]]  # shape (1, size)
+        except Exception as error:  # noqa: BLE001 - any failure means "no vector"; never log text
+            logger.warning("Embedding failed: %s", type(error).__name__)
             return None
-        return [float(value) for value in result[0]]  # shape (1, size)

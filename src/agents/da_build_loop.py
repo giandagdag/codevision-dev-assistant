@@ -600,7 +600,9 @@ class _Run:
             to_write, failures = self._fix_input(number)
         with self._turn() as tx:
             tx.set(step="b_running", current_round=len(self.inp.rounds))
-            self._note(tx, f"Round {number} of {limit}", "done")
+            # Not proven rows hold a row number but no budget, so show the budget count.
+            used_now = _rounds_used(self.inp.rounds) + 1
+            self._note(tx, f"Round {used_now} of {limit}", "done")
         generated: dict[str, str] = {}
         problems: list[LayerAProblem] = []
         for path in to_write:
@@ -882,11 +884,12 @@ class _Run:
                 )
             if not passed and not unproven:
                 tx.audit("system", "round_failed", {"round": number, "files_to_fix": fix})
-                if number < limit and not self.check:
+                counted = _rounds_used(self.inp.rounds) + 1  # this round is not appended yet
+                if counted < limit and not self.check:
                     tx.set(step="b_round_failed", current_round=number)
                     tx.say(
                         "assistant",
-                        _round_failed_text(number, layer_a, layer_b, len(self.inp.cases), fix),
+                        _round_failed_text(counted, layer_a, layer_b, len(self.inp.cases), fix),
                     )
         self.inp.rounds.append(record)
         if unproven:
