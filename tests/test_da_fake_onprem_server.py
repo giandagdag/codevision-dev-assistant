@@ -20,6 +20,12 @@ from web.da_fake_onprem_server import (
 )
 
 
+def _practice_index():
+    from agents.da_search_index import FakeSearchIndex
+
+    return FakeSearchIndex.from_file()
+
+
 def settings_for(make_settings, server, **changes):
     values = {
         "llm_provider": "onprem",
@@ -200,7 +206,7 @@ def test_discover_through_the_real_client_gives_ai_findings(make_settings, publi
     with running_fake_onprem_server() as server:
         settings = settings_for(make_settings, server)
         request_id = to_confirmed(settings).request.request_id
-        view = start_discovery(settings, request_id, 0)
+        view = start_discovery(settings, request_id, 0, index=_practice_index())
 
     assert view.result.summary_source == "ai" and view.result.model == "fake-qwen"
     assert view.request.status == "SIMILAR_IMPLEMENTATION_FOUND"
@@ -214,7 +220,7 @@ def test_bad_json_mode_is_bad_on_every_discover_try_so_the_fallback_shows(
     with running_fake_onprem_server("bad-json") as server:
         settings = settings_for(make_settings, server)
         request_id = to_confirmed(settings).request.request_id
-        view = start_discovery(settings, request_id, 0)
+        view = start_discovery(settings, request_id, 0, index=_practice_index())
 
     assert view.result.summary_source == "fallback" and view.result.findings
     assert view.request.status in ("SIMILAR_IMPLEMENTATION_FOUND", "NO_RELIABLE_MATCH")
@@ -251,7 +257,7 @@ def _confirmed_discovery(settings):
     from agents.da_discover_flow import confirm_discovery, start_discovery
 
     request_id = to_confirmed(settings).request.request_id
-    view = start_discovery(settings, request_id, 0)
+    view = start_discovery(settings, request_id, 0, index=_practice_index())
     confirm_discovery(settings, request_id, view.revision)
     return request_id
 
