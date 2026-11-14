@@ -51,6 +51,7 @@ from db_table_functions.db_tbl_da_enhance import (
     read_enhance_state,
     save_enhance_state,
 )
+from db_table_functions.db_tbl_da_handoff import refuse_if_locked
 from db_table_functions.db_tbl_da_requests import read_request, update_request
 from db_table_functions.db_tbl_da_rulebook import ensure_rulebook_tables
 from db_table_functions.db_tbl_da_understand import (
@@ -154,7 +155,7 @@ def confirm_discovery(
 ) -> DiscoveryView:
     now = now or datetime.now(UTC)
     with _write_transaction(settings.db_path) as conn:
-        request = _require_request(conn, request_id)
+        request = _require_open_request(conn, request_id)
         _require_status(request, _OUTCOME_STATUSES, "confirmed")
         bump_discovery_revision(conn, request_id, base_revision, now)
         rounds = count_rounds(conn, request_id)
@@ -180,7 +181,7 @@ def escalate_discovery(
     audit event, the chat and the view (spec 3.5)."""
     now = now or datetime.now(UTC)
     with _write_transaction(settings.db_path) as conn:
-        request = _require_request(conn, request_id)
+        request = _require_open_request(conn, request_id)
         _require_status(request, _OUTCOME_STATUSES, "escalated")
         bump_discovery_revision(conn, request_id, base_revision, now)
         latest = read_latest_result(conn, request_id)
@@ -278,7 +279,7 @@ def _run_round(
         impact=impact,
     )
     with _write_transaction(settings.db_path) as conn:
-        current = _require_request(conn, request_id)
+        current = _require_open_request(conn, request_id)
         _require_status(current, _round_statuses(hint), "searched")
         bump_discovery_revision(conn, request_id, base_revision, now)
         first_round = current.status == STATUS_CONFIRMED
@@ -342,7 +343,7 @@ def _read_for_round(
     with open_db(settings.db_path) as conn:
         ensure_discovery_tables(conn)
         conn.execute("BEGIN")
-        request = _require_request(conn, request_id)
+        request = _require_open_request(conn, request_id)
         _require_status(request, _round_statuses(hint), "searched")
         if read_discovery_revision(conn, request_id) != base_revision:
             raise StaleRevisionError(STALE_MESSAGE)
@@ -405,6 +406,13 @@ def _start_safety_net_step(conn: sqlite3.Connection, request_id: str, now: datet
     if state is not None and state.step == "e_fresh":
         moved = state.model_copy(update={"step": "s_writing"})
         save_enhance_state(conn, moved, state.revision, now)
+
+
+def _require_open_request(conn: sqlite3.Connection, request_id: str) -> Request:
+    """For developer actions: refused when the request is handed off (Phase 10)."""
+    request = _require_request(conn, request_id)
+    refuse_if_locked(conn, request_id)
+    return request
 
 
 def _require_request(conn: sqlite3.Connection, request_id: str) -> Request:

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from agents.da_build_agent import get_build_client
-from agents.da_build_flow import _require_request
+from agents.da_build_flow import _require_open_request as _require_request  # locked = refused
 from agents.da_enhance_refine import carry_net_forward
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_refine_agent import (

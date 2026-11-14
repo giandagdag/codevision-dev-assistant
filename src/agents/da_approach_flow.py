@@ -72,6 +72,7 @@ from db_table_functions.db_tbl_da_audit import ensure_audit_table, insert_audit_
 from db_table_functions.db_tbl_da_build import ensure_build_tables
 from db_table_functions.db_tbl_da_discovery import count_rounds, read_latest_result
 from db_table_functions.db_tbl_da_enhance import ensure_enhance_tables, read_accepted_net
+from db_table_functions.db_tbl_da_handoff import refuse_if_locked
 from db_table_functions.db_tbl_da_requests import (
     get_rulebook_for_request,
     read_request,
@@ -256,7 +257,7 @@ def start_approach(
         pending_choices=result.reply.design_choices,
     )
     with _write_transaction(settings.db_path) as conn:
-        request = _require_request(conn, request_id)
+        request = _require_open_request(conn, request_id)
         turn = _Turn(conn, request, state, now)
         turn.state = save_approach_state(conn, state, base_revision, now)
         insert_approach_version(conn, version, now)
@@ -905,7 +906,7 @@ def _snapshot(settings: Settings, request_id: str, base_revision: int) -> _Snap:
         ensure_audit_table(conn)
         ensure_enhance_tables(conn)
         conn.execute("BEGIN")
-        request = _require_request(conn, request_id)
+        request = _require_open_request(conn, request_id)
         if read_approach_revision(conn, request_id) != base_revision:
             raise StaleRevisionError(STALE_MESSAGE)
         record = read_confirmed_record(conn, request_id, request.version)
@@ -946,13 +947,20 @@ def _write_transaction(db_path: Path) -> Iterator[sqlite3.Connection]:
 def _turn(db_path: Path, request_id: str, base_revision: int, now: datetime) -> Iterator[_Turn]:
     """Open one action's transaction, check the revision, and save the state at the end."""
     with _write_transaction(db_path) as conn:
-        request = _require_request(conn, request_id)
+        request = _require_open_request(conn, request_id)
         state = read_approach_state(conn, request_id)
         if state is None or state.revision != base_revision:
             raise StaleRevisionError(STALE_MESSAGE)
         turn = _Turn(conn, request, state, now)
         yield turn
         save_approach_state(conn, turn.state, base_revision, now)
+
+
+def _require_open_request(conn: sqlite3.Connection, request_id: str) -> Request:
+    """For developer actions: refused when the request is handed off (Phase 10)."""
+    request = _require_request(conn, request_id)
+    refuse_if_locked(conn, request_id)
+    return request
 
 
 def _require_request(conn: sqlite3.Connection, request_id: str) -> Request:

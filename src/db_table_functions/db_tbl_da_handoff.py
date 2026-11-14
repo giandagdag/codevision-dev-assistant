@@ -11,8 +11,13 @@ import sqlite3
 from datetime import datetime
 
 from db_table_functions.da_db import to_db_time
-from db_table_functions.db_tbl_da_understand import STALE_MESSAGE, StaleRevisionError
-from pydantic_classes.da_handoff_models import HandoffRow, HandoffState
+from db_table_functions.db_tbl_da_understand import (
+    STALE_MESSAGE,
+    StaleRevisionError,
+    UnderstandError,
+)
+from pydantic_classes.da_handoff_models import LOCKED_MESSAGE, HandoffRow, HandoffState
+from pydantic_classes.da_models import STATUS_HANDED_OFF
 
 _CREATE_TABLES_SQL = """
 CREATE TABLE IF NOT EXISTS da_handoff_state (
@@ -45,6 +50,20 @@ BEGIN
     SELECT RAISE(ABORT, 'A handoff is append-only and cannot be deleted.');
 END;
 """
+
+
+class HandoffLockedError(UnderstandError):
+    """A developer action on a handed-off request (spec section 4: locked means locked)."""
+
+
+def refuse_if_locked(conn: sqlite3.Connection, request_id: str) -> None:
+    """Put at the top of every developer action. Reading stays open, so views never call it.
+    AS400 picture: an object lock, the member is checked in and nobody may change it."""
+    row = conn.execute(
+        "SELECT status FROM da_requests WHERE request_id = ?", (request_id,)
+    ).fetchone()
+    if row is not None and row["status"] == STATUS_HANDED_OFF:
+        raise HandoffLockedError(LOCKED_MESSAGE)
 
 
 def ensure_handoff_tables(conn: sqlite3.Connection) -> None:

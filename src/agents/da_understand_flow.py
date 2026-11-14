@@ -38,6 +38,7 @@ from da_logging import get_logger
 from db_table_functions import db_tbl_da_requests
 from db_table_functions.da_db import begin_write, open_db
 from db_table_functions.db_tbl_da_audit import ensure_audit_table, insert_audit_event
+from db_table_functions.db_tbl_da_handoff import refuse_if_locked
 from db_table_functions.db_tbl_da_requests import (
     get_rulebook_for_request,
     insert_request,
@@ -1005,6 +1006,7 @@ def _turn(db_path: Path, request_id: str, base_revision: int, now: datetime) -> 
     max_decisions = _decision_limit(db_path, request_id)
     with _write_transaction(db_path) as conn:
         request = read_request(conn, request_id)
+        refuse_if_locked(conn, request_id)
         session = read_session(conn, request_id)
         if request is None or session is None:
             raise UnderstandError(f"Request {request_id} does not exist.")

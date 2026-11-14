@@ -113,3 +113,12 @@ class HandoffRow(_Shape):
     summary_text: str
     handed_off_by: str
     created_at: AwareDatetime | None = None
+
+
+class HandoffView(_Shape):
+    """What the screen needs about Handoff, read with no lock."""
+
+    state: HandoffState
+    handoff: HandoffRow | None = None
+    can_start: bool = False  # the Ready for handoff button (READY_FOR_REVIEW only)
+    locked: bool = False

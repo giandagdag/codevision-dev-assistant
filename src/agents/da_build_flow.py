@@ -59,6 +59,7 @@ from db_table_functions.db_tbl_da_build import (
     read_rounds,
     save_build_state,
 )
+from db_table_functions.db_tbl_da_handoff import refuse_if_locked
 from db_table_functions.db_tbl_da_requests import (
     get_rulebook_for_request,
     read_request,
@@ -188,7 +189,7 @@ def start_build(
     is saved as a `scanned` row, and his text becomes the starting text for the build (D-K)."""
     now = now or datetime.now(UTC)
     with _write(settings.db_path) as conn:
-        request = _require_request(conn, request_id)
+        request = _require_open_request(conn, request_id)
         _check_revision(conn, request_id, base_revision)
         state = read_build_state(conn, request_id) or BuildState(request_id=request_id)
         _require_can_start(conn, request, state)
@@ -447,7 +448,7 @@ def rebuild_after_stop(
     choosing between his version and the AI's is Phase 8."""
     now = now or datetime.now(UTC)
     with _write(settings.db_path) as conn:
-        request = _require_request(conn, request_id)
+        request = _require_open_request(conn, request_id)
         _check_revision(conn, request_id, base_revision)
         state = read_build_state(conn, request_id)
         _require_step(state or BuildState(request_id=request_id), "b_write_stopped")
@@ -869,7 +870,7 @@ def _write(db_path: Path) -> Iterator[sqlite3.Connection]:
 def _turn(db_path: Path, request_id: str, base_revision: int, now: datetime) -> Iterator[BuildTx]:
     """Open one action's transaction, check the revision, and save the state at the end."""
     with _write(db_path) as conn:
-        request = _require_request(conn, request_id)
+        request = _require_open_request(conn, request_id)
         _check_revision(conn, request_id, base_revision)
         state = read_build_state(conn, request_id)
         if state is None:
@@ -894,6 +895,13 @@ def _require_request(conn: sqlite3.Connection, request_id: str) -> Request:
     request = read_request(conn, request_id)
     if request is None:
         raise BuildError(f"Request {request_id} does not exist.")
+    return request
+
+
+def _require_open_request(conn: sqlite3.Connection, request_id: str) -> Request:
+    """For developer actions: the request must exist and must not be handed off (Phase 10)."""
+    request = _require_request(conn, request_id)
+    refuse_if_locked(conn, request_id)
     return request
 
 

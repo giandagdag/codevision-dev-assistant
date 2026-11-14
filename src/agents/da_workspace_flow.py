@@ -37,6 +37,7 @@ from db_table_functions.db_tbl_da_approach import (
     save_approach_state,
 )
 from db_table_functions.db_tbl_da_audit import ensure_audit_table, insert_audit_event
+from db_table_functions.db_tbl_da_handoff import refuse_if_locked
 from db_table_functions.db_tbl_da_requests import (
     get_rulebook_for_request,
     read_request,
@@ -748,7 +749,7 @@ def _snapshot(settings, request_id: str, base_revision: int) -> _Snap:
         ensure_workspace_tables(conn)
         ensure_audit_table(conn)
         conn.execute("BEGIN")
-        request = _require_request(conn, request_id)
+        request = _require_open_request(conn, request_id)
         if read_workspace_revision(conn, request_id) != base_revision:
             raise StaleRevisionError(STALE_MESSAGE)
         if request.status != STATUS_READY_TO_BUILD:
@@ -787,7 +788,14 @@ def _begin(conn: sqlite3.Connection, request_id: str, base_revision: int, now: d
     """Inside the write lock: the revision must still be the one the window saw."""
     if read_workspace_revision(conn, request_id) != base_revision:
         raise StaleRevisionError(STALE_MESSAGE)
-    return _Tx(conn, _require_request(conn, request_id), now)
+    return _Tx(conn, _require_open_request(conn, request_id), now)
+
+
+def _require_open_request(conn: sqlite3.Connection, request_id: str) -> Request:
+    """For developer actions: refused when the request is handed off (Phase 10)."""
+    request = _require_request(conn, request_id)
+    refuse_if_locked(conn, request_id)
+    return request
 
 
 def _require_request(conn: sqlite3.Connection, request_id: str) -> Request:
