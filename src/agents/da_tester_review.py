@@ -14,6 +14,7 @@ from pathlib import Path
 from agents.da_approach_agent import fill_template
 from agents.da_build_agent import format_approach, format_cases
 from agents.da_build_checks import case_ids_from_method, find_test_methods
+from agents.da_guidance import guidance_block
 from pydantic_classes.da_approach_models import ApproachVersion, TestCase
 from pydantic_classes.da_build_models import (
     LABEL_NOT_PASSING,
@@ -62,6 +63,8 @@ class ReviewInput:
     start_texts: dict[str, str]
     planned_paths: list[str]
     round: int
+    # Phase 10: guidance a senior sent, handed over once (da_guidance.py). Plain text only.
+    senior_guidance: str = ""
 
 
 def judgement_rules(rules: list[Rule]) -> list[Rule]:
@@ -423,7 +426,7 @@ def build_review_prompt(data: ReviewInput, only_file: str | None = None) -> str:
         "results": format_results(data.layer_b),
         "code": "\n\n".join(blocks) or "(no code)",
     }
-    return fill_template(REVIEW_PROMPT, values)
+    return fill_template(REVIEW_PROMPT, values) + guidance_block(data.senior_guidance)
 
 
 def _same(a: str, b: str) -> bool:

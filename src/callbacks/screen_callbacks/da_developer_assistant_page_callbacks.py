@@ -58,6 +58,7 @@ from callbacks.screen_callbacks.da_refine_callbacks import register_da_refine_ca
 from callbacks.screen_callbacks.da_workspace_callbacks import register_da_workspace_callbacks
 from configs.da_config import ConfigError, Settings, load_settings
 from db_table_functions.da_db import DatabaseBusyError
+from db_table_functions.db_tbl_da_discovery import DiscoveryError
 from db_table_functions.db_tbl_da_rulebook import RulebookError
 from db_table_functions.db_tbl_da_understand import (
     STALE_MESSAGE,
@@ -353,7 +354,18 @@ def show_page(search: str | None, refresh: int | None):
                     switch_offer=enhance_flow.has_open_offer(settings, request_id),
                     enhance=understand_extras(settings, view, enhance),
                 )
-            discovery = get_discovery_view(settings, request_id)
+            try:
+                discovery = get_discovery_view(settings, request_id)
+            except DiscoveryError:
+                if view.request.status != STATUS_ESCALATION:
+                    raise
+                # Phase 10: escalated from Understand before the record was confirmed. There is
+                # no Discover to draw, so the Understand screen shows the (read-only) request.
+                return render_workspace(
+                    view,
+                    switch_offer=enhance_flow.has_open_offer(settings, request_id),
+                    enhance=understand_extras(settings, view, enhance),
+                )
             status = view.request.status
             if status in APPROACH_STATUSES or (
                 status == STATUS_ESCALATION and approach_flow.has_approach(settings, request_id)

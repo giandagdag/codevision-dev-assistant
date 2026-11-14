@@ -17,7 +17,7 @@ Like a change form that goes through two sign-offs, in a fixed order, with every
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -45,6 +45,7 @@ from agents.da_approach_checks import (
 from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import get_help, out_of_scope_approach
+from agents.da_guidance import USED_APPROACH, take_guidance
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_refine_hooks import approach_lane_plan_of, finish_revision, revision_plan_of
 from agents.da_tester_agent import (
@@ -1074,7 +1075,9 @@ def _generate(
         client = client or get_approach_client(settings, call)
     except (ConfigError, LLMClientError) as error:
         return ApproachResult(None, settings.llm_provider, "", 0, [str(error)], str(error))
-    return generate_approach(client, call, context)
+    # Phase 10: a senior's guidance goes into this one call, then it is marked used.
+    note = take_guidance(settings.db_path, context.record.request_id, USED_APPROACH)
+    return generate_approach(client, call, replace(context, senior_guidance=note))
 
 
 def _tester_client(

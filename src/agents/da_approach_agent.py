@@ -21,6 +21,7 @@ from agents.da_approach_checks import (
     normalise_reply_paths,
     question_key,
 )
+from agents.da_guidance import guidance_block
 from agents.da_llm_client import LLMClient, LLMClientError, LLMReply, get_llm_client
 from agents.da_rejected_reply_log import write_rejected_reply
 from agents.da_understand_agent import strip_think_block
@@ -86,6 +87,8 @@ class ApproachContext:
     change_text: str = ""
     # Phase 9: the accepted safety-net cases (IDs and plain sentences only, never test code).
     net_cases: list[SafetyCase] = field(default_factory=list)
+    # Phase 10: guidance a senior sent, handed over once (da_guidance.py). Plain text only.
+    senior_guidance: str = ""
 
 
 @dataclass(frozen=True)
@@ -206,7 +209,7 @@ def build_prompt(call: str, context: ApproachContext) -> str:
         "change_section": _change_section(context.change_text),
         "call_rules": CALL_RULES[call],
     }
-    return fill_template(PROMPT_FILE, values)
+    return fill_template(PROMPT_FILE, values) + guidance_block(context.senior_guidance)
 
 
 def fill_template(template_file: Path, values: dict[str, str]) -> str:

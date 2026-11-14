@@ -124,6 +124,20 @@ def read_open_escalation(conn: sqlite3.Connection, request_id: str) -> Escalatio
     return _row_from_db(row) if row else None
 
 
+def mark_guidance_used(conn: sqlite3.Connection, item: EscalationRow, used_in: str) -> None:
+    """Write `used_in` on every unused piece of guidance of a (closed) row. The row stays closed
+    and keeps its closing time; only the revision goes up."""
+    marked = [
+        piece if piece.used_in else piece.model_copy(update={"used_in": used_in})
+        for piece in item.guidance
+    ]
+    body = item.model_copy(update={"guidance": marked}).model_dump_json(exclude=_COLUMN_FIELDS)
+    conn.execute(
+        "UPDATE da_escalations SET body = ?, revision = revision + 1 WHERE escalation_id = ?",
+        (body, item.escalation_id),
+    )
+
+
 def read_escalation(conn: sqlite3.Connection, escalation_id: int) -> EscalationRow | None:
     row = conn.execute(
         "SELECT * FROM da_escalations WHERE escalation_id = ?", (escalation_id,)

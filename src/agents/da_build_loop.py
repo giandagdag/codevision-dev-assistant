@@ -59,6 +59,7 @@ from agents.da_escalation_triggers import (
     cap_hit_twice,
     tester_unable_twice,
 )
+from agents.da_guidance import USED_FIX_ROUND, USED_TESTER_REVIEW, take_guidance
 from agents.da_refine_merge import his_lines, marker_text, plan_merge
 from agents.da_sandbox import run_tests
 from agents.da_workspace_checks import fingerprint
@@ -691,10 +692,14 @@ class _Run:
         shown = (
             scoped_view(path, base, self.inp.record.functions_in_scope) if scoped else base
         )
+        # Phase 10: a senior's guidance goes into the first FIX round call only, once.
+        note = ""
+        if failures:
+            note = take_guidance(self.settings.db_path, self.request_id, USED_FIX_ROUND)
         prompt = agent.build_code_prompt(
             self.context, contract, path, action, number, tests, shown, failures,
-            self._his_lines_note(path),
-        )
+            self._his_lines_note(path), note,
+        )  # fmt: skip
         result = agent.write_code(self.client("generator"), self.context, prompt, action)
         if result.kind in ("unreachable", "too_big"):
             raise _Paused(
@@ -1172,6 +1177,10 @@ class _Run:
             start_texts=self._review_start_texts,
             planned_paths=[_clean(item.path) for item in self.inp.planned],
             round=last.round,
+            # Phase 10: a senior's guidance goes into this one review, then it is marked used.
+            senior_guidance=take_guidance(
+                self.settings.db_path, self.request_id, USED_TESTER_REVIEW
+            ),
         )
 
     def _plain_findings(self, last: RoundRecord) -> list[Finding]:

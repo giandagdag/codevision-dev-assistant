@@ -74,6 +74,8 @@ SPEC_TABLE = {
     # Phase 10: handoff, and a senior's Return (the code checks the STORED status; the table
     # lists every status a request can be escalated from).
     ("READY_FOR_REVIEW", "HANDED_OFF"),
+    # Phase 10 trigger 2a: a record confirmed with a scope conflict goes straight to a senior.
+    ("CONFIRMED_FOR_DISCOVERY", "ESCALATION_REQUIRED"),
 }
 # Return moves: ESCALATION_REQUIRED back to every status that has a move into it.
 SPEC_TABLE |= {
@@ -88,8 +90,8 @@ def test_there_are_306_real_moves():
     assert len(REAL_MOVES) == 306
 
 
-def test_confirmed_for_discovery_moves_only_to_searching():
-    assert ALLOWED_MOVES["CONFIRMED_FOR_DISCOVERY"] == ("SEARCHING",)
+def test_confirmed_for_discovery_moves_only_to_searching_or_a_senior():
+    assert ALLOWED_MOVES["CONFIRMED_FOR_DISCOVERY"] == ("SEARCHING", "ESCALATION_REQUIRED")
 
 
 def test_handed_off_has_no_moves_out_and_only_the_developer_gets_in():
