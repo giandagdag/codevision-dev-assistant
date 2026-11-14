@@ -343,24 +343,30 @@ def _criterion_of(state: RefineState, context) -> str:
 
 
 def _write_and_prove(
-    settings, work: _Work, feedback: str, client: LLMClient | None, own_test: bool = False
+    settings,
+    work: _Work,
+    feedback: str,
+    client: LLMClient | None,
+    own_test: bool = False,
+    allow_conflict: bool = True,
 ):
     """(reply, why, tests text, sandbox result). The reply is None when no usable test came. With
-    `own_test`, a reply with a `question` (too vague) comes back with no tests and no proof."""
+    `own_test`, a reply with a `question` (too vague) or a `conflict_id` comes back with no tests
+    and no proof."""
     result, error = _call(
         settings,
         REPRO_ROLE,
         client,
         lambda c: write_repro_test(
             c, work.context.record, work.contract, work.context.cases, work.policy,
-            work.criterion_id, work.case_id, feedback, own_test,
+            work.criterion_id, work.case_id, feedback, own_test, allow_conflict,
         ),
     )
     if result is None or not result.ok:
         why = error or (result.message if result else "") or "The answer was not usable."
         return None, why, "", None
     reply = result.value
-    if reply.question:
+    if reply.question or reply.conflict_id:
         return reply, "", "", None
     try:
         tests = append_test_method(work.base_tests, reply.method)

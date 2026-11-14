@@ -22,6 +22,7 @@ from agents.da_refine_bug import (
 from agents.da_refine_checks import cap_message, refine_cap_reached
 from agents.da_refine_lanes import (
     STEP_BUG_REBUILD,
+    STEP_LANE_CHOICE,
     STEP_START,
     RefineTx,
     _load_state,
@@ -44,7 +45,21 @@ ADD_LABEL = "Add this test"
 YES_FIX_LABEL = "Yes, fix it"
 DROP_LABEL = "Drop this test"
 VAGUE_PREFIX = "Describe the case more:"
-FAILS_LINE ="Your new test fails on the current code. Treat it as a bug?"
+FAILS_LINE = "Your new test fails on the current code. Treat it as a bug?"
+# B1 F6: his test disagrees with a criterion. The words live here so batch B2 can reuse them.
+STEP_OWN_CONFLICT = "own_conflict"  # nothing stored; Change what it does or Change my test
+CONFLICT_LINE = (
+    "Your test expects {expects}, but {criterion} says {says}. "
+    "Change the requirement, or change your test."
+)
+CHANGE_REQ_LABEL = "Change what it does"
+CHANGE_TEST_LABEL = "Change my test"
+SHOWN_LIMIT = 200
+
+
+def _short(text: str) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= SHOWN_LIMIT else text[: SHOWN_LIMIT - 3] + "..."
 
 
 def add_test_case(
@@ -55,6 +70,7 @@ def add_test_case(
     description: str,
     client: LLMClient | None = None,
     now: datetime | None = None,
+    allow_conflict: bool = True,
 ) -> RefineState:
     """One Tester call, one sandbox run. Nothing is appended before his click."""
     now = now or datetime.now(UTC)
@@ -63,9 +79,12 @@ def add_test_case(
         raise RefineError(problem)
     description = description.strip()
     work = _read_work(settings, request_id, base_revision, (STEP_START,), criterion_id)
-    if criterion_id not in [c.id for c in work.context.record.acceptance_criteria]:
+    criteria = {c.id: c for c in work.context.record.acceptance_criteria}
+    if criterion_id not in criteria:
         raise RefineError("Pick one of the acceptance criteria of this request.")
-    reply, why, _, proof = _write_and_prove(settings, work, description, client, own_test=True)
+    reply, why, _, proof = _write_and_prove(
+        settings, work, description, client, own_test=True, allow_conflict=allow_conflict
+    )
     with _write(settings.db_path) as conn:
         state = _load_state(conn, request_id, base_revision)
         _require_step(state, STEP_START)
@@ -77,6 +96,27 @@ def add_test_case(
             # Too vague is an answer: nothing is run or stored, and no case ID is used up.
             tx.audit("system", "own_test_vague", {"question": reply.question})
             tx.say("assistant", f"{VAGUE_PREFIX} {reply.question}")
+            return _save(tx, base_revision)
+        if reply is not None and reply.conflict_id:
+            # His test disagrees with a criterion: ask him, store nothing, use no case ID.
+            tx.audit(
+                "system", "own_test_conflict",
+                {"criterion": reply.conflict_id, "why": reply.conflict_why},
+            )
+            tx.say(
+                "assistant",
+                CONFLICT_LINE.format(
+                    expects=_short(description),
+                    criterion=reply.conflict_id,
+                    says=_short(criteria[reply.conflict_id].then),
+                ),
+            )
+            # His words and the criterion he picked wait in the Refine state (no test row, no ID).
+            tx.set(
+                step=STEP_OWN_CONFLICT,
+                pending_feedback=description,
+                suggested_criterion=criterion_id,
+            )
             return _save(tx, base_revision)
         if reply is None or proof is None:
             tx.audit("system", "own_test_unusable", {"why": why})
@@ -183,6 +223,50 @@ def treat_as_bug(
             repro_passed_today=0,
         )
         return _save(tx, base_revision)
+
+
+def change_what_it_does(
+    settings, request_id: str, base_revision: int, now: datetime | None = None
+) -> RefineState:
+    """Change what it does: his test text becomes the start of the requirement lane. The caller
+    then runs `choose_lane("requirement")` and `revise`, like any lane pick."""
+    now = now or datetime.now(UTC)
+    with _write(settings.db_path) as conn:
+        state = _load_state(conn, request_id, base_revision)
+        _require_step(state, STEP_OWN_CONFLICT)
+        tx = RefineTx(conn, _request_of(conn, request_id), state, now)
+        tx.say("developer", CHANGE_REQ_LABEL)
+        tx.audit("developer", "own_test_conflict_requirement", {})
+        tx.set(
+            step=STEP_LANE_CHOICE, pending_source="feedback", suggested_lane="requirement",
+            suggested_reason="", suggested_criterion="", lane_unusable=False, pending_record=None,
+        )
+        return _save(tx, base_revision)
+
+
+def change_my_test(
+    settings,
+    request_id: str,
+    base_revision: int,
+    client: LLMClient | None = None,
+    now: datetime | None = None,
+) -> RefineState:
+    """Change my test: the Tester writes the test to match the criterion (it may not answer
+    CONFLICT this time). The new test then goes the normal way: sandbox, then his choice."""
+    now = now or datetime.now(UTC)
+    with _write(settings.db_path) as conn:
+        state = _load_state(conn, request_id, base_revision)
+        _require_step(state, STEP_OWN_CONFLICT)
+        description, criterion_id = state.pending_feedback, state.suggested_criterion
+        tx = RefineTx(conn, _request_of(conn, request_id), state, now)
+        tx.say("developer", CHANGE_TEST_LABEL)
+        tx.audit("developer", "own_test_conflict_test", {"criterion": criterion_id})
+        tx.set(step=STEP_START, pending_feedback="", suggested_criterion="")
+        saved = _save(tx, base_revision)
+    return add_test_case(
+        settings, request_id, saved.revision, criterion_id, description, client, now,
+        allow_conflict=False,
+    )
 
 
 def drop_own_test(

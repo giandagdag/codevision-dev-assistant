@@ -146,6 +146,15 @@ LANE_STEPS: dict[str, tuple[str, list[tuple[str, str]], str, str]] = {
         "",
         "",
     ),
+    owntest.STEP_OWN_CONFLICT: (
+        "Your test and a criterion disagree.",
+        [
+            ("own_change_req", owntest.CHANGE_REQ_LABEL),
+            ("own_change_test", owntest.CHANGE_TEST_LABEL),
+        ],
+        "",
+        "",
+    ),
 }
 # Steps where Get help is added (the request is REVISION_IN_PROGRESS, spec section 10).
 HELP_STATUSES = (STATUS_REVISION,)
@@ -432,6 +441,17 @@ def _own_bug(call: _Call) -> Outcome:
     return _chain(call, lambda: bug.start_bug_fix(s, r, call.rr()))
 
 
+def _own_change_req(call: _Call) -> Outcome:
+    s, r = call.settings, call.request_id
+    owntest.change_what_it_does(s, r, call.refine_revision)
+
+    def start_lane():
+        lanes.choose_lane(s, r, "requirement", call.rr())
+        lanes.revise(s, r, call.rr())
+
+    return _chain(call, start_lane)
+
+
 def _fix_edit(call: _Call) -> Outcome:
     edit.fix_edit(call.settings, call.request_id, call.refine_revision)
     return Outcome(job=_job(call))
@@ -488,6 +508,8 @@ HANDLERS: dict[str, Callable[[_Call], Outcome]] = {
     "own_add": _own_add,
     "own_drop": _plain(owntest.drop_own_test),
     "own_bug": _own_bug,
+    "own_change_req": _own_change_req,
+    "own_change_test": _plain(owntest.change_my_test),
     "help": _plain(help_.request_help),
     "apply": _with_build_revision(picks.apply_choices),
     "fixit": _fix_it,

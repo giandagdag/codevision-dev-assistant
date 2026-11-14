@@ -49,6 +49,8 @@ instead, and nothing else (the question is at most 200 characters):
 VAGUE
 <one question that would make the case clear>
 
+{{conflict_rule}}
+
 Rules:
 - One method only, written at column 0 here (it is placed inside the test class for you).
 - Name it `test_{{method_prefix}}<short words>` in lower case words joined with underscores.
