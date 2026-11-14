@@ -13,9 +13,7 @@ from agents import da_build_loop as build_loop
 from agents import da_enhance_flow as enhance
 from agents import da_tester_flow as tester_flow
 from agents.da_admin_metrics import (
-    GET_HELP_LABEL,
     NO_DATA,
-    NO_DATA_PHASE_10,
     WINDOW_30_DAYS,
     WINDOW_ALL,
     health_report,
@@ -221,11 +219,8 @@ def test_11_40_an_empty_database_says_no_data_yet_everywhere(db_path):
     report = health_report(db_path, WINDOW_ALL, NOW)
 
     for metric in report.all_metrics:
-        if metric is report.handoffs:
-            continue
         assert metric.text == NO_DATA, metric.label
         assert metric.value is None
-    assert report.handoffs.text == NO_DATA_PHASE_10
 
 
 def test_a_fresh_install_with_only_the_rulebook_tables_does_not_crash(db_path):
@@ -268,7 +263,8 @@ def test_11_41_get_help_from_the_enhance_screen_counts_once(db_path, make_settin
     report = health_report(db_path, WINDOW_ALL)
 
     assert report.escalations.value == 1
-    assert report.escalations.note == GET_HELP_LABEL
+    assert dict(report.escalations.items)["Get help"] == 1
+    assert report.escalations.note == ""  # the old "Get help only" note is gone (10-48)
 
 
 def test_11_41_get_help_from_approach_counts_once_not_twice(db_path, make_settings):
@@ -280,7 +276,7 @@ def test_11_41_get_help_from_approach_counts_once_not_twice(db_path, make_settin
     assert health_report(db_path, WINDOW_ALL).escalations.value == 1
 
 
-def test_a_dispute_is_not_a_get_help_but_a_get_help_next_to_it_still_counts(
+def test_a_dispute_is_counted_under_dispute_and_a_get_help_next_to_it_under_get_help(
     db_path, make_settings, monkeypatch
 ):
     settings = make_settings()
@@ -294,12 +290,16 @@ def test_a_dispute_is_not_a_get_help_but_a_get_help_next_to_it_still_counts(
         settings, disputed_id, build_flow.get_revision(settings, disputed_id), must, "It is fine"
     )
 
-    assert health_report(db_path, WINDOW_ALL).escalations.value == 0  # a dispute only
+    report = health_report(db_path, WINDOW_ALL)  # Phase 10: a dispute opens a row of its own
+    assert report.escalations.value == 1
+    assert dict(report.escalations.items)["Dispute"] == 1
 
     helped = enhance.start_enhance_request(settings)
     enhance_help(settings, helped.request_id, helped.revision)
 
-    assert health_report(db_path, WINDOW_ALL).escalations.value == 1
+    report = health_report(db_path, WINDOW_ALL)
+    assert report.escalations.value == 2
+    assert dict(report.escalations.items)["Get help"] == 1
 
 
 def test_get_help_shows_even_when_no_request_was_created_in_the_window(db_path, make_settings):

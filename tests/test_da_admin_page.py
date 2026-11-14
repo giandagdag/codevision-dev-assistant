@@ -107,7 +107,7 @@ def test_build_view_shows_limits_with_bounds_and_advanced_collapsed(published_ru
     for label in ("Generator model", "Tester model", "Flag-for-review zones", "Protected files"):
         assert label in text
     switches = [c for c in walk(view) if type(c).__name__ == "Switch"]
-    assert len(switches) == 5
+    assert len(switches) == 6  # five triggers plus Phase 10's "lock the developer's chat"
 
 
 def test_no_screen_shows_a_retired_field(published_rulebook):

@@ -71,7 +71,11 @@ ADVANCED_LIMIT_FIELDS: tuple[str, ...] = (
     "max_design_choices",
     "max_material_decisions",
     "admin_unassigned_stale_days",
+    "handoff_summary_max_chars",  # Phase 10
 )
+# Phase 10: the sixth switch sits with the five triggers on the screen, but it is a plain Policy
+# yes/no field, not a trigger (it is taken out of the trigger rows when the form is saved).
+LOCK_CHAT_SWITCH = "escalation_lock_chat"
 _MODEL_FIELDS = ("generator_model", "tester_model")
 # Repository and index (Phase 11c): the four editable Policy fields (spec 11).
 REPO_LIST_FIELDS = ("allowed_folders", "workspace_markers")
@@ -201,6 +205,10 @@ def _policy_from_build_form(current: Policy, form: dict) -> Policy:
         if name in form:
             data[name] = str(form[name] or "").strip()
     if "triggers" in form:
+        switches = dict(form["triggers"]) if isinstance(form["triggers"], dict) else {}
+        if LOCK_CHAT_SWITCH in switches:
+            data[LOCK_CHAT_SWITCH] = bool(switches.pop(LOCK_CHAT_SWITCH))
+            form = {**form, "triggers": switches}
         data["escalation_triggers"] = _trigger_rows(form["triggers"])
     if "zones" in form:
         data["flag_review_zones"] = _zone_rows(form["zones"])

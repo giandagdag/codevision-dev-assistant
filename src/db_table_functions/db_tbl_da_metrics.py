@@ -80,6 +80,32 @@ def help_event_rows(conn: sqlite3.Connection, since: str | None) -> list[sqlite3
     ).fetchall()
 
 
+def handoff_count(conn: sqlite3.Connection, since: str | None) -> int:
+    """Requests handed off in the window (Phase 10: one da_handoffs row per request)."""
+    clause, params = _window("created_at", since)
+    row = conn.execute(
+        f"SELECT COUNT(*) AS total FROM da_handoffs WHERE 1 = 1{clause}", params
+    ).fetchone()
+    return row["total"]
+
+
+def escalation_rows(conn: sqlite3.Connection, since: str | None) -> list[sqlite3.Row]:
+    """Escalation rows opened in the window (Phase 10). `body` holds the triggers as JSON."""
+    clause, params = _window("opened_at", since)
+    return conn.execute(
+        "SELECT request_id, body, outcome, opened_at, closed_at FROM da_escalations"
+        f" WHERE 1 = 1{clause}",
+        params,
+    ).fetchall()
+
+
+def requests_with_escalation_rows(conn: sqlite3.Connection) -> set[str]:
+    """Requests that have any escalation row at all (any time). A request without one was
+    escalated before Phase 10 and is still counted from the audit trail."""
+    rows = conn.execute("SELECT DISTINCT request_id FROM da_escalations").fetchall()
+    return {row["request_id"] for row in rows}
+
+
 def kept_findings_by_check_and_severity(
     conn: sqlite3.Connection, since: str | None
 ) -> list[sqlite3.Row]:

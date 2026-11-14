@@ -20,6 +20,7 @@ from agents.da_admin_diff import text_line_diff
 from agents.da_admin_forms import (
     ADVANCED_LIMIT_FIELDS,
     CORE_BUILD_FIELDS,
+    LOCK_CHAT_SWITCH,
     capability_rows,
     field_bounds,
     rule_counter_text,
@@ -74,6 +75,7 @@ TRIGGER_LABELS = {
     "dispute": "Dispute",
     "tester_unable_twice": "Tester unable twice",
     "get_help": "Get help",
+    "escalation_lock_chat": "Lock the developer's chat during an escalation",  # Phase 10
 }
 
 ZONE_COLUMNS = ("name", "description", "examples", "path_patterns")
@@ -979,7 +981,12 @@ def _model_field(policy: Policy, name: str, label: str, editable: bool, draft: d
 
 
 def _triggers(policy: Policy, editable: bool, draft: dict | None):
-    chosen = _draft(draft, "triggers", {t.name: t.on for t in policy.escalation_triggers})
+    chosen = _draft(
+        draft,
+        "triggers",
+        {t.name: t.on for t in policy.escalation_triggers}
+        | {LOCK_CHAT_SWITCH: policy.escalation_lock_chat},  # Phase 10: the sixth switch
+    )
     return dmc.Stack(
         [
             dmc.Switch(

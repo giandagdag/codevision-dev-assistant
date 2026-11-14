@@ -45,7 +45,9 @@ def test_an_empty_database_says_no_data_yet_on_every_number(make_settings, publi
     text = all_text(admin_content(admin_settings(make_settings), ADMIN_PATH))
 
     assert text.count("No data yet") >= 10
-    assert "Handoffs: No data yet (comes with Phase 10)" in text
+    assert "Handoffs: No data yet" in text
+    assert "Escalations: No data yet" in text
+    assert "Phase 10" not in text  # Phase 10 is built: the "comes with Phase 10" notes are gone
 
 
 def test_the_window_change_redraws_only_the_health_numbers(make_settings, published_rulebook):
