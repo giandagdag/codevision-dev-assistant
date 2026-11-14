@@ -31,6 +31,7 @@ from agents.da_impact import summary_line
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_search_index import (
     IndexFormatError,
+    IndexNotBuiltError,
     SearchIndex,
     SearchNotConfiguredError,
     get_search_index,
@@ -270,11 +271,15 @@ def _run_round(
     request, record, rounds = _read_for_round(settings, request_id, base_revision, hint)
     # Search and the AI call run with no database lock held.
     round_number = rounds + 1
-    no_index = index is None and _no_index_at_work(settings)
-    if no_index:
-        searched = SearchRound(queries=[], hits=[], dropped=0)
+    searched, no_index_text, notes = SearchRound(queries=[], hits=[], dropped=0), "", []
+    if index is None and _no_index_at_work(settings):
+        no_index_text = NO_INDEX_MESSAGE
     else:
-        searched = _search(settings, record, hint, index)
+        try:
+            searched, notes = _search(settings, record, hint, index)
+        except IndexNotBuiltError as error:  # B1 I5: say so and carry on
+            no_index_text = str(error)
+    no_index = bool(no_index_text)
     summary = _summarise(settings, record, searched.hits, hint, client)
     outcome = outcome_status(summary.findings)
     # Phase 9: who calls the functions being changed (None for a new-program request).
@@ -289,7 +294,8 @@ def _run_round(
         hits=searched.hits,
         findings=summary.findings,
         limitations=[
-            *([NO_INDEX_MESSAGE] if no_index else []),
+            *([no_index_text] if no_index else []),
+            *notes,
             *final_limitations(summary.limitations, outcome),
         ],
         summary_source=summary.summary_source,
@@ -315,7 +321,9 @@ def _run_round(
             current = _move(conn, current, STATUS_SEARCHING, now)
         _say(conn, request_id, "assistant", SEARCHING_MESSAGE, now)
         if no_index:
-            _say(conn, request_id, "assistant", NO_INDEX_MESSAGE, now)
+            _say(conn, request_id, "assistant", no_index_text, now)
+        for note in notes:
+            _say(conn, request_id, "assistant", note, now)
         insert_result(conn, result, now)
         _move(conn, current, outcome, now)
         _audit(
@@ -388,7 +396,10 @@ def _no_index_at_work(settings: Settings) -> bool:
 def _search(settings: Settings, record: RequestRecord, hint: str, index: SearchIndex | None):
     try:
         index = index or get_search_index(settings)
-        return run_searches(index, record, hint, settings.search_top_k)
+        found = run_searches(index, record, hint, settings.search_top_k)
+        return found, list(getattr(index, "notes", []))
+    except IndexNotBuiltError:
+        raise
     except (SearchNotConfiguredError, IndexFormatError) as error:
         raise DiscoveryError(str(error)) from error
 
