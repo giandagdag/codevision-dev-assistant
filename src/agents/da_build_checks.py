@@ -110,11 +110,32 @@ def _arg_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
     return [name for name in names if name not in ("self", "cls")]
 
 
+def _last_name(expr: ast.expr) -> str:
+    """`dataclass`, `dataclasses.dataclass`, `dataclass(frozen=True)` -> `dataclass`."""
+    if isinstance(expr, ast.Call):
+        expr = expr.func
+    if isinstance(expr, ast.Attribute):
+        return expr.attr
+    return expr.id if isinstance(expr, ast.Name) else ""
+
+
 def _class_args(node: ast.ClassDef) -> list[str]:
+    """`__init__` args when written; else the fields of a Pydantic model or dataclass."""
     for child in node.body:
         if isinstance(child, ast.FunctionDef) and child.name == "__init__":
             return _arg_names(child)
-    return []
+    is_model = any(_last_name(base) == "BaseModel" for base in node.bases)
+    is_dataclass = any(_last_name(deco) == "dataclass" for deco in node.decorator_list)
+    if not (is_model or is_dataclass):
+        return []
+    return [
+        child.target.id
+        for child in node.body
+        if isinstance(child, ast.AnnAssign)
+        and isinstance(child.target, ast.Name)
+        and not child.target.id.startswith("_")
+        and "ClassVar" not in ast.unparse(child.annotation)
+    ]
 
 
 # --- the contract (spec section 3, step 1) ---

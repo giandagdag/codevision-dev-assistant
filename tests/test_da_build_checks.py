@@ -319,6 +319,24 @@ def test_a6_class_arguments_come_from_init(policy):
     assert good.ok and codes(bad) == ["A6"]
 
 
+def test_b1_5_class_arguments_come_from_model_and_dataclass_fields(policy):
+    contract = make_contract(**{MODIFY: [item("Loan", "class", ("amount", "rate"))]})
+    model = (
+        "from typing import ClassVar\nfrom pydantic import BaseModel\n\n"
+        "class Loan(BaseModel):\n    amount: float\n    rate: float\n"
+        "    _cache: int = 0\n    kind: ClassVar[str] = 'x'\n"
+    )
+    data = (
+        "import dataclasses\n\n@dataclasses.dataclass(frozen=True)\n"
+        "class Loan:\n    amount: float\n    rate: float\n"
+    )
+    plain = "class Loan:\n    amount: float\n    rate: float\n"
+
+    assert layer_a(policy, model, contract=contract).ok
+    assert layer_a(policy, data, contract=contract).ok
+    assert codes(layer_a(policy, plain, contract=contract)) == ["A6"]
+
+
 def test_every_problem_is_listed_not_just_the_first(policy):
     text = "import subprocess\n\ndef validate(path):\n    eval('1')\n"
 
