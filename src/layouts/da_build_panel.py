@@ -57,8 +57,26 @@ BANNER_COLOURS = {
 ACT_STEPS = ("b_done", "b_written", "b_write_stopped")
 ACT_STATUSES = ("READY_FOR_REVIEW", "NOT_PASSING")
 STATE_ICON = {"done": "✅", "running": "⏳", "failed": "❌", "pending": "⬜"}
-RESULT_TEXT = {"pass": "Passed", "fail": "Failed", "error": "Error", "skipped": "Skipped", "": "-"}
-RESULT_COLOUR = {"pass": "green", "fail": "red", "error": "red", "skipped": "gray", "": "gray"}
+RESULT_TEXT = {
+    "pass": "Passed",
+    "fail": "Failed",
+    "error": "Error",
+    "skipped": "Skipped",
+    "expected_failure": "Expected to fail",
+    "unexpected_success": "Passed, but expected to fail",
+    "not_proven": "Not proven: no result recorded",
+    "": "-",
+}
+RESULT_COLOUR = {
+    "pass": "green",
+    "fail": "red",
+    "error": "red",
+    "skipped": "gray",
+    "expected_failure": "gray",
+    "unexpected_success": "red",
+    "not_proven": "orange",
+    "": "gray",
+}
 
 
 def poll_interval(view: BuildView) -> dcc.Interval:

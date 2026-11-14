@@ -33,7 +33,9 @@ BuildStep = Literal[
 WriteState = Literal["not_written", "written", "stopped"]
 FileKind = Literal["contract", "test", "code"]
 MadeBy = Literal["generator", "tester", "system", "merge"]  # merge: his picks (Phase 8)
-TestResultKind = Literal["pass", "fail", "error", "skipped"]
+TestResultKind = Literal[
+    "pass", "fail", "error", "skipped", "expected_failure", "unexpected_success", "not_proven"
+]
 ProgressState = Literal["pending", "running", "done", "failed"]
 ContractKind = Literal["function", "class"]
 
@@ -144,11 +146,23 @@ class LayerBResult(_Shape):
 
     @property
     def failed(self) -> int:
-        return sum(1 for item in self.tests if item.result in ("fail", "error"))
+        bad = ("fail", "error", "unexpected_success")
+        return sum(1 for item in self.tests if item.result in bad)
+
+    @property
+    def not_proven(self) -> list[str]:
+        """Frozen tests that never reported (F2): the Developer Assistant's problem."""
+        return [item.name for item in self.tests if item.result == "not_proven"]
 
     @property
     def ok(self) -> bool:
-        return self.ran and not self.timed_out and self.failed == 0 and bool(self.tests)
+        # Pass means proven: every test reported, and every one of them passed.
+        return (
+            self.ran
+            and not self.timed_out
+            and bool(self.tests)
+            and all(item.result == "pass" for item in self.tests)
+        )
 
 
 # --- the failure report ---
