@@ -59,6 +59,19 @@ log complete and make "normal end" mean "every expected line is there".
 
 (Steps 13 to 15 are three plan steps; step 16 is small. Each run builds at most 3.)
 
+## Progress notes (builder)
+
+- Step 10 (F11) done: B4 lets `create` pass on a file the DA wrote (`written` paths); edited since is
+  left to the build's existing Keep mine / Take the AI's flow (start text = his scanned text).
+- Step 11 (F12) done: `layouts/da_busy_text.py` (table + one click script); fallback line uses the
+  button's own label.
+- PARKED step 12 (F10 Home): no browser at home (the Playwright test is skipped), so the cause cannot
+  be reproduced. Read-only leads: (a) `PAGE_BUSY` sets `pointer-events: none` on the whole page until
+  the slow callback ends, and that style survives a redraw, so the new page of the same request can
+  look dead; (b) `render_message_page` (the error page) has "Back to Home" but no title. Neither is
+  proven. Test `tests/test_da_home_again_browser.py` is written but has never run. Needs: run it at work
+  (or home with a browser) and say which lead it was. `gian-later`.
+
 ## Plan review round 1: changes taken in (Must fix 1, Should fix 6)
 
 - Step 1 also edits CLAUDE.md "Current phase" (one line, size test kept green).
