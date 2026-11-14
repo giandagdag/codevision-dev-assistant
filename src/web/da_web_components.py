@@ -22,6 +22,7 @@ from pydantic_classes.da_models import (
     STATUS_DISCOVERY_CONFIRMED,
     STATUS_DRAFT,
     STATUS_ESCALATION,
+    STATUS_HANDED_OFF,
     STATUS_NO_MATCH,
     STATUS_NOT_PASSING,
     STATUS_READY,
@@ -63,6 +64,7 @@ _PILL_COLOURS: dict[str, str] = {
     STATUS_READY_FOR_REVIEW: "yellow",
     STATUS_NOT_PASSING: "red",
     STATUS_TESTER_REVIEW: "blue",
+    STATUS_HANDED_OFF: "teal",
 }
 
 FALLBACK_BANNER = "AI summary unavailable. Showing plain search results."
@@ -285,6 +287,42 @@ def limitations_card(limitations: list[str]) -> dmc.Paper:
         radius="md",
         p="sm",
         id="da-limitations",
+    )
+
+
+# --- PR summary box (Phase 10, Handoff) ---
+
+SUMMARY_BOX_ID = "da-pr-summary"
+COPY_BUTTON_ID = "da-copy-summary"
+COPY_NOTE_ID = "da-copy-note"
+COPY_LABEL = "Copy summary"
+COPY_FALLBACK = "Your browser would not copy. The text is selected: press Ctrl+C."
+COPIED_TEXT = "Copied."
+
+
+def summary_box(text: str) -> dmc.Box:
+    """The PR summary as read-only text with a Copy summary button. The text is a plain string
+    (rule R11). The button is wired by a clientside callback (da_handoff_callbacks)."""
+    return dmc.Box(
+        [
+            dmc.Text("PR summary", fw=700, size="sm", c=da_styles.NAVY, mb=6),
+            dmc.Textarea(
+                id=SUMMARY_BOX_ID,
+                value=text,
+                readOnly=True,
+                autosize=True,
+                minRows=8,
+                maxRows=24,
+            ),
+            dmc.Group(
+                [
+                    dmc.Button(COPY_LABEL, id=COPY_BUTTON_ID, size="sm"),
+                    dmc.Text("", id=COPY_NOTE_ID, size="xs", c=da_styles.MUTED),
+                ],
+                mt="xs",
+            ),
+        ],
+        style=da_styles.PANEL_SECTION,
     )
 
 

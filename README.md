@@ -681,6 +681,30 @@ Phase 11c finishes the **Admin console**: the Overview and the Repository and in
 - **Work test:** `docs/admin-work-test.md` (Command Prompt only, one test per open question WF-1 to
   WF-8). Home check: run the app and open `127.0.0.1:8050/admin`.
 
+## How Phase 10 works: Handoff (so far)
+
+Handoff is the last step of a request. It is plain code, with no AI call. Spec
+`specs/phase-10-handoff-escalations.md`, plan `specs/phase-10-plan.md`. AS400 picture: the
+promotion request. The clerk ticks a checklist, compares the member in the library with the one
+that was tested, and only then promotes it and locks it.
+
+- **Ready for handoff** (chat button, only at READY FOR REVIEW). First the plain checks: the Tester
+  label is green or yellow, no Must fix is open, each Should fix is fixed or accepted, the last
+  test run finished. A blocked answer lists every reason in the chat and opens the Tests tab.
+- **Check my folder** (or **Upload folder to check in** in download mode). The browser reads only
+  the planned files; the server compares their fingerprints with the last tested ones. A changed
+  or missing file blocks. Re-scan and check my edits, or Restore the tested version, then check
+  again. Extra files in the folder are ignored.
+- **HANDED OFF.** One save writes the status, the PR summary, the audit events and the chat. The
+  request is locked, the sixth step lights, and the page opens on the **Audit** tab: a lock banner
+  and the **PR summary** box with **Copy summary** (if the browser will not copy, the text is
+  selected for Ctrl+C). The chat says what to do next: a Git clone is told to commit and open the
+  pull request in Bitbucket; a ZIP copy is told to upload the listed files. No Git command is shown
+  or run, and the app never commits, pushes or opens a PR.
+- **Start a follow-up request** opens a new request that says "Follows CVDA-...". Nothing is copied.
+- **Smoke check** item 28b (Handoff of the built request, summary under the length guard).
+- Still to come in Phase 10: the escalations inbox (steps 6 to 10).
+
 ## Notes for the move to CodeVision
 
 - **The audit-table triggers are SQLite-only.** The append-only guarantee comes from two SQLite

@@ -18,6 +18,7 @@ from agents.da_discover_flow import (
     HINT_QUESTION,
     outcome_status,
 )
+from agents.da_handoff_screen import FOLLOW_UP_KEY, READY_KEY, HandoffBox
 from agents.da_refine_hooks import STEP_REQ_APPROACH, STEP_REQ_FINDINGS
 from agents.da_refine_lanes import STEP_APPROACH, STEP_REQ_CHECKPOINT
 from agents.da_refine_screen import RefineBox, RefineBuildPanel, VersionHistory
@@ -121,6 +122,8 @@ UNDERSTAND_STEP = 1
 DISCOVER_STEP = 2
 APPROACH_STEP = 3
 BUILD_STEP = 4
+HANDOFF_STEP = 6  # the stepper's sixth step lights once the request is handed off
+HANDOFF_TYPE = "da-handoff"  # Phase 10: the Handoff buttons, the id index is the action key
 # The Discover buttons use the same pattern id as the Understand choices (the callbacks tell them
 # apart by the workspace state). Their ids are plain ASCII keys, never the label: Dash cannot read
 # the click count of a button whose id holds an emoji (it matches ids as escaped text).
@@ -385,8 +388,10 @@ def _workspace(
     open_tab: str | None = None,
     code_written: bool = False,
     net: list | None = None,
+    audit: list | None = None,
 ) -> list:
-    """`net`: the Safety net tab of an Enhance request (Phase 9, step 18c). None = no such tab."""
+    """`net`: the Safety net tab of an Enhance request (Phase 9, step 18c). None = no such tab.
+    `audit`: the Audit tab of a handed-off request (Phase 10). None = the tab stays greyed."""
     top = dmc.Group(
         [
             dmc.Group(
@@ -455,6 +460,7 @@ def _workspace(
                     or (name == "Approach" and approach)
                     or (name == "Build" and build)
                     or (name == "Tests" and tests)
+                    or (name == "Audit" and audit)
                 ),
                 px="xs",
             )
@@ -486,6 +492,8 @@ def _workspace(
             panels.append(_tab_panel(tests, "tests"))
         if net:
             panels.append(_tab_panel(net, NET_TAB_VALUE))
+        if audit:
+            panels.append(_tab_panel(audit, "audit"))
         tabs = dmc.Tabs(
             [tab_list, *panels],
             value=open_tab or ("approach" if approach else "discovery"),
@@ -602,8 +610,12 @@ def render_approach_workspace(
     history: VersionHistory | None = None,
     refine_panel: RefineBuildPanel | None = None,
     enhance: dict | None = None,
+    handoff: HandoffBox | None = None,
 ) -> list:
     """The workspace from APPROACH_PROPOSED on: Approach is step 3 and its tab opens first.
+
+    `handoff` (Phase 10): the Handoff buttons and notes; once handed off the Audit tab holds the
+    PR summary and the composer is a read-only line.
 
     `enhance` (Phase 9, step 18c): `net` (the Safety net tab) and `plan` (the read-only net section
     of the test plan, added under the Approach tab).
@@ -631,11 +643,15 @@ def render_approach_workspace(
         if refine is not None and refine.offered:
             # Send and the Refine buttons are Refine's now; they carry the Refine revision.
             state["refine"], state["refine_revision"] = True, refine.refine_revision
+        offered = handoff is not None and handoff.offered
+        locked = offered and handoff.locked
+        if offered:
+            state["handoff"], state["handoff_revision"] = True, handoff.revision
         if building:
             build_content = build_tab(
                 build,
                 refine.hint if refine and refine.offered else "",
-                refine_build_blocks(refine_panel),
+                [*refine_build_blocks(refine_panel), *handoff_build_blocks(handoff)],
             )
         else:
             build_content = build_panel(workspace) if workspace.step == "ws_ready" else None
@@ -645,10 +661,16 @@ def render_approach_workspace(
             status=_pill_status(view.request.status, build if building else None),
             demo_mode=view.demo_mode,
             messages=[parts.chat_bubble(message) for message in view.messages],
-            composer=_approach_composer(view, workspace, build if building else None, refine),
+            composer=(
+                locked_composer(handoff)
+                if locked
+                else _approach_composer(
+                    view, workspace, build if building else None, refine, handoff
+                )
+            ),
             panel=[*_summary_panel(understand), *version_history_blocks(history)],
             state=state,
-            step=BUILD_STEP if building else APPROACH_STEP,
+            step=HANDOFF_STEP if locked else (BUILD_STEP if building else APPROACH_STEP),
             discovery=_discovery_panel(discovery),
             busy_text=WS_BUSY_TEXT,
             approach=[
@@ -660,12 +682,18 @@ def render_approach_workspace(
             chip=workspace_chip(workspace),
             build=build_content,
             stores=workspace_stores(
-                workspace, build, refine.restore_build if refine is not None else 0
+                workspace,
+                build,
+                refine.restore_build if refine is not None else 0,
+                handoff.revision if offered else 0,
             ),
             tests=tests_tab(build) if building else None,
             poll=poll_interval(build) if building else None,
-            open_tab=refine_step_tab(refine) or ("build" if building else None),
+            open_tab=(handoff.open_tab if offered else None)
+            or refine_step_tab(refine)
+            or ("build" if building else None),
             code_written=building and any(row.status == "Written" for row in build.rows),
+            audit=audit_blocks(handoff) if locked else None,
         )
     return _workspace(
         title=view.request.title,
@@ -695,6 +723,7 @@ def _approach_composer(
     workspace: WorkspaceView | None = None,
     build: BuildView | None = None,
     refine: RefineBox | None = None,
+    handoff: HandoffBox | None = None,
 ) -> dmc.Box:
     """The bottom of the chat in Approach: the buttons of the step, and a text box that opens
     only at the steps that take typed text (rule G1). The Refine box (Phase 8) opens the text
@@ -736,7 +765,7 @@ def _approach_composer(
         style=da_styles.COMPOSER if text_open else {**da_styles.COMPOSER, "opacity": 0.6},
     )
     if build is not None and not (view is not None and view.step == "escalated"):
-        return dmc.Box([_build_bar(build, workspace, refine), controls])
+        return dmc.Box([_build_bar(build, workspace, refine, handoff), controls])
     if view is not None and view.request.status == STATUS_READY_TO_BUILD:
         done = dmc.Box(
             [
@@ -782,8 +811,56 @@ def _pill_status(status: str, build: BuildView | None) -> str:
     return status
 
 
+def handoff_buttons(handoff: HandoffBox) -> list:
+    """The server-run Handoff buttons. The id holds the key (ASCII), like the Refine buttons."""
+    return [
+        parts.choice_button(
+            label,
+            {"type": HANDOFF_TYPE, "index": key},
+            parts.PRIMARY if key in (READY_KEY, FOLLOW_UP_KEY) else parts.SECONDARY,
+        )
+        for key, label in handoff.buttons
+    ]
+
+
+def locked_composer(handoff: HandoffBox) -> dmc.Box:
+    """HANDED_OFF: no text box, one read-only line, and the follow-up button."""
+    return dmc.Box(
+        [
+            dmc.Group([_lock(), dmc.Text(handoff.note, size="sm", fw=600)], id="da-locked-line"),
+            dmc.Group(handoff_buttons(handoff), mt="xs", mb="xs"),
+        ],
+        style=da_styles.CHOICES_BAR,
+        pb="xs",
+    )
+
+
+def audit_blocks(handoff: HandoffBox) -> list:
+    """The Audit tab of a handed-off request: the lock banner and the PR summary box."""
+    return [
+        dmc.Alert(
+            "Handed off. This request is locked.",
+            color="teal",
+            variant="light",
+            mb="sm",
+            id="da-lock-banner",
+        ),
+        parts.summary_box(handoff.summary),
+    ]
+
+
+def handoff_build_blocks(handoff: HandoffBox | None) -> list:
+    """The Build tab's pointer to the summary (one place to copy from: the Audit tab)."""
+    if handoff is None or not handoff.locked:
+        return []
+    return [dmc.Text("The PR summary is on the Audit tab.", size="sm", id="da-open-summary")]
+
+
 def _build_bar(
-    build: BuildView, workspace: WorkspaceView | None = None, refine: RefineBox | None = None
+    build: BuildView,
+    workspace: WorkspaceView | None = None,
+    refine: RefineBox | None = None,
+    handoff: HandoffBox | None = None,
 ) -> dmc.Box:
     """The buttons under the chat once a build has started (spec section 1). Browser-run ones
     (Re-scan and build again) start JavaScript; server-run ones use the normal choice path.
@@ -811,6 +888,12 @@ def _build_bar(
     # F8: Get help comes last, after the Refine buttons (Check my edits, Restore or Undo).
     shown += [button for key, button in build_buttons if key != "help"]
     shown += refine_buttons(refine) if offered else []
+    if handoff is not None and handoff.offered and not lane:
+        shown += [
+            parts.choice_button(label, ws_button_id(key, "bar"), parts.PRIMARY)
+            for key, label in handoff.browser_buttons
+        ]
+        shown += handoff_buttons(handoff)
     shown += [button for key, button in build_buttons if key == "help"]
     reconnect = _hidden_reconnect(workspace)
     if reconnect is not None:
@@ -826,10 +909,15 @@ def _build_bar(
         id="da-build-chat-status",
     )
     note = (refine.note if offered and refine.note else "") or BUILD_NOTES.get(build.state.step, "")
+    handoff_lines = []
+    if handoff is not None and handoff.offered and not lane:
+        note = handoff.note or note
+        handoff_lines = [dmc.Text(line, size="xs", c="red") for line in handoff.blockers]
     return dmc.Box(
         [
             status,
             dmc.Group([_lock(), dmc.Text(note, size="xs", fw=600)]),
+            *handoff_lines,
             dmc.Group(shown, mt="xs", mb="xs"),
         ],
         style=da_styles.CHOICES_BAR,
@@ -1246,7 +1334,9 @@ def _summary_panel(view: UnderstandView | None) -> list:
         else []
     )
     criteria = list(record.acceptance_criteria) if record and "acceptance_criteria" in shown else []
+    follows = view.request.follows_request_id if view else None
     return [
+        *([dmc.Text(f"Follows {follows}", size="sm", fw=600, id="da-follows")] if follows else []),
         parts.progress_segments(answered, text, warn),
         parts.panel_section(
             "Requirement summary",

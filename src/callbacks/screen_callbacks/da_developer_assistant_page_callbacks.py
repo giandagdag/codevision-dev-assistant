@@ -31,6 +31,7 @@ from agents.da_discover_flow import (
 )
 from agents.da_enhance_checks import available_symbols
 from agents.da_enhance_flow import get_enhance_view, start_enhance_request
+from agents.da_handoff_screen import get_handoff_box
 from agents.da_refine_actions import get_refine_bar
 from agents.da_refine_screen import (
     get_history,
@@ -52,6 +53,7 @@ from agents.da_understand_flow import (
 from agents.da_understand_flow import (
     PROCEED_OPTION as UNDERSTAND_PROCEED,
 )
+from callbacks.screen_callbacks.da_handoff_callbacks import register_da_handoff_callbacks
 from callbacks.screen_callbacks.da_refine_callbacks import register_da_refine_callbacks, run_refine
 from callbacks.screen_callbacks.da_workspace_callbacks import register_da_workspace_callbacks
 from configs.da_config import ConfigError, Settings, load_settings
@@ -128,6 +130,7 @@ from pydantic_classes.da_models import (
     STATUS_DISCOVERY_CONFIRMED,
     STATUS_DRAFT,
     STATUS_ESCALATION,
+    STATUS_HANDED_OFF,
     STATUS_NOT_PASSING,
     STATUS_READY,
     STATUS_READY_FOR_REVIEW,
@@ -155,6 +158,7 @@ APPROACH_STATUSES = (
     STATUS_BUILDING,
     STATUS_TESTER_REVIEW,
     STATUS_READY_FOR_REVIEW,
+    STATUS_HANDED_OFF,  # Phase 10: locked, opens on the Audit tab
     STATUS_NOT_PASSING,
     STATUS_REVISION,  # Phase 8: a Refine lane is open; the pill shows REVISION IN PROGRESS
 )
@@ -166,6 +170,7 @@ WORKSPACE_STATUSES = (
     STATUS_BUILDING,
     STATUS_TESTER_REVIEW,
     STATUS_READY_FOR_REVIEW,
+    STATUS_HANDED_OFF,
     STATUS_NOT_PASSING,
     STATUS_REVISION,
 )
@@ -371,9 +376,15 @@ def show_page(search: str | None, refresh: int | None):
                     if build is not None
                     else None
                 )
+                handoff = (
+                    get_handoff_box(settings, request_id, status, workspace.mode)
+                    if workspace is not None
+                    else None
+                )
                 return render_approach_workspace(
                     view, discovery, approach, workspace, build, refine, history, panel,
                     enhance=approach_extras(settings, request_id, enhance),
+                    handoff=handoff,
                 )
             # A requirement lane runs Discover again; the Refine bar replaces its buttons.
             lane_bar = get_refine_bar(settings, request_id)
@@ -871,6 +882,7 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
 
     register_da_workspace_callbacks(app, lambda: get_settings())
     register_da_refine_callbacks(app, lambda: get_settings())
+    register_da_handoff_callbacks(app, lambda: get_settings())
 
     # Card 1 switch offer (Phase 9 step 18a). Registered last so the order tests above still hold.
     app.callback(

@@ -15,6 +15,7 @@ from agents import da_approach_flow as approach
 from agents import da_build_flow as build
 from agents import da_build_loop as build_loop
 from agents import da_enhance_flow as enhance_flow
+from agents import da_handoff_flow as handoff
 from agents import da_refine_bug as refine_bug
 from agents import da_refine_lanes as refine_lanes
 from agents import da_refine_revision as refine_revision
@@ -38,6 +39,7 @@ from agents.da_understand_flow import (
     set_functions_in_scope,
     submit_form,
 )
+from agents.da_workspace_checks import fingerprint
 from configs.da_config import DEFAULT_ENV_FILE, ConfigError, Settings, load_settings
 from da_llm_ping import ping
 from da_load_starter_rulebook import load_starter_rulebook
@@ -630,6 +632,41 @@ def _run_build_steps(settings: Settings, request_id: str, folder: FakeBrowserFol
     )
     _run_refine_bug_step(settings, request_id, folder)
     _run_refine_requirement_step(settings, request_id, folder)
+    _run_handoff_step(settings, request_id, folder)
+
+
+def _run_handoff_step(settings: Settings, request_id: str, folder: FakeBrowserFolder) -> None:
+    """Item 28b (Phase 10): Handoff. Open Should fix findings are accepted with a reason, the
+    plain checks pass, the pretend folder is compared with the last test, and the request is
+    locked with a PR summary under the length guard."""
+    _write_built_files(settings, request_id, folder)
+    for row in tester_flow.get_tester_view(settings, request_id).rows:
+        if row.state == "open" and row.finding.severity == "should_fix":
+            tester_flow.accept_finding(
+                settings,
+                request_id,
+                build.get_revision(settings, request_id),
+                row.finding.finding_id,
+                "Made-up reason: the team agreed to leave this as it is for now.",
+            )
+    revision = handoff.get_handoff_view(settings, request_id).state.revision
+    state = handoff.ready_for_handoff(settings, request_id, revision)
+    if state.step != "h_checking":
+        raise UnderstandError(f"Ready for handoff ended at {state.step}: {state.blockers}")
+    seen = {
+        path: fingerprint(folder.files[path])
+        for path in workspace.get_workspace_view(settings, request_id).planned_paths
+        if path in folder.files
+    }
+    state = handoff.final_check(settings, request_id, state.revision, seen)
+    view = handoff.get_handoff_view(settings, request_id)
+    text = view.handoff.summary_text if view.handoff else ""
+    if state.step != "h_done" or not view.locked or not 0 < len(text) < 4000 or "tests/" in text:
+        raise UnderstandError(f"The handoff ended at {state.step}, summary of {len(text)} chars.")
+    print(
+        f"28b. Handoff: the folder matched the last test, the request is HANDED_OFF and locked, "
+        f"and the PR summary has {len(text)} characters (no tests/ path)"
+    )
 
 
 def _write_built_files(settings: Settings, request_id: str, folder: FakeBrowserFolder) -> None:

@@ -245,33 +245,46 @@ def create_understand_request(
     now = now or datetime.now(UTC)
     developer_id = developer_id or settings.developer_id
     with _write_transaction(settings.db_path) as conn:
-        request = insert_request(conn, NEW_REQUEST_TITLE, developer_id, now)
-        record = RequestRecord(
-            request_id=request.request_id, rulebook_version=request.rulebook_version
-        )
-        session = UnderstandSession(request_id=request.request_id, record=record, step=FORM_STEP)
-        insert_session(conn, session, now)
-        add_message(conn, request.request_id, "developer", text, now)
-        insert_audit_event(
-            conn,
-            request.request_id,
-            "developer",
-            "request_created",
-            {"rulebook_version": request.rulebook_version},
-            now,
-        )
-        update_request(conn, request.request_id, now=now, status=STATUS_CLARIFICATION)
-        insert_audit_event(
-            conn,
-            request.request_id,
-            "system",
-            "status_changed",
-            {"from": request.status, "to": STATUS_CLARIFICATION},
-            now,
-        )
-        add_message(conn, request.request_id, "assistant", FORM_MESSAGE, now)
+        request = open_new_request(conn, developer_id, text, now)
     logger.info("Created Understand request %s", request.request_id)
     return get_understand_view(settings, request.request_id)
+
+
+def open_new_request(
+    conn,
+    developer_id: str,
+    first_message: str,
+    now: datetime,
+    title: str = NEW_REQUEST_TITLE,
+    follows_request_id: str | None = None,
+) -> Request:
+    """The rows of a new request, inside the caller's write transaction: the request, its form
+    session, the first message, the move to CLARIFICATION and the form message. A Handoff
+    follow-up uses the same rows (and a title and a link), so its page opens like any new one."""
+    request = insert_request(conn, title, developer_id, now, follows_request_id)
+    record = RequestRecord(request_id=request.request_id, rulebook_version=request.rulebook_version)
+    session = UnderstandSession(request_id=request.request_id, record=record, step=FORM_STEP)
+    insert_session(conn, session, now)
+    add_message(conn, request.request_id, "developer", first_message, now)
+    insert_audit_event(
+        conn,
+        request.request_id,
+        "developer",
+        "request_created",
+        {"rulebook_version": request.rulebook_version},
+        now,
+    )
+    update_request(conn, request.request_id, now=now, status=STATUS_CLARIFICATION)
+    insert_audit_event(
+        conn,
+        request.request_id,
+        "system",
+        "status_changed",
+        {"from": request.status, "to": STATUS_CLARIFICATION},
+        now,
+    )
+    add_message(conn, request.request_id, "assistant", FORM_MESSAGE, now)
+    return request
 
 
 class FormError(UnderstandError):

@@ -18,6 +18,7 @@ from agents.da_handoff_checks import compare_fingerprints, findings_check, folde
 from agents.da_handoff_facts import gather_summary_facts
 from agents.da_handoff_summary import build_summary
 from agents.da_tester_flow import DONE_STEPS, get_tester_view
+from agents.da_understand_flow import open_new_request
 from db_table_functions.da_db import begin_write, open_db
 from db_table_functions.db_tbl_da_approach import read_approach_state, save_approach_state
 from db_table_functions.db_tbl_da_audit import ensure_audit_table, insert_audit_event
@@ -35,7 +36,6 @@ from db_table_functions.db_tbl_da_handoff import (
 from db_table_functions.db_tbl_da_refine import read_tested
 from db_table_functions.db_tbl_da_requests import (
     get_rulebook_for_request,
-    insert_request,
     read_request,
     update_request,
 )
@@ -45,8 +45,9 @@ from db_table_functions.db_tbl_da_understand import (
     StaleRevisionError,
     UnderstandError,
     add_message,
+    ensure_understand_tables,
 )
-from db_table_functions.db_tbl_da_workspace import ensure_workspace_tables
+from db_table_functions.db_tbl_da_workspace import ensure_workspace_tables, read_workspace_state
 from pydantic_classes.da_handoff_models import (
     ESCALATION_OPEN_MESSAGE,
     HandoffRow,
@@ -71,6 +72,15 @@ DONE_LINE = (
     "Handed off. The request is locked. Copy the PR summary from the Audit tab into your pull "
     "request."
 )
+CLONE_TEXT = (
+    "Commit the changed files from your folder and open the pull request in Bitbucket. Paste the "
+    "summary from the Audit tab into the PR description."
+)
+ZIP_TEXT = (
+    "Upload the files listed under Files in the summary to the Bitbucket branch and open the pull "
+    "request. Paste the summary into the PR description."
+)
+SENIOR_TEXT = " Add {senior} as a reviewer."
 
 
 class HandoffError(UnderstandError):
@@ -178,7 +188,9 @@ def start_follow_up(
         old = read_request(conn, request_id)
         if old is None or old.status != STATUS_HANDED_OFF:
             raise HandoffError("A follow-up can only start from a handed-off request.")
-        new = insert_request(conn, f"Follow-up to {old.title}"[:200], developer_id, now, request_id)
+        title = f"Follow-up to {old.title}"[:200]
+        opening = f"This follows {request_id}: {old.title}"
+        new = open_new_request(conn, developer_id, opening, now, title, request_id)
         insert_audit_event(
             conn, request_id, "developer", "follow_up_started", {"new_request": new.request_id}, now
         )
@@ -242,9 +254,23 @@ def _hand_off(conn, request, state, base_revision, checks, approach, max_chars, 
         conn, request_id, "developer", "handed_off",
         {"build": facts.build_number, "summary_chars": len(text)}, now,
     )  # fmt: skip
-    _say(conn, request_id, "assistant", DONE_LINE, now)
+    senior = facts.named_senior if facts.zones else ""  # named only when a flagged zone exists
+    _say(conn, request_id, "assistant", done_text(conn, request_id, senior), now)
     changes = {"step": "h_done", "blockers": [], "checks": checks}
     return save_handoff_state(conn, state.model_copy(update=changes), base_revision, now)
+
+
+def done_text(conn: sqlite3.Connection, request_id: str, named_senior: str = "") -> str:
+    """The chat text at h_done (spec section 6): a Git clone and a ZIP copy get different next
+    steps. No Git command is shown or run. The folder kind comes from the Phase 5 check."""
+    workspace = read_workspace_state(conn, request_id)
+    check = workspace.last_check if workspace is not None else None
+    if check is not None and check.has_git:
+        next_step = CLONE_TEXT
+    else:
+        next_step = ZIP_TEXT
+    senior = SENIOR_TEXT.format(senior=named_senior) if named_senior else ""
+    return f"{DONE_LINE}\n{next_step}{senior}"
 
 
 def _move(conn: sqlite3.Connection, request: Request, status: str, now: datetime) -> Request:
@@ -313,6 +339,7 @@ def _write(db_path) -> Iterator[sqlite3.Connection]:
         # Tables first: setting up a table ends any open transaction.
         ensure_rulebook_tables(conn)
         ensure_audit_table(conn)
+        ensure_understand_tables(conn)  # a follow-up request opens with a form session
         ensure_workspace_tables(conn)
         ensure_build_tables(conn)
         ensure_enhance_tables(conn)
