@@ -540,8 +540,9 @@ def _evaluate(snap: _Snap, facts: FolderFacts, request_id: str) -> tuple[CheckRe
     (Phase 6, C1). It stays a job so the browser steps of Phase 5 keep their shape."""
     try:
         verify_facts(facts, snap.planned_paths)
+        wrote = [path for path, item in snap.known.items() if item.kind == "written"]
         result = check_facts(
-            facts, snap.planned, snap.policy, snap.state.folder_name if snap.state else ""
+            facts, snap.planned, snap.policy, snap.state.folder_name if snap.state else "", wrote
         )
     except FactsProblem as error:
         raise WorkspaceError(str(error)) from error

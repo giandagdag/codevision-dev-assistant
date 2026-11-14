@@ -109,6 +109,7 @@ def check_facts(
     files: list[PlannedFile],
     policy: Policy,
     remembered_folder: str = "",
+    written: Iterable[str] = (),
 ) -> CheckResult:
     """The workspace check (spec section 4). Blockers B1 to B6, plus shown-only information.
     (B7, the tests-folder blocker, was dropped in Phase 6: tests never go to the workspace.)"""
@@ -121,7 +122,7 @@ def check_facts(
     folder_blockers = _folder_blockers(facts, policy)
     blockers.extend(folder_blockers)
     if not folder_blockers:
-        blockers.extend(_file_blockers(facts, files, policy))
+        blockers.extend(_file_blockers(facts, files, policy, set(written)))
     info = [] if facts.has_git else [NOT_GIT_INFO]
     return CheckResult(
         passed=not blockers,
@@ -151,7 +152,9 @@ def _folder_blockers(facts: FolderFacts, policy: Policy) -> list[Blocker]:
     ]
 
 
-def _file_blockers(facts: FolderFacts, files: list[PlannedFile], policy: Policy) -> list[Blocker]:
+def _file_blockers(
+    facts: FolderFacts, files: list[PlannedFile], policy: Policy, written: set[str]
+) -> list[Blocker]:
     by_path = {normalise_path(item.path): item for item in facts.files}
     blockers: list[Blocker] = []
     for planned in files:
@@ -159,11 +162,18 @@ def _file_blockers(facts: FolderFacts, files: list[PlannedFile], policy: Policy)
         fact = by_path.get(path)
         if fact is None:
             raise FactsProblem(f"The browser did not report {path}.")
-        blockers.extend(_one_file_blockers(path, planned.action, fact, policy))
+        blockers.extend(_one_file_blockers(path, planned.action, fact, policy, path in written))
     return blockers
 
 
-def _one_file_blockers(path: str, action: str, fact: FileFact, policy: Policy) -> list[Blocker]:
+def _one_file_blockers(
+    path: str, action: str, fact: FileFact, policy: Policy, wrote_it: bool = False
+) -> list[Blocker]:
+    if action == "create" and fact.exists and wrote_it:
+        # F11: the DA wrote this file in an earlier build, so a revision updates it in place. If he
+        # edited it since, the build's Keep mine / Take the AI's flow protects his edit (never a
+        # silent overwrite), so the check does not block either way.
+        action = "modify"
     if action == "create":
         if fact.exists:
             return [
