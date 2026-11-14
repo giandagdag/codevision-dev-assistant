@@ -21,6 +21,9 @@ from agents.da_approach_checks import normalise_path
 from agents.da_approach_flow import CAP_MESSAGE, CHANGE_APPROACH_OPTION, HELP_BUTTON, TEXT_PROMPTS
 from agents.da_build_checks import case_ids_from_method, find_test_methods
 from agents.da_check_words import CHECK_BANNER, CHECK_CANCEL_LABEL, CHECK_KIND
+from agents.da_escalation_flow import escalate as open_escalation
+from agents.da_escalation_flow import request_triggers
+from agents.da_escalation_triggers import get_help
 from agents.da_workspace_checks import (
     FactsProblem,
     build_write_job,
@@ -86,6 +89,7 @@ from pydantic_classes.da_build_models import (
     BuildView,
     TestRow,
 )
+from pydantic_classes.da_escalation_models import TriggerDecision
 from pydantic_classes.da_models import (
     STATUS_APPROACH_PROPOSED,
     STATUS_BUILDING,
@@ -281,9 +285,18 @@ def request_help(
     return get_state(settings, request_id)
 
 
-def escalate(tx: BuildTx, open_item: str, details: dict) -> None:
+def escalate(
+    tx: BuildTx, open_item: str, details: dict, decision: TriggerDecision | None = None
+) -> bool:
     """Hand the request to a senior (ESCALATION_REQUIRED) with a named open item. Used by Get help
-    and by Dispute (Phase 7). Call it inside an action's transaction."""
+    and by Dispute (Phase 7). Call it inside an action's transaction. The shared helper writes the
+    row first; with the trigger's switch off nothing moves and this answers False (D-I)."""
+    decision = decision or get_help(
+        request_triggers(tx.conn, tx.request.request_id), "Build", str(details.get("step", ""))
+    )
+    outcome = open_escalation(tx.conn, tx.request.request_id, decision, tx.now, open_item)
+    if outcome.switched_off:
+        return False
     approach_state = read_approach_state(tx.conn, tx.request.request_id)
     if approach_state is None:
         raise BuildError("There is no approach to escalate.")
@@ -300,6 +313,7 @@ def escalate(tx: BuildTx, open_item: str, details: dict) -> None:
     )
     save_approach_state(tx.conn, approach_state, approach_revision, tx.now)
     tx.set(step="escalated")
+    return True
 
 
 def change_approach(

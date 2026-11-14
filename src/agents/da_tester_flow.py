@@ -14,6 +14,9 @@ from agents import da_build_flow as build_flow
 from agents import da_build_loop as loop
 from agents import da_tester_review as tester
 from agents.da_build_flow import BuildTx, _turn, escalate
+from agents.da_escalation_flow import escalate as open_escalation
+from agents.da_escalation_flow import request_triggers
+from agents.da_escalation_triggers import dispute as dispute_trigger
 from db_table_functions.da_db import open_db
 from db_table_functions.db_tbl_da_build import (
     BuildError,
@@ -109,10 +112,16 @@ def dispute_finding(
     reason = _clean_reason(reason)
     with _report_turn(settings, request_id, base_revision, now) as (tx, review, actions):
         _finding(review, finding_id, "must_fix")
+        decision = dispute_trigger(request_triggers(tx.conn, request_id), finding_id)
+        if decision.switched_off:
+            # D-I: the Must fix stays open and nothing moves; the chat says so.
+            tx.say("developer", f"Dispute {finding_id}: {reason}")
+            open_escalation(tx.conn, request_id, decision, tx.now)
+            return
         _record(tx, review, finding_id, "disputed", reason, actions)
         tx.say("developer", f"Dispute {finding_id}: {reason}")
         tx.audit("developer", "finding_disputed", {"finding": finding_id, "reason": reason})
-        escalate(tx, f"{DISPUTE_PREFIX}{finding_id}", {"step": tx.state.step})
+        escalate(tx, f"{DISPUTE_PREFIX}{finding_id}", {"step": tx.state.step}, decision)
 
 
 def rerun_review(

@@ -209,6 +209,16 @@ def read_reviews(
     return [_to_review(conn, row) for row in rows]
 
 
+def unable_review_numbers(conn: sqlite3.Connection, request_id: str) -> list[int]:
+    """The review numbers that ended Unable to assess, oldest first (escalation trigger 4)."""
+    rows = conn.execute(
+        "SELECT review_number FROM da_tester_reviews WHERE request_id = ? AND result = 'unable'"
+        " ORDER BY build_number, review_number",
+        (request_id,),
+    ).fetchall()
+    return [row["review_number"] for row in rows]
+
+
 def count_unable_reviews(conn: sqlite3.Connection, request_id: str) -> int:
     """How many reviews ended Unable to assess (kept for Phase 10, escalation trigger 4)."""
     row = conn.execute(

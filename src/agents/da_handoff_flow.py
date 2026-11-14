@@ -14,6 +14,9 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 
+from agents.da_escalation_flow import escalate as open_escalation
+from agents.da_escalation_flow import request_triggers
+from agents.da_escalation_triggers import get_help
 from agents.da_handoff_checks import compare_fingerprints, findings_check, folder_blockers
 from agents.da_handoff_facts import gather_summary_facts
 from agents.da_handoff_summary import build_summary
@@ -213,11 +216,14 @@ def request_help(
         if approach is None:
             raise HandoffError("There is no approach to escalate.")
         open_item = f"{ESCALATED_PREFIX}{state.step}"
+        _say(conn, request_id, "developer", HELP_LABEL, now)
+        decision = get_help(request_triggers(conn, request_id), "Handoff", state.step)
+        if open_escalation(conn, request_id, decision, now, open_item).switched_off:
+            return state  # D-I: the buttons stay, nothing moves
         revision = approach.revision
         approach.step = "escalated"
         approach.open_item = open_item
         save_approach_state(conn, approach, revision, now)
-        _say(conn, request_id, "developer", HELP_LABEL, now)
         insert_audit_event(
             conn, request_id, "developer", "escalated",
             {"step": state.step, "open_item": open_item}, now,
