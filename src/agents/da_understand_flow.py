@@ -26,6 +26,9 @@ from agents.da_enhance_checks import (
     scope_problems,
 )
 from agents.da_enhance_flow import baseline_texts, maybe_offer_switch
+from agents.da_escalation_flow import escalate as open_escalation
+from agents.da_escalation_flow import request_triggers
+from agents.da_escalation_triggers import out_of_scope_understand
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_understand_agent import InterpretResult, get_understand_client, interpret
 from agents.da_understand_checks import (
@@ -66,6 +69,7 @@ from pydantic_classes.da_models import (
     STATUS_CLARIFICATION,
     STATUS_CONFIRMED,
     STATUS_DECISION_REQUIRED,
+    STATUS_ESCALATION,
     STATUS_READY,
     Actor,
     Request,
@@ -971,6 +975,16 @@ def _confirm(turn: _Turn) -> None:
     session.step = "done"
     session.last_changed_fields = []
     turn.say("assistant", _confirmed_message(turn.request, record))
+    _scope_conflict_to_senior(turn, record)
+
+
+def _scope_conflict_to_senior(turn: _Turn, record: RequestRecord) -> None:
+    """Escalation trigger 2a (spec section 7): the confirmed record still carries a
+    `Scope conflict:` open item. Plain code decides this, never the AI (D-H). Same transaction."""
+    triggers = request_triggers(turn.conn, turn.request.request_id)
+    decision = out_of_scope_understand(triggers, record.open_items)
+    if open_escalation(turn.conn, turn.request.request_id, decision, turn.now).opened:
+        turn.move_to(STATUS_ESCALATION)
 
 
 def _confirmed_message(request: Request, record: RequestRecord) -> str:

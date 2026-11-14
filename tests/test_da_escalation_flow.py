@@ -5,18 +5,22 @@ from types import SimpleNamespace
 
 import pytest
 
+from agents import da_approach_flow as approach_flow
 from agents import da_build_flow as build_flow
 from agents import da_build_loop as loop
 from agents import da_handoff_flow as handoff_flow
+from agents.da_approach_checks import scope_problem_paths
 from agents.da_build_loop import _Run
 from agents.da_escalation_flow import escalate, request_triggers
 from agents.da_escalation_triggers import dispute, get_help
+from agents.da_understand_flow import _scope_conflict_to_senior
 from db_table_functions.da_db import open_db
 from db_table_functions.db_tbl_da_audit import ensure_audit_table
 from db_table_functions.db_tbl_da_build import ensure_build_tables
 from db_table_functions.db_tbl_da_escalation import read_escalations, read_open_escalation
 from db_table_functions.db_tbl_da_requests import create_request, read_request
 from pydantic_classes.da_rulebook_models import EscalationTrigger
+from tests.da_approach_play import Tweaked, at_review, discovery_confirmed_id
 from tests.da_build_play import chat, event_types, ready_with_workspace, request_status
 
 NOW = datetime(2026, 11, 14, 9, 0, tzinfo=UTC)
@@ -160,6 +164,91 @@ def test_a_count_of_three_does_not_fire_again_after_the_row_at_two(db_path, requ
         _Run._cap_hit_twice(run_self, tx, 3)
         assert len(read_escalations(conn, request_id)) == 1
     assert moves == ["ESCALATION_REQUIRED"]  # the second call found a count below 2 + 2
+
+
+# --- trigger 2a: a scope conflict at Confirm ---
+
+
+def confirm_turn(conn, request_id):
+    request = read_request(conn, request_id)
+    moves = []
+    return SimpleNamespace(conn=conn, now=NOW, request=request, move_to=moves.append), moves
+
+
+def test_a_scope_conflict_at_confirm_opens_a_row_and_names_the_conflict(db_path, request_id):
+    record = SimpleNamespace(open_items=['Scope conflict: "export" is both in scope and out.'])
+    with open_db(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        turn, moves = confirm_turn(conn, request_id)
+        _scope_conflict_to_senior(turn, record)
+        row = read_open_escalation(conn, request_id)
+    assert moves == ["ESCALATION_REQUIRED"]
+    assert row.triggers == ["out_of_scope"]
+    assert row.reasons == ['Out of scope: "export" is both in scope and out.']
+
+
+def test_no_scope_conflict_means_no_row(db_path, request_id):
+    record = SimpleNamespace(open_items=["Help requested: confirmation"])
+    with open_db(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        turn, moves = confirm_turn(conn, request_id)
+        _scope_conflict_to_senior(turn, record)
+        assert read_escalations(conn, request_id) == []
+    assert moves == []
+
+
+# --- trigger 2b: a refused plan with the 3 changes used up ---
+
+
+def test_scope_paths_are_read_from_the_problem_lines():
+    problems = [
+        "src/core/ledger.py is protected. List it under needs_people with the reason instead.",
+        "tools/x.py is not in an allowed folder. Use one of: src.",
+        "src/a.py is listed more than once.",
+    ]
+    assert scope_problem_paths(problems) == ["src/core/ledger.py", "tools/x.py"]
+
+
+def capped_approach(settings, changes):
+    """An approach at the review step with `changes` changes used (made-up plan)."""
+    request_id = discovery_confirmed_id(settings)
+    view = at_review(settings, request_id)
+    for number in range(changes):
+        view = approach_flow.submit_text(
+            settings, request_id, f"Change {number + 1}", view.revision, generator=Tweaked("change")
+        )
+    return request_id, view
+
+
+def refuse(settings, request_id, revision):
+    snap = approach_flow._snapshot(settings, request_id, revision)
+    result = SimpleNamespace(problems=["src/core/ledger.py is protected. Use needs_people."])
+    return approach_flow._scope_refusal_to_senior(settings, snap, result, revision, NOW)
+
+
+def test_a_protected_file_with_the_cap_used_up_goes_to_a_senior(make_settings, published_rulebook):
+    settings = make_settings()
+    request_id, view = capped_approach(settings, 3)
+
+    assert refuse(settings, request_id, view.revision)
+
+    assert request_status(settings, request_id) == "ESCALATION_REQUIRED"
+    with open_db(settings.db_path) as conn:
+        row = read_open_escalation(conn, request_id)
+    assert row.triggers == ["out_of_scope"]
+    assert row.reasons == ["Out of scope: src/core/ledger.py"]
+    assert row.from_status == "APPROACH_PROPOSED"
+
+
+def test_a_protected_file_with_changes_left_does_not_escalate(make_settings, published_rulebook):
+    settings = make_settings()
+    request_id, view = capped_approach(settings, 1)
+
+    assert not refuse(settings, request_id, view.revision)
+
+    assert request_status(settings, request_id) == "APPROACH_PROPOSED"
+    with open_db(settings.db_path) as conn:
+        assert read_escalations(conn, request_id) == []
 
 
 # --- the hooks ---

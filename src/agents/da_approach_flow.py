@@ -40,10 +40,11 @@ from agents.da_approach_checks import (
     folder_for_tests,
     gate_problem_lines,
     limit_reason_problem,
+    scope_problem_paths,
 )
 from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
-from agents.da_escalation_triggers import get_help
+from agents.da_escalation_triggers import get_help, out_of_scope_approach
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_refine_hooks import approach_lane_plan_of, finish_revision, revision_plan_of
 from agents.da_tester_agent import (
@@ -620,6 +621,8 @@ def _answer_choice(
         context = _context(pinned, snap, decisions=decisions)
         result = _generate(settings, SETTLE, context, generator)
         if not result.ok:
+            if _scope_refusal_to_senior(settings, snap, result, base_revision, now):
+                return
             raise ApproachError(
                 _failure_text(result, "settle the plan from your answers")
                 + " Nothing was saved, so choose again to retry."
@@ -682,6 +685,29 @@ def _open_change_box(
         turn.say("assistant", TEXT_PROMPTS["change"] + ".")
 
 
+def _scope_refusal_to_senior(
+    settings: Settings, snap: _Snap, result: ApproachResult, base_revision: int, now: datetime
+) -> bool:
+    """Escalation trigger 2b (spec section 7): the plan was refused because it needs a protected
+    file or a path outside the allowed folders, and the 3 changes (G9) are used up, so the
+    developer cannot change it again. True when the request went to a senior."""
+    paths = scope_problem_paths(result.problems)
+    if not paths or snap.state.change_count < MAX_CHANGES:
+        return False
+    request_id = snap.request.request_id
+    with _turn(settings.db_path, request_id, base_revision, now) as turn:
+        triggers = request_triggers(turn.conn, request_id)
+        decision = out_of_scope_approach(triggers, paths, snap.state.change_count, MAX_CHANGES)
+        open_item = decision.reason
+        if not open_escalation(turn.conn, request_id, decision, now, open_item).opened:
+            return False
+        turn.state.open_item = open_item
+        turn.state.step = "escalated"
+        turn.audit("system", "escalated", {"step": snap.state.step, "open_item": open_item})
+        turn.move_to(STATUS_ESCALATION)
+    return True
+
+
 def _change(
     settings: Settings,
     snap: _Snap,
@@ -700,6 +726,8 @@ def _change(
     context = _context(pinned, snap, decisions=snap.state.decisions, change_text=typed)
     result = _generate(settings, CHANGE, context, generator)
     if not result.ok:
+        if _scope_refusal_to_senior(settings, snap, result, base_revision, now):
+            return
         raise ApproachError(
             _failure_text(result, "apply your change") + " Nothing was saved. Please try again."
         )
