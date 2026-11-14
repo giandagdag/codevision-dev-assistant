@@ -340,7 +340,44 @@ def test_an_option_that_was_not_offered_is_refused(settings):
         choose(settings, to_decision(settings), "Only the first sheet")
 
 
-def test_help_waits_then_choosing_later_resumes(settings):
+@pytest.fixture
+def get_help_off(monkeypatch):
+    """The Admin switch for Get help is off: Help keeps the Phase 2 behaviour (the request waits
+    where it is) and the chat says to ask the senior directly (Phase 10, D-I)."""
+    from pydantic_classes.da_rulebook_models import EscalationTrigger
+
+    off = [EscalationTrigger(name="get_help", on=False)]
+    monkeypatch.setattr(da_understand_flow, "request_triggers", lambda conn, rid: off)
+
+
+def test_help_with_the_switch_on_opens_an_escalation_row(settings):
+    from db_table_functions.da_db import open_db
+    from db_table_functions.db_tbl_da_escalation import read_open_escalation
+
+    view = choose(settings, to_decision(settings), HELP_OPTION)
+
+    assert view.request.status == "ESCALATION_REQUIRED"
+    with open_db(settings.db_path) as conn:
+        row = read_open_escalation(conn, rid(view))
+    assert row.triggers == ["get_help"]
+    assert row.open_item == "Escalated in Understand: decision"
+    assert row.from_status == "DECISION_REQUIRED"
+
+
+def test_help_at_checkpoint_with_the_switch_on_opens_a_row_from_decision_required(settings):
+    from db_table_functions.da_db import open_db
+    from db_table_functions.db_tbl_da_escalation import read_open_escalation
+
+    view = choose(settings, to_checkpoint(settings), HELP_OPTION)
+
+    assert view.request.status == "ESCALATION_REQUIRED"
+    with open_db(settings.db_path) as conn:
+        row = read_open_escalation(conn, rid(view))
+    assert row.open_item == "Escalated in Understand: checkpoint"
+    assert row.from_status == "DECISION_REQUIRED"
+
+
+def test_help_waits_then_choosing_later_resumes(settings, get_help_off):
     view = choose(settings, to_decision(settings), HELP_OPTION)
 
     assert view.request.status == "DECISION_REQUIRED"
@@ -602,7 +639,7 @@ def test_a_failed_correction_leaves_the_request_at_the_checkpoint(settings):
     assert after.record == view.record
 
 
-def test_help_at_checkpoint_then_proceed_confirms_in_one_action(settings):
+def test_help_at_checkpoint_then_proceed_confirms_in_one_action(settings, get_help_off):
     view = choose(settings, to_checkpoint(settings), HELP_OPTION)
     assert view.request.status == "DECISION_REQUIRED"
     assert view.record.open_items == [CHECKPOINT_HELP_ITEM]

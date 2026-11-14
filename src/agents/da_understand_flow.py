@@ -28,7 +28,7 @@ from agents.da_enhance_checks import (
 from agents.da_enhance_flow import baseline_texts, maybe_offer_switch
 from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
-from agents.da_escalation_triggers import out_of_scope_understand
+from agents.da_escalation_triggers import get_help, out_of_scope_understand
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_understand_agent import InterpretResult, get_understand_client, interpret
 from agents.da_understand_checks import (
@@ -872,6 +872,7 @@ def _record_decision(turn: _Turn, choice: str, custom: bool) -> bool:
             "Help requested. This request will wait here. You can come back and choose at any "
             "time. (A senior escalation inbox comes in a later phase.)",
         )
+        _help_to_senior(turn, "decision")
         return False
 
     decision = Decision(question=pending.question, choice=choice, decided_at=turn.now)
@@ -924,6 +925,7 @@ def _choose_checkpoint(turn: _Turn, option: str) -> None:
             f"Help requested. This request will wait here. When you are ready, choose Proceed "
             f"or type what should change and press {CORRECT_OPTION}.",
         )
+        _help_to_senior(turn, "checkpoint")
         return
 
     _clear_checkpoint_help(turn)
@@ -931,6 +933,20 @@ def _choose_checkpoint(turn: _Turn, option: str) -> None:
     # one action with every move audited, no second click (review S1).
     if _run_gate(turn, announce=False):
         _confirm(turn)
+
+
+def _help_to_senior(turn: _Turn, step: str) -> None:
+    """Escalation trigger 5 at the Understand Help choices (spec section 7). With the switch on,
+    a row opens and the request moves to ESCALATION_REQUIRED, open item `Escalated in Understand:
+    <step>`. With it off, the old behaviour stays: the request waits where it is, and the shared
+    helper tells the developer to ask his senior directly (D-I)."""
+    request_id = turn.request.request_id
+    decision = get_help(request_triggers(turn.conn, request_id), "Understand", step)
+    open_item = f"Escalated in Understand: {step}"
+    if open_escalation(turn.conn, request_id, decision, turn.now, open_item).opened:
+        turn.audit("developer", "escalated", {"step": step, "open_item": open_item})
+        turn.move_to(STATUS_ESCALATION)
+        turn.say("assistant", "A senior developer will pick this up.")
 
 
 def _clear_checkpoint_help(turn: _Turn) -> None:
