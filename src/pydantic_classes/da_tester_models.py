@@ -16,7 +16,8 @@ SEVERITIES: tuple[str, ...] = ("must_fix", "should_fix", "fyi")
 SEVERITY_TEXT = {"must_fix": "Must fix", "should_fix": "Should fix", "fyi": "FYI"}
 ReviewResult = Literal["done", "unable", "interrupted"]
 CheckState = Literal["passed", "failed", "warning", "not_run"]
-ActionKind = Literal["accepted", "reopened", "disputed"]
+# Phase 10: a senior can overrule a finding (actor `senior:<id>`); the developer cannot.
+ActionKind = Literal["accepted", "reopened", "disputed", "overruled"]
 MadeByTester = Literal["plain", "tester"]
 
 # The seven checks (spec section 5): number -> short name. 1, 2, 3 and 7 are plain code.
@@ -132,8 +133,9 @@ class FindingRow(BaseModel):
     """A kept finding with its current state, for the table."""
 
     finding: Finding
-    state: str = "open"  # open, accepted, disputed
+    state: str = "open"  # open, accepted, disputed, overruled
     reason: str = ""
+    actor: str = ""  # who made the newest action ("senior:<id>" for an overrule)
 
 
 class TesterView(BaseModel):

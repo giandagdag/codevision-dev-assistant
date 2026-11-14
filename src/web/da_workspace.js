@@ -303,6 +303,13 @@
       if (found.kind !== "scan_facts" && found.kind !== "upload_facts") { return { kind: "enhance_cancelled" }; }
       return { ...found, kind: key };
     }
+    // Phase 10 Handoff final check: read ONLY the planned files, then the server compares them with
+    // the last test. Download mode has no folder handle, so the check is the folder upload.
+    if (key === "handoff_check") {
+      let found = ctx.mode === "download" || !pickerAvailable() ? await upload(ctx) : await scan(ctx);
+      if (found.kind !== "scan_facts" && found.kind !== "upload_facts") { return { kind: "handoff_cancelled" }; }
+      return { ...found, kind: "handoff_facts" };
+    }
     if (key === "build_download") { return { kind: "build_download" }; }
     // Phase 8 Restore build N: the server holds the build number (ctx.restore_build). Nothing is
     // read from the folder; the edit guard of the write job protects his files.

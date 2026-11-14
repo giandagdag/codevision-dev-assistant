@@ -21,7 +21,11 @@ from agents.da_admin_diff import (
     build_timeline,
 )
 from agents.da_admin_forms import capabilities_without_backup
+from db_table_functions.da_db import open_db
+from db_table_functions.db_tbl_da_build import ensure_build_tables
+from db_table_functions.db_tbl_da_escalation import list_escalations
 from db_table_functions.db_tbl_da_rulebook import get_active_version
+from pydantic_classes.da_escalation_models import UNASSIGNED, EscalationRow
 from pydantic_classes.da_rulebook_models import (
     MAX_JUDGEMENT_RULES,
     RETIRED_POLICY_FIELDS,
@@ -71,7 +75,16 @@ def build_overview(settings, now: datetime | None = None) -> Overview | None:
     if active is None:
         return None
     waiting = [row.waiting_since for row in queue_rows(settings)]
-    return overview_from(active, waiting, build_timeline(settings.db_path), now)
+    return overview_from(
+        active, waiting, build_timeline(settings.db_path), now, open_escalations(settings)
+    )
+
+
+def open_escalations(settings) -> list[EscalationRow]:
+    """The open escalation rows (Phase 10), read only. Empty on a database that has none yet."""
+    with open_db(settings.db_path) as conn:
+        ensure_build_tables(conn)  # makes the escalations table too
+        return [row for row in list_escalations(conn) if row.outcome == "open"]
 
 
 def overview_from(
@@ -79,10 +92,12 @@ def overview_from(
     waiting_since: list[datetime | None],
     timeline: list[TimelineRow],
     now: datetime | None = None,
+    escalations: list[EscalationRow] | None = None,
 ) -> Overview:
     """The pure part: given the version, the open queue's ages and the timeline, no database."""
     rulebook = version.rulebook
     items = attention_items(rulebook, waiting_since, now)
+    items += escalation_items(escalations or [], rulebook.policy.admin_unassigned_stale_days, now)
     summaries = area_summaries(rulebook, len(waiting_since))
     changed = last_changed(timeline)
     areas = [
@@ -186,6 +201,26 @@ def _queue_items(
                 f"{stale_days} days.",
             )
         )
+    return items
+
+
+def escalation_items(
+    rows: list[EscalationRow], stale_days: int, now: datetime | None = None
+) -> list[AttentionItem]:
+    """Phase 10 (spec section 13): open escalations with no named senior, and open ones that have
+    waited longer than the same stale limit the Unassigned queue uses."""
+    now = now or datetime.now(UTC)
+    unnamed = sum(1 for row in rows if row.senior_label == UNASSIGNED)
+    limit = timedelta(days=stale_days)
+    stale = sum(1 for row in rows if row.opened_at is not None and now - row.opened_at > limit)
+    items = []
+    if unnamed:
+        text = f"{unnamed} escalation{'s' if unnamed != 1 else ''} "
+        text += "have no named senior." if unnamed != 1 else "has no named senior."
+        items.append(AttentionItem(AREA_CATALOG, LEVEL_INFO, text))
+    if stale:
+        text = f"{stale} escalation{'s' if stale != 1 else ''} open longer than {stale_days} days."
+        items.append(AttentionItem(AREA_CATALOG, LEVEL_RED, text))
     return items
 
 

@@ -352,6 +352,16 @@ def _active_version(conn: sqlite3.Connection) -> RulebookVersion | None:
     return _version_from_row(row) if row else None
 
 
+def active_version_on(conn: sqlite3.Connection) -> RulebookVersion | None:
+    """The newest version, read on the caller's connection (inside its transaction)."""
+    return _active_version(conn)
+
+
+def version_on(conn: sqlite3.Connection, number: int) -> RulebookVersion | None:
+    """Version `number`, read on the caller's connection (inside its transaction)."""
+    return _version_by_number(conn, number)
+
+
 def _require_active_version(conn: sqlite3.Connection) -> RulebookVersion:
     active = _active_version(conn)
     if active is None:

@@ -157,17 +157,16 @@ def test_typed_answer_at_a_decision_is_saved_and_redraws(settings):
     assert after.record.decisions[0].choice == "Only the first sheet"
 
 
-def test_help_choice_shows_decision_required_then_choosing_resumes(settings):
+def test_help_choice_with_get_help_on_goes_to_a_senior(settings):
+    """Phase 10 (trigger 5): with the Get help switch on, the Help choice opens an escalation and
+    the page shows ESCALATION REQUIRED. (The old wait-and-resume path, with the switch off, is
+    tested in test_da_understand_flow.)"""
     view = da_play.to_decision(settings)
     help_button = view.choices.index(flow.HELP_OPTION)
     cb.perform_action(settings, choice(help_button), None, state_of(view), 0)
     view = flow.get_understand_view(settings, view.request.request_id)
-    assert view.request.status == "DECISION_REQUIRED"
-    assert "DECISION REQUIRED" in all_text(cb.show_page(f"?request={view.request.request_id}", 0))
-    cb.perform_action(settings, choice(0), None, state_of(view), 1)
-    view = flow.get_understand_view(settings, view.request.request_id)
-    # The form already covered the optional area, so the checkpoint comes straight after.
-    assert view.request.status == "READY_FOR_CONFIRMATION"
+    assert view.request.status == "ESCALATION_REQUIRED"
+    assert "ESCALATION REQUIRED" in all_text(cb.show_page(f"?request={view.request.request_id}", 0))
 
 
 @pytest.mark.parametrize("index", range(len(TRICKY_OPTIONS)))

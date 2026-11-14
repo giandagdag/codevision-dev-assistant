@@ -118,6 +118,20 @@ def _file_problems(reply: ApproachReply, policy: Policy) -> list[str]:
     return problems
 
 
+_SCOPE_MARKERS = (" is protected.", " is not in an allowed folder.")
+
+
+def scope_problem_paths(problems: list[str]) -> list[str]:
+    """The paths named in problems that are about scope (a protected file, or a path outside the
+    allowed folders). Plain code decides this, never the AI (Phase 10 spec, D-H)."""
+    found = []
+    for problem in problems:
+        for marker in _SCOPE_MARKERS:
+            if marker in problem:
+                found.append(problem.split(marker)[0])
+    return found
+
+
 def _target_problems(reply: ApproachReply, targets: list[str]) -> list[str]:
     """Phase 9 (spec section 9): each confirmed target appears in the file plan as `modify`.
     A target that a person must change (needs_people) is the one allowed exception."""

@@ -49,6 +49,29 @@ def test_9_45_get_help_while_finding_the_program(make_settings):
     assert event.details["open_item"] == "Escalated in Enhance: e_find"
 
 
+def test_10_28_get_help_row_and_switch_off(make_settings, monkeypatch):
+    from agents import da_enhance_help
+    from db_table_functions.db_tbl_da_escalation import read_escalations
+    from pydantic_classes.da_rulebook_models import EscalationTrigger
+
+    settings = make_settings()
+    started = enhance.start_enhance_request(settings)
+    off = [EscalationTrigger(name="get_help", on=False)]
+    with monkeypatch.context() as patch:
+        patch.setattr(da_enhance_help, "request_triggers", lambda conn, rid: off)
+        request_help(settings, started.request_id, started.revision)
+    assert status_of(settings, started.request_id) == "DRAFT"
+    with open_db(settings.db_path) as conn:
+        assert read_escalations(conn, started.request_id) == []
+
+    request_help(settings, started.request_id, started.revision)
+
+    with open_db(settings.db_path) as conn:
+        [row] = read_escalations(conn, started.request_id)
+    assert row.triggers == ["get_help"] and row.open_item == "Escalated in Enhance: e_find"
+    assert row.from_status == "DRAFT"
+
+
 def test_9_45_get_help_at_the_safety_net_review(make_settings, tmp_path):
     settings = make_settings()
     request_id = at_review(settings, tmp_path)

@@ -11,6 +11,7 @@ import dash_mantine_components as dmc
 from dash_iconify import DashIconify
 
 from agents.da_discover_flow import DISCOVER_DIVIDER
+from agents.da_inbox import CLOSED_BY_SENIOR
 from db_table_functions.db_tbl_da_requests import SINGAPORE_TIME
 from pydantic_classes.da_discovery_models import Finding, SearchHit
 from pydantic_classes.da_models import (
@@ -22,6 +23,7 @@ from pydantic_classes.da_models import (
     STATUS_DISCOVERY_CONFIRMED,
     STATUS_DRAFT,
     STATUS_ESCALATION,
+    STATUS_HANDED_OFF,
     STATUS_NO_MATCH,
     STATUS_NOT_PASSING,
     STATUS_READY,
@@ -34,6 +36,9 @@ from pydantic_classes.da_models import (
 )
 from pydantic_classes.da_request_record_models import ChatMessage
 from styles import da_styles
+
+# A senior's chat line starts like this (agents/da_senior_actions.py); the screen marks it.
+SENIOR_LINE_START = "Senior "
 
 # The developer's 6 steps, as on the demo. On screen Understand is step 1.
 STEPS: tuple[str, ...] = (
@@ -63,6 +68,7 @@ _PILL_COLOURS: dict[str, str] = {
     STATUS_READY_FOR_REVIEW: "yellow",
     STATUS_NOT_PASSING: "red",
     STATUS_TESTER_REVIEW: "blue",
+    STATUS_HANDED_OFF: "teal",
 }
 
 FALLBACK_BANNER = "AI summary unavailable. Showing plain search results."
@@ -88,10 +94,12 @@ def format_singapore_time(moment: datetime) -> str:
     return moment.astimezone(SINGAPORE_TIME).strftime("%d %b %Y %H:%M")
 
 
-def status_pill(status: str) -> dmc.Badge:
-    return dmc.Badge(
-        display_status(status), color=_PILL_COLOURS.get(status, "gray"), variant="light"
-    )
+def status_pill(status: str, note: str = "") -> dmc.Badge:
+    """`note` (Phase 10): "with <label>" after ESCALATION REQUIRED, or "Closed by senior"."""
+    if note == CLOSED_BY_SENIOR:
+        return dmc.Badge(CLOSED_BY_SENIOR, color="gray", variant="light")
+    text = display_status(status) + (f", {note}" if note and status == STATUS_ESCALATION else "")
+    return dmc.Badge(text, color=_PILL_COLOURS.get(status, "gray"), variant="light")
 
 
 def stepper(current_step: int) -> dmc.Box:
@@ -143,12 +151,13 @@ def chat_bubble(message: ChatMessage) -> dmc.Box:
     """One chat message with its time in Singapore time. The Discover marker is a divider."""
     if message.speaker == "system" and message.text == DISCOVER_DIVIDER:
         return dmc.Divider(label=DISCOVER_DIVIDER, labelPosition="center")
+    from_senior = message.speaker == "assistant" and message.text.startswith(SENIOR_LINE_START)
     return dmc.Box(
         [
             dmc.Text(message.text, size="sm"),
             dmc.Text(format_singapore_time(message.sent_at), size="xs", opacity=0.7),
         ],
-        style=da_styles.BUBBLE[message.speaker],
+        style=da_styles.BUBBLE_SENIOR if from_senior else da_styles.BUBBLE[message.speaker],
         p="sm",
         bdrs="md",
     )
@@ -285,6 +294,42 @@ def limitations_card(limitations: list[str]) -> dmc.Paper:
         radius="md",
         p="sm",
         id="da-limitations",
+    )
+
+
+# --- PR summary box (Phase 10, Handoff) ---
+
+SUMMARY_BOX_ID = "da-pr-summary"
+COPY_BUTTON_ID = "da-copy-summary"
+COPY_NOTE_ID = "da-copy-note"
+COPY_LABEL = "Copy summary"
+COPY_FALLBACK = "Your browser would not copy. The text is selected: press Ctrl+C."
+COPIED_TEXT = "Copied."
+
+
+def summary_box(text: str) -> dmc.Box:
+    """The PR summary as read-only text with a Copy summary button. The text is a plain string
+    (rule R11). The button is wired by a clientside callback (da_handoff_callbacks)."""
+    return dmc.Box(
+        [
+            dmc.Text("PR summary", fw=700, size="sm", c=da_styles.NAVY, mb=6),
+            dmc.Textarea(
+                id=SUMMARY_BOX_ID,
+                value=text,
+                readOnly=True,
+                autosize=True,
+                minRows=8,
+                maxRows=24,
+            ),
+            dmc.Group(
+                [
+                    dmc.Button(COPY_LABEL, id=COPY_BUTTON_ID, size="sm"),
+                    dmc.Text("", id=COPY_NOTE_ID, size="xs", c=da_styles.MUTED),
+                ],
+                mt="xs",
+            ),
+        ],
+        style=da_styles.PANEL_SECTION,
     )
 
 

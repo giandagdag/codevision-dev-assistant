@@ -17,7 +17,7 @@ Like a change form that goes through two sign-offs, in a fixed order, with every
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -40,7 +40,12 @@ from agents.da_approach_checks import (
     folder_for_tests,
     gate_problem_lines,
     limit_reason_problem,
+    scope_problem_paths,
 )
+from agents.da_escalation_flow import escalate as open_escalation
+from agents.da_escalation_flow import request_triggers
+from agents.da_escalation_triggers import get_help, out_of_scope_approach
+from agents.da_guidance import USED_APPROACH, take_guidance
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_refine_hooks import approach_lane_plan_of, finish_revision, revision_plan_of
 from agents.da_tester_agent import (
@@ -72,6 +77,7 @@ from db_table_functions.db_tbl_da_audit import ensure_audit_table, insert_audit_
 from db_table_functions.db_tbl_da_build import ensure_build_tables
 from db_table_functions.db_tbl_da_discovery import count_rounds, read_latest_result
 from db_table_functions.db_tbl_da_enhance import ensure_enhance_tables, read_accepted_net
+from db_table_functions.db_tbl_da_handoff import refuse_if_locked
 from db_table_functions.db_tbl_da_requests import (
     get_rulebook_for_request,
     read_request,
@@ -256,7 +262,7 @@ def start_approach(
         pending_choices=result.reply.design_choices,
     )
     with _write_transaction(settings.db_path) as conn:
-        request = _require_request(conn, request_id)
+        request = _require_open_request(conn, request_id)
         turn = _Turn(conn, request, state, now)
         turn.state = save_approach_state(conn, state, base_revision, now)
         insert_approach_version(conn, version, now)
@@ -410,14 +416,16 @@ def request_help(
         step = turn.state.step
         open_item = f"{ESCALATED_PREFIX}{step}"
         turn.say("developer", HELP_BUTTON)
-        turn.state.open_item = open_item
-        turn.state.step = "escalated"
-        turn.audit("developer", "escalated", {"step": step, "open_item": open_item})
-        turn.move_to(STATUS_ESCALATION)
-        turn.say(
-            "assistant",
-            "A senior developer will pick this up. (The escalations inbox comes in Phase 10.)",
-        )
+        decision = get_help(request_triggers(turn.conn, request_id), "Approach", step)
+        if not open_escalation(turn.conn, request_id, decision, now, open_item).switched_off:
+            turn.state.open_item = open_item
+            turn.state.step = "escalated"
+            turn.audit("developer", "escalated", {"step": step, "open_item": open_item})
+            turn.move_to(STATUS_ESCALATION)
+            turn.say(
+                "assistant",
+                "A senior developer will pick this up. (The escalations inbox comes in Phase 10.)",
+            )
     return get_approach_view(settings, request_id)
 
 
@@ -614,6 +622,8 @@ def _answer_choice(
         context = _context(pinned, snap, decisions=decisions)
         result = _generate(settings, SETTLE, context, generator)
         if not result.ok:
+            if _scope_refusal_to_senior(settings, snap, result, base_revision, now):
+                return
             raise ApproachError(
                 _failure_text(result, "settle the plan from your answers")
                 + " Nothing was saved, so choose again to retry."
@@ -676,6 +686,29 @@ def _open_change_box(
         turn.say("assistant", TEXT_PROMPTS["change"] + ".")
 
 
+def _scope_refusal_to_senior(
+    settings: Settings, snap: _Snap, result: ApproachResult, base_revision: int, now: datetime
+) -> bool:
+    """Escalation trigger 2b (spec section 7): the plan was refused because it needs a protected
+    file or a path outside the allowed folders, and the 3 changes (G9) are used up, so the
+    developer cannot change it again. True when the request went to a senior."""
+    paths = scope_problem_paths(result.problems)
+    if not paths or snap.state.change_count < MAX_CHANGES:
+        return False
+    request_id = snap.request.request_id
+    with _turn(settings.db_path, request_id, base_revision, now) as turn:
+        triggers = request_triggers(turn.conn, request_id)
+        decision = out_of_scope_approach(triggers, paths, snap.state.change_count, MAX_CHANGES)
+        open_item = decision.reason
+        if not open_escalation(turn.conn, request_id, decision, now, open_item).opened:
+            return False
+        turn.state.open_item = open_item
+        turn.state.step = "escalated"
+        turn.audit("system", "escalated", {"step": snap.state.step, "open_item": open_item})
+        turn.move_to(STATUS_ESCALATION)
+    return True
+
+
 def _change(
     settings: Settings,
     snap: _Snap,
@@ -694,6 +727,8 @@ def _change(
     context = _context(pinned, snap, decisions=snap.state.decisions, change_text=typed)
     result = _generate(settings, CHANGE, context, generator)
     if not result.ok:
+        if _scope_refusal_to_senior(settings, snap, result, base_revision, now):
+            return
         raise ApproachError(
             _failure_text(result, "apply your change") + " Nothing was saved. Please try again."
         )
@@ -905,7 +940,7 @@ def _snapshot(settings: Settings, request_id: str, base_revision: int) -> _Snap:
         ensure_audit_table(conn)
         ensure_enhance_tables(conn)
         conn.execute("BEGIN")
-        request = _require_request(conn, request_id)
+        request = _require_open_request(conn, request_id)
         if read_approach_revision(conn, request_id) != base_revision:
             raise StaleRevisionError(STALE_MESSAGE)
         record = read_confirmed_record(conn, request_id, request.version)
@@ -946,13 +981,20 @@ def _write_transaction(db_path: Path) -> Iterator[sqlite3.Connection]:
 def _turn(db_path: Path, request_id: str, base_revision: int, now: datetime) -> Iterator[_Turn]:
     """Open one action's transaction, check the revision, and save the state at the end."""
     with _write_transaction(db_path) as conn:
-        request = _require_request(conn, request_id)
+        request = _require_open_request(conn, request_id)
         state = read_approach_state(conn, request_id)
         if state is None or state.revision != base_revision:
             raise StaleRevisionError(STALE_MESSAGE)
         turn = _Turn(conn, request, state, now)
         yield turn
         save_approach_state(conn, turn.state, base_revision, now)
+
+
+def _require_open_request(conn: sqlite3.Connection, request_id: str) -> Request:
+    """For developer actions: refused when the request is handed off (Phase 10)."""
+    request = _require_request(conn, request_id)
+    refuse_if_locked(conn, request_id)
+    return request
 
 
 def _require_request(conn: sqlite3.Connection, request_id: str) -> Request:
@@ -1033,7 +1075,9 @@ def _generate(
         client = client or get_approach_client(settings, call)
     except (ConfigError, LLMClientError) as error:
         return ApproachResult(None, settings.llm_provider, "", 0, [str(error)], str(error))
-    return generate_approach(client, call, context)
+    # Phase 10: a senior's guidance goes into this one call, then it is marked used.
+    note = take_guidance(settings.db_path, context.record.request_id, USED_APPROACH)
+    return generate_approach(client, call, replace(context, senior_guidance=note))
 
 
 def _tester_client(

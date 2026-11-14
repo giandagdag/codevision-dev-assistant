@@ -70,6 +70,7 @@ from db_table_functions.db_tbl_da_enhance import (
     read_latest_safety_net,
     save_enhance_state,
 )
+from db_table_functions.db_tbl_da_handoff import refuse_if_locked
 from db_table_functions.db_tbl_da_requests import (
     get_rulebook_for_request,
     insert_request,
@@ -364,6 +365,7 @@ def start_understand(
     with _write_transaction(settings.db_path) as conn:
         tx = _Tx(conn, request_id, now)
         request = read_request(conn, request_id)
+        refuse_if_locked(conn, request_id)
         latest = read_latest_freshness(conn, request_id)
         record = _enhance_record(request, state, latest.result if latest else None, draft)
         insert_session(

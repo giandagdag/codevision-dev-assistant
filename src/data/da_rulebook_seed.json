@@ -117,6 +117,8 @@
     "generator_model": "",
     "tester_model": "",
     "admin_unassigned_stale_days": 14,
+    "escalation_lock_chat": true,
+    "handoff_summary_max_chars": 6000,
     "allowed_folders": ["src/configs", "src/agents", "src/pydantic_classes", "src/db_table_functions", "src/callbacks", "src/layouts", "src/styles", "src/web"],
     "new_file_name_pattern": "^[a-z][a-z0-9_]*\\.py$",
     "protected_files": [".env", "*/.env*", "src/configs/llm_config.py", "src/web/web_server.py", "src/callbacks/universal_callbacks.py"],

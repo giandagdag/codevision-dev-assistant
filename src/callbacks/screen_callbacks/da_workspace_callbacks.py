@@ -22,6 +22,7 @@ from agents import da_build_runner as build_runner
 from agents import da_enhance_flow as enhance_flow
 from agents import da_refine_flow as refine_flow
 from agents import da_workspace_flow as flow
+from callbacks.screen_callbacks.da_handoff_callbacks import final_check_from_facts
 from db_table_functions.da_db import DatabaseBusyError
 from db_table_functions.db_tbl_da_build import BuildError
 from db_table_functions.db_tbl_da_understand import UnderstandError
@@ -136,6 +137,14 @@ def _dispatch(settings, event: dict, request_id: str, revision: int, refresh: in
             "nonce": event["nonce"],
         }
         return again, None, pack, ""
+    if kind == "handoff_facts":
+        # Phase 10: the browser read the planned files for the Handoff final check. Nothing is
+        # written to his folder; the server compares the fingerprints with the last test.
+        facts = FolderFacts.model_validate(event["facts"])
+        final_check_from_facts(settings, request_id, facts, (ctx or {}).get("handoff_revision", 0))
+        return again, None, no_update, ""
+    if kind == "handoff_cancelled":
+        raise PreventUpdate
     refined = _dispatch_refine(settings, event, request_id, again, ctx or {})
     if refined is not None:
         return refined

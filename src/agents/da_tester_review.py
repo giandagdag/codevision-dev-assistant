@@ -14,6 +14,7 @@ from pathlib import Path
 from agents.da_approach_agent import fill_template
 from agents.da_build_agent import format_approach, format_cases
 from agents.da_build_checks import case_ids_from_method, find_test_methods
+from agents.da_guidance import guidance_block
 from pydantic_classes.da_approach_models import ApproachVersion, TestCase
 from pydantic_classes.da_build_models import (
     LABEL_NOT_PASSING,
@@ -62,6 +63,8 @@ class ReviewInput:
     start_texts: dict[str, str]
     planned_paths: list[str]
     round: int
+    # Phase 10: guidance a senior sent, handed over once (da_guidance.py). Plain text only.
+    senior_guidance: str = ""
 
 
 def judgement_rules(rules: list[Rule]) -> list[Rule]:
@@ -279,11 +282,23 @@ def finding_state(finding_id: str, review_number: int, actions: list[FindingActi
     state, reason = "open", ""
     for action in actions:
         if action.finding_id == finding_id and action.review_number == review_number:
-            state = {"accepted": "accepted", "reopened": "open", "disputed": "disputed"}[
-                action.action
-            ]
+            state = {
+                "accepted": "accepted",
+                "reopened": "open",
+                "disputed": "disputed",
+                "overruled": "overruled",
+            }[action.action]
             reason = action.reason
     return state, reason
+
+
+def finding_actor(finding_id: str, review_number: int, actions: list[FindingAction]) -> str:
+    """Who made the newest action on a finding ("" when nobody did)."""
+    who = ""
+    for action in actions:
+        if action.finding_id == finding_id and action.review_number == review_number:
+            who = action.actor
+    return who
 
 
 def compute_label(
@@ -296,7 +311,12 @@ def compute_label(
     """The label from the last review and the developer's actions. Plain code only."""
     kept = [item for item in findings if item.kept]
     # A plain-code Must fix (checks 1 to 3) beats "unable": the build ends Not passing then.
-    if any(item.severity == "must_fix" for item in kept):
+    # Phase 10: a Must fix a senior overruled no longer holds the label at Not passing.
+    if any(
+        item.severity == "must_fix"
+        and finding_state(item.finding_id, review_number, actions)[0] != "overruled"
+        for item in kept
+    ):
         return LABEL_NOT_PASSING
     if result == "unable":
         return LABEL_UNABLE
@@ -304,9 +324,16 @@ def compute_label(
         item
         for item in kept
         if item.severity == "should_fix"
-        and finding_state(item.finding_id, review_number, actions)[0] != "accepted"
+        and finding_state(item.finding_id, review_number, actions)[0]
+        not in ("accepted", "overruled")
     ]
-    if open_should or zones:
+    # Spec 10-36: an overruled Must fix still shows as a warning to the reviewer.
+    overruled_must = any(
+        item.severity == "must_fix"
+        and finding_state(item.finding_id, review_number, actions)[0] == "overruled"
+        for item in kept
+    )
+    if open_should or zones or overruled_must:
         return LABEL_WITH_WARNINGS
     return LABEL_READY
 
@@ -405,7 +432,7 @@ def build_review_prompt(data: ReviewInput, only_file: str | None = None) -> str:
         "results": format_results(data.layer_b),
         "code": "\n\n".join(blocks) or "(no code)",
     }
-    return fill_template(REVIEW_PROMPT, values)
+    return fill_template(REVIEW_PROMPT, values) + guidance_block(data.senior_guidance)
 
 
 def _same(a: str, b: str) -> bool:

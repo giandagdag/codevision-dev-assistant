@@ -39,7 +39,9 @@ STATUS_OUTCOME_TEXT = {
 ACTION_TEXT = {"create": "New", "modify": "Change"}
 
 
-def workspace_context(view: WorkspaceView, build=None, restore_build: int = 0) -> dict:
+def workspace_context(
+    view: WorkspaceView, build=None, restore_build: int = 0, handoff_revision: int = 0
+) -> dict:
     """What the browser script needs for a click: the plan's paths, the policy and the revision.
     With a BuildView it also carries what the Build clicks and the automatic write need.
     `restore_build` (Phase 8): the build the Restore button would put back, 0 when none."""
@@ -56,6 +58,7 @@ def workspace_context(view: WorkspaceView, build=None, restore_build: int = 0) -
         "build_step": "start",
         "auto_write": False,
         "restore_build": restore_build,
+        "handoff_revision": handoff_revision,
     }
     if build is not None:
         context["build_revision"] = build.revision
@@ -64,10 +67,13 @@ def workspace_context(view: WorkspaceView, build=None, restore_build: int = 0) -
     return context
 
 
-def workspace_stores(view: WorkspaceView, build=None, restore_build: int = 0) -> list:
+def workspace_stores(
+    view: WorkspaceView, build=None, restore_build: int = 0, handoff_revision: int = 0
+) -> list:
     """The store that tells the browser script where the request stands (revision, plan paths).
     It is redrawn with the page, so it always holds the current values."""
-    return [dcc.Store(id=WS_CTX_ID, data=workspace_context(view, build, restore_build))]
+    context = workspace_context(view, build, restore_build, handoff_revision)
+    return [dcc.Store(id=WS_CTX_ID, data=context)]
 
 
 def workspace_hop_stores() -> list:

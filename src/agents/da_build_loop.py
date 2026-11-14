@@ -52,6 +52,14 @@ from agents.da_enhance_build_checks import (
     scoped_view,
     signature_problems,
 )
+from agents.da_escalation_flow import escalate as open_escalation
+from agents.da_escalation_triggers import (
+    CAP_HIT_TWICE,
+    TESTER_UNABLE_TWICE,
+    cap_hit_twice,
+    tester_unable_twice,
+)
+from agents.da_guidance import USED_FIX_ROUND, USED_TESTER_REVIEW, take_guidance
 from agents.da_refine_merge import his_lines, marker_text, plan_merge
 from agents.da_sandbox import run_tests
 from agents.da_workspace_checks import fingerprint
@@ -80,6 +88,7 @@ from db_table_functions.db_tbl_da_build import (
 )
 from db_table_functions.db_tbl_da_discovery import read_latest_result
 from db_table_functions.db_tbl_da_enhance import ensure_enhance_tables, read_accepted_net
+from db_table_functions.db_tbl_da_escalation import last_fired_count
 from db_table_functions.db_tbl_da_refine import (
     add_build_result,
     close_refine,
@@ -92,7 +101,12 @@ from db_table_functions.db_tbl_da_refine import (
     set_last_tested,
 )
 from db_table_functions.db_tbl_da_requests import get_rulebook_for_request
-from db_table_functions.db_tbl_da_tester import insert_review, next_review_number, read_reviews
+from db_table_functions.db_tbl_da_tester import (
+    insert_review,
+    next_review_number,
+    read_reviews,
+    unable_review_numbers,
+)
 from db_table_functions.db_tbl_da_understand import (
     STALE_MESSAGE,
     StaleRevisionError,
@@ -115,7 +129,9 @@ from pydantic_classes.da_build_models import (
 )
 from pydantic_classes.da_enhance_models import ImpactRow, SafetyNetRow
 from pydantic_classes.da_models import (
+    ALLOWED_MOVES,
     STATUS_BUILDING,
+    STATUS_ESCALATION,
     STATUS_NOT_PASSING,
     STATUS_READY_FOR_REVIEW,
     STATUS_READY_TO_BUILD,
@@ -676,10 +692,14 @@ class _Run:
         shown = (
             scoped_view(path, base, self.inp.record.functions_in_scope) if scoped else base
         )
+        # Phase 10: a senior's guidance goes into the first FIX round call only, once.
+        note = ""
+        if failures:
+            note = take_guidance(self.settings.db_path, self.request_id, USED_FIX_ROUND)
         prompt = agent.build_code_prompt(
             self.context, contract, path, action, number, tests, shown, failures,
-            self._his_lines_note(path),
-        )
+            self._his_lines_note(path), note,
+        )  # fmt: skip
         result = agent.write_code(self.client("generator"), self.context, prompt, action)
         if result.kind in ("unreachable", "too_big"):
             raise _Paused(
@@ -984,10 +1004,23 @@ class _Run:
         tx.say("assistant", text)
         # "Last tested" for Phase 10, and the NOT_PASSING-in-a-row count of rebuilds (F4).
         set_last_tested(tx.conn, self.request_id, tx.state.build_number, self.kind, tx.now)
-        if self.kind == "rebuild":
-            add_build_result(tx.conn, self.request_id, not passed, tx.now)
+        if self.kind in ("build", "rebuild"):
+            count = add_build_result(tx.conn, self.request_id, not passed, tx.now)
+            self._cap_hit_twice(tx, count)
         if self.bug_fix or self.finding_fix is not None:
             self._close_bug_refine(tx, passed)
+
+    def _cap_hit_twice(self, tx: BuildTx, count: int) -> None:
+        """Escalation trigger 1 (spec section 7): two builds in a row ended NOT_PASSING. Same
+        transaction as the build_not_passing audit. A returned row reset the count, so only open
+        rows are looked at (rule X2)."""
+        if count < 2:
+            return
+        last = last_fired_count(tx.conn, self.request_id, CAP_HIT_TWICE, ("open",))
+        number = tx.state.build_number
+        decision = cap_hit_twice(self.inp.policy.escalation_triggers, count, number, last)
+        if open_escalation(tx.conn, self.request_id, decision, tx.now).opened:
+            tx.move_to(STATUS_ESCALATION)
 
     def _find_conflicts(self, tx: BuildTx) -> int:
         """R5.3 steps 2 to 4: compare the Generator's result with his version of each file, save
@@ -1144,6 +1177,10 @@ class _Run:
             start_texts=self._review_start_texts,
             planned_paths=[_clean(item.path) for item in self.inp.planned],
             round=last.round,
+            # Phase 10: a senior's guidance goes into this one review, then it is marked used.
+            senior_guidance=take_guidance(
+                self.settings.db_path, self.request_id, USED_TESTER_REVIEW
+            ),
         )
 
     def _plain_findings(self, last: RoundRecord) -> list[Finding]:
@@ -1278,7 +1315,22 @@ class _Run:
             else:
                 text = _passed_text(last.round, label, _counts(saved), zones, self._cases)
                 self._close(tx, True, used, label, text)
+            self._unable_twice(tx, saved)
         return True
+
+    def _unable_twice(self, tx: BuildTx, saved: ReviewRecord) -> None:
+        """Escalation trigger 4 (spec section 7): two reviews of this request ended Unable to
+        assess. Same transaction as the review. Skipped when the request cannot move to a senior
+        from its status now (the next review will count again)."""
+        if saved.result != "unable":
+            return
+        if STATUS_ESCALATION not in ALLOWED_MOVES.get(tx.request.status, ()):
+            return
+        numbers = unable_review_numbers(tx.conn, self.request_id)
+        last = last_fired_count(tx.conn, self.request_id, TESTER_UNABLE_TWICE)
+        decision = tester_unable_twice(self.inp.policy.escalation_triggers, numbers, last)
+        if open_escalation(tx.conn, self.request_id, decision, tx.now).opened:
+            tx.move_to(STATUS_ESCALATION)
 
     def _finish_rerun(self, tx: BuildTx, saved: ReviewRecord, label: str, must: bool) -> None:
         """The end of a re-run: both moves in one transaction. A Must fix ends NOT_PASSING (Gian,

@@ -27,6 +27,7 @@ from agents.da_build_checks import (
     case_ids_from_method,
     prompt_too_big,
 )
+from agents.da_guidance import guidance_block
 from agents.da_llm_client import ContextTooLargeError, LLMClient, LLMClientError
 from agents.da_refine_checks import check_lane_suggestion
 from agents.da_rejected_reply_log import write_rejected_reply
@@ -81,6 +82,8 @@ class RefineContext:
     policy: Policy
     label: str = ""
     findings: list[Finding] = field(default_factory=list)
+    # Phase 10: guidance a senior sent, handed over once (da_guidance.py). Plain text only.
+    senior_guidance: str = ""
 
 
 @dataclass(frozen=True)
@@ -116,7 +119,7 @@ def build_lane_prompt(context: RefineContext, feedback: str) -> str:
         "result": format_result(context.label, context.findings),
         "feedback": feedback,
     }
-    return fill_template(LANE_PROMPT, values)
+    return fill_template(LANE_PROMPT, values) + guidance_block(context.senior_guidance)
 
 
 def build_revision_prompt(context: RefineContext, feedback: str) -> str:

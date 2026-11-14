@@ -681,6 +681,60 @@ Phase 11c finishes the **Admin console**: the Overview and the Repository and in
 - **Work test:** `docs/admin-work-test.md` (Command Prompt only, one test per open question WF-1 to
   WF-8). Home check: run the app and open `127.0.0.1:8050/admin`.
 
+## How Phase 10 works: Handoff
+
+Handoff is the last step of a request. It is plain code, with no AI call. Spec
+`specs/phase-10-handoff-escalations.md`, plan `specs/phase-10-plan.md`. AS400 picture: the
+promotion request. The clerk ticks a checklist, compares the member in the library with the one
+that was tested, and only then promotes it and locks it.
+
+- **Ready for handoff** (chat button, only at READY FOR REVIEW). First the plain checks: the Tester
+  label is green or yellow, no Must fix is open, each Should fix is fixed or accepted, the last
+  test run finished. A blocked answer lists every reason in the chat and opens the Tests tab.
+- **Check my folder** (or **Upload folder to check in** in download mode). The browser reads only
+  the planned files; the server compares their fingerprints with the last tested ones. A changed
+  or missing file blocks. Re-scan and check my edits, or Restore the tested version, then check
+  again. Extra files in the folder are ignored.
+- **HANDED OFF.** One save writes the status, the PR summary, the audit events and the chat. The
+  request is locked, the sixth step lights, and the page opens on the **Audit** tab: a lock banner
+  and the **PR summary** box with **Copy summary** (if the browser will not copy, the text is
+  selected for Ctrl+C). The chat says what to do next: a Git clone is told to commit and open the
+  pull request in Bitbucket; a ZIP copy is told to upload the listed files. No Git command is shown
+  or run, and the app never commits, pushes or opens a PR.
+- **Start a follow-up request** opens a new request that says "Follows CVDA-...". Nothing is copied.
+- **Smoke check** item 28b (Handoff of the built request, summary under the length guard).
+
+## How Phase 10 works: Escalations inbox
+
+When a request needs a human, plain code opens **one row** for it (five triggers: the build stopped
+twice, out of scope, a Dispute, the Tester unable twice, or Get help; each can be switched off in
+Admin, Build and test). No AI call is involved. AS400 picture: a message on the help-desk queue.
+
+- **Who gets it.** The named senior of the request's capability in the active rulebook, else the
+  backup, else **Unassigned** (shown to every senior under "Nobody is named for this capability").
+- **The developer's side.** The status pill says "ESCALATION REQUIRED, with <label>". While a row is
+  open the composer is one line: "Waiting for your senior. Your chat is locked until <label>
+  replies." (a policy switch). Reading stays free. Lines from a senior have their own amber bubble.
+- **The Inbox** (`/inbox`, third menu entry). Only seniors (`DA_SENIOR_SOURCE=env`,
+  `DA_SENIOR_IDS`, plus any senior named in the catalog; `codevision` is a placeholder that lets
+  nobody in). The menu shows `Inbox (2)` and Home shows "You have 2 escalations waiting" to seniors
+  only; no email or Teams. The list has **Mine / All** and **Show closed**. Clicking a row shows the
+  developer's own page read-only (every button and text box removed) under the senior's four buttons.
+- **The four actions** (each one save, audited with the senior's ID, a chat line for the developer):
+  **Overrule a finding** (reason of 20+ characters, the label is worked out again), **Send guidance**
+  (goes once into the next AI call of the flow, and unlocks the chat), **Take over**, **Close**
+  (**Return to developer** to the status before, or **Abandon request**, which locks it; the pill then
+  says "Closed by senior").
+- **Home check.** Run with `DA_LLM_PROVIDER=fake`, `DA_SENIOR_IDS=senior-home-01` and
+  `DA_DEVELOPER_ID=dev-home-01`; press Get help on a request; open
+  `http://127.0.0.1:8050/inbox?as=senior-home-01` (the `?as=` switch exists in the home shell only).
+- **Smoke check** item 28a: a test-only switch makes the fake Tester keep one Must fix; the
+  developer disputes it, the row reaches the inbox, the senior overrules it and returns the request,
+  and it is handed off (28b). The Admin numbers then show Handoffs 1 and Escalations 1 (Dispute).
+- **`?as=<id>` lives in `web/da_home_web_server.py` only.** The inbox code that goes to work uses
+  the logged-in user and never reads that query.
+- **Work test:** `docs/handoff-work-test.md` (Command Prompt only).
+
 ## Notes for the move to CodeVision
 
 - **The audit-table triggers are SQLite-only.** The append-only guarantee comes from two SQLite
@@ -705,7 +759,8 @@ Phase 11c finishes the **Admin console**: the Overview and the Repository and in
 - **Phase 2C files:** `agents/da_llm_client.py`, `agents/da_rejected_reply_log.py`, the settings in
   `configs/da_config.py`, `da_llm_ping.py`. `requests` 2.32.5 is the one library added to
   `requirements.txt`. For the Monday test only (decision D-E), `web/da_fake_onprem_server.py` is
-  not needed at work, but `da_home_web_server.py` is copied to run the screen on the work laptop.
+  not needed at work, but `da_home_web_server.py` is copied to run the screen on the work laptop
+  (since Phase 10 it holds the `?as=` switch: delete the `?as=` lines first, never ship them).
   Smoke check items 13 and 14 import the pretend server, so copy it too if you run the smoke check.
 - **Phase 3 files:** `agents/da_discover_*.py`, `agents/da_search_index.py`,
   `agents/da_code_splitter.py`, `db_table_functions/db_tbl_da_discovery.py`,

@@ -26,6 +26,9 @@ from agents.da_enhance_checks import (
     scope_problems,
 )
 from agents.da_enhance_flow import baseline_texts, maybe_offer_switch
+from agents.da_escalation_flow import escalate as open_escalation
+from agents.da_escalation_flow import request_triggers
+from agents.da_escalation_triggers import get_help, out_of_scope_understand
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_understand_agent import InterpretResult, get_understand_client, interpret
 from agents.da_understand_checks import (
@@ -38,6 +41,7 @@ from da_logging import get_logger
 from db_table_functions import db_tbl_da_requests
 from db_table_functions.da_db import begin_write, open_db
 from db_table_functions.db_tbl_da_audit import ensure_audit_table, insert_audit_event
+from db_table_functions.db_tbl_da_handoff import refuse_if_locked
 from db_table_functions.db_tbl_da_requests import (
     get_rulebook_for_request,
     insert_request,
@@ -65,6 +69,7 @@ from pydantic_classes.da_models import (
     STATUS_CLARIFICATION,
     STATUS_CONFIRMED,
     STATUS_DECISION_REQUIRED,
+    STATUS_ESCALATION,
     STATUS_READY,
     Actor,
     Request,
@@ -244,33 +249,46 @@ def create_understand_request(
     now = now or datetime.now(UTC)
     developer_id = developer_id or settings.developer_id
     with _write_transaction(settings.db_path) as conn:
-        request = insert_request(conn, NEW_REQUEST_TITLE, developer_id, now)
-        record = RequestRecord(
-            request_id=request.request_id, rulebook_version=request.rulebook_version
-        )
-        session = UnderstandSession(request_id=request.request_id, record=record, step=FORM_STEP)
-        insert_session(conn, session, now)
-        add_message(conn, request.request_id, "developer", text, now)
-        insert_audit_event(
-            conn,
-            request.request_id,
-            "developer",
-            "request_created",
-            {"rulebook_version": request.rulebook_version},
-            now,
-        )
-        update_request(conn, request.request_id, now=now, status=STATUS_CLARIFICATION)
-        insert_audit_event(
-            conn,
-            request.request_id,
-            "system",
-            "status_changed",
-            {"from": request.status, "to": STATUS_CLARIFICATION},
-            now,
-        )
-        add_message(conn, request.request_id, "assistant", FORM_MESSAGE, now)
+        request = open_new_request(conn, developer_id, text, now)
     logger.info("Created Understand request %s", request.request_id)
     return get_understand_view(settings, request.request_id)
+
+
+def open_new_request(
+    conn,
+    developer_id: str,
+    first_message: str,
+    now: datetime,
+    title: str = NEW_REQUEST_TITLE,
+    follows_request_id: str | None = None,
+) -> Request:
+    """The rows of a new request, inside the caller's write transaction: the request, its form
+    session, the first message, the move to CLARIFICATION and the form message. A Handoff
+    follow-up uses the same rows (and a title and a link), so its page opens like any new one."""
+    request = insert_request(conn, title, developer_id, now, follows_request_id)
+    record = RequestRecord(request_id=request.request_id, rulebook_version=request.rulebook_version)
+    session = UnderstandSession(request_id=request.request_id, record=record, step=FORM_STEP)
+    insert_session(conn, session, now)
+    add_message(conn, request.request_id, "developer", first_message, now)
+    insert_audit_event(
+        conn,
+        request.request_id,
+        "developer",
+        "request_created",
+        {"rulebook_version": request.rulebook_version},
+        now,
+    )
+    update_request(conn, request.request_id, now=now, status=STATUS_CLARIFICATION)
+    insert_audit_event(
+        conn,
+        request.request_id,
+        "system",
+        "status_changed",
+        {"from": request.status, "to": STATUS_CLARIFICATION},
+        now,
+    )
+    add_message(conn, request.request_id, "assistant", FORM_MESSAGE, now)
+    return request
 
 
 class FormError(UnderstandError):
@@ -854,6 +872,7 @@ def _record_decision(turn: _Turn, choice: str, custom: bool) -> bool:
             "Help requested. This request will wait here. You can come back and choose at any "
             "time. (A senior escalation inbox comes in a later phase.)",
         )
+        _help_to_senior(turn, "decision")
         return False
 
     decision = Decision(question=pending.question, choice=choice, decided_at=turn.now)
@@ -906,6 +925,7 @@ def _choose_checkpoint(turn: _Turn, option: str) -> None:
             f"Help requested. This request will wait here. When you are ready, choose Proceed "
             f"or type what should change and press {CORRECT_OPTION}.",
         )
+        _help_to_senior(turn, "checkpoint")
         return
 
     _clear_checkpoint_help(turn)
@@ -913,6 +933,20 @@ def _choose_checkpoint(turn: _Turn, option: str) -> None:
     # one action with every move audited, no second click (review S1).
     if _run_gate(turn, announce=False):
         _confirm(turn)
+
+
+def _help_to_senior(turn: _Turn, step: str) -> None:
+    """Escalation trigger 5 at the Understand Help choices (spec section 7). With the switch on,
+    a row opens and the request moves to ESCALATION_REQUIRED, open item `Escalated in Understand:
+    <step>`. With it off, the old behaviour stays: the request waits where it is, and the shared
+    helper tells the developer to ask his senior directly (D-I)."""
+    request_id = turn.request.request_id
+    decision = get_help(request_triggers(turn.conn, request_id), "Understand", step)
+    open_item = f"Escalated in Understand: {step}"
+    if open_escalation(turn.conn, request_id, decision, turn.now, open_item).opened:
+        turn.audit("developer", "escalated", {"step": step, "open_item": open_item})
+        turn.move_to(STATUS_ESCALATION)
+        turn.say("assistant", "A senior developer will pick this up.")
 
 
 def _clear_checkpoint_help(turn: _Turn) -> None:
@@ -957,6 +991,16 @@ def _confirm(turn: _Turn) -> None:
     session.step = "done"
     session.last_changed_fields = []
     turn.say("assistant", _confirmed_message(turn.request, record))
+    _scope_conflict_to_senior(turn, record)
+
+
+def _scope_conflict_to_senior(turn: _Turn, record: RequestRecord) -> None:
+    """Escalation trigger 2a (spec section 7): the confirmed record still carries a
+    `Scope conflict:` open item. Plain code decides this, never the AI (D-H). Same transaction."""
+    triggers = request_triggers(turn.conn, turn.request.request_id)
+    decision = out_of_scope_understand(triggers, record.open_items)
+    if open_escalation(turn.conn, turn.request.request_id, decision, turn.now).opened:
+        turn.move_to(STATUS_ESCALATION)
 
 
 def _confirmed_message(request: Request, record: RequestRecord) -> str:
@@ -1005,6 +1049,7 @@ def _turn(db_path: Path, request_id: str, base_revision: int, now: datetime) -> 
     max_decisions = _decision_limit(db_path, request_id)
     with _write_transaction(db_path) as conn:
         request = read_request(conn, request_id)
+        refuse_if_locked(conn, request_id)
         session = read_session(conn, request_id)
         if request is None or session is None:
             raise UnderstandError(f"Request {request_id} does not exist.")

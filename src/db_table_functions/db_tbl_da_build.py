@@ -21,6 +21,8 @@ from datetime import datetime
 from db_table_functions.da_db import to_db_time
 from db_table_functions.db_tbl_da_approach import ensure_approach_tables
 from db_table_functions.db_tbl_da_enhance import ensure_enhance_tables
+from db_table_functions.db_tbl_da_escalation import ensure_escalation_tables
+from db_table_functions.db_tbl_da_handoff import ensure_handoff_tables
 from db_table_functions.db_tbl_da_refine import ensure_refine_tables
 from db_table_functions.db_tbl_da_tester import ensure_tester_tables
 from db_table_functions.db_tbl_da_understand import (
@@ -160,6 +162,8 @@ def ensure_build_tables(conn: sqlite3.Connection) -> None:
     ensure_tester_tables(conn)  # Phase 7: the Tester's three tables ride along
     ensure_refine_tables(conn)  # Phase 8: Refine's tables ride along
     ensure_enhance_tables(conn)  # Phase 9: Enhance's tables ride along
+    ensure_handoff_tables(conn)  # Phase 10: Handoff's two tables ride along
+    ensure_escalation_tables(conn)  # Phase 10: the escalations table too
     _add_kind_column(conn)
 
 

@@ -14,6 +14,9 @@ from agents import da_build_flow as build_flow
 from agents import da_build_loop as loop
 from agents import da_tester_review as tester
 from agents.da_build_flow import BuildTx, _turn, escalate
+from agents.da_escalation_flow import escalate as open_escalation
+from agents.da_escalation_flow import request_triggers
+from agents.da_escalation_triggers import dispute as dispute_trigger
 from db_table_functions.da_db import open_db
 from db_table_functions.db_tbl_da_build import (
     BuildError,
@@ -74,8 +77,9 @@ def accept_finding(
     reason = _clean_reason(reason)
     with _report_turn(settings, request_id, base_revision, now) as (tx, review, actions):
         item = _finding(review, finding_id, "should_fix")
-        if tester.finding_state(item.finding_id, review.review_number, actions)[0] == "accepted":
-            raise BuildError(f"{finding_id} is already accepted.")
+        held = tester.finding_state(item.finding_id, review.review_number, actions)[0]
+        if held in ("accepted", "overruled"):
+            raise BuildError(f"{finding_id} is already {held}.")
         before = _label(review, actions)
         _record(tx, review, finding_id, "accepted", reason, actions)
         tx.audit("developer", "finding_accepted", {"finding": finding_id, "reason": reason})
@@ -109,10 +113,16 @@ def dispute_finding(
     reason = _clean_reason(reason)
     with _report_turn(settings, request_id, base_revision, now) as (tx, review, actions):
         _finding(review, finding_id, "must_fix")
+        decision = dispute_trigger(request_triggers(tx.conn, request_id), finding_id)
+        if decision.switched_off:
+            # D-I: the Must fix stays open and nothing moves; the chat says so.
+            tx.say("developer", f"Dispute {finding_id}: {reason}")
+            open_escalation(tx.conn, request_id, decision, tx.now)
+            return
         _record(tx, review, finding_id, "disputed", reason, actions)
         tx.say("developer", f"Dispute {finding_id}: {reason}")
         tx.audit("developer", "finding_disputed", {"finding": finding_id, "reason": reason})
-        escalate(tx, f"{DISPUTE_PREFIX}{finding_id}", {"step": tx.state.step})
+        escalate(tx, f"{DISPUTE_PREFIX}{finding_id}", {"step": tx.state.step}, decision)
 
 
 def rerun_review(
@@ -149,7 +159,8 @@ def get_tester_view(settings, request_id: str) -> TesterView:
     for item in _sorted(review):
         if item.kept:
             acted, why = tester.finding_state(item.finding_id, review.review_number, actions)
-            rows.append(FindingRow(finding=item, state=acted, reason=why))
+            who = tester.finding_actor(item.finding_id, review.review_number, actions)
+            rows.append(FindingRow(finding=item, state=acted, reason=why, actor=who))
     finished = state.step in DONE_STEPS
     return TesterView(
         review=review,

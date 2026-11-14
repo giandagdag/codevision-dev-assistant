@@ -13,12 +13,13 @@ Cancel withdraws it.
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
 from agents.da_build_agent import get_build_client
-from agents.da_build_flow import _require_request
+from agents.da_build_flow import _require_open_request as _require_request  # locked = refused
 from agents.da_enhance_refine import carry_net_forward
+from agents.da_guidance import USED_REFINE_LANE, take_guidance
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_refine_agent import (
     LANE_ROLE,
@@ -194,6 +195,9 @@ def suggest(
         raise RefineError(problem)
     feedback = feedback.strip()
     context, from_status = _read_context(settings, request_id, base_revision, new_refine=True)
+    # Phase 10: a senior's guidance goes into this one call, then it is marked used.
+    note = take_guidance(settings.db_path, request_id, USED_REFINE_LANE)
+    context = replace(context, senior_guidance=note)
     result, error = _call(settings, LANE_ROLE, client, lambda c: suggest_lane(c, context, feedback))
     suggestion: LaneSuggestion | None = result.value if result is not None else None
     with _write(settings.db_path) as conn:

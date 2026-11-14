@@ -18,6 +18,9 @@ from pathlib import Path
 
 from agents.da_approach_checks import normalise_path
 from agents.da_approach_flow import CAP_MESSAGE, CHANGE_APPROACH_OPTION, HELP_BUTTON, TEXT_PROMPTS
+from agents.da_escalation_flow import escalate as open_escalation
+from agents.da_escalation_flow import request_triggers
+from agents.da_escalation_triggers import get_help
 from agents.da_workspace_checks import (
     FactsProblem,
     build_write_job,
@@ -37,6 +40,7 @@ from db_table_functions.db_tbl_da_approach import (
     save_approach_state,
 )
 from db_table_functions.db_tbl_da_audit import ensure_audit_table, insert_audit_event
+from db_table_functions.db_tbl_da_handoff import refuse_if_locked
 from db_table_functions.db_tbl_da_requests import (
     get_rulebook_for_request,
     read_request,
@@ -444,10 +448,14 @@ def request_help(
         approach_state = read_approach_state(conn, request_id)
         if approach_state is None:
             raise WorkspaceError("There is no approach to escalate.")
+        tx.say("developer", HELP_BUTTON)
+        decision = get_help(request_triggers(conn, request_id), "Workspace", snap.step)
+        if open_escalation(conn, request_id, decision, now, open_item).switched_off:
+            save_workspace_state(conn, snap.state, base_revision, now)  # D-I: nothing moves
+            return get_workspace_view(settings, request_id)
         approach_revision = approach_state.revision
         approach_state.step = "escalated"
         approach_state.open_item = open_item
-        tx.say("developer", HELP_BUTTON)
         tx.audit("developer", "escalated", {"step": snap.step, "open_item": open_item})
         tx.move_to(STATUS_ESCALATION)
         tx.say(
@@ -748,7 +756,7 @@ def _snapshot(settings, request_id: str, base_revision: int) -> _Snap:
         ensure_workspace_tables(conn)
         ensure_audit_table(conn)
         conn.execute("BEGIN")
-        request = _require_request(conn, request_id)
+        request = _require_open_request(conn, request_id)
         if read_workspace_revision(conn, request_id) != base_revision:
             raise StaleRevisionError(STALE_MESSAGE)
         if request.status != STATUS_READY_TO_BUILD:
@@ -787,7 +795,14 @@ def _begin(conn: sqlite3.Connection, request_id: str, base_revision: int, now: d
     """Inside the write lock: the revision must still be the one the window saw."""
     if read_workspace_revision(conn, request_id) != base_revision:
         raise StaleRevisionError(STALE_MESSAGE)
-    return _Tx(conn, _require_request(conn, request_id), now)
+    return _Tx(conn, _require_open_request(conn, request_id), now)
+
+
+def _require_open_request(conn: sqlite3.Connection, request_id: str) -> Request:
+    """For developer actions: refused when the request is handed off (Phase 10)."""
+    request = _require_request(conn, request_id)
+    refuse_if_locked(conn, request_id)
+    return request
 
 
 def _require_request(conn: sqlite3.Connection, request_id: str) -> Request:

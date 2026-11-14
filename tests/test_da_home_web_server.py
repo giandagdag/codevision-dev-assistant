@@ -18,10 +18,13 @@ def test_the_app_builds_and_serves_its_pages(make_settings, published_rulebook, 
     assert client.get("/_dash-dependencies").status_code == 200
 
 
-def test_menu_has_the_developer_assistant_and_admin(make_settings, published_rulebook, monkeypatch):
+def test_menu_has_the_developer_assistant_admin_and_inbox(
+    make_settings, published_rulebook, monkeypatch
+):
     app = make_app(make_settings, monkeypatch)
     links = components(app.layout, "NavLink")
-    assert [link.label for link in links] == ["Developer Assistant", "Admin"]
+    assert [link.label for link in links] == ["Developer Assistant", "Admin", "Inbox"]
+    assert links[2].href == "/inbox"  # Phase 10: the third entry, next to Admin
     assert links[0].active is True
     assert "dev-home-01" in all_text(app.layout)
 

@@ -9,8 +9,9 @@ What the words mean (fixed in specs/phase-11c-plan.md):
 - First-round pass: round 1 passed Layer A and Layer B, by the build loop's own test
   (layer A has no problems, and layer B ran, did not time out, had tests and none failed).
 - Fix rounds: rounds used minus the first one.
-- Get help: a request that moved to ESCALATION_REQUIRED, or has an escalation event (the Enhance
-  screen writes only the event). A Tester dispute also escalates but is not a Get help: left out.
+- Escalations (Phase 10): the rows of da_escalations, grouped by the trigger that opened them. A
+  request escalated BEFORE Phase 10 has no row and is counted from the audit trail, as Get help
+  (a request that moved to ESCALATION_REQUIRED, or has an escalation event) or as Dispute.
 """
 
 import json
@@ -27,10 +28,13 @@ from db_table_functions.db_tbl_da_metrics import (
     DISPUTE_EVENT,
     STATUS_EVENT,
     closed_build_rows,
+    escalation_rows,
+    handoff_count,
     help_event_rows,
     highest_record_versions,
     kept_findings_by_check_and_severity,
     request_rows,
+    requests_with_escalation_rows,
     review_counts,
     scanned_file_pairs,
 )
@@ -45,8 +49,14 @@ WINDOW_LABELS = {WINDOW_30_DAYS: "Last 30 days", WINDOW_ALL: "All time"}
 WINDOW_DAYS = 30
 
 NO_DATA = "No data yet"
-NO_DATA_PHASE_10 = "No data yet (comes with Phase 10)"
-GET_HELP_LABEL = "Get help only; the other four triggers come with Phase 10"
+# The trigger names in words, in the order the Escalations number lists them (spec section 13).
+TRIGGER_WORDS = {
+    "get_help": "Get help",
+    "dispute": "Dispute",
+    "cap_hit_twice": "Cap hit twice",
+    "out_of_scope": "Out of scope",
+    "tester_unable_twice": "Tester unable twice",
+}
 ESCALATION_STATUS = "ESCALATION_REQUIRED"
 # Start of the open item a dispute writes. Keep in step with DISPUTE_PREFIX in da_tester_flow.py;
 # the dispute test drives the real flow, so a reworded text fails there first.
@@ -124,6 +134,9 @@ def health_report(
         findings = kept_findings_by_check_and_severity(conn, since)
         reviews, unable = review_counts(conn, since)
         cites = count_kept_cites(conn, since)
+        handed_off = handoff_count(conn, since)
+        escalated = escalation_rows(conn, since)
+        with_rows = requests_with_escalation_rows(conn)
     request_total = len(requests)
     return HealthReport(
         window=window,
@@ -132,8 +145,8 @@ def health_report(
         fix_rounds=_fix_rounds(builds),
         revisions=_revisions(versions),
         files_edited=_files_edited(pairs, {row["request_id"] for row in requests}),
-        escalations=_escalations(help_rows, request_total),
-        handoffs=Metric("Handoffs", None, NO_DATA_PHASE_10),
+        escalations=_escalations(help_rows, request_total, escalated, with_rows),
+        handoffs=_handoffs(handed_off, request_total),
         findings_by_check=_findings_by_check(findings),
         findings_by_severity=_findings_by_severity(findings),
         unable_reviews=_unable(reviews, unable),
@@ -234,13 +247,59 @@ def _is_get_help(row, disputed: set[str]) -> bool:
     return not str(details.get("open_item", "")).startswith(DISPUTE_OPEN_ITEM)
 
 
-def _escalations(help_rows, request_total: int) -> Metric:
+def _first_trigger(row) -> str:
+    try:
+        names = json.loads(row["body"]).get("triggers", [])
+    except (TypeError, ValueError, AttributeError):
+        return ""
+    return str(names[0]) if names else ""
+
+
+def _hours_open(row) -> float:
+    opened = datetime.fromisoformat(row["opened_at"])
+    return (datetime.fromisoformat(row["closed_at"]) - opened).total_seconds() / 3600
+
+
+def _escalations(help_rows, request_total: int, rows=(), with_rows=frozenset()) -> Metric:
+    """Phase 10 (spec section 13): the escalation rows, grouped by the trigger that opened them,
+    open and closed, and the hours closed ones stayed open. A request escalated BEFORE Phase 10
+    has no row; it is still counted from the audit trail, as Get help or Dispute."""
     label = "Escalations"
-    if not request_total and not help_rows:
-        return _no_data(label)
     disputed = {row["request_id"] for row in help_rows if row["event_type"] == DISPUTE_EVENT}
-    count = len({row["request_id"] for row in help_rows if _is_get_help(row, disputed)})
-    return Metric(label, count, str(count), note=GET_HELP_LABEL)
+    old_help = {
+        row["request_id"]
+        for row in help_rows
+        if _is_get_help(row, disputed) and row["request_id"] not in with_rows
+    }
+    old_dispute = disputed - with_rows
+    counts = dict.fromkeys(TRIGGER_WORDS, 0)
+    for row in rows:
+        name = _first_trigger(row)
+        counts[name] = counts.get(name, 0) + 1
+    counts["get_help"] += len(old_help)
+    counts["dispute"] += len(old_dispute)
+    total = len(rows) + len(old_help) + len(old_dispute)
+    if not request_total and not total:
+        return _no_data(label)
+    if not total:
+        return Metric(label, 0, "0")
+    closed = [row for row in rows if row["outcome"] != "open" and row["closed_at"]]
+    parts = [f"open {sum(1 for row in rows if row['outcome'] == 'open')}", f"closed {len(closed)}"]
+    if closed:
+        average = sum(_hours_open(row) for row in closed) / len(closed)
+        parts.append(f"closed ones stayed open {average:.1f} hours on average")
+    if old_help or old_dispute:
+        parts.append(f"{len(old_help) + len(old_dispute)} from before Phase 10")
+    items = tuple((TRIGGER_WORDS.get(name, name), count) for name, count in counts.items())
+    return Metric(label, total, f"{total} ({', '.join(parts)})", items)
+
+
+def _handoffs(count: int, request_total: int) -> Metric:
+    label = "Handoffs"
+    if not count:
+        return _no_data(label)
+    share = f" ({100 * count / request_total:.0f}%)" if request_total else ""
+    return Metric(label, count, str(count), note=f"{count} of {request_total} requests{share}")
 
 
 def _findings_by_check(rows) -> Metric:

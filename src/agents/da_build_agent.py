@@ -27,6 +27,7 @@ from agents.da_build_checks import (
     parse_edit_blocks,
     prompt_too_big,
 )
+from agents.da_guidance import guidance_block
 from agents.da_llm_client import (
     ContextTooLargeError,
     LLMClient,
@@ -355,9 +356,11 @@ def build_code_prompt(
     current_text: str,
     failures: str = "",
     developer_lines: str = "",
+    senior_guidance: str = "",
 ) -> str:
     """One file per call: this file in full, the other files by contract line only.
-    `developer_lines` (Phase 8, R5.3): a sentence that says which lines he wrote himself."""
+    `developer_lines` (Phase 8, R5.3): a sentence that says which lines he wrote himself.
+    `senior_guidance` (Phase 10): used in a fix round only, once."""
     if developer_lines and action == "modify":
         current_text = f"{current_text}\n\n{developer_lines}"
     failure_section = ""
@@ -380,7 +383,7 @@ def build_code_prompt(
         "failures": failure_section,
         "reply_rules": MODIFY_RULES if action == "modify" else CREATE_RULES,
     }
-    return fill_template(CODE_PROMPT, values)
+    return fill_template(CODE_PROMPT, values) + guidance_block(senior_guidance)
 
 
 # --- the calls ---

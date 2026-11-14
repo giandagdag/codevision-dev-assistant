@@ -41,6 +41,11 @@ BUBBLE = {
     "assistant": {**BUBBLE_BASE, "alignSelf": "flex-start", "background": CANVAS, "color": INK},
     "system": {**BUBBLE_BASE, "alignSelf": "center", "background": BLUE_LIGHT, "color": INK},
 }
+# A line from a senior (Phase 10): left side like the assistant, but amber with a border.
+BUBBLE_SENIOR = {
+    **BUBBLE_BASE, "alignSelf": "flex-start", "background": AMBER_LIGHT, "color": INK,
+    "border": "1px solid #E8C16F",
+}  # fmt: skip
 
 # Help and escalation buttons (P21): outlined, so they read as clickable but less prominent than the
 # main blue buttons. Only the border colour is set here: the Mantine "default" variant already gives
