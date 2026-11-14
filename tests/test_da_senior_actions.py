@@ -124,6 +124,7 @@ def test_10_36_overruling_the_only_must_fix_changes_the_label_not_the_status(set
     assert "finding_overruled" in events and "label_changed" in events
     assert status_of(settings, request_id) == "ESCALATION_REQUIRED"
     assert row_of(settings, request_id).revision == row.revision + 1
+    assert "The label is now Ready with warnings." in chat_of(settings, request_id)[-1]
 
 
 def test_overrule_needs_twenty_characters_and_an_open_finding(settings):

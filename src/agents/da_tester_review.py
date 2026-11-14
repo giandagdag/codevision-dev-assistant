@@ -327,7 +327,13 @@ def compute_label(
         and finding_state(item.finding_id, review_number, actions)[0]
         not in ("accepted", "overruled")
     ]
-    if open_should or zones:
+    # Spec 10-36: an overruled Must fix still shows as a warning to the reviewer.
+    overruled_must = any(
+        item.severity == "must_fix"
+        and finding_state(item.finding_id, review_number, actions)[0] == "overruled"
+        for item in kept
+    )
+    if open_should or zones or overruled_must:
         return LABEL_WITH_WARNINGS
     return LABEL_READY
 

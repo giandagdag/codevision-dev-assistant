@@ -79,7 +79,7 @@ from db_table_functions.db_tbl_da_understand import (
     get_session,
     list_messages,
 )
-from pydantic_classes.da_build_models import LABEL_READY, LABEL_WITH_WARNINGS
+from pydantic_classes.da_build_models import LABEL_WITH_WARNINGS
 from pydantic_classes.da_discovery_models import SearchFilters
 from pydantic_classes.da_models import (
     STATUS_CONFIRMED,
@@ -727,8 +727,8 @@ def _run_dispute_steps(settings: Settings) -> None:
     )
     status = _status_of(settings, request_id)
     label = tester_flow.get_build_view(settings, request_id).label
-    # No Must fix is left: Ready with warnings, or green when every Should fix is answered too.
-    if status != "READY_FOR_REVIEW" or label not in (LABEL_READY, LABEL_WITH_WARNINGS):
+    # The overruled Must fix still shows as a warning (spec 10-36).
+    if status != "READY_FOR_REVIEW" or label != LABEL_WITH_WARNINGS:
         raise UnderstandError(f"After the return: {status}, label {label}.")
     if get_chat_lock(settings, request_id).locked:
         raise UnderstandError("The chat stayed locked after the return.")

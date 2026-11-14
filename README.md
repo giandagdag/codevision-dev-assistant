@@ -759,7 +759,8 @@ Admin, Build and test). No AI call is involved. AS400 picture: a message on the 
 - **Phase 2C files:** `agents/da_llm_client.py`, `agents/da_rejected_reply_log.py`, the settings in
   `configs/da_config.py`, `da_llm_ping.py`. `requests` 2.32.5 is the one library added to
   `requirements.txt`. For the Monday test only (decision D-E), `web/da_fake_onprem_server.py` is
-  not needed at work, but `da_home_web_server.py` is copied to run the screen on the work laptop.
+  not needed at work, but `da_home_web_server.py` is copied to run the screen on the work laptop
+  (since Phase 10 it holds the `?as=` switch: delete the `?as=` lines first, never ship them).
   Smoke check items 13 and 14 import the pretend server, so copy it too if you run the smoke check.
 - **Phase 3 files:** `agents/da_discover_*.py`, `agents/da_search_index.py`,
   `agents/da_code_splitter.py`, `db_table_functions/db_tbl_da_discovery.py`,
