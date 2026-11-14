@@ -143,6 +143,7 @@ def run_smoke_check(settings: Settings) -> int:
             _run_reveal_step(Path(folder) / "smoke_understand.db", settings)
             _run_approach_steps(Path(folder) / "smoke_understand.db", settings)
             _run_admin_steps(Path(folder) / "smoke_admin.db")
+            _run_code_index_step(Path(folder))
     except (
         ConfigError,
         LLMClientError,
@@ -293,6 +294,33 @@ def _run_admin_11c_steps(db_path: Path, admin_settings) -> None:
 
     report = health_report(db_path, WINDOW_ALL)
     print(f"39. Health numbers: requests {report.requests.text}; handoffs {report.handoffs.text}")
+
+
+def _run_code_index_step(folder: Path) -> None:
+    """Item 40 (fix B1, I6): build a tiny real index from a made-up folder with the fake
+    embedder, then one exact and one meaning search. No AI, no network."""
+    from agents.da_code_index import FakeEmbedder
+    from agents.da_search_index import CodeVisionSearchIndex
+    from da_build_code_index import build_index
+
+    source, out = folder / "index_source", folder / "index_out"
+    source.mkdir()
+    (source / "loans.py").write_text(
+        "def validate_excel_upload():\n    return 1\n\ndef compute_rate():\n    return 2\n",
+        encoding="utf-8",
+    )
+    summary = build_index(source, out, FakeEmbedder(), say=lambda _text: None)
+    index = CodeVisionSearchIndex(FakeEmbedder(), out)
+    exact = index.search("validate excel", "exact", SearchFilters(), 3)
+    meaning = index.search(
+        "loans.py compute_rate\ndef compute_rate():\n    return 2", "meaning", SearchFilters(), 3
+    )
+    if not summary.saved or not exact or not meaning or meaning[0].symbol != "compute_rate":
+        raise UnderstandError(f"The code index check failed: {summary.message}")
+    print(
+        f"40. Code index built from a made-up folder ({summary.count} pieces); exact search "
+        f"found {exact[0].symbol}, meaning search found {meaning[0].symbol}"
+    )
 
 
 def _run_understand_steps(db_path: Path, settings: Settings) -> None:
