@@ -89,6 +89,7 @@ from layouts.da_developer_assistant_page import (
     STATE_ID,
     SWITCH_ID,
     TEXT_ID,
+    add_pill_note,
     approach_buttons,
     discover_buttons,
     render_approach_workspace,
@@ -347,6 +348,8 @@ def show_page(search: str | None, refresh: int | None):
             lock = get_chat_lock(get_settings(), params["request"][0])
         except (UnderstandError, DatabaseBusyError):
             return page  # the page itself already shows the problem
+        if lock.pill_note:
+            add_pill_note(page, lock.pill_note)
         if lock.locked:
             return replace_composer(page, lock.waiting_line, lock.open_item)
     return page

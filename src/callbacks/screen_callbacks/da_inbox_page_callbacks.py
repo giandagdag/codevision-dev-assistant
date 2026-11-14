@@ -109,13 +109,10 @@ def get_inbox_settings() -> Settings:
     return load_settings()
 
 
-def inbox_user(settings: Settings, search: str | None, allow_switch: bool = False) -> str:
-    """Who is looking. Only the home shell may pretend to be someone else (`?as=`)."""
-    if allow_switch:
-        wanted = parse_qs((search or "").lstrip("?")).get("as")
-        if wanted and wanted[0].strip():
-            return wanted[0].strip()
-    return settings.developer_id
+def default_identify(_search: str | None) -> str:
+    """Who is looking, at work: the logged-in user, and nobody else. The home shell passes its own
+    function instead (it may read `?as=`); no code here reads that query (spec D-G)."""
+    return get_inbox_settings().developer_id
 
 
 @dataclass
@@ -136,18 +133,26 @@ def escalation_id_from(search: str | None) -> int | None:
 
 def inbox_view(
     settings: Settings, pathname: str | None, search: str | None, user: str,
-    mine: bool = True, show_closed: bool = False,
+    mine: bool = True, show_closed: bool = False, link_extra: str = "",
 ) -> InboxView:  # fmt: skip
     """The whole inbox for this path: hidden elsewhere, the refusal for a non-senior, else the
-    list and (when a row is picked) the read-only request under the action bar."""
+    list and (when a row is picked) the read-only request under the action bar. `link_extra` is
+    added to every row link (the home shell uses it to keep its `?as=` switch)."""
     if pathname != INBOX_PATH:
         return InboxView()
     shell = {**da_styles.PAGE}
     if not is_senior(settings, user):
         return InboxView(shell_style=shell, listing=[refusal_page()])
+    try:
+        return _senior_view(settings, search, user, mine, show_closed, link_extra, shell)
+    except SHOWN_ERRORS as error:  # a busy database is a sentence, not a Dash error page
+        return InboxView(shell_style=shell, listing=[html.Div(str(error), style={"color": "red"})])
+
+
+def _senior_view(settings, search, user, mine, show_closed, link_extra, shell) -> InboxView:
     senior.route_pre_phase_10(settings)  # rows for escalations opened before this phase (10-32)
     rows = inbox_rows(settings, user, mine, show_closed)
-    view = InboxView(shell_style=shell, listing=inbox_list(rows, user))
+    view = InboxView(shell_style=shell, listing=inbox_list(rows, link_extra))
     picked = escalation_id_from(search)
     row = get_inbox_row(settings, picked) if picked else None
     if row is None:
@@ -234,22 +239,29 @@ def run_senior_action(
     raise senior.SeniorActionError("That action is not known.")
 
 
-def menu_and_banner(settings: Settings, user: str, pathname: str | None):
-    """The menu label (with the count for a senior) and the home banner text (or None)."""
-    count = senior_open_count(settings, user)
-    home = pathname in (None, "/")
+def menu_and_banner(
+    settings: Settings, user: str, pathname: str | None, search: str | None = ""
+):
+    """The menu label (with the count for a senior) and the home banner text (or None). The
+    banner is for Home itself, not for a request or the blank workspace."""
+    try:
+        count = senior_open_count(settings, user)
+    except SHOWN_ERRORS:
+        return menu_label(0), None  # the menu runs on every page: never an error page
+    params = parse_qs((search or "").lstrip("?"))
+    home = pathname in (None, "/") and not (params.get("request") or params.get("new"))
     return menu_label(count), (banner_text(count) if home else None)
 
 
 # --- Dash wrappers ---
 
 
-def register_da_inbox_page_callbacks(app, allow_switch: bool = False) -> None:
-    """`allow_switch` turns on `?as=<id>`; only the home shell passes True."""
-
-    def who(search):
-        return inbox_user(get_inbox_settings(), search, allow_switch)
-
+def register_da_inbox_page_callbacks(app, identify=None, keep_query=None) -> None:
+    """`identify(search)` says who is looking; `keep_query(search)` is added to the row links.
+    Both default to plain work behaviour (the logged-in user, no extra query). Only the home
+    shell passes its own, to support `?as=<id>` (spec D-G)."""
+    who = identify or default_identify
+    keep = keep_query or (lambda _search: "")
     @app.callback(
         Output(INBOX_SHELL_ID, "style"),
         Output(INBOX_LIST_ID, "children"),
@@ -266,7 +278,7 @@ def register_da_inbox_page_callbacks(app, allow_switch: bool = False) -> None:
         settings = get_inbox_settings()
         view = inbox_view(
             settings, pathname, search, who(search),
-            mine=filter_value == FILTER_MINE, show_closed=bool(closed),
+            mine=filter_value == FILTER_MINE, show_closed=bool(closed), link_extra=keep(search),
         )  # fmt: skip
         return view.shell_style, view.listing, view.detail, view.findings, view.target
 
@@ -279,10 +291,12 @@ def register_da_inbox_page_callbacks(app, allow_switch: bool = False) -> None:
         Input(INBOX_REFRESH_ID, "data"),
     )
     def show_menu_and_banner(pathname, search, _refresh):
-        label, banner = menu_and_banner(get_inbox_settings(), who(search), pathname)
+        label, banner = menu_and_banner(get_inbox_settings(), who(search), pathname, search)
         if not banner:
             return label, None, HIDDEN
-        return label, [f"{banner}. ", dcc.Link("Open the Inbox", href=INBOX_PATH)], {}
+        extra = keep(search)  # "&as=x" in the home shell: the link starts a query with "?"
+        href = f"{INBOX_PATH}?{extra[1:]}" if extra else INBOX_PATH
+        return label, [f"{banner}. ", dcc.Link("Open the Inbox", href=href)], {}
 
     _register_actions(app, who)
 

@@ -138,22 +138,23 @@ def refusal_page() -> html.Div:
     return html.Div(dmc.Text(NOT_SENIOR_MESSAGE, c="red"), style=da_styles.PAGE)
 
 
-def inbox_list(rows: list[InboxRow], user_id: str) -> list:
-    """The table, newest first. Rows with nobody named sit under their own heading."""
+def inbox_list(rows: list[InboxRow], link_extra: str = "") -> list:
+    """The table, newest first. Rows with nobody named sit under their own heading.
+    `link_extra` (for example "&as=ann" in the home shell) is added to every row link."""
     if not rows:
         return [dmc.Text(NO_ROWS_TEXT, c=da_styles.MUTED, size="sm")]
     unassigned = [row for row in rows if row.senior_label == UNASSIGNED]
     named = [row for row in rows if row.senior_label != UNASSIGNED]
     blocks = []
     if named:
-        blocks.append(_table(named, user_id))
+        blocks.append(_table(named, link_extra))
     if unassigned:
         blocks.append(dmc.Text(UNASSIGNED_HEADING, fw=700, c=da_styles.NAVY, mt="md", mb="xs"))
-        blocks.append(_table(unassigned, user_id))
+        blocks.append(_table(unassigned, link_extra))
     return blocks
 
 
-def _table(rows: list[InboxRow], user_id: str) -> dmc.Table:
+def _table(rows: list[InboxRow], link_extra: str) -> dmc.Table:
     head = dmc.TableThead(
         dmc.TableTr(
             [
@@ -166,14 +167,12 @@ def _table(rows: list[InboxRow], user_id: str) -> dmc.Table:
         )
     )
     return dmc.Table(
-        [head, dmc.TableTbody([_row(row, user_id) for row in rows])], highlightOnHover=True
+        [head, dmc.TableTbody([_row(row, link_extra) for row in rows])], highlightOnHover=True
     )
 
 
-def _row(row: InboxRow, user_id: str) -> dmc.TableTr:
-    href = f"{INBOX_PATH}?escalation={row.escalation_id}"
-    if user_id:
-        href += f"&as={user_id}"
+def _row(row: InboxRow, link_extra: str) -> dmc.TableTr:
+    href = f"{INBOX_PATH}?escalation={row.escalation_id}{link_extra}"
     when = parts.format_singapore_time(row.opened_at) if row.opened_at else ""
 
     def cell(content):

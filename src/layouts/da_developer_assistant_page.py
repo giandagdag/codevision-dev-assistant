@@ -522,6 +522,20 @@ def _workspace(
     ]
 
 
+def add_pill_note(page, note: str):
+    """Add ", with <label>" to the ESCALATION REQUIRED pill (spec section 14). The pill is found
+    by its words, so a page without one is returned unchanged."""
+    if isinstance(page, list | tuple):
+        for item in page:
+            add_pill_note(item, note)
+    elif isinstance(getattr(page, "children", None), str):
+        if page.children == display_status(STATUS_ESCALATION) and type(page).__name__ == "Badge":
+            page.children = f"{page.children}, {note}"
+    elif hasattr(page, "children"):
+        add_pill_note(page.children, note)
+    return page
+
+
 def replace_composer(page: list, line: str, note: str = "") -> list:
     """Swap the composer (the last part of the chat box) for one read-only line with a lock.
     `note` (the open item) is shown small under the line.

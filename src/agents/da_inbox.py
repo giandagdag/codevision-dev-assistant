@@ -23,7 +23,6 @@ from db_table_functions.db_tbl_da_rulebook import ensure_rulebook_tables
 from db_table_functions.db_tbl_da_tester import read_actions, read_reviews
 from db_table_functions.db_tbl_da_understand import ensure_understand_tables
 from pydantic_classes.da_escalation_models import UNASSIGNED, EscalationRow
-from pydantic_classes.da_models import STATUS_ESCALATION
 
 CLOSED_LIMIT = 50  # "Show closed" adds the last 50 closed rows
 MENU_NAME = "Inbox"
@@ -205,11 +204,3 @@ def _note_for(rows: list[EscalationRow]) -> str:
         who = "your senior" if newest.senior_label == UNASSIGNED else newest.senior_label
         return f"with {who}"
     return ""
-
-
-def pill_text(status: str, note: str) -> str:
-    """The pill words: "ESCALATION REQUIRED, with <label>" or the abandoned wording."""
-    if note == CLOSED_BY_SENIOR:
-        return CLOSED_BY_SENIOR
-    shown = status.replace("_", " ")
-    return f"{shown}, {note}" if note and status == STATUS_ESCALATION else shown

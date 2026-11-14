@@ -728,8 +728,11 @@ Admin, Build and test). No AI call is involved. AS400 picture: a message on the 
 - **Home check.** Run with `DA_LLM_PROVIDER=fake`, `DA_SENIOR_IDS=senior-home-01` and
   `DA_DEVELOPER_ID=dev-home-01`; press Get help on a request; open
   `http://127.0.0.1:8050/inbox?as=senior-home-01` (the `?as=` switch exists in the home shell only).
-- **Smoke check** item 28a (Get help, inbox row, guidance, Return, chat unlocked). The fake Tester
-  finds no Must fix, so the smoke check uses Get help instead of a Dispute.
+- **Smoke check** item 28a: a test-only switch makes the fake Tester keep one Must fix; the
+  developer disputes it, the row reaches the inbox, the senior overrules it and returns the request,
+  and it is handed off (28b). The Admin numbers then show Handoffs 1 and Escalations 1 (Dispute).
+- **`?as=<id>` lives in `web/da_home_web_server.py` only.** The inbox code that goes to work uses
+  the logged-in user and never reads that query.
 - **Work test:** `docs/handoff-work-test.md` (Command Prompt only).
 
 ## Notes for the move to CodeVision

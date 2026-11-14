@@ -197,7 +197,7 @@ def test_10_38_a_second_senior_cannot_take_over(settings):
     with pytest.raises(SeniorActionError, match="Taken over by ann"):
         take_over(settings, again.escalation_id, again.revision, "bob", NOW)
     assert again.taken_over_by == "ann"
-    assert "ann has taken over this request." in chat_of(settings, request_id)
+    assert "Senior ann: ann has taken over this request." in chat_of(settings, request_id)
 
 
 # --- 10-39, 10-40 Return ---

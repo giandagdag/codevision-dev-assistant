@@ -18,12 +18,12 @@ from agents.da_inbox import (
     menu_label,
     open_count,
     pill_notes,
-    pill_text,
     senior_open_count,
 )
 from callbacks.screen_callbacks import da_developer_assistant_page_callbacks as dev_cb
+from callbacks.screen_callbacks import da_inbox_page_callbacks as inbox_cb
 from callbacks.screen_callbacks.da_inbox_page_callbacks import (
-    inbox_user,
+    default_identify,
     inbox_view,
     menu_and_banner,
     run_senior_action,
@@ -31,7 +31,7 @@ from callbacks.screen_callbacks.da_inbox_page_callbacks import (
 from db_table_functions.da_db import open_db
 from db_table_functions.db_tbl_da_build import read_build_state, save_build_state
 from db_table_functions.db_tbl_da_escalation import read_open_escalation, update_escalation
-from db_table_functions.db_tbl_da_understand import StaleRevisionError
+from db_table_functions.db_tbl_da_understand import StaleRevisionError, read_messages
 from layouts.da_inbox_page import (
     INBOX_PATH,
     MODE_CLOSE,
@@ -72,6 +72,16 @@ def texts(node) -> str:
 
     visit(node)
     return "\n".join(found)
+
+
+def walk_components(node):
+    """Every Dash component in a tree, parents first."""
+    if isinstance(node, list | tuple):
+        for item in node:
+            yield from walk_components(item)
+    elif hasattr(node, "to_plotly_json"):
+        yield node
+        yield from walk_components(getattr(node, "children", None))
 
 
 def row(label="ann", backup="", outcome="open", request="CVDA-2026-0001") -> EscalationRow:
@@ -209,19 +219,22 @@ def test_unassigned_rows_show_to_everybody_under_their_own_heading(settings):
     rows = inbox_rows(settings, "bob", mine=True)
 
     assert [r.request_id for r in rows] == [request_id]
-    assert "Nobody is named for this capability" in texts(inbox_list(rows, "bob"))
+    assert "Nobody is named for this capability" in texts(inbox_list(rows))
 
 
 def test_an_empty_list_says_so(settings):
-    assert "Nothing is waiting." in texts(inbox_list([], "ann"))
+    assert "Nothing is waiting." in texts(inbox_list([]))
 
 
-def test_the_list_links_keep_the_as_switch_and_show_why_it_was_escalated(settings):
+def test_the_list_shows_why_it_was_escalated_and_links_carry_the_extra_query(settings):
     request_id = seed(settings)
     set_labels(settings, request_id, "ann")
-    shown = texts(inbox_list(inbox_rows(settings, "ann"), "ann"))
+    table = inbox_list(inbox_rows(settings, "ann"), "&as=ann")
+    shown = texts(table)
     assert "Dispute" in shown and "Disputed Must fix: F-1" in shown
     assert "NOT PASSING" in shown
+    links = [c.href for c in walk_components(table) if type(c).__name__ == "Link"]
+    assert links and all(href.endswith("&as=ann") for href in links)
 
 
 # --- 10-35: the detail is read-only ---
@@ -325,13 +338,28 @@ def test_overrule_needs_a_picked_finding(settings):
                           "request_id": "CVDA-2026-0001"}, "ann", REASON)  # fmt: skip
 
 
-# --- ?as= works in the home shell only ---
+# --- ?as= lives in the home shell only (spec D-G) ---
 
 
-def test_the_as_switch_works_only_when_the_shell_allows_it(settings):
-    assert inbox_user(settings, "?as=bob", allow_switch=True) == "bob"
-    assert inbox_user(settings, "?as=bob", allow_switch=False) == "ann"
-    assert inbox_user(settings, "", allow_switch=True) == "ann"
+def test_the_work_code_never_reads_the_as_switch(settings, monkeypatch):
+    monkeypatch.setattr(inbox_cb, "get_inbox_settings", lambda: settings)
+    assert default_identify("?as=bob") == "ann"  # the logged-in user, whatever the query says
+    for path in (
+        SRC / "callbacks" / "screen_callbacks" / "da_inbox_page_callbacks.py",
+        SRC / "layouts" / "da_inbox_page.py",
+        SRC / "agents" / "da_inbox.py",
+    ):
+        text = path.read_text(encoding="utf-8")  # the query key "as" is never looked up here
+        assert '"as"' not in text and "'as'" not in text, path
+
+
+def test_the_home_shell_reads_the_as_switch(settings, monkeypatch):
+    from web import da_home_web_server as shell
+
+    monkeypatch.setattr(shell, "get_settings", lambda: settings)
+    assert shell.as_user("?escalation=3&as=bob") == "bob"
+    assert shell.as_user("?escalation=3") == "ann"
+    assert shell.keep_as("?as=bob") == "&as=bob" and shell.keep_as("") == ""
 
 
 # --- the developer side: waiting line, senior bubble, pills ---
@@ -390,12 +418,56 @@ def test_pills_say_with_whom_and_closed_by_senior(settings):
     notes = pill_notes(settings, [first, second])
 
     assert notes == {first: "with ann", second: CLOSED_BY_SENIOR}
-    assert pill_text("ESCALATION_REQUIRED", notes[first]) == "ESCALATION REQUIRED, with ann"
-    assert pill_text("ESCALATION_REQUIRED", CLOSED_BY_SENIOR) == "Closed by senior"
-    assert pill_text("NOT_PASSING", "") == "NOT PASSING"
-    assert "ESCALATION REQUIRED, with ann" in texts(
-        parts.status_pill("ESCALATION_REQUIRED", notes[first])
+    assert parts.status_pill("ESCALATION_REQUIRED", notes[first]).children == (
+        "ESCALATION REQUIRED, with ann"
     )
+    assert parts.status_pill("ESCALATION_REQUIRED", CLOSED_BY_SENIOR).children == (
+        "Closed by senior"
+    )
+    assert parts.status_pill("NOT_PASSING", "").children == "NOT PASSING"
+
+
+def test_the_developers_own_page_shows_who_has_the_request(settings, monkeypatch):
+    request_id = drawable(settings)
+    set_labels(settings, request_id, "ann")
+    monkeypatch.setattr(dev_cb, "get_settings", lambda: settings)
+
+    assert "ESCALATION REQUIRED, with ann" in texts(dev_cb.show_page(f"?request={request_id}", 0))
+    # after guidance the chat unlocks but the request is still with the senior
+    target = read_open(settings, request_id)
+    senior.send_guidance(settings, target.escalation_id, target.revision, "ann", "Try X.")
+    assert "ESCALATION REQUIRED, with ann" in texts(dev_cb.show_page(f"?request={request_id}", 0))
+
+
+def test_an_old_dispute_is_routed_as_a_dispute(settings):
+    request_id = seed(settings)  # its open item is "Disputed Must fix: F-1"
+    with open_db(settings.db_path) as conn:  # make it look like a pre-phase-10 request
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("DELETE FROM da_escalations WHERE request_id = ?", (request_id,))
+
+    assert senior.route_pre_phase_10(settings, NOW) == 1
+
+    assert read_open(settings, request_id).triggers == ["dispute"]
+
+
+def test_take_over_gets_the_senior_bubble(settings):
+    request_id = seed(settings)
+    set_labels(settings, request_id, "ann")
+    target = read_open(settings, request_id)
+    senior.take_over(settings, target.escalation_id, target.revision, "ann", NOW)
+
+    with open_db(settings.db_path) as conn:
+        lines = [m.text for m in read_messages(conn, request_id)]
+    assert "Senior ann: ann has taken over this request." in lines
+
+
+def test_the_banner_is_for_home_not_for_a_request_page(settings):
+    request_id = seed(settings)
+    set_labels(settings, request_id, "ann")
+
+    assert menu_and_banner(settings, "ann", "/", "?request=CVDA-2026-0001")[1] is None
+    assert menu_and_banner(settings, "ann", "/", "?new=1")[1] is None
+    assert menu_and_banner(settings, "ann", "/", "")[1] == "You have 1 escalation waiting"
 
 
 # --- 10-50: the inbox imports nothing from the developer page callbacks ---

@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from agents import da_tester_review as tester
 from agents.da_escalation_flow import route_request
 from agents.da_escalation_return import restore_flow_steps, return_status_for
+from agents.da_tester_flow import DISPUTE_PREFIX
 from db_table_functions.da_db import begin_write, open_db
 from db_table_functions.db_tbl_da_approach import read_approach_state
 from db_table_functions.db_tbl_da_audit import ensure_audit_table, insert_audit_event
@@ -64,6 +65,7 @@ class ChatLock:
     locked: bool = False
     waiting_line: str = ""
     open_item: str = ""  # what the developer is waiting on, shown under the waiting line
+    pill_note: str = ""  # "with <label>", added to the ESCALATION REQUIRED pill while a row is open
 
 
 # --- the four actions ---
@@ -137,8 +139,7 @@ def take_over(
         changed = row.model_copy(update={"taken_over_by": senior_id})
         update_escalation(conn, changed, base_revision, now)
         _audit(conn, row, "escalation_taken_over", senior_id, {}, now)
-        line = f"{senior_id} has taken over this request."
-        add_message(conn, row.request_id, "assistant", line, now)
+        _say(conn, row, senior_id, f"{senior_id} has taken over this request.", now)
 
 
 def close_escalation(
@@ -179,16 +180,20 @@ def chat_lock_for(conn: sqlite3.Connection, request_id: str) -> ChatLock:
     """Locked while a row is open, the policy switch is on and no guidance has been sent."""
     row = read_open_escalation(conn, request_id) if _has_table(conn, "da_escalations") else None
     request = read_request(conn, request_id)
-    if row is None or request is None or row.guidance:
-        return ChatLock()
-    version = version_on(conn, request.rulebook_version) if request.rulebook_version else None
-    if version is not None and not version.rulebook.policy.escalation_lock_chat:
+    if row is None or request is None:
         return ChatLock()
     who = "your senior" if row.senior_label == UNASSIGNED else row.senior_label
+    note = f"with {who}"  # the words after the status pill, locked or not
+    if row.guidance:
+        return ChatLock(pill_note=note)
+    version = version_on(conn, request.rulebook_version) if request.rulebook_version else None
+    if version is not None and not version.rulebook.policy.escalation_lock_chat:
+        return ChatLock(pill_note=note)
     return ChatLock(
         locked=True,
         waiting_line=f"Waiting for your senior. Your chat is locked until {who} replies.",
         open_item=row.open_item,
+        pill_note=note,
     )
 
 
@@ -225,8 +230,10 @@ def _route_old(conn: sqlite3.Connection, request_id: str, now: datetime) -> None
     route = route_request(conn, request_id)
     approach = read_approach_state(conn, request_id)
     open_item = approach.open_item if approach and approach.open_item else "Get help"
+    # An old dispute is still a dispute (the health numbers group by trigger).
+    trigger = "dispute" if open_item.startswith(DISPUTE_PREFIX) else "get_help"
     row = EscalationRow(
-        request_id=request_id, triggers=["get_help"], reasons=[open_item], open_item=open_item,
+        request_id=request_id, triggers=[trigger], reasons=[open_item], open_item=open_item,
         from_status=_status_before(conn, request_id), capability=route.capability,
         other_capabilities=route.other_capabilities, senior_label=route.senior_label,
         backup_label=route.backup_label,

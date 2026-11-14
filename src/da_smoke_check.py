@@ -12,6 +12,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 from agents import da_approach_flow as approach
+from agents import da_build_agent as build_agent
 from agents import da_build_flow as build
 from agents import da_build_loop as build_loop
 from agents import da_enhance_flow as enhance_flow
@@ -78,6 +79,7 @@ from db_table_functions.db_tbl_da_understand import (
     get_session,
     list_messages,
 )
+from pydantic_classes.da_build_models import LABEL_READY, LABEL_WITH_WARNINGS
 from pydantic_classes.da_discovery_models import SearchFilters
 from pydantic_classes.da_models import (
     STATUS_CONFIRMED,
@@ -470,6 +472,7 @@ def _run_approach_steps(db_path: Path, settings: Settings) -> None:
     )
     folder = _run_workspace_steps(demo, fake_request_id)
     _run_build_steps(demo, fake_request_id, folder)
+    _run_dispute_steps(demo)
     _run_enhance_steps(demo)
 
 
@@ -574,9 +577,9 @@ def _run_build_steps_enhance(
         )
 
 
-def _run_workspace_steps(settings: Settings, request_id: str) -> FakeBrowserFolder:
-    """Items 22 and 23: the Workspace (Phase 5) with a pretend browser folder. It goes from
-    READY_TO_BUILD to ws_ready, then a re-scan finds one file the developer changed."""
+def _check_workspace(settings: Settings, request_id: str):
+    """The folder check of a request at READY_TO_BUILD against a pretend browser folder. Returns
+    the folder and the workspace view at ws_ready."""
     view = workspace.get_workspace_view(settings, request_id)
     folder = _pretend_codevision_folder(view)
     facts = folder.facts(view.planned_paths, view.markers, request_id, view.max_file_kb)
@@ -590,6 +593,13 @@ def _run_workspace_steps(settings: Settings, request_id: str) -> FakeBrowserFold
         raise UnderstandError(f"The workspace ended at {view.step}.")
     if any(path.startswith("tests/") for path in folder.files):
         raise UnderstandError("The check wrote a tests folder. It must write nothing.")
+    return folder, view
+
+
+def _run_workspace_steps(settings: Settings, request_id: str) -> FakeBrowserFolder:
+    """Items 22 and 23: the Workspace (Phase 5) with a pretend browser folder. It goes from
+    READY_TO_BUILD to ws_ready, then a re-scan finds one file the developer changed."""
+    folder, view = _check_workspace(settings, request_id)
     print(
         f"22. {request_id}: workspace ready in folder {view.folder_name}: "
         f"{len([r for r in view.rows if r.baseline_at])} baselines taken, nothing written "
@@ -640,7 +650,6 @@ def _run_build_steps(settings: Settings, request_id: str, folder: FakeBrowserFol
     )
     _run_refine_bug_step(settings, request_id, folder)
     _run_refine_requirement_step(settings, request_id, folder)
-    _run_handoff_step(settings, request_id, folder)
 
 
 def _run_handoff_step(settings: Settings, request_id: str, folder: FakeBrowserFolder) -> None:
@@ -657,7 +666,6 @@ def _run_handoff_step(settings: Settings, request_id: str, folder: FakeBrowserFo
                 row.finding.finding_id,
                 "Made-up reason: the team agreed to leave this as it is for now.",
             )
-    _run_escalation_step(settings, request_id)
     revision = handoff.get_handoff_view(settings, request_id).state.revision
     state = handoff.ready_for_handoff(settings, request_id, revision)
     if state.step != "h_checking":
@@ -678,30 +686,70 @@ def _run_handoff_step(settings: Settings, request_id: str, folder: FakeBrowserFo
     )
 
 
-def _run_escalation_step(settings: Settings, request_id: str) -> None:
-    """Item 28a (Phase 10): the escalation round trip. The fake Tester finds no Must fix, so the
-    developer asks for help (Get help) instead of a Dispute; the row reaches the inbox, the senior
-    sends guidance and returns the request, and the chat lock lifts."""
-    revision = handoff.get_handoff_view(settings, request_id).state.revision
-    handoff.request_help(settings, request_id, revision)
+def _run_dispute_steps(settings: Settings) -> None:
+    """Items 28a and 28b (Phase 10): the escalation round trip, then the Handoff. A second request
+    is built with the test-only switch that makes the fake Tester keep one Must fix. The developer
+    disputes it, the row reaches the inbox, the senior overrules it with a reason and returns the
+    request, the label becomes Ready with warnings, and the request is handed off. The Admin
+    numbers must then show Handoffs 1 and Escalations 1 (Dispute)."""
+    request_id = _discovery_confirmed_request(settings)
+    _run_approach(settings, request_id)
+    folder, view = _check_workspace(settings, request_id)
+    facts = folder.facts(view.planned_paths, view.markers, request_id, view.max_file_kb)
+    build.start_build(settings, request_id, build.get_revision(settings, request_id), facts=facts)
+    before = build_agent.FAKE_SWITCHES
+    build_agent.FAKE_SWITCHES = frozenset({"review_must_fix_always"})
+    try:
+        outcome = build_loop.run_build(settings, request_id)
+    finally:
+        build_agent.FAKE_SWITCHES = before
+    shown = tester_flow.get_tester_view(settings, request_id)
+    musts = [r.finding.finding_id for r in shown.rows if r.finding.severity == "must_fix"]
+    if outcome != "done" or len(musts) != 1 or _status_of(settings, request_id) != "NOT_PASSING":
+        raise UnderstandError(f"The build ended as {outcome} with Must fix {musts}.")
+    tester_flow.dispute_finding(
+        settings, request_id, build.get_revision(settings, request_id), musts[0],
+        "Made-up reason: the rule does not apply to this batch job.",
+    )  # fmt: skip
     inbox = inbox_rows(settings, "smoke-senior", mine=False)
-    if [row.request_id for row in inbox] != [request_id]:
-        raise UnderstandError(f"The inbox listed {[row.request_id for row in inbox]}.")
+    if [row.request_id for row in inbox] != [request_id] or inbox[0].triggers != "Dispute":
+        raise UnderstandError(f"The inbox listed {[(r.request_id, r.triggers) for r in inbox]}.")
     if not get_chat_lock(settings, request_id).locked:
         raise UnderstandError("The developer's chat was not locked while the row was open.")
     row = _open_row(settings, request_id)
-    senior.send_guidance(
-        settings, row.escalation_id, row.revision, "smoke-senior", "Made-up guidance: carry on."
-    )
+    senior.overrule_finding(
+        settings, row.escalation_id, row.revision, "smoke-senior", musts[0],
+        "Made-up reason: the senior checked and the rule does not apply here.",
+    )  # fmt: skip
     row = _open_row(settings, request_id)
     senior.close_escalation(
         settings, row.escalation_id, row.revision, "smoke-senior", "returned", "Looks fine."
     )
+    status = _status_of(settings, request_id)
+    label = tester_flow.get_build_view(settings, request_id).label
+    # No Must fix is left: Ready with warnings, or green when every Should fix is answered too.
+    if status != "READY_FOR_REVIEW" or label not in (LABEL_READY, LABEL_WITH_WARNINGS):
+        raise UnderstandError(f"After the return: {status}, label {label}.")
+    if get_chat_lock(settings, request_id).locked:
+        raise UnderstandError("The chat stayed locked after the return.")
+    print(
+        f"28a. Dispute of {musts[0]}: inbox row, overruled by the senior, "
+        f"returned to {status} ({label})"
+    )
+    _run_handoff_step(settings, request_id, folder)
+    report = health_report(settings.db_path, WINDOW_ALL)
+    disputes = dict(report.escalations.items).get("Dispute")
+    if report.handoffs.value != 1 or report.escalations.value != 1 or disputes != 1:
+        raise UnderstandError(
+            f"Admin numbers: handoffs {report.handoffs.text}, "
+            f"escalations {report.escalations.value}."
+        )
+    print("    - Admin health numbers: Handoffs 1, Escalations 1 (Dispute)")
+
+
+def _status_of(settings: Settings, request_id: str) -> str:
     with open_db(settings.db_path) as conn:
-        status = read_request(conn, request_id).status
-    if status != "READY_FOR_REVIEW" or get_chat_lock(settings, request_id).locked:
-        raise UnderstandError(f"After the return the status was {status}.")
-    print(f"28a. Escalation: row in the inbox, guidance sent, returned to {status}, chat unlocked")
+        return read_request(conn, request_id).status
 
 
 def _open_row(settings: Settings, request_id: str):
