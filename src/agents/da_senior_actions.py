@@ -63,6 +63,7 @@ class ChatLock:
 
     locked: bool = False
     waiting_line: str = ""
+    open_item: str = ""  # what the developer is waiting on, shown under the waiting line
 
 
 # --- the four actions ---
@@ -187,6 +188,7 @@ def chat_lock_for(conn: sqlite3.Connection, request_id: str) -> ChatLock:
     return ChatLock(
         locked=True,
         waiting_line=f"Waiting for your senior. Your chat is locked until {who} replies.",
+        open_item=row.open_item,
     )
 
 

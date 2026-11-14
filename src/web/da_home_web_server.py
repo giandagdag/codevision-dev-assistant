@@ -27,11 +27,20 @@ from callbacks.screen_callbacks.da_developer_assistant_page_callbacks import (  
     get_settings,
     register_da_developer_assistant_page_callbacks,
 )
+from callbacks.screen_callbacks.da_inbox_page_callbacks import (  # noqa: E402
+    register_da_inbox_page_callbacks,
+)
 from configs.da_config import ConfigError  # noqa: E402
 from db_table_functions.da_db import DatabaseBusyError  # noqa: E402
 from db_table_functions.db_tbl_da_rulebook import RulebookError, get_active_version  # noqa: E402
 from layouts.da_admin_page import ADMIN_CONTENT_ID, ADMIN_PATH  # noqa: E402
 from layouts.da_developer_assistant_page import LOCATION_ID, layout  # noqa: E402
+from layouts.da_inbox_page import (  # noqa: E402
+    BANNER_ID,
+    INBOX_PATH,
+    MENU_LINK_ID,
+    inbox_shell,
+)
 from styles import da_styles  # noqa: E402
 
 # Local only (rule R13): nobody else on the network can reach this server.
@@ -44,6 +53,8 @@ MENU_NAME = "Developer Assistant"
 MENU_ICON = "tabler:code"
 ADMIN_MENU_NAME = "Admin"
 ADMIN_MENU_ICON = "tabler:settings"
+INBOX_MENU_NAME = "Inbox"
+INBOX_MENU_ICON = "tabler:inbox"
 
 
 def create_app() -> Dash:
@@ -60,7 +71,16 @@ def create_app() -> Dash:
                 dmc.AppShellHeader(_header(), px="md"),
                 dmc.AppShellNavbar(_menu(), p="xs"),
                 dmc.AppShellMain(
-                    [html.Div(layout(), id=DEV_WRAP_ID), html.Div(id=ADMIN_CONTENT_ID)],
+                    [
+                        # Seniors only: filled by a callback, hidden at 0 (Phase 10 step 10b).
+                        dmc.Alert(
+                            id=BANNER_ID, color="orange", variant="light", m="md",
+                            style={"display": "none"},
+                        ),  # fmt: skip
+                        html.Div(layout(), id=DEV_WRAP_ID),
+                        html.Div(id=ADMIN_CONTENT_ID),
+                        inbox_shell(),
+                    ],
                     bg=da_styles.CANVAS,
                 ),
             ],
@@ -71,6 +91,8 @@ def create_app() -> Dash:
     )
     register_da_developer_assistant_page_callbacks(app)
     register_da_admin_page_callbacks(app)
+    # `?as=<id>` (pretend to be another senior) works in this home shell only.
+    register_da_inbox_page_callbacks(app, allow_switch=True)
     return app
 
 
@@ -102,6 +124,12 @@ def _menu() -> list:
             label=ADMIN_MENU_NAME,
             leftSection=DashIconify(icon=ADMIN_MENU_ICON, width=20),
             href=ADMIN_PATH,
+        ),
+        dmc.NavLink(  # the label gets "(2)" from a callback when this user is a senior
+            id=MENU_LINK_ID,
+            label=INBOX_MENU_NAME,
+            leftSection=DashIconify(icon=INBOX_MENU_ICON, width=20),
+            href=INBOX_PATH,
         ),
     ]
 

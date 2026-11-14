@@ -193,7 +193,8 @@ def layout() -> list:
 # --- Home ---
 
 
-def render_home(requests: list[Request]) -> list:
+def render_home(requests: list[Request], notes: dict[str, str] | None = None) -> list:
+    """`notes` (Phase 10): the words after a status pill, by request ID ("with <label>")."""
     return [
         dmc.Title("Developer Assistant", order=2, c=da_styles.NAVY),
         dmc.Text("Start a new change, or get your own code reviewed.", c=da_styles.MUTED, mb="md"),
@@ -223,7 +224,7 @@ def render_home(requests: list[Request]) -> list:
         dmc.Paper(
             [
                 dmc.Text("My recent requests", fw=700, c=da_styles.NAVY, mb="sm"),
-                _requests_table(requests),
+                _requests_table(requests, notes or {}),
             ],
             withBorder=True,
             radius="md",
@@ -256,7 +257,7 @@ def _entry_card(icon: str, title: str, text: str, disabled: bool = False) -> dmc
     )
 
 
-def _requests_table(requests: list[Request]):
+def _requests_table(requests: list[Request], notes: dict[str, str]):
     if not requests:
         return dmc.Text("No requests yet. Start one above.", c=da_styles.MUTED, size="sm")
     header = dmc.TableThead(
@@ -267,7 +268,12 @@ def _requests_table(requests: list[Request]):
             [
                 dmc.TableTd(_row_link(request, request.request_id)),
                 dmc.TableTd(_row_link(request, request.title)),
-                dmc.TableTd(_row_link(request, parts.status_pill(request.status))),
+                dmc.TableTd(
+                    _row_link(
+                        request,
+                        parts.status_pill(request.status, notes.get(request.request_id, "")),
+                    )
+                ),
             ]
         )
         for request in requests
@@ -514,6 +520,27 @@ def _workspace(
         dmc.Box(top, mt="sm"),
         dmc.Box([chat, side], style=da_styles.WORKSPACE_GRID),
     ]
+
+
+def replace_composer(page: list, line: str, note: str = "") -> list:
+    """Swap the composer (the last part of the chat box) for one read-only line with a lock.
+    `note` (the open item) is shown small under the line.
+
+    Used for the chat lock of an open escalation (spec section 11) and for the senior's read-only
+    view. `page` is what `_workspace` returned; a page of another shape is returned unchanged."""
+    grid = page[-1] if page else None
+    boxes = getattr(grid, "children", None)
+    chat = boxes[0] if isinstance(boxes, list) and boxes else None
+    if not isinstance(getattr(chat, "children", None), list):
+        return page
+    chat.children[-1] = dmc.Box(
+        [
+            dmc.Group([_lock(), dmc.Text(line, size="sm", fw=600)], id="da-waiting-line"),
+            dmc.Text(note, size="xs", c=da_styles.MUTED) if note else None,
+        ],
+        style=da_styles.COMPOSER,
+    )
+    return page
 
 
 def _tab_panel(content: list, value: str) -> dmc.TabsPanel:

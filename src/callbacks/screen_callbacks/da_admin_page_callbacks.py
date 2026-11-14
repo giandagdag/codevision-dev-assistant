@@ -96,6 +96,7 @@ from layouts.da_admin_page import (
     tab_button_id,
     tab_content,
 )
+from layouts.da_inbox_page import INBOX_PATH
 from styles import da_styles
 
 NO_RULEBOOK_MESSAGE = (
@@ -175,8 +176,8 @@ def health_content(settings: Settings, window: str):
 
 
 def developer_page_style(pathname: str | None) -> dict:
-    """The developer page stays built but hidden on /admin, so its layout is not touched."""
-    return {"display": "none"} if pathname == ADMIN_PATH else {}
+    """The developer page stays built but hidden on /admin and /inbox (layout not touched)."""
+    return {"display": "none"} if pathname in (ADMIN_PATH, INBOX_PATH) else {}
 
 
 # --- Reading the form back ---

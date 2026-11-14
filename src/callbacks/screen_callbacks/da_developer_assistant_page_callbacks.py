@@ -32,12 +32,14 @@ from agents.da_discover_flow import (
 from agents.da_enhance_checks import available_symbols
 from agents.da_enhance_flow import get_enhance_view, start_enhance_request
 from agents.da_handoff_screen import get_handoff_box
+from agents.da_inbox import pill_notes
 from agents.da_refine_actions import get_refine_bar
 from agents.da_refine_screen import (
     get_history,
     get_refine_build_panel,
     get_tagged_build,
 )
+from agents.da_senior_actions import get_chat_lock
 from agents.da_understand_flow import (
     FORM_OPTIONAL_BOX,
     FormError,
@@ -95,6 +97,7 @@ from layouts.da_developer_assistant_page import (
     render_message_page,
     render_new_workspace,
     render_workspace,
+    replace_composer,
 )
 from layouts.da_enhance_panel import (
     CAP_NONE_VALUE,
@@ -334,7 +337,22 @@ def show_page(search: str | None, refresh: int | None):
     """Draw Home, the blank workspace, or one request, from the URL.
 
     The conversation lives in the database, so a page reload draws exactly the same thing.
+    While an escalation is open (and the chat lock is on) the composer becomes the waiting line
+    (Phase 10, spec section 11).
     """
+    page = _draw_page(search, refresh)
+    params = parse_qs((search or "").lstrip("?"))
+    if params.get("request"):
+        try:
+            lock = get_chat_lock(get_settings(), params["request"][0])
+        except (UnderstandError, DatabaseBusyError):
+            return page  # the page itself already shows the problem
+        if lock.locked:
+            return replace_composer(page, lock.waiting_line, lock.open_item)
+    return page
+
+
+def _draw_page(search: str | None, refresh: int | None):
     settings = get_settings()
     params = parse_qs((search or "").lstrip("?"))
     if params.get("request"):
@@ -412,7 +430,9 @@ def show_page(search: str | None, refresh: int | None):
     if params.get("new"):
         return render_new_workspace(demo_mode=settings.llm_provider == "fake")
     try:
-        return render_home(list_my_requests(settings))
+        requests = list_my_requests(settings)
+        notes = pill_notes(settings, [request.request_id for request in requests])
+        return render_home(requests, notes)
     except DatabaseBusyError as error:
         return render_message_page(str(error))
 
