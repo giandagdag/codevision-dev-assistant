@@ -231,6 +231,17 @@ def _policy_from_repo_form(current: Policy, form: dict) -> Policy:
         data[REPO_PATTERN_FIELD] = str(form[REPO_PATTERN_FIELD] or "").strip()
     if REPO_NUMBER_FIELD in form:
         data[REPO_NUMBER_FIELD] = _number(form[REPO_NUMBER_FIELD])
+    if "index_folder_scope" in form:
+        data["index_folder_scope"] = str(form["index_folder_scope"] or "").strip()
+    if "index_refresh_mode" in form:
+        data["index_refresh_mode"] = form["index_refresh_mode"]
+    if "index_exclusions" in form:
+        rows = [
+            {k: str(row.get(k, "")).strip() for k in ("pattern", "reason", "kind")}
+            for row in form["index_exclusions"]
+        ]
+        # An untouched new row (nothing typed) is dropped, as for the glossary.
+        data["index_exclusions"] = [r for r in rows if r["pattern"] or r["reason"]]
     return Policy.model_validate(data)
 
 

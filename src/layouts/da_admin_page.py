@@ -13,6 +13,7 @@ Ids the callbacks read back (all dictionaries, CodeVision's habit for repeated c
 """
 
 import itertools
+from datetime import datetime
 
 import dash_mantine_components as dmc
 from dash import dcc, html
@@ -27,6 +28,8 @@ from agents.da_admin_forms import (
     field_bounds,
     rule_counter_text,
 )
+from agents.da_admin_index import read_health, recent_runs
+from agents.da_admin_labels import label as field_label
 from agents.da_admin_metrics import WINDOW_ALL, WINDOW_LABELS
 from agents.da_admin_modules import (
     matches_search,
@@ -36,6 +39,14 @@ from agents.da_admin_modules import (
     share_counts,
 )
 from agents.da_admin_sonar import SAMPLE_BANNER, sample_with_mapping
+from layouts.da_admin_index_panels import (
+    REFRESH_MODES,
+    fixed_skip_rows,
+    health_tiles,
+    index_pill,
+    recent_refreshes,
+    refresh_tiles,
+)
 from layouts.da_admin_ui_standards import brand_panel, convention_rows, rule_cards
 from pydantic_classes.da_rulebook_models import (
     SONAR_SEVERITY_KEYS,
@@ -1163,7 +1174,9 @@ def repo_view(
 ):
     """Read-only server settings, then the four editable fields. `server` is (name, shown value)."""
     policy = version.rulebook.policy
-    settings_lines = [dmc.Text(f"{name}: {value}", size="sm") for name, value in (server or [])]
+    settings_lines = [
+        dmc.Text(f"{field_label(name)}: {value}", size="sm") for name, value in (server or [])
+    ]
     pattern = _draft(draft, REPO_PATTERN, policy.new_file_name_pattern)
     if editable:
         pattern_widget = dmc.TextInput(
@@ -1174,12 +1187,33 @@ def repo_view(
         )
     else:
         pattern_widget = dmc.Text(f"New file name pattern: {pattern}", size="sm")
+    health = read_health()
     return html.Div(
         [
             version_line(version, active),
+            index_pill(health, datetime.now()),
+            _section("Index health", health_tiles(health)),
+            _section("Recent refreshes", recent_refreshes(recent_runs())),
+            _section("Connection", _connection(policy, editable, draft)),
             _section(
-                "Server settings (read only; they live in .env, not in the rulebook)",
-                dmc.Stack(settings_lines, gap=2),
+                "Refresh",
+                refresh_tiles(_draft(draft, "index_refresh_mode", policy.index_refresh_mode)),
+            ),
+            _section(
+                "Exclusions",
+                dmc.Stack(
+                    [
+                        fixed_skip_rows(),
+                        list_table(
+                            TAB_REPO,
+                            "index_exclusions",
+                            EXCLUSION_COLUMNS,
+                            _draft(draft, "index_exclusions", _exclusion_rows(policy)),
+                            editable,
+                            kinds={"kind": list(EXCLUSION_KINDS)},
+                        ),
+                    ]
+                ),
             ),
             *[
                 _section(
@@ -1199,8 +1233,57 @@ def repo_view(
                 "Largest file the laptop scan reads",
                 _number_field(policy, REPO_SIZE, editable, draft, TAB_REPO),
             ),
+            dmc.Accordion(
+                [
+                    dmc.AccordionItem(
+                        [
+                            dmc.AccordionControl("Server settings (read only, set in .env)"),
+                            dmc.AccordionPanel(dmc.Stack(settings_lines, gap=2)),
+                        ],
+                        value="server",
+                    )
+                ],
+                value=None,
+            ),
         ]
     )
+
+
+EXCLUSION_COLUMNS = ("pattern", "reason", "kind")
+EXCLUSION_KINDS = ("Config", "Build", "Scratch")
+
+
+def _exclusion_rows(policy: Policy) -> list[dict]:
+    return [e.model_dump() for e in policy.index_exclusions]
+
+
+def _connection(policy: Policy, editable: bool, draft: dict | None):
+    scope = _draft(draft, "index_folder_scope", policy.index_folder_scope)
+    lines = [
+        dmc.Text(f"Bitbucket repository: {policy.index_repo or '(not set)'}", size="sm"),
+        dmc.Text(f"Branch indexed: {policy.index_branch} 🔒", size="sm"),
+    ]
+    if editable:
+        lines.append(
+            dmc.TextInput(
+                label="Folder scope (empty = the server's default source folder)",
+                value=scope,
+                id={"type": "adm-field", "tab": TAB_REPO, "name": "index_folder_scope"},
+                size="xs",
+            )
+        )
+        lines.append(
+            dmc.Select(
+                label="Refresh",
+                data=[{"value": k, "label": t} for k, t, _ in REFRESH_MODES],
+                value=_draft(draft, "index_refresh_mode", policy.index_refresh_mode),
+                id={"type": "adm-field", "tab": TAB_REPO, "name": "index_refresh_mode"},
+                size="xs",
+            )
+        )
+    else:
+        lines.append(dmc.Text(f"Folder scope: {scope or '(default)'}", size="sm"))
+    return dmc.Stack(lines, gap=2)
 
 
 def _model_field(policy: Policy, name: str, label: str, editable: bool, draft: dict | None):

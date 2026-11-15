@@ -139,7 +139,8 @@ def test_add_row_and_remove_keep_the_typed_form(make_settings, published_ruleboo
     removed_cells = [c for c in walk(removed) if type(c).__name__ == "Textarea"]
     assert [c.value for c in cells][-3:] == ["a/*", "b/*", ""]
     assert [c.value for c in removed_cells][-1:] == ["b/*"]
-    assert any(c.value == "4" for c in walk(added) if type(c).__name__ == "TextInput")
+    # Step 13: number fields are steppers (NumberInput) holding the number.
+    assert any(c.value == 4 for c in walk(added) if type(c).__name__ == "NumberInput")
 
 
 def test_form_is_read_back_with_empty_tables_and_switches():

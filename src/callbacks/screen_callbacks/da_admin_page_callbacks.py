@@ -58,6 +58,7 @@ from layouts.da_admin_page import (
     CATALOG_COLUMNS,
     CATALOG_TABLE,
     EDITABLE_TABS,
+    EXCLUSION_COLUMNS,
     GLOSSARY_COLUMNS,
     GOLDEN_COLUMNS,
     GOTO_TYPE,
@@ -132,7 +133,7 @@ TABLES: dict[str, tuple[str, ...]] = {
     TAB_UI: (RULES_TABLE,),
     TAB_CODING: (RULES_TABLE, "approved_libraries", "blocked_imports", "golden_examples"),
     TAB_CAPABILITY: (CATALOG_TABLE, MODULE_TABLE),
-    TAB_REPO: ("allowed_folders", "workspace_markers"),
+    TAB_REPO: ("allowed_folders", "workspace_markers", "index_exclusions"),
 }
 TABLE_COLUMNS = {  # the rest hold one "text"
     "glossary": GLOSSARY_COLUMNS,
@@ -141,6 +142,7 @@ TABLE_COLUMNS = {  # the rest hold one "text"
     "golden_examples": GOLDEN_COLUMNS,
     CATALOG_TABLE: CATALOG_COLUMNS,
     MODULE_TABLE: MODULE_COLUMNS,
+    "index_exclusions": EXCLUSION_COLUMNS,
 }
 
 

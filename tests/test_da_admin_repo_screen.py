@@ -41,8 +41,8 @@ def test_read_view_shows_server_settings_and_the_four_fields(make_settings, publ
     text = all_text(run_action_view(make_settings))
 
     for word in (
-        "DA_SEARCH_PROVIDER",
-        "DA_SANDBOX_SOURCE_DIR: not set",
+        "Code search source",  # plain label for DA_SEARCH_PROVIDER (fix 11-1, AF-2)
+        "Sandbox copy of CodeVision: not set",
         "Allowed folders",
         "Workspace markers",
         "New file name pattern",
