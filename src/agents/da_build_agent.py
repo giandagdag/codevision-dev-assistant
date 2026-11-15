@@ -27,6 +27,7 @@ from agents.da_build_checks import (
     parse_edit_blocks,
     prompt_too_big,
 )
+from agents.da_golden_example import golden_block
 from agents.da_guidance import guidance_block
 from agents.da_llm_client import (
     ContextTooLargeError,
@@ -99,6 +100,7 @@ class BuildContext:
     approach: ApproachVersion
     cases: list[TestCase]
     policy: Policy
+    golden_examples: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -383,7 +385,11 @@ def build_code_prompt(
         "failures": failure_section,
         "reply_rules": MODIFY_RULES if action == "modify" else CREATE_RULES,
     }
-    return fill_template(CODE_PROMPT, values) + guidance_block(senior_guidance)
+    return (
+        fill_template(CODE_PROMPT, values)
+        + golden_block(context.golden_examples, path, current_text)
+        + guidance_block(senior_guidance)
+    )
 
 
 # --- the calls ---
