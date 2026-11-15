@@ -28,6 +28,13 @@ from agents.da_admin_forms import (
     rule_counter_text,
 )
 from agents.da_admin_metrics import WINDOW_ALL, WINDOW_LABELS
+from agents.da_admin_modules import (
+    matches_search,
+    module_chips,
+    module_paths,
+    modules_by_capability,
+    share_counts,
+)
 from agents.da_admin_sonar import SAMPLE_BANNER, sample_with_mapping
 from pydantic_classes.da_rulebook_models import (
     SONAR_SEVERITY_KEYS,
@@ -210,6 +217,7 @@ def tab_content(
     cited: dict[str, int] | None = None,
     queue: dict | None = None,
     server: list[tuple[str, str]] | None = None,
+    modules: list[str] | None = None,
 ):
     """One editable tab: notice lines, the view or the form, and the buttons that fit the mode.
 
@@ -221,7 +229,9 @@ def tab_content(
     elif tab in (TAB_UI, TAB_CODING):
         body = rules_view(tab, version, editable, draft, active, cited or {})
     elif tab == TAB_CAPABILITY:
-        body = catalog_view(version, editable, draft, active, queue)
+        if modules is None:
+            modules = module_paths(version.rulebook.policy.index_folder_scope)
+        body = catalog_view(version, editable, draft, active, queue, modules)
     else:
         view = charter_view if tab == TAB_CHARTER else build_view
         body = view(version, editable, draft, active)
@@ -287,9 +297,7 @@ def message_notice(
     parts: list = [dmc.Text(message, size="sm")]
     if reload_tab:
         label = f"Reload v{newest}" if newest else "Reload"
-        parts.append(
-            dmc.Button(label, id=act_id(reload_tab, ACTION_RELOAD), size="xs", mt="xs")
-        )
+        parts.append(dmc.Button(label, id=act_id(reload_tab, ACTION_RELOAD), size="xs", mt="xs"))
     return dmc.Alert(parts, color=color, mb="sm")
 
 
@@ -372,9 +380,7 @@ def _table_row(tab, table_id, columns, index, row, editable, kinds, static, mova
             elif kind:
                 widget = dmc.Select(data=kind, value=value or None, id=cell_id, size="xs")
             else:
-                widget = dmc.Textarea(
-                    value=value, id=cell_id, autosize=True, minRows=1, size="xs"
-                )
+                widget = dmc.Textarea(value=value, id=cell_id, autosize=True, minRows=1, size="xs")
             cells.append(dmc.TableTd(widget))
         else:
             cells.append(dmc.TableTd(dmc.Text(value, size="sm", style={"whiteSpace": "pre-wrap"})))
@@ -684,19 +690,134 @@ def catalog_view(
     draft: dict | None = None,
     active: bool = True,
     queue: dict | None = None,
+    modules: list[str] | None = None,
+    missing_backup: bool = False,
 ):
-    """The catalog table (editable) with the Unassigned queue under it (read view only)."""
+    """The catalog table (editable) with the Unassigned queue under it (read view only).
+    `modules` is every indexed path (da_admin_modules.module_paths)."""
     policy = version.rulebook.policy
     rows = _draft(draft, CATALOG_TABLE, capability_rows(policy))
+    paths = modules or []
+    if editable:
+        table = html.Div(
+            [
+                list_table(
+                    TAB_CAPABILITY, CATALOG_TABLE, CATALOG_COLUMNS, rows, editable, movable=True
+                ),
+                _add_module_panel([r["name"] for r in rows if r.get("name")], paths),
+            ]
+        )
+    else:
+        table = html.Div(
+            [
+                dmc.Group(
+                    [
+                        dmc.TextInput(
+                            id=CAP_SEARCH_ID, placeholder="Search name or module", size="xs"
+                        ),
+                        dmc.Chip("Missing backup", id=CAP_MISSING_ID, checked=missing_backup),
+                    ],
+                    mb="xs",
+                ),
+                html.Div(
+                    catalog_list(policy.capabilities, paths, "", missing_backup), id=CAP_LIST_ID
+                ),
+            ]
+        )
     return html.Div(
         [
             version_line(version, active),
             dmc.Text(CATALOG_HINT, size="xs", c=da_styles.MUTED),
-            list_table(
-                TAB_CAPABILITY, CATALOG_TABLE, CATALOG_COLUMNS, rows, editable, movable=True
-            ),
+            table,
             queue_block(queue, [c.name for c in policy.capabilities], disabled=editable),
         ]
+    )
+
+
+CAP_SEARCH_ID = "adm-cat-search"
+CAP_MISSING_ID = "adm-cat-missing"
+CAP_LIST_ID = "adm-cat-list"
+MODULE_TABLE = "capmodule"  # the Add module picker: one row, a capability and a path
+MODULE_COLUMNS = ("capability", "path")
+
+
+def catalog_list(capabilities, paths: list[str], search: str = "", missing_backup: bool = False):
+    """The read-only catalog: one row per capability with its module chips (max 6, then +N more).
+    A module claimed by two capabilities shows "×2". Search matches name, description or module."""
+    by_capability = modules_by_capability(list(capabilities), paths)
+    counts = share_counts(by_capability)
+    rows = []
+    for c in capabilities:
+        mine = by_capability[c.name]
+        if missing_backup and c.backup_senior.strip():
+            continue
+        if not matches_search(c.name, c.description, mine, search):
+            continue
+        labels, more = module_chips(mine, counts)
+        chips = [dmc.Badge(label, variant="outline", tt="none") for label in labels]
+        if more:
+            chips.append(dmc.Badge(f"+{more} more", variant="light", tt="none"))
+        backup = c.backup_senior.strip() or "none"
+        rows.append(
+            dmc.TableTr(
+                [
+                    dmc.TableTd(dmc.Text(c.name, fw=600, size="sm")),
+                    dmc.TableTd(dmc.Text(c.description, size="sm")),
+                    dmc.TableTd(dmc.Text(c.named_senior, size="sm")),
+                    dmc.TableTd(
+                        dmc.Badge(
+                            backup,
+                            variant="light",
+                            style=admin_styles.pill_style("green" if c.backup_senior else "amber"),
+                        )
+                    ),
+                    dmc.TableTd(dmc.Group(chips or [dmc.Text("none", size="xs")], gap=4)),
+                ]
+            )
+        )
+    head = dmc.TableThead(
+        dmc.TableTr(
+            [
+                dmc.TableTh(h)
+                for h in ("Capability", "Description", "Named senior", "Backup senior", "Modules")
+            ]
+        )
+    )
+    parts: list = [dmc.Table([head, dmc.TableTbody(rows)])]
+    if not rows:
+        parts.append(dmc.Text("No capability matches.", style=da_styles.EMPTY_TEXT))
+    return html.Div(parts)
+
+
+def _add_module_panel(names: list[str], paths: list[str]):
+    """Edit mode: pick a capability and an indexed path; Add module makes it an exact pattern."""
+
+    def cell(col, data):
+        return dmc.Select(
+            data=data,
+            searchable=True,
+            size="xs",
+            id={
+                "type": "adm-cell",
+                "tab": TAB_CAPABILITY,
+                "table": MODULE_TABLE,
+                "row": 0,
+                "col": col,
+            },
+        )
+
+    return dmc.Group(
+        [
+            cell("capability", names),
+            cell("path", paths),
+            dmc.Button(
+                "Add module",
+                id={"type": "adm-add", "tab": TAB_CAPABILITY, "table": MODULE_TABLE, "index": 0},
+                variant="default",
+                size="xs",
+            ),
+        ],
+        mt="xs",
     )
 
 
@@ -724,9 +845,7 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
             dmc.Table(
                 [
                     dmc.TableThead(dmc.TableTr([dmc.TableTh(h) for h in header])),
-                    dmc.TableTbody(
-                        [_queue_row(r, capability_names, disabled) for r in rows]
-                    ),
+                    dmc.TableTbody([_queue_row(r, capability_names, disabled) for r in rows]),
                 ],
                 withTableBorder=True,
             )
@@ -835,9 +954,7 @@ def _pattern_dialog(dialog: dict):
         )
     )
     buttons.append(
-        dmc.Button(
-            "Cancel", id=queue_button_id(Q_CANCEL, uid), size="xs", variant="subtle"
-        )
+        dmc.Button("Cancel", id=queue_button_id(Q_CANCEL, uid), size="xs", variant="subtle")
     )
     return dmc.Alert([*parts, dmc.Group(buttons, mt="xs")], color="blue", mb="sm")
 
@@ -970,9 +1087,7 @@ def repo_view(
 ):
     """Read-only server settings, then the four editable fields. `server` is (name, shown value)."""
     policy = version.rulebook.policy
-    settings_lines = [
-        dmc.Text(f"{name}: {value}", size="sm") for name, value in (server or [])
-    ]
+    settings_lines = [dmc.Text(f"{name}: {value}", size="sm") for name, value in (server or [])]
     pattern = _draft(draft, REPO_PATTERN, policy.new_file_name_pattern)
     if editable:
         pattern_widget = dmc.TextInput(

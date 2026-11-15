@@ -29,7 +29,12 @@ from agents.da_admin_forms import (
     save_from_form,
 )
 from agents.da_admin_metrics import WINDOW_ALL, WINDOW_LABELS, health_report
-from agents.da_admin_overview import build_overview, server_settings_view
+from agents.da_admin_modules import module_paths
+from agents.da_admin_overview import (
+    MISSING_BACKUP_FILTER,
+    build_overview,
+    server_settings_view,
+)
 from configs.da_config import Settings, load_settings
 from db_table_functions.db_tbl_da_rulebook import (
     RulebookError,
@@ -47,6 +52,9 @@ from layouts.da_admin_page import (
     ADMIN_TABS,
     ADMIN_TABS_ID,
     BASE_STORE_TYPE,
+    CAP_LIST_ID,
+    CAP_MISSING_ID,
+    CAP_SEARCH_ID,
     CATALOG_COLUMNS,
     CATALOG_TABLE,
     EDITABLE_TABS,
@@ -59,6 +67,8 @@ from layouts.da_admin_page import (
     HIST_PICK_TYPE,
     HIST_RESTORE,
     HIST_TYPE,
+    MODULE_COLUMNS,
+    MODULE_TABLE,
     MOVE_TYPE,
     NOTE_ID_NAME,
     Q_APPLY,
@@ -86,6 +96,7 @@ from layouts.da_admin_page import (
     ZONE_COLUMNS,
     admin_page,
     body_id,
+    catalog_list,
     health_numbers,
     history_view,
     message_notice,
@@ -118,7 +129,7 @@ TABLES: dict[str, tuple[str, ...]] = {
     TAB_BUILD: ("zones", "protected_files"),
     TAB_UI: (RULES_TABLE,),
     TAB_CODING: (RULES_TABLE, "approved_libraries", "blocked_imports", "golden_examples"),
-    TAB_CAPABILITY: (CATALOG_TABLE,),
+    TAB_CAPABILITY: (CATALOG_TABLE, MODULE_TABLE),
     TAB_REPO: ("allowed_folders", "workspace_markers"),
 }
 TABLE_COLUMNS = {  # the rest hold one "text"
@@ -127,6 +138,7 @@ TABLE_COLUMNS = {  # the rest hold one "text"
     RULES_TABLE: RULE_COLUMNS,
     "golden_examples": GOLDEN_COLUMNS,
     CATALOG_TABLE: CATALOG_COLUMNS,
+    MODULE_TABLE: MODULE_COLUMNS,
 }
 
 
@@ -144,9 +156,7 @@ def admin_content(settings: Settings, pathname: str | None):
         return refusal_page()
     active = get_active_version(settings.db_path)
     if active is None:
-        return html.Div(
-            dmc.Text(NO_RULEBOOK_MESSAGE, c=da_styles.MUTED), style=da_styles.PAGE
-        )
+        return html.Div(dmc.Text(NO_RULEBOOK_MESSAGE, c=da_styles.MUTED), style=da_styles.PAGE)
     return admin_page(
         active,
         build_timeline(settings.db_path),
@@ -225,6 +235,19 @@ def _with_new_row(form: dict, table: str) -> dict:
     return {**form, table: [*form.get(table, []), new]}
 
 
+def with_added_module(form: dict) -> dict:
+    """Add module: the picked path becomes an exact pattern on the picked capability. The picker's
+    own row is dropped from the form. An empty pick changes nothing."""
+    form = dict(form)
+    pick = (form.pop(MODULE_TABLE, None) or [{}])[0]
+    capability, path = pick.get("capability", ""), pick.get("path", "")
+    for row in form.get(CATALOG_TABLE, []):
+        patterns = row["path_patterns"].splitlines()
+        if capability and path and row["name"] == capability and path not in patterns:
+            row["path_patterns"] = "\n".join([*patterns, path])
+    return form
+
+
 def _without_row(form: dict, table: str, index: int) -> dict:
     rows = [row for i, row in enumerate(form.get(table, [])) if i != index]
     return {**form, table: rows}
@@ -254,7 +277,9 @@ def run_action(
             return _save(settings, tab, form, note, base_version, active)
     base = get_version(settings.db_path, base_version or active.version_number) or active
     notice = None
-    if kind == "adm-add" and action["table"] == RULES_TABLE:
+    if kind == "adm-add" and action["table"] == MODULE_TABLE:
+        form = with_added_module(form)
+    elif kind == "adm-add" and action["table"] == RULES_TABLE:
         form, notice = _with_new_rule(settings, tab, form)
     elif kind == "adm-add":
         form = _with_new_row(form, action["table"])
@@ -354,9 +379,7 @@ def _apply_resolve(settings: Settings, action: dict, note: str, base_version: in
     if result.stale:
         # The catalog moved on since this screen was drawn: nothing was closed.
         newest = get_active_version(settings.db_path).version_number
-        notice = message_notice(
-            result.message, reload_tab=TAB_CAPABILITY, newest=newest
-        )
+        notice = message_notice(result.message, reload_tab=TAB_CAPABILITY, newest=newest)
         return _queue_tab(settings, notice=[notice])
     lines = result.problems or [result.message]
     return _queue_tab(settings, notice=[problem_notice(lines)])
@@ -401,9 +424,7 @@ def history_content(settings: Settings, diff=None, restore_target=None, notice=N
     return history_view(build_timeline(settings.db_path), diff, restore_target, notice)
 
 
-def run_history_action(
-    settings: Settings, action: dict, from_number, to_number, note: str | None
-):
+def run_history_action(settings: Settings, action: dict, from_number, to_number, note: str | None):
     """One click on the Version history tab. Writes only on a confirmed Restore."""
     name = action["action"]
     number = action.get("version") or 0
@@ -457,6 +478,7 @@ def register_da_admin_page_callbacks(app) -> None:
     _register_history(app)
     _register_queue(app)
     _register_overview(app)
+    _register_catalog_filter(app)
 
 
 def refresh_overview(settings: Settings, tab: str | None):
@@ -505,6 +527,40 @@ def _register_overview(app) -> None:
         if not is_admin(settings, settings.developer_id):
             raise PreventUpdate
         return triggered["tab"]
+
+
+def filtered_catalog(settings: Settings, search: str | None, missing_backup: bool | None):
+    """The read-only catalog list for the search box and the Missing backup chip."""
+    if not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    policy = get_active_version(settings.db_path).rulebook.policy
+    paths = module_paths(policy.index_folder_scope)
+    return catalog_list(policy.capabilities, paths, search or "", bool(missing_backup))
+
+
+def _register_catalog_filter(app) -> None:
+    @app.callback(
+        Output(CAP_LIST_ID, "children"),
+        Input(CAP_SEARCH_ID, "value"),
+        Input(CAP_MISSING_ID, "checked"),
+        prevent_initial_call=True,
+    )
+    def on_catalog_filter(search, missing_backup):
+        return filtered_catalog(get_admin_settings(), search, missing_backup)
+
+    @app.callback(
+        Output(CAP_MISSING_ID, "checked"),
+        Input({"type": GOTO_TYPE, "tab": ALL, "n": ALL}, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def tick_missing_backup(_clicks):
+        # The Overview's Assign button carries the filter name in its "n" (see _attention_list).
+        triggered = ctx.triggered_id
+        if not isinstance(triggered, dict) or not ctx.triggered[0]["value"]:
+            raise PreventUpdate
+        if MISSING_BACKUP_FILTER not in str(triggered["n"]):
+            raise PreventUpdate
+        return True
 
 
 def _register_history(app) -> None:
