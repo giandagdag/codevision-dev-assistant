@@ -52,6 +52,14 @@ def settings(make_settings):
     return make_settings()
 
 
+@pytest.fixture
+def limit_five(settings, published_rulebook):
+    """The seed now allows 8 decisions (fix 11-1); these tests are about the limit of 5."""
+    policy = published_rulebook.rulebook.policy.model_copy(update={"max_material_decisions": 5})
+    five = published_rulebook.rulebook.model_copy(update={"policy": policy})
+    save_new_version(settings.db_path, five, 1, "admin-0001", "Limit 5")
+
+
 def start(settings, client=None, developer_id=None):
     """A request saved BEFORE the Phase 6 fixes batch (question 1 asked, one at a time). Such a
     request must still open and finish the old way (plan X1), so this whole file covers that
@@ -392,7 +400,7 @@ def test_help_waits_then_choosing_later_resumes(settings, get_help_off):
     assert later.record.decisions[0].choice == VISIBLE_ONLY
 
 
-def test_more_than_5_material_decisions_need_a_senior(settings):
+def test_more_than_5_material_decisions_need_a_senior(settings, limit_five):
     many = [
         {"text": f"Decision {n}?", "material": True, "options": ["Yes", "No"]} for n in range(7)
     ]
@@ -428,7 +436,7 @@ def material(count, start_at=0):
     ]
 
 
-def test_senior_message_shows_once_when_nothing_is_pending(settings):
+def test_senior_message_shows_once_when_nothing_is_pending(settings, limit_five):
     """2D-9 (W4): the 6th material ambiguity arrives with no decision waiting."""
     view = start(settings)
     view = answer(settings, view, client=StubClient(stub_reply(GOOD_Q1["updates"], material(5))))
@@ -442,7 +450,7 @@ def test_senior_message_shows_once_when_nothing_is_pending(settings):
     assert len(senior_messages(view)) == 1
 
 
-def test_senior_message_shows_once_after_the_last_pending_decision(settings):
+def test_senior_message_shows_once_after_the_last_pending_decision(settings, limit_five):
     """2D-10 (W4): with decisions still pending it must not appear early."""
     view = start(settings)
     view = answer(settings, view, client=StubClient(stub_reply(GOOD_Q1["updates"], material(7))))
