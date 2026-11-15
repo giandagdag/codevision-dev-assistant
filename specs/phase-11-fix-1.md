@@ -1,6 +1,6 @@
 # Phase 11 fix 1: Admin console redesign (match the agreed design)
 
-Version 1.1 APPROVED, 15 Nov 2026 (11:41 SGT). Gian: "Yes go ahead. Do your recommendations. Ensure that it
+Version 1.2 APPROVED, 16 Nov 2026 (07:16 SGT): section 14 added (layout rework). v1.1 approved 15 Nov 2026 (11:41 SGT). Gian: "Yes go ahead. Do your recommendations. Ensure that it
 doesn't mess up with our Phase 10 progress." All D-x below are option 1 (the recommended one).
 
 Branch `phase-11-fix-1` (from `auto/phases-7-10`). PR into `auto/phases-7-10`; the chief merges it.
@@ -246,3 +246,41 @@ only).
   Admin (WF-7).
 - The developer pages, except Discover's capability step (section 6.2) and the menu highlight.
 - P31 (Windows-only sandbox test). Still open, still must be fixed before `main`.
+
+## 14. Layout rework (v1.2, 16 Nov 2026)
+
+Gian, 16 Nov 07:16 SGT: "Fix now please. You already know the results were not in line with the
+expectations. Go ahead with the fix." So P31 is **not** accepted as a known gap. It is closed on this
+branch (`phase-11-fix-1`, PR #77) before the merge. Same way of working: plan addendum, plan review,
+small steps with tests, code review (max 3 rounds), pytest, ruff, smoke check, screenshots.
+Behaviour, data and tests that already pass stay as they are. This is a layout change.
+
+### 14.1 What to fix (section 3 is binding; the reference demos decide)
+
+| # | Where | Today | Must become |
+|---|---|---|---|
+| L1 | Header, **all 8 tabs** including Version history | Small "V1 Showing v1 (active)..." line with a text link | Version pill on the right: green dot, "Active rulebook vN", "Published <date>, <who>", **View history** button |
+| L2 | Overview | One full-width table, then Needs attention and Health stacked below | Grid: left 2/3 **Rulebook** panel (clickable rows), right 1/3 **Needs attention** then **Health numbers** tiles |
+| L3 | Coding standards | Table plus accordion cards | Left 2/3 rule list, right 1/3 **rule card** for the selected row (section 5.2); golden examples as cards with a working **Change** button (module picker from the index, P29); approved libraries as chips, blocked imports as red chips (P29) |
+| L4 | UI standards | Stacked | Brand constants left, UI conventions right, side by side |
+| L5 | Repository and index | Health as text, allowed folders as a table | Left column / right column as section 7; Index health as **tiles**; allowed folders and markers as **chips** |
+| L6 | Capability catalog | Unassigned queue as a table | Table left, Unassigned queue as **cards on the right**, with **New capability** and **Reject** (P28) |
+| L7 | Version history | From/To number boxes with Compare | Left: vertical **timeline** (green filled dot = active, newest first, Active / "Restored from vM" tags). Right: **side panel** "What changed in vN" coloured plain-word diff, Requests pinned chips, **Restore vN** with the confirm text of section 3 |
+| L8 | Build and test | (check against the demo) | Cards as section 3; fix any panel not in place |
+
+### 14.2 Proof
+1. **Screenshot seed has at least 2 versions** (v1 seed, v2 with a change note), so the History diff,
+   the side panel and Restore show in the PNGs.
+2. Re-run the screenshot script: 16 PNGs (8 tabs, read and edit) at 1366 by 768.
+3. Code review: the code-reviewer opens **each PNG next to the matching tab of both reference demos**
+   and lists every panel missing or in the wrong place, tab by tab. Any one is a **Must fix**. "Content
+   there, layout stacked" is a Must fix.
+4. Split `layouts/da_admin_page.py` per tab (`da_admin_*_tab.py`) while redoing each tab (plan risk).
+
+### 14.3 Stays parked
+P30 (refresh on merge or nightly), P32 except the file split, P27 (Windows sandbox test).
+
+### 14.4 Merge rule
+**Nobody merges PR #77 until Gian comments that he approves the screenshots** (section 10.2). When
+the build and review are done: update the PR body (remove P31 from Known gaps, list what changed),
+then open a `gian-later` issue "Phase 11 fix 1: screenshots ready for your sign-off" and stop.
