@@ -12,6 +12,8 @@ Ids the callbacks read back (all dictionaries, CodeVision's habit for repeated c
   adm-act    Edit, Save, Cancel, Reload  {"type","tab","action"}
 """
 
+import itertools
+
 import dash_mantine_components as dmc
 from dash import dcc, html
 
@@ -148,15 +150,31 @@ def refusal_page() -> html.Div:
     return html.Div(dmc.Text(NOT_ADMIN_MESSAGE, c=da_styles.MUTED), style=da_styles.PAGE)
 
 
-def version_line(version: RulebookVersion, active: bool = True) -> dmc.Text:
+_HISTORY_LINK_COUNTER = itertools.count(5000)  # each link needs its own id (all tabs are drawn)
+
+
+def version_line(version: RulebookVersion, active: bool = True) -> dmc.Group:
+    """The version pill on every tab (AF-3): version, date, who, note and a View history link."""
     saved = version.saved_at.strftime("%Y-%m-%d %H:%M")
     # After a stale save the form shows the version the Admin started from, which is not active.
     state = "active" if active else "the version you started from"
-    return dmc.Text(
-        f"Showing v{version.version_number} ({state}), saved by {version.saved_by} on {saved}: "
-        f"{version.change_note}",
-        size="sm",
-        c=da_styles.MUTED,
+    return dmc.Group(
+        [
+            dmc.Badge(f"v{version.version_number}", color="blue", variant="light"),
+            dmc.Text(
+                f"Showing v{version.version_number} ({state}), saved by {version.saved_by} "
+                f"on {saved}: {version.change_note}",
+                size="sm",
+                c=da_styles.MUTED,
+            ),
+            dmc.Button(
+                "View history",
+                id=goto_id(TAB_HISTORY, next(_HISTORY_LINK_COUNTER)),
+                size="compact-xs",
+                variant="subtle",
+            ),
+        ],
+        gap="xs",
     )
 
 
@@ -219,22 +237,34 @@ def tab_content(
 def _buttons(tab: str, version: RulebookVersion, editable: bool):
     if not editable:
         return dmc.Button("Edit", id=act_id(tab, ACTION_EDIT), mt="md")
-    return dmc.Stack(
-        [
-            dmc.TextInput(
-                label="Change note (required)",
-                id={"type": "adm-field", "tab": tab, "name": NOTE_ID_NAME},
-                value="",
-            ),
-            dmc.Group(
-                [
-                    dmc.Button("Save", id=act_id(tab, ACTION_SAVE)),
-                    dmc.Button("Cancel", id=act_id(tab, ACTION_CANCEL), variant="default"),
-                ]
-            ),
-        ],
+    label = next(name for tab_id, name, _ in ADMIN_TABS if tab_id == tab)
+    # The shared edit bar (AF-3): stays at the bottom of the window while the Admin scrolls.
+    return dmc.Paper(
+        dmc.Stack(
+            [
+                dmc.Text(
+                    f"Editing {label}. Nothing changes for developers until you save.",
+                    size="sm",
+                    fw=600,
+                ),
+                dmc.TextInput(
+                    label="Change note (required)",
+                    id={"type": "adm-field", "tab": tab, "name": NOTE_ID_NAME},
+                    value="",
+                ),
+                dmc.Group(
+                    [
+                        dmc.Button("Save as new version", id=act_id(tab, ACTION_SAVE)),
+                        dmc.Button("Cancel", id=act_id(tab, ACTION_CANCEL), variant="default"),
+                    ]
+                ),
+            ],
+            gap="xs",
+        ),
+        withBorder=True,
+        p="sm",
         mt="md",
-        gap="xs",
+        style={"position": "sticky", "bottom": 0, "zIndex": 5},
     )
 
 
