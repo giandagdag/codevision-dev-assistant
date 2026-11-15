@@ -451,20 +451,21 @@ def test_the_number_of_ai_questions_is_read_from_the_policy(
     assert sum(1 for item in view.record.open_items if item.startswith("Needs a senior")) == 2
 
 
-def test_a_higher_policy_limit_allows_more_questions_than_5(settings, published_rulebook):
-    _with_limit(settings, published_rulebook, 8)
-    many = [ambiguity(f"Question number {n}?") for n in range(7)]
+def test_a_higher_policy_limit_allows_more_questions_than_the_seed_8(settings, published_rulebook):
+    # Fix 11-1: the seed default is now 8, so the "higher" limit is 12.
+    _with_limit(settings, published_rulebook, 12)
+    many = [ambiguity(f"Question number {n}?") for n in range(10)]
 
     view = submit(
         settings, create(settings), client=StubClient(stub_reply(FILLED["updates"], many))
     )
 
-    assert len(get_session(settings.db_path, rid(view)).pending_decisions) == 7
+    assert len(get_session(settings.db_path, rid(view)).pending_decisions) == 10
     assert view.request.status == "DECISION_REQUIRED"
 
 
 def test_the_limit_of_the_pinned_version_wins_over_a_newer_one(settings, published_rulebook):
-    view = create(settings)  # pinned to v1 (limit 5)
+    view = create(settings)  # pinned to v1 (seed limit 8)
     _with_limit(settings, published_rulebook, 1)
     many = [ambiguity(f"Question number {n}?") for n in range(3)]
 

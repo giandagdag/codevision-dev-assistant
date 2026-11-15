@@ -100,6 +100,15 @@ Reference demos are already in `docs/admin-reference/`.
   file stores only "path symbol" strings (`BuildSummary.skipped`), never code text.
 - **Step 18:** the AF-2 scan also draws all 8 tabs from an old stored version (AF-19).
 
+## Plan review round 2: approved (0 Must fix), two Should fix taken in
+- Step 1 changed tests also: the policy-equality line (~510) in the old-version default test is
+  adjusted (keep the `== 5` check); the refused-values test (~521) becomes `[0, 16, -1]`. Run the
+  Understand tests right after step 1.
+- Step 16: the shared embedder helper is used **only by the Admin rebuild**. B1's `main()` and `--fake`
+  stay exactly as they are.
+- Step 4 mapping: a batch file = text has `__main__`, or a top-level `def run...` (name starts with
+  `run`, so `run_batch` counts).
+
 ## Risks
 - Big UI file (`da_admin_page.py`, 1251 lines): split per tab into new `da_admin_*_tab.py` layouts as
   each tab is redone, rather than growing it.

@@ -269,7 +269,7 @@ class Policy(_RulebookPart):
     max_design_choices: int = Field(default=DEFAULT_MAX_DESIGN_CHOICES, ge=1)
     # Phase 6 fixes (U6): moved here from a constant in Understand. 1 to 10, so a typo cannot
     # switch the questions off or make them endless.
-    max_material_decisions: int = Field(default=DEFAULT_MAX_MATERIAL_DECISIONS, ge=1, le=10)
+    max_material_decisions: int = Field(default=DEFAULT_MAX_MATERIAL_DECISIONS, ge=1, le=15)
     flag_review_zones: list[FlagReviewZone] = Field(default_factory=_default_zones)
     # Phase 5 (Workspace), spec section 8. Same defaults idea: older versions still load.
     workspace_markers: list[str] = Field(default_factory=lambda: list(DEFAULT_WORKSPACE_MARKERS))
