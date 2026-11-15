@@ -45,6 +45,7 @@ from agents.da_search_index import (
     SearchIndex,
     SearchNotConfiguredError,
     get_search_index,
+    no_index_at_work,
     search_safely,
 )
 from agents.da_understand_checks import developer_message_problem
@@ -229,6 +230,11 @@ def find_program(
         raise EnhanceError(
             f"I searched {state.find_rounds_used} times and found nothing you confirmed. "
             "Please use Get help."
+        )
+    if index is None and no_index_at_work(settings):
+        raise EnhanceError(
+            "No CodeVision index is connected yet, so I cannot search for the program. "
+            "Ask your admin to set it up."
         )
     candidates, by_name, by_meaning = _search(index or get_search_index(settings), text, policy)
     with _write_transaction(settings.db_path) as conn:
@@ -634,7 +640,7 @@ def maybe_offer_switch(
     only for a Best match; never again after an offer or a decline. Never raises for a missing or
     unreadable index: the offer is a convenience."""
     now = now or datetime.now(UTC)
-    if _offer_history(settings, request_id):
+    if _offer_history(settings, request_id) or (index is None and no_index_at_work(settings)):
         return None
     text = "\n".join(m.text for m in list_messages(settings.db_path, request_id)
                      if m.speaker == "developer")

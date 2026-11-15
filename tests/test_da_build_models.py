@@ -64,7 +64,18 @@ def test_layer_b_counts_and_ok():
     result = LayerBResult(tests=[outcome("pass"), outcome("fail"), outcome("error")])
 
     assert (result.passed, result.failed, result.ok) == (1, 2, False)
-    assert LayerBResult(tests=[outcome("pass"), outcome("skipped")]).ok
+    # Fix B1 (F2): pass means proven. A skipped test is not a pass.
+    assert not LayerBResult(tests=[outcome("pass"), outcome("skipped")], strict=True).ok
+    assert LayerBResult(tests=[outcome("pass")]).ok
+
+
+def test_p26_a_skip_in_an_old_record_keeps_the_old_rule():
+    old = LayerBResult.model_validate_json(
+        '{"tests": [{"name": "a", "result": "pass"}, {"name": "b", "result": "skipped"}]}'
+    )
+
+    assert not old.strict and old.ok and old.failed == 0
+    assert not LayerBResult(tests=old.tests, strict=True).ok
 
 
 def test_layer_b_is_not_ok_when_timed_out_not_run_or_empty():

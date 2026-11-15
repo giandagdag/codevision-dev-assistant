@@ -68,7 +68,8 @@ NO_CASE_NOTE = "The reply must have a CASE part and a METHOD part, exactly as sh
 #   vague                    the own-test reply is VAGUE plus a question (Add a test case)
 #   repro_passes_today      the repro test passes on today's code (does not show the bug)
 #   approach_changes_criterion  the approach-lane reply would change a criterion (step 8)
-#   conflict                 the rebuild's edit block overlaps his lines (step 10)
+#   conflict                 the rebuild's edit block overlaps his lines (step 10); also the
+#                            own-test reply is CONFLICT AC-n (B1 F6) until Change my test
 
 
 @dataclass(frozen=True)
@@ -96,6 +97,21 @@ class ReproReply:
     method: str
     # Own test only (F1b): the Tester found the case too vague and asks one question instead.
     question: str = ""
+    # Own test only (B1 F6): his test disagrees with this criterion; nothing is written.
+    conflict_id: str = ""
+    conflict_why: str = ""
+
+
+# Words the Tester prompt carries for an own test (B1 F6). One place, so B2 can reuse them.
+CONFLICT_RULE = (
+    "If (and only if) the developer's test expectation disagrees with one acceptance criterion of "
+    "the request, reply with exactly this instead, and nothing else (one line, the reason at most "
+    "200 characters):\n\nCONFLICT AC-<number>: <why they disagree>"
+)
+NO_CONFLICT_RULE = (
+    "The developer chose to change his test. Write the test so it matches the criterion, even "
+    "when his text differs. Do not reply CONFLICT."
+)
 
 
 # --- prompts ---
@@ -140,11 +156,13 @@ def build_repro_prompt(
     case_id: str,
     feedback: str,
     own_test: bool = False,
+    allow_conflict: bool = True,
 ) -> str:
     """The bug-lane and Add-a-test-case Tester prompt. No code text of any kind goes in (D-G):
     the record, the contract (names only), this criterion's cases, and the developer's words."""
     own = [case for case in cases if case.criterion_id == criterion_id]
     prefix = f"{case_id.lower().replace('-', '')}_{criterion_id.lower().replace('-', '')}_"
+    rule = (CONFLICT_RULE if allow_conflict else NO_CONFLICT_RULE) if own_test else ""
     values = {
         "task": OWN_TEST_MARKER if own_test else REPRO_MARKER,
         "record": record.model_dump_json(indent=2),
@@ -154,6 +172,7 @@ def build_repro_prompt(
         "feedback": feedback,
         "case_id": case_id,
         "method_prefix": prefix,
+        "conflict_rule": rule,
     }
     return fill_template(REPRO_PROMPT, values)
 
@@ -222,17 +241,26 @@ def write_repro_test(
     case_id: str,
     feedback: str,
     own_test: bool = False,
+    allow_conflict: bool = True,
 ) -> AIResult:
     """One Tester call. `value` is a ReproReply. Whether the test fails today is the sandbox's
     job (step 9), not this call's."""
-    prompt = build_repro_prompt(record, contract, cases, criterion_id, case_id, feedback, own_test)
+    prompt = build_repro_prompt(
+        record, contract, cases, criterion_id, case_id, feedback, own_test, allow_conflict
+    )
     prefix = f"test_{case_id.lower().replace('-', '')}_{criterion_id.lower().replace('-', '')}_"
+    known = {item.id for item in record.acceptance_criteria}
 
     def check(text: str):
         if own_test:
             question = parse_vague_reply(text)
             if question:
                 return ReproReply(criterion_id, "", "", "", question), []
+            conflict = parse_conflict_reply(text) if allow_conflict else None
+            if conflict:
+                if conflict[0] not in known:
+                    return None, [f"{conflict[0]} is not a criterion of this request."]
+                return ReproReply(criterion_id, "", "", "", "", *conflict), []
         reply, problems = parse_repro_reply(text, criterion_id, prefix)
         return (reply, []) if reply else (None, problems)
 
@@ -258,6 +286,17 @@ def parse_vague_reply(text: str) -> str:
     if not found:
         return ""
     return " ".join(found.group("question").split())[:VAGUE_MAX_CHARS]
+
+
+_CONFLICT = re.compile(r"^\s*CONFLICT\s+(AC-\d+)\s*:\s*(.+?)\s*$", re.DOTALL)
+
+
+def parse_conflict_reply(text: str) -> tuple[str, str] | None:
+    """B1 F6: `CONFLICT AC-n: why`. Returns (criterion id, why cut at 200 characters) or None."""
+    found = _CONFLICT.match(text)
+    if not found:
+        return None
+    return found.group(1), " ".join(found.group(2).split())[:VAGUE_MAX_CHARS]
 
 
 _CASE_PART = re.compile(
@@ -381,6 +420,10 @@ def scripted_refine_reply(prompt: str, switches: frozenset[str] | None = None) -
     own = re.search(rf"^{re.escape(OWN_TEST_MARKER)}$", prompt, re.MULTILINE)
     if own and "vague" in switches:
         return "VAGUE\nWhat exactly should happen to the file after it is uploaded?"
+    if own and "conflict" in switches and NO_CONFLICT_RULE not in prompt:
+        criterion = _CRITERION_LINE.search(prompt)
+        number = criterion.group(1) if criterion else "AC-1"
+        return f"CONFLICT {number}: the test expects another result."
     return _scripted_repro(prompt, switches)
 
 

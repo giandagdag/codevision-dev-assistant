@@ -235,10 +235,11 @@ def test_get_search_index_gives_the_pretend_index_by_default():
     assert isinstance(get_search_index(settings), FakeSearchIndex)
 
 
-def test_codevision_provider_says_it_is_not_configured():
+def test_codevision_provider_without_index_files_says_to_build(tmp_path, monkeypatch):
+    monkeypatch.setenv("DA_CODE_INDEX_DIR", str(tmp_path / "none"))
     settings = load_settings(env_file=None, environ={"DA_SEARCH_PROVIDER": "codevision"})
 
-    with pytest.raises(SearchNotConfiguredError, match="CodeVision search is not configured yet"):
+    with pytest.raises(SearchNotConfiguredError, match="needs building"):
         get_search_index(settings).search("x", "exact", FILTERS, 5)
 
 

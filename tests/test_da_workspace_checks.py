@@ -149,6 +149,29 @@ def test_5_5_a_new_file_that_already_exists_is_b4(policy):
     assert codes(run_check(facts, policy)) == ["B4"]
 
 
+def existing_create_facts(text):
+    return good_facts(
+        files=[
+            FileFact(path=MODIFY, exists=True, parent_exists=True, text="x\n"),
+            FileFact(path=CREATE, exists=True, parent_exists=True, text=text),
+        ]
+    )
+
+
+@pytest.mark.parametrize("text", ["y = 1\n", "y = 1\n# his own edit\n"])
+def test_b1_12_13_a_file_the_da_wrote_is_updated_not_blocked(policy, text):
+    # Untouched or edited since: no B4. The edit case is protected by Keep mine / Take the AI's.
+    result = checks.check_facts(existing_create_facts(text), plan(), policy, "", [CREATE])
+
+    assert result.passed
+
+
+def test_b1_14_a_file_the_da_never_wrote_is_still_b4(policy):
+    result = checks.check_facts(existing_create_facts("y\n"), plan(), policy, "", [MODIFY])
+
+    assert codes(result) == ["B4"]
+
+
 def test_5_6_a_missing_parent_folder_is_b5(policy):
     facts = good_facts(
         files=[

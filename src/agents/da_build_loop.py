@@ -40,7 +40,7 @@ from agents.da_build_flow import (
     _require_request,
     _write,
 )
-from agents.da_check_words import testing_files_line
+from agents.da_check_words import NOT_PROVEN_TEXT, testing_files_line
 from agents.da_enhance_build_checks import (
     STILL_OLD,
     ExpectedOutcome,
@@ -331,7 +331,7 @@ class _Run:
     def _pause(self, kind: str, message: str) -> str:
         try:
             with self._turn() as tx:
-                rounds_used = len(self.inp.rounds)
+                rounds_used = _rounds_used(self.inp.rounds)
                 tx.audit("system", "build_interrupted", {"why": message, "kind": kind})
                 if kind == "unable":
                     tx.close_run(STATUS_READY_TO_BUILD, LABEL_UNABLE, message, rounds_used)
@@ -341,7 +341,7 @@ class _Run:
                 else:
                     tx.set(step="b_interrupted", message=message)
                     # A Tester pause already says what it is (spec section 2).
-                    own = message.startswith(TESTER_PAUSE)
+                    own = message.startswith(TESTER_PAUSE) or message == NOT_PROVEN_TEXT
                     tx.say("assistant", message if own else f"The build paused: {message}")
         except _Cancelled:
             return "cancelled"
@@ -556,9 +556,20 @@ class _Run:
                 if self._layer_c(last):
                     return "done"
                 continue
-            if len(done) >= limit:
-                return self._finish_failed(len(done))
+            if last is not None and last.layer_b is not None and last.layer_b.not_proven:
+                self._retry_unproven(last, contract, tests)  # Run again: no round is used
+                continue
+            used = _rounds_used(done)
+            if used >= limit:
+                return self._finish_failed(used)
             self._one_round(len(done) + 1, contract, tests)
+
+    def _retry_unproven(self, last: RoundRecord, contract: Contract, tests: str) -> None:
+        """Run only Layer B again on the saved code, as a new row (rounds are append-only, so the
+        unproven row stays as the record). That row does not count against the budget (F3)."""
+        self._record_round(
+            last.round + 1, last.layer_a, self._layer_b(tests), contract, tests
+        )
 
     def _review_of(self, round_number: int) -> ReviewRecord | None:
         """The saved review of a round. A saved review of a passed round that is not the end of the
@@ -589,7 +600,9 @@ class _Run:
             to_write, failures = self._fix_input(number)
         with self._turn() as tx:
             tx.set(step="b_running", current_round=len(self.inp.rounds))
-            self._note(tx, f"Round {number} of {limit}", "done")
+            # Not proven rows hold a row number but no budget, so show the budget count.
+            used_now = _rounds_used(self.inp.rounds) + 1
+            self._note(tx, f"Round {used_now} of {limit}", "done")
         generated: dict[str, str] = {}
         problems: list[LayerAProblem] = []
         for path in to_write:
@@ -825,6 +838,9 @@ class _Run:
         tests: str,
     ) -> bool:
         passed = layer_a.ok and layer_b is not None and layer_b.ok
+        # F3: tests that never reported are the Developer Assistant's problem. Show the rows,
+        # then pause like an interrupted run. No repair round, no Generator call.
+        unproven = bool(layer_b and layer_b.not_proven)
         planned = [_clean(i.path) for i in self.inp.planned]
         fix: list[str] = []
         report = None
@@ -866,15 +882,18 @@ class _Run:
                     "done" if layer_b.ok else "failed",
                     self._layer_b_line,
                 )
-            if not passed:
+            if not passed and not unproven:
                 tx.audit("system", "round_failed", {"round": number, "files_to_fix": fix})
-                if number < limit and not self.check:
+                counted = _rounds_used(self.inp.rounds) + 1  # this round is not appended yet
+                if counted < limit and not self.check:
                     tx.set(step="b_round_failed", current_round=number)
                     tx.say(
                         "assistant",
-                        _round_failed_text(number, layer_a, layer_b, len(self.inp.cases), fix),
+                        _round_failed_text(counted, layer_a, layer_b, len(self.inp.cases), fix),
                     )
         self.inp.rounds.append(record)
+        if unproven:
+            raise _Paused("interrupted", NOT_PROVEN_TEXT)
         return passed
 
     # --- a check run: Check my edits (Phase 8 spec section 3) ---
@@ -887,6 +906,9 @@ class _Run:
         if not self.inp.rounds:
             self._check_round(contract, tests)
         last = self.inp.rounds[-1]
+        if last.layer_b is not None and last.layer_b.not_proven:
+            self._retry_unproven(last, contract, tests)
+            last = self.inp.rounds[-1]
         if not _round_passed(last):
             return self._finish_check_failed(last)
         if self._review_of(last.round) is None:
@@ -1262,8 +1284,8 @@ class _Run:
         one_failed = check_one_failed
         unable = outcome.kind == "unable"
         limit = self.inp.policy.build_max_rounds
-        used = len(self.inp.rounds)
-        must = tester.must_fix_items(findings)
+        used = _rounds_used(self.inp.rounds)
+        must =tester.must_fix_items(findings)
         label = tester.compute_label(findings, zones, "unable" if unable else "done", 1, [])
         with self._turn() as tx:
             record = ReviewRecord(
@@ -1507,6 +1529,11 @@ def _clean(path: str) -> str:
 
 def _parse(text: str) -> ast.Module:
     return ast.parse(text)
+
+
+def _rounds_used(rounds: list[RoundRecord]) -> int:
+    """Rounds against the budget. A Not proven row is the app's problem, so it is not counted."""
+    return sum(1 for item in rounds if not (item.layer_b and item.layer_b.not_proven))
 
 
 def _round_passed(record: RoundRecord) -> bool:

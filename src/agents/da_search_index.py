@@ -7,6 +7,7 @@ Standard library only (rule R8).
 """
 
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +15,13 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from agents.da_code_index import (
+    DEFAULT_INDEX_DIR,
+    FAISS_NAME,
+    PIECES_NAME,
+    Embedder,
+    WorkEmbedder,
+)
 from configs.da_config import Settings
 from da_logging import get_logger
 from pydantic_classes.da_discovery_models import (
@@ -29,7 +37,13 @@ logger = get_logger(__name__)
 DATA_FOLDER = Path(__file__).resolve().parents[1] / "data"
 FAKE_INDEX_FILE = DATA_FOLDER / "da_fake_index.json"
 
-NOT_CONFIGURED_MESSAGE = "CodeVision search is not configured yet."
+INDEX_NEEDS_BUILDING_MESSAGE = (
+    "The CodeVision index needs building: run `python src\\da_build_code_index.py`."
+)
+MEANING_UNAVAILABLE_NOTE = (
+    "The meaning search was not available, so only the exact search was used."
+)
+DEFAULT_MAX_DISTANCE = 0.90  # same limit as CodeVision's own search
 
 # Standards, documents and settings are not tied to one programming language (planning decision 6).
 _LANGUAGE_NEUTRAL_KINDS = ("doc", "standard", "config")
@@ -166,19 +180,99 @@ class FakeSearchIndex:
         )
 
 
+class IndexNotBuiltError(SearchNotConfiguredError):
+    """The real index files are missing or do not match each other (B1 I5)."""
+
+
 class CodeVisionSearchIndex:
-    """Placeholder until the work adapter (P15) exists."""
+    """The real index built by `da_build_code_index.py` (B1 I4).
+
+    Exact mode reuses the practice index's word matching on the real piece list. Meaning mode
+    asks the embedder for the query vector and searches the FAISS file ourselves, because
+    CodeVision's own query helper returns nothing for an empty filter list (spec 3.2).
+    """
+
+    def __init__(
+        self,
+        embedder: Embedder | None = None,
+        index_dir: Path | None = None,
+        max_distance: float | None = None,
+    ) -> None:
+        self._embedder = embedder or WorkEmbedder()
+        self._dir = index_dir or Path(os.environ.get("DA_CODE_INDEX_DIR") or DEFAULT_INDEX_DIR)
+        self._max_distance = (
+            max_distance
+            if max_distance is not None
+            else float(os.environ.get("DA_CODE_INDEX_MAX_DISTANCE") or DEFAULT_MAX_DISTANCE)
+        )
+        self._loaded: tuple[FakeSearchIndex, object] | None = None
+        # Things the chat should say after a search (for example: meaning search not available).
+        self.notes: list[str] = []
 
     def search(
         self, query: str, mode: SearchMode, filters: SearchFilters, top_k: int
     ) -> list[SearchHit]:
-        raise SearchNotConfiguredError(NOT_CONFIGURED_MESSAGE)
+        words_index, vectors = self._load()
+        if mode == "meaning":
+            hits = self._meaning(words_index, vectors, query, filters, top_k)
+            if hits is not None:
+                return hits
+        return words_index.search(query, "exact", filters, top_k)
+
+    def _load(self) -> tuple[FakeSearchIndex, object]:
+        if self._loaded is None:
+            self._loaded = self._read_files()
+        return self._loaded
+
+    def _read_files(self) -> tuple[FakeSearchIndex, object]:
+        import faiss  # only needed with the real index
+
+        faiss_file, pieces_file = self._dir / FAISS_NAME, self._dir / PIECES_NAME
+        if not faiss_file.exists() or not pieces_file.exists():
+            raise IndexNotBuiltError(INDEX_NEEDS_BUILDING_MESSAGE)
+        data = load_index_file(pieces_file)
+        vectors = faiss.read_index(str(faiss_file))
+        if vectors.ntotal != len(data.pieces):
+            raise IndexNotBuiltError(INDEX_NEEDS_BUILDING_MESSAGE)
+        return FakeSearchIndex(data), vectors
+
+    def _meaning(self, words_index, vectors, query, filters, top_k) -> list[SearchHit] | None:
+        """None means the meaning search could not run: the caller falls back to exact."""
+        import numpy as np
+
+        try:
+            vector = self._embedder.embed(query)
+        except RuntimeError:  # for example: not inside CodeVision
+            vector = None
+        if vector is None or len(vector) != vectors.d:
+            if MEANING_UNAVAILABLE_NOTE not in self.notes:
+                self.notes.append(MEANING_UNAVAILABLE_NOTE)
+            return None
+        count = min(top_k * 4, vectors.ntotal)
+        distances, numbers = vectors.search(np.array([vector], dtype="float32"), count)
+        near = [
+            (int(n), float(d))
+            for n, d in zip(numbers[0], distances[0], strict=True)
+            if n >= 0 and d <= self._max_distance
+        ]
+        pieces = words_index._data.pieces
+        permitted = [(pieces[n], d) for n, d in near if _allowed_by_flags(pieces[n], filters)]
+        wanted = [(p, d) for p, d in permitted if _allowed_by_language(p, filters)]
+        # Filters come after the vector search; a filter that matches nothing must not hide
+        # everything, so we fall back to all permitted pieces (as the practice index does).
+        chosen = (wanted or permitted)[:top_k]
+        return [words_index._to_hit(p, max(0.0, min(1.0, 1 - d / 2)), "meaning") for p, d in chosen]
 
 
 def get_search_index(settings: Settings, index_file: Path = FAKE_INDEX_FILE) -> SearchIndex:
     if settings.search_provider == "codevision":
         return CodeVisionSearchIndex()
     return FakeSearchIndex.from_file(index_file)
+
+
+def no_index_at_work(settings: Settings) -> bool:
+    """At work (onprem AI) the made-up practice index must never answer silently (B1 F7, P25)."""
+    return settings.llm_provider == "onprem" and settings.search_provider == "fake"
 
 
 def looks_secret(path: str) -> bool:

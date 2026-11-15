@@ -7,6 +7,7 @@ from dash.exceptions import PreventUpdate
 from agents import da_approach_flow as approach_flow
 from agents import da_understand_flow as flow
 from callbacks.screen_callbacks import da_developer_assistant_page_callbacks as cb
+from db_table_functions.db_tbl_da_discovery import DiscoveryError
 from db_table_functions.db_tbl_da_understand import STALE_MESSAGE
 from layouts import da_developer_assistant_page as page
 from tests import da_play
@@ -423,16 +424,19 @@ def test_a_discover_choice_with_no_button_behind_it_gets_the_stale_message(setti
     assert discovery_view(settings, confirmed_id).request.status == "CONFIRMED_FOR_DISCOVERY"
 
 
-def test_codevision_search_provider_shows_the_not_configured_message(
-    make_settings, published_rulebook, settings, confirmed_id
+def test_codevision_search_provider_without_a_built_index_says_so_and_carries_on(
+    make_settings, published_rulebook, settings, confirmed_id, tmp_path, monkeypatch
 ):
+    # B1 I5: a missing index is no longer an error message, the round says so in its findings.
+    monkeypatch.setenv("DA_CODE_INDEX_DIR", str(tmp_path / "nothing_built_here"))
     work = make_settings(search_provider="codevision")
 
-    result = cb.perform_action(
-        work, choice(0), None, discover_state(confirmed_id), 0
-    )
+    result = cb.perform_action(work, choice(0), None, discover_state(confirmed_id), 0)
 
-    assert result == (no_update, no_update, "CodeVision search is not configured yet.")
+    assert result[0] == 1 and result[2] == ""
+    shown = cb.get_discovery_view(work, confirmed_id).result
+    said = " ".join(shown.limitations)
+    assert shown.search_provider == "none" and "da_build_code_index.py" in said
 
 
 def test_the_same_buttons_in_an_understand_workspace_still_call_the_understand_engine(settings):
@@ -585,7 +589,12 @@ def test_one_click_on_findings_look_right_goes_to_the_approach(settings, confirm
 def test_if_discover_cannot_start_the_confirmation_is_kept_and_try_again_shows(
     make_settings, published_rulebook, monkeypatch
 ):
-    work = make_settings(search_provider="codevision")  # the real index is not set up here
+    work = make_settings()
+
+    def cannot_start(*_args):
+        raise DiscoveryError("The search could not start.")
+
+    monkeypatch.setattr(cb, "start_discovery", cannot_start)
     monkeypatch.setattr(cb, "get_settings", lambda: work)
     view = da_play.to_checkpoint(work)
     proceed = view.choices.index(flow.PROCEED_OPTION)

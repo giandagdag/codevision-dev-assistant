@@ -185,16 +185,19 @@ def test_unknown_request_is_refused(settings, request_id):
         start_discovery(settings, "CVDA-2026-9999", 0)
 
 
-def test_codevision_provider_gives_the_not_configured_message(make_settings, published_rulebook):
+def test_b1_20_codevision_provider_without_index_says_to_build_and_carries_on(
+    make_settings, published_rulebook, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("DA_CODE_INDEX_DIR", str(tmp_path / "none"))
     fake = make_settings()
     request_id = confirmed_id(fake)
     settings = make_settings(search_provider="codevision")
 
-    with pytest.raises(DiscoveryError, match="CodeVision search is not configured yet"):
-        start_discovery(settings, request_id, 0)
+    view = start_discovery(settings, request_id, 0)
 
-    assert get_request(settings.db_path, request_id).status == "CONFIRMED_FOR_DISCOVERY"
-    assert get_results(settings.db_path, request_id) == []
+    assert any("needs building" in text for text in view.result.limitations)
+    assert view.result.hits == []
+    assert get_request(settings.db_path, request_id).status != "CONFIRMED_FOR_DISCOVERY"
 
 
 def test_a_broken_index_file_is_a_plain_message(settings, request_id, monkeypatch):

@@ -319,6 +319,24 @@ def test_a6_class_arguments_come_from_init(policy):
     assert good.ok and codes(bad) == ["A6"]
 
 
+def test_b1_5_class_arguments_come_from_model_and_dataclass_fields(policy):
+    contract = make_contract(**{MODIFY: [item("Loan", "class", ("amount", "rate"))]})
+    model = (
+        "from typing import ClassVar\nfrom pydantic import BaseModel\n\n"
+        "class Loan(BaseModel):\n    amount: float\n    rate: float\n"
+        "    _cache: int = 0\n    kind: ClassVar[str] = 'x'\n"
+    )
+    data = (
+        "import dataclasses\n\n@dataclasses.dataclass(frozen=True)\n"
+        "class Loan:\n    amount: float\n    rate: float\n"
+    )
+    plain = "class Loan:\n    amount: float\n    rate: float\n"
+
+    assert layer_a(policy, model, contract=contract).ok
+    assert layer_a(policy, data, contract=contract).ok
+    assert codes(layer_a(policy, plain, contract=contract)) == ["A6"]
+
+
 def test_every_problem_is_listed_not_just_the_first(policy):
     text = "import subprocess\n\ndef validate(path):\n    eval('1')\n"
 
@@ -471,6 +489,21 @@ def test_failure_report_for_the_developer_has_ids_tag_expected_and_message():
     assert "line a" not in developer
     generator = checks.report_for_generator(report)
     assert "Traceback for T-2:" in generator and "  line a" in generator
+
+
+def test_a_skipped_or_unexpected_success_test_is_a_failure_in_the_report_and_counts():
+    result = LayerBResult(
+        tests=[
+            outcome("test_t1_ac1_accepts_a_file", "pass"),
+            outcome("test_t2_ac2_rejects_empty", "skipped"),
+        ],
+        strict=True,
+    )
+
+    report = checks.build_failure_report(LayerAResult(), result, [], TEST_SOURCE, [MODIFY])
+
+    assert [i.test_id for i in report.items] == ["T-2"] and result.failed == 1
+    assert checks.failing_tests(result) == ["test_t2_ac2_rejects_empty"]
 
 
 def test_failure_report_names_a_timeout_and_layer_a_problems():

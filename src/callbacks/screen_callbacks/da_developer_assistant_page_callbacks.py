@@ -68,6 +68,7 @@ from db_table_functions.db_tbl_da_understand import (
     UnderstandError,
 )
 from layouts.da_build_panel import POLL_ID, POLL_MS
+from layouts.da_busy_text import BUSY_JS
 from layouts.da_developer_assistant_page import (
     BUSY_ID,
     CHOICE_TYPE,
@@ -942,6 +943,14 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
         State(REFRESH_ID, "data"),
         prevent_initial_call=True,
     )(confirm_picked)
+
+    # F12: each button puts its own waiting line on the busy text when pressed.
+    app.clientside_callback(
+        BUSY_JS,
+        Output(KEYS_ID, "data", allow_duplicate=True),
+        Input(PAGE_CONTENT_ID, "children"),
+        prevent_initial_call="initial_duplicate",
+    )
 
     # The functions-in-scope tick list at the Understand checkpoint (step 18c).
     app.callback(

@@ -47,7 +47,24 @@ class RecordingResult(unittest.TestResult):
         super().addSkip(test, reason)
         self._record(test, "skipped", reason, [])
 
+    def addExpectedFailure(self, test, err):
+        super().addExpectedFailure(test, err)
+        self._record(test, "expected_failure", _message(err), [])
+
+    def addUnexpectedSuccess(self, test):
+        super().addUnexpectedSuccess(test)
+        self._record(test, "unexpected_success", "Passed, but was marked as expected to fail.", [])
+
+    def addSubTest(self, test, subtest, err):
+        super().addSubTest(test, subtest, err)
+        # A passing sub-test says nothing: the parent gets its own addSuccess if all pass.
+        if err is not None:
+            self._record(test, "fail", _message(err), _tail(err))
+
     def _record(self, test, result: str, message: str, tail: list[str]) -> None:
+        # One row per test: the first non-pass outcome (a failing sub-test) is kept.
+        if any(row["name"] == _name(test) for row in self.outcomes):
+            return
         self.outcomes.append(
             {"name": _name(test), "result": result, "message": message, "traceback_tail": tail}
         )

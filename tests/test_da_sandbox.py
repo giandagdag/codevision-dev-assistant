@@ -372,3 +372,78 @@ def test_tasklist_output_is_read_by_the_exact_process_id():
     info = "INFO: No tasks are running which match the criteria."
     assert tasklist_says_alive(info, 1234) is False
     assert tasklist_says_alive("", 1234) is False
+
+
+# --- Fix B1: every outcome is recorded and a pass must be proven (F1, F2) ---
+
+ALL_KINDS = '''
+import unittest
+
+
+class C(unittest.TestCase):
+    def test_a_sub(self):
+        """Sub."""
+        for n in (1, 2):
+            with self.subTest(n=n):
+                self.assertEqual(n, 1, "sub-test two broke")
+
+    def test_b_subs_ok(self):
+        """All sub-tests pass."""
+        for n in (1, 2):
+            with self.subTest(n=n):
+                self.assertTrue(n)
+
+    @unittest.expectedFailure
+    def test_c_expected(self):
+        """Expected."""
+        self.fail("known")
+
+    @unittest.expectedFailure
+    def test_d_unexpected(self):
+        """Unexpected."""
+
+    @unittest.skip("later")
+    def test_e_skipped(self):
+        """Skipped."""
+'''
+
+
+def test_every_outcome_gets_its_own_row_and_none_but_a_pass_is_ok():
+    """B1-1 and B1-2."""
+    result = run(ALL_KINDS)
+
+    rows = {t.name: t for t in result.tests}
+    assert rows["test_a_sub"].result == "fail"
+    assert "sub-test two broke" in rows["test_a_sub"].message
+    assert rows["test_b_subs_ok"].result == "pass"
+    assert rows["test_c_expected"].result == "expected_failure"
+    assert rows["test_d_unexpected"].result == "unexpected_success"
+    assert rows["test_e_skipped"].result == "skipped"
+    assert len(result.tests) == 5  # one row per test, no duplicates
+    assert not result.ok
+
+
+def test_a_frozen_test_with_no_result_is_not_proven(monkeypatch):
+    """B1-3 (model part): 3 of 8 never report."""
+    text = "import unittest\n\n\nclass C(unittest.TestCase):\n" + "".join(
+        f'    def test_t{n}_ac{n}_x(self):\n        """X."""\n' for n in range(8)
+    )
+    # Only 5 results come back, as if the runner had died quietly.
+    monkeypatch.setattr(
+        da_sandbox,
+        "_read_outcomes",
+        lambda path: [
+            da_sandbox.TestOutcome(name=f"test_t{n}_ac{n}_x", result="pass") for n in range(5)
+        ],
+    )
+
+    result = run(text)
+
+    assert result.passed == 5 and len(result.tests) == 8
+    assert result.not_proven == [f"test_t{n}_ac{n}_x" for n in (5, 6, 7)]
+    assert not result.ok
+
+
+def test_all_frozen_tests_passing_is_ok():
+    """B1-4."""
+    assert run().ok

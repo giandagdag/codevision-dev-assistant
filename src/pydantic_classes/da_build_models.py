@@ -33,7 +33,9 @@ BuildStep = Literal[
 WriteState = Literal["not_written", "written", "stopped"]
 FileKind = Literal["contract", "test", "code"]
 MadeBy = Literal["generator", "tester", "system", "merge"]  # merge: his picks (Phase 8)
-TestResultKind = Literal["pass", "fail", "error", "skipped"]
+TestResultKind = Literal[
+    "pass", "fail", "error", "skipped", "expected_failure", "unexpected_success", "not_proven"
+]
 ProgressState = Literal["pending", "running", "done", "failed"]
 ContractKind = Literal["function", "class"]
 
@@ -126,6 +128,10 @@ class TestOutcome(_Shape):
     traceback_tail: list[str] = Field(default_factory=list, max_length=20)
 
 
+# Every result that blocks a pass but was reported (Not proven is the app's problem, not these).
+NOT_PASSING = ("fail", "error", "skipped", "expected_failure", "unexpected_success")
+
+
 class LayerBResult(_Shape):
     # False when the sandbox could not run at all (not the code's fault: b_interrupted).
     ran: bool = True
@@ -137,18 +143,36 @@ class LayerBResult(_Shape):
     output: str = ""
     tests: list[TestOutcome] = Field(default_factory=list)
     error: str = ""
+    # B1 P26: True for runs made since F1/F2 (a skip blocks a pass). A record saved earlier lacks
+    # the field, so it reads False and keeps the old rule: a skip did not block a pass.
+    strict: bool = False
 
     @property
     def passed(self) -> int:
         return sum(1 for item in self.tests if item.result == "pass")
 
     @property
+    def _blocking(self) -> tuple[str, ...]:
+        return NOT_PASSING if self.strict else ("fail", "error")
+
+    @property
     def failed(self) -> int:
-        return sum(1 for item in self.tests if item.result in ("fail", "error"))
+        return sum(1 for item in self.tests if item.result in self._blocking)
+
+    @property
+    def not_proven(self) -> list[str]:
+        """Frozen tests that never reported (F2): the Developer Assistant's problem."""
+        return [item.name for item in self.tests if item.result == "not_proven"]
 
     @property
     def ok(self) -> bool:
-        return self.ran and not self.timed_out and self.failed == 0 and bool(self.tests)
+        # Pass means proven: every test reported, and every one of them passed.
+        return (
+            self.ran
+            and not self.timed_out
+            and bool(self.tests)
+            and not any(item.result in self._blocking + ("not_proven",) for item in self.tests)
+        )
 
 
 # --- the failure report ---

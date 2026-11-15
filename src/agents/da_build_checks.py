@@ -24,6 +24,7 @@ from agents.da_workspace_checks import (
 from pydantic_classes.da_approach_models import TestCase
 from pydantic_classes.da_build_models import (
     LABEL_NOT_PASSING,
+    NOT_PASSING,
     Contract,
     ContractFile,
     ContractItem,
@@ -110,11 +111,32 @@ def _arg_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
     return [name for name in names if name not in ("self", "cls")]
 
 
+def _last_name(expr: ast.expr) -> str:
+    """`dataclass`, `dataclasses.dataclass`, `dataclass(frozen=True)` -> `dataclass`."""
+    if isinstance(expr, ast.Call):
+        expr = expr.func
+    if isinstance(expr, ast.Attribute):
+        return expr.attr
+    return expr.id if isinstance(expr, ast.Name) else ""
+
+
 def _class_args(node: ast.ClassDef) -> list[str]:
+    """`__init__` args when written; else the fields of a Pydantic model or dataclass."""
     for child in node.body:
         if isinstance(child, ast.FunctionDef) and child.name == "__init__":
             return _arg_names(child)
-    return []
+    is_model = any(_last_name(base) == "BaseModel" for base in node.bases)
+    is_dataclass = any(_last_name(deco) == "dataclass" for deco in node.decorator_list)
+    if not (is_model or is_dataclass):
+        return []
+    return [
+        child.target.id
+        for child in node.body
+        if isinstance(child, ast.AnnAssign)
+        and isinstance(child.target, ast.Name)
+        and not child.target.id.startswith("_")
+        and "ClassVar" not in ast.unparse(child.annotation)
+    ]
 
 
 # --- the contract (spec section 3, step 1) ---
@@ -535,7 +557,7 @@ def parse_edit_blocks(text: str) -> list[FileEdit]:
 
 
 def failing_tests(result: LayerBResult) -> list[str]:
-    return [item.name for item in result.tests if item.result in ("fail", "error")]
+    return [item.name for item in result.tests if item.result in NOT_PASSING]
 
 
 def choose_files_to_fix(
@@ -562,7 +584,7 @@ def choose_files_to_fix(
 def _files_from_tracebacks(layer_b: LayerBResult | None, planned: list[str]) -> set[str]:
     named = set()
     for item in layer_b.tests if layer_b else []:
-        if item.result not in ("fail", "error"):
+        if item.result not in NOT_PASSING:
             continue
         for line in item.traceback_tail:
             match = _TRACE_FILE.search(line)
@@ -612,7 +634,7 @@ def build_failure_report(
         methods = {}
     items = []
     for item in layer_b.tests if layer_b else []:
-        if item.result not in ("fail", "error"):
+        if item.result not in NOT_PASSING:
             continue
         ids = case_ids_from_method(item.name)
         case = by_id.get(ids[0]) if ids else None

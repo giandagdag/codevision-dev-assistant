@@ -14,6 +14,9 @@ __pycache__/
 data/*.db
 data/*.db-*
 
+# The built CodeVision code index (fix B1): made at work, never committed
+src/data/da_code_index/
+
 # Windows folder settings file
 desktop.ini
 

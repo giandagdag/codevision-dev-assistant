@@ -29,6 +29,8 @@ ONPREM_MAX_TRIES = 3
 ONPREM_RETRY_WAITS = (2, 4)
 # How much of a server's answer may appear in an error message.
 ERROR_TEXT_LIMIT = 300
+# How much of an empty reply's body may appear in the log (B1 F8).
+EMPTY_REPLY_LOG_LIMIT = 2000
 
 
 class LLMClientError(Exception):
@@ -175,7 +177,7 @@ class OnPremLLMClient:
     def _handle_response(self, response: requests.Response) -> LLMReply:
         status = response.status_code
         if 200 <= status < 300:
-            return _read_reply(response, self.model)
+            return _read_reply(response, self.model, self._api_key)
         if status in (401, 403):
             raise LLMClientError(
                 f"The AI server refused the request (HTTP {status}). Check DA_ONPREM_API_KEY, "
@@ -238,24 +240,66 @@ def _build_headers(api_key: str, auth_header: str, auth_prefix: str) -> dict[str
     return headers
 
 
-def _read_reply(response: requests.Response, fallback_model: str) -> LLMReply:
-    """Read the text from choices[0].message.content, and the model name if the reply has one."""
+def _read_reply(
+    response: requests.Response, fallback_model: str, api_key: str = ""
+) -> LLMReply:
+    """Read the text from choices[0].message.content, and the model name if the reply has one.
+
+    An empty or missing content is logged (model, finish_reason, token counts, the first
+    EMPTY_REPLY_LOG_LIMIT characters of the body) and the error says why (B1 F8)."""
     try:
         data = response.json()
-        text = data["choices"][0]["message"]["content"]
-        model = data.get("model")
-    except (ValueError, KeyError, IndexError, TypeError, AttributeError):
-        text = None
-    if not isinstance(text, str):
-        raise LLMClientError(
-            "The AI server answered, but not in the expected chat-completions shape "
-            "(no choices[0].message.content). Check DA_ONPREM_URL points at the chat endpoint."
+    except (ValueError, TypeError, AttributeError):
+        data = None
+    data = data if isinstance(data, dict) else {}
+    choices = data.get("choices")
+    choice = choices[0] if isinstance(choices, list) and choices else None
+    choice = choice if isinstance(choice, dict) else {}
+    message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
+    text = message.get("content")
+    model = data.get("model")
+    if not isinstance(text, str) or not text:
+        reason = choice.get("finish_reason")
+        usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+        body = str(getattr(response, "text", "") or "")
+        if api_key:
+            body = body.replace(api_key, "***")
+        logger.warning(
+            "The AI sent no text. model=%s finish_reason=%s prompt_tokens=%s "
+            "completion_tokens=%s total_tokens=%s body=%s",
+            model if isinstance(model, str) and model else fallback_model,
+            reason,
+            usage.get("prompt_tokens"),
+            usage.get("completion_tokens"),
+            usage.get("total_tokens"),
+            body[:EMPTY_REPLY_LOG_LIMIT],
         )
+        raise LLMClientError(_empty_reply_message(reason, message))
     return LLMReply(
         text=text,
         provider="onprem",
         model=model if isinstance(model, str) and model else fallback_model,
     )
+
+
+def _empty_reply_message(reason: Any, message: dict[str, Any]) -> str:
+    """The error for a reply with no text: the old shape sentence, then why in plain words."""
+    text = (
+        "The AI server answered, but not in the expected chat-completions shape "
+        "(no choices[0].message.content). Check DA_ONPREM_URL points at the chat endpoint."
+    )
+    if reason == "length":
+        why = (
+            "The AI stopped at its length limit before it wrote an answer. "
+            "Raise DA_ONPREM_MAX_TOKENS."
+        )
+    elif message.get("reasoning_content"):
+        why = "The AI sent only its thinking and no answer."
+    elif reason:
+        why = f"The AI stopped with the reason '{reason}'."
+    else:
+        return text
+    return f"{text} {why}"
 
 
 def get_llm_client(role: Role, settings: Settings | None = None, model: str = "") -> LLMClient:

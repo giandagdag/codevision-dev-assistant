@@ -22,7 +22,7 @@ from agents.da_discover_agent import (
     summarise_hits,
 )
 from agents.da_discover_checks import hint_problem
-from agents.da_discover_queries import run_searches
+from agents.da_discover_queries import SearchRound, run_searches
 from agents.da_enhance_flow import impact_for_record
 from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
@@ -31,9 +31,11 @@ from agents.da_impact import summary_line
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_search_index import (
     IndexFormatError,
+    IndexNotBuiltError,
     SearchIndex,
     SearchNotConfiguredError,
     get_search_index,
+    no_index_at_work,
 )
 from configs.da_config import ConfigError, Settings
 from da_logging import get_logger
@@ -98,6 +100,12 @@ HINT_QUESTION = "What's missing? Name a feature, file or term."
 DEVELOPER_REQUEST = "developer request"
 # Said whenever a round used the made-up index (DA_SEARCH_PROVIDER=fake), also with a real AI.
 FAKE_INDEX_NOTICE = "Practice index (made-up code), not CodeVision."
+# B1 F7: at work (onprem) with the practice index, Discovery does not search at all.
+NO_INDEX_MESSAGE = (
+    "No CodeVision index is connected yet, so Discovery found nothing to reuse. "
+    "Ask your admin to set it up."
+)
+NO_INDEX_PROVIDER = "none"  # saved as the round's search provider: nothing was searched
 
 _OUTCOME_STATUSES = (STATUS_SIMILAR_FOUND, STATUS_NO_MATCH)
 _STARTABLE = (STATUS_CONFIRMED, STATUS_SEARCHING)
@@ -264,7 +272,15 @@ def _run_round(
     request, record, rounds = _read_for_round(settings, request_id, base_revision, hint)
     # Search and the AI call run with no database lock held.
     round_number = rounds + 1
-    searched = _search(settings, record, hint, index)
+    searched, no_index_text, notes = SearchRound(queries=[], hits=[], dropped=0), "", []
+    if index is None and no_index_at_work(settings):
+        no_index_text = NO_INDEX_MESSAGE
+    else:
+        try:
+            searched, notes = _search(settings, record, hint, index)
+        except IndexNotBuiltError as error:  # B1 I5: say so and carry on
+            no_index_text = str(error)
+    no_index = bool(no_index_text)
     summary = _summarise(settings, record, searched.hits, hint, client)
     outcome = outcome_status(summary.findings)
     # Phase 9: who calls the functions being changed (None for a new-program request).
@@ -274,11 +290,15 @@ def _run_round(
         round=round_number,
         record_version=record.version,
         rulebook_version=request.rulebook_version or record.rulebook_version,
-        search_provider=settings.search_provider,
+        search_provider=NO_INDEX_PROVIDER if no_index else settings.search_provider,
         queries=[query.label() for query in searched.queries],
         hits=searched.hits,
         findings=summary.findings,
-        limitations=final_limitations(summary.limitations, outcome),
+        limitations=[
+            *([no_index_text] if no_index else []),
+            *notes,
+            *final_limitations(summary.limitations, outcome),
+        ],
         summary_source=summary.summary_source,
         model=summary.model,
         hint=hint,
@@ -301,6 +321,10 @@ def _run_round(
         if current.status != STATUS_SEARCHING:
             current = _move(conn, current, STATUS_SEARCHING, now)
         _say(conn, request_id, "assistant", SEARCHING_MESSAGE, now)
+        if no_index:
+            _say(conn, request_id, "assistant", no_index_text, now)
+        for note in notes:
+            _say(conn, request_id, "assistant", note, now)
         insert_result(conn, result, now)
         _move(conn, current, outcome, now)
         _audit(
@@ -368,7 +392,10 @@ def _read_for_round(
 def _search(settings: Settings, record: RequestRecord, hint: str, index: SearchIndex | None):
     try:
         index = index or get_search_index(settings)
-        return run_searches(index, record, hint, settings.search_top_k)
+        found = run_searches(index, record, hint, settings.search_top_k)
+        return found, list(getattr(index, "notes", []))
+    except IndexNotBuiltError:
+        raise
     except (SearchNotConfiguredError, IndexFormatError) as error:
         raise DiscoveryError(str(error)) from error
 
