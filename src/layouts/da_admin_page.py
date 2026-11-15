@@ -431,18 +431,14 @@ def charter_view(
             version_line(version, active),
             _charter_size(charter),
             _section("Purpose", _purpose(purpose, editable)),
+            # Scope, then principles and constraints: two boxes side by side each.
             *[
-                _section(
-                    label,
-                    list_table(
-                        TAB_CHARTER,
-                        name,
-                        (TEXT_COLUMN,),
-                        _text_rows(_draft(draft, name, getattr(charter, name))),
-                        editable,
-                    ),
+                dmc.SimpleGrid(
+                    [_charter_box(charter, draft, editable, *entry) for entry in pair],
+                    cols=2,
+                    mb="sm",
                 )
-                for name, label in CHARTER_LISTS
+                for pair in (CHARTER_LISTS[:2], CHARTER_LISTS[2:])
             ],
             _section(
                 "Glossary",
@@ -469,13 +465,31 @@ def _purpose(purpose: str, editable: bool):
     )
 
 
+CHARTER_BOX_ICONS = {"in_scope": "✅ ", "out_of_scope": "🔴 "}
+
+
+def _charter_box(charter: Charter, draft: dict | None, editable: bool, name: str, label: str):
+    rows = _text_rows(_draft(draft, name, getattr(charter, name)))
+    table = list_table(TAB_CHARTER, name, (TEXT_COLUMN,), rows, editable)
+    return _section(CHARTER_BOX_ICONS.get(name, "") + label, table)
+
+
 def _charter_size(charter: Charter):
+    """The size meter: a coloured pill and a bar (green under 80%, amber to 100%, red over)."""
     size = check_charter_size(charter)
-    color = {"green": "green", "amber": "yellow", "red": "red"}[size.status]
-    return dmc.Badge(
-        f"Charter size: {size.characters} characters ({size.percent:.0f}% of the limit)",
-        color=color,
-        variant="light",
+    return dmc.Group(
+        [
+            dmc.Badge(
+                f"Charter size: {size.characters} characters ({size.percent:.0f}% of the limit)",
+                variant="light",
+                style=admin_styles.pill_style(size.status),
+            ),
+            dmc.Progress(
+                value=min(size.percent, 100),
+                color=admin_styles.pill_style(size.status)["color"],
+                w=160,
+            ),
+        ],
         my="xs",
     )
 
