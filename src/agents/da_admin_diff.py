@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from agents.da_admin_labels import label
 from db_table_functions.db_tbl_da_requests import list_pinned_request_ids
 from db_table_functions.db_tbl_da_rulebook import list_versions
 from pydantic_classes.da_rulebook_models import Rulebook
@@ -149,6 +150,41 @@ def area_of_path(path: str) -> str:
     if name in _CODING_FIELDS:
         return AREA_CODING
     return AREA_BUILD
+
+
+def plain_path(path: str) -> str:
+    """A flattened path in plain words: "rules[CV-PY-007].why" becomes "Rules CV-PY-007: Why"."""
+    head, _, rest = path.partition("[")
+    key, _, tail = rest.partition("]")
+    first = label(head.removeprefix("policy.").split(".")[-1])
+    if not rest:
+        return first
+    return f"{first} {key}" + (f": {label(tail.lstrip('.'))}" if tail.lstrip(".") else "")
+
+
+def plain_diff_lines(diff: RulebookDiff) -> list[tuple[str, str]]:
+    """The diff as (kind, text) lines: kind is "area" (heading), "+" or "-". No raw field names."""
+    by_area: dict[str, list[tuple[str, str]]] = {}
+    for path, value in diff.added.items():
+        lines = by_area.setdefault(area_of_path(path), [])
+        lines.append(("+", f"{plain_path(path)}: {_short(value)}"))
+    for path, value in diff.removed.items():
+        lines = by_area.setdefault(area_of_path(path), [])
+        lines.append(("-", f"{plain_path(path)}: {_short(value)}"))
+    for path, (old, new) in diff.changed.items():
+        lines = by_area.setdefault(area_of_path(path), [])
+        lines.append(("-", f"{plain_path(path)}: {_short(old)}"))
+        lines.append(("+", f"{plain_path(path)}: {_short(new)}"))
+    out: list[tuple[str, str]] = []
+    for area in sorted(by_area):
+        out.append(("area", area))
+        out.extend(by_area[area])
+    return out
+
+
+def _short(value: Any) -> str:
+    text = str(value)
+    return text if len(text) <= 80 else text[:77] + "..."
 
 
 def areas_touched(diff: RulebookDiff) -> list[str]:

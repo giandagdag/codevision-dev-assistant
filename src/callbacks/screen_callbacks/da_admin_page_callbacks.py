@@ -19,7 +19,7 @@ from agents.da_admin_catalog import (
     resolved_rows,
 )
 from agents.da_admin_cited import cited_counts, fires_in
-from agents.da_admin_diff import build_timeline, diff_rulebooks
+from agents.da_admin_diff import build_timeline, diff_rulebooks, plain_diff_lines
 from agents.da_admin_forms import (
     RESULT_PROBLEMS,
     RESULT_SAVED,
@@ -67,6 +67,7 @@ from layouts.da_admin_page import (
     HIST_PICK_TYPE,
     HIST_RESTORE,
     HIST_TYPE,
+    HIST_VIEW,
     MODULE_COLUMNS,
     MODULE_TABLE,
     MOVE_TYPE,
@@ -425,16 +426,35 @@ def _save(settings, tab, form, note, base_version, active):
 # --- Version history ---
 
 
-def history_content(settings: Settings, diff=None, restore_target=None, notice=None):
-    return history_view(build_timeline(settings.db_path), diff, restore_target, notice)
+def history_content(
+    settings: Settings, diff=None, restore_target=None, notice=None, selected=None
+):
+    rows = build_timeline(settings.db_path)
+    if selected is None and rows:
+        # Default: the newest older version (the one an Admin most likely wants to look at).
+        selected = rows[1].version_number if len(rows) > 1 else rows[0].version_number
+    changes = _selected_changes(settings, rows, selected)
+    return history_view(rows, diff, restore_target, notice, selected, changes)
+
+
+def _selected_changes(settings: Settings, rows, selected):
+    """Plain-word lines for what version `selected` changed against the version before it."""
+    numbers = [row.version_number for row in rows]
+    if selected not in numbers or numbers.index(selected) + 1 >= len(numbers):
+        return []  # nothing before the first version
+    new = get_version(settings.db_path, selected)
+    old = get_version(settings.db_path, numbers[numbers.index(selected) + 1])
+    return plain_diff_lines(diff_rulebooks(old.rulebook, new.rulebook))
 
 
 def run_history_action(settings: Settings, action: dict, from_number, to_number, note: str | None):
     """One click on the Version history tab. Writes only on a confirmed Restore."""
     name = action["action"]
     number = action.get("version") or 0
+    if name == HIST_VIEW:
+        return history_content(settings, selected=number)
     if name == HIST_RESTORE:
-        return history_content(settings, restore_target=number)
+        return history_content(settings, restore_target=number, selected=number)
     if name == HIST_COMPARE:
         return history_content(settings, diff=_compare(settings, from_number, to_number))
     if name == HIST_CONFIRM:

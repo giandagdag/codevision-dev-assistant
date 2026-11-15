@@ -44,6 +44,34 @@ def test_timeline_is_newest_first_with_pins_and_the_active_mark(
     assert text.count("Restore") >= 2  # a button on each non-active version
 
 
+def test_side_panel_shows_plain_diff_pinned_requests_and_restore(
+    make_settings, seed_rulebook, published_rulebook
+):
+    settings = settings_for(make_settings)
+    make_three_versions(settings, seed_rulebook)
+
+    content = run_history_action(settings, click("view", 2), None, None, None)
+
+    text = all_text(content)
+    assert "What changed in v2" in text
+    assert "+ Max fix rounds: 4" in text and "− Max fix rounds: 3" in text
+    assert "build_max_rounds" not in text.split("What changed in v2")[1].split("Requests")[0]
+    assert "Requests pinned" in text
+    assert "Restore v2" in text
+
+
+def test_restore_dialog_says_what_happens_to_versions(
+    make_settings, seed_rulebook, published_rulebook
+):
+    settings = settings_for(make_settings)
+    make_three_versions(settings, seed_rulebook)
+
+    text = all_text(run_history_action(settings, click("restore", 1), None, None, None))
+
+    assert "v4 becomes active for new requests. Requests in progress keep their version." in text
+    assert "v3 stays in history." in text
+
+
 def test_compare_lists_the_changed_path(make_settings, seed_rulebook, published_rulebook):
     settings = settings_for(make_settings)
     make_three_versions(settings, seed_rulebook)

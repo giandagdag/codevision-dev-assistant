@@ -1245,6 +1245,7 @@ HIST_COMPARE = "compare"
 HIST_RESTORE = "restore"
 HIST_CONFIRM = "confirm"
 HIST_CANCEL = "cancel"
+HIST_VIEW = "view"
 
 
 def hist_id(action: str, version: int = 0) -> dict:
@@ -1255,34 +1256,87 @@ def pick_id(name: str) -> dict:
     return {"type": HIST_PICK_TYPE, "name": name}
 
 
-def history_view(rows, diff=None, restore_target: int | None = None, notice=None):
-    """Timeline (newest first), the "what changed" picker and, when asked, the Restore dialog.
+def history_view(
+    rows,
+    diff=None,
+    restore_target: int | None = None,
+    notice=None,
+    selected: int | None = None,
+    selected_changes=None,
+):
+    """Timeline on the left, the selected version's side panel on the right, then the picker.
 
-    `diff` is (from_number, to_number, RulebookDiff) or None.
+    `diff` is (from_number, to_number, RulebookDiff) or None. `selected_changes` is the plain
+    (kind, text) lines for the selected version (see plain_diff_lines).
     """
     numbers = [str(row.version_number) for row in rows]
+    chosen = next((row for row in rows if row.version_number == selected), None)
+    active = next((row.version_number for row in rows if row.is_active), 0)
     return html.Div(
         [
             *(notice or []),
-            *([_restore_dialog(restore_target)] if restore_target else []),
-            dmc.Stack([_timeline_row(row) for row in rows], gap="xs"),
+            *([_restore_dialog(restore_target, active)] if restore_target else []),
+            dmc.Grid(
+                [
+                    dmc.GridCol(
+                        dmc.Stack(
+                            [_timeline_row(row, row is chosen) for row in rows], gap="xs"
+                        ),
+                        span=6,
+                    ),
+                    dmc.GridCol(_side_panel(chosen, selected_changes), span=6),
+                ]
+            ),
             _section("What changed", _compare_picker(numbers, diff)),
         ]
     )
 
 
-def _timeline_row(row):
+def _side_panel(row, changes):
+    if row is None:
+        return dmc.Text("Pick a version to see what changed.", style=da_styles.EMPTY_TEXT)
+    number = row.version_number
+    parts = [dmc.Text(f"What changed in v{number}", fw=600, size="sm", c=da_styles.NAVY)]
+    parts.extend(_plain_diff(changes or []))
+    parts.append(dmc.Text("Requests pinned", fw=600, size="sm", mt="sm"))
+    chips = [dmc.Badge(r, variant="light") for r in row.pinned_request_ids]
+    parts.append(dmc.Group(chips) if chips else dmc.Text("None", size="xs", c=da_styles.MUTED))
+    if not row.is_active:
+        parts.append(
+            dmc.Button(f"Restore v{number}", id=hist_id(HIST_RESTORE, number), size="xs", mt="sm")
+        )
+    return html.Div(parts, style=da_styles.PANEL_SECTION)
+
+
+def _plain_diff(changes):
+    if not changes:
+        return [dmc.Text("No changes.", size="sm")]
+    style = {
+        "area": {"color": admin_styles.BLUE, "fontWeight": 600},
+        "+": {"color": admin_styles.GREEN, "background": admin_styles.GREEN_LIGHT},
+        "-": {"color": admin_styles.RED, "background": admin_styles.RED_LIGHT},
+    }
+    marks = {"area": "", "+": "+ ", "-": "− "}
+    return [dmc.Text(marks[k] + text, size="xs", style=style[k]) for k, text in changes]
+
+
+def _timeline_row(row, selected: bool = False):
     saved = row.saved_at.strftime("%Y-%m-%d %H:%M")
     head = f"v{row.version_number}  {saved}  {row.saved_by}"
     if row.is_active:
         head += "  (active)"
     lines = [dmc.Text(head, fw=600, size="sm"), dmc.Text(row.change_note, size="sm")]
+    lines.append(
+        dmc.Button(
+            "View", id=hist_id(HIST_VIEW, row.version_number), size="xs", variant="subtle"
+        )
+    )
     if row.restored_from is not None:
         lines.append(dmc.Text(f"Restored from v{row.restored_from}", size="xs", c=da_styles.MUTED))
     if row.areas:
         lines.append(dmc.Text("Touched: " + ", ".join(row.areas), size="xs", c=da_styles.MUTED))
     lines.append(_pinned(row))
-    if not row.is_active:
+    if not row.is_active and not selected:  # the selected version's Restore is in the side panel
         lines.append(
             dmc.Button(
                 "Restore",
@@ -1313,10 +1367,15 @@ def _pinned(row):
     )
 
 
-def _restore_dialog(number: int):
+def _restore_dialog(number: int, active: int = 0):
     return dmc.Alert(
         [
             dmc.Text(f"Restore v{number} as a new version?", size="sm", fw=600),
+            dmc.Text(
+                f"v{active + 1} becomes active for new requests. Requests in progress keep "
+                f"their version. v{active} stays in history.",
+                size="xs",
+            ),
             dmc.TextInput(
                 label="Change note (required)",
                 id=pick_id("note"),
