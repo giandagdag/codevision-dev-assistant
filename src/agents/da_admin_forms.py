@@ -352,22 +352,36 @@ def _coding_from_form(base: Rulebook, form: dict) -> Rulebook:
     }
     if "golden_examples" in form:
         update["golden_examples"] = [
-            GoldenExample.model_validate(row) for row in _golden_rows(form["golden_examples"])
+            GoldenExample.model_validate(row)
+            for row in _golden_rows(form["golden_examples"], base.golden_examples)
         ]
     return base.model_copy(update=update)
 
 
-def _golden_rows(rows: list[dict]) -> list[dict]:
+def _golden_rows(rows: list[dict], before: list[GoldenExample] | None = None) -> list[dict]:
+    # The drawn table has only four columns, so a row without program_type or module_path takes
+    # them from the saved example with the same title (the key the diff uses too).
+    saved = {g.title.strip().lower(): g for g in before or []}
+    rows = [_with_saved_fields(row, saved) for row in rows]
     cleaned = [
         {
             "title": str(row.get("title", "")).strip(),
             "tags": _clean_list(row.get("tags", [])),
             "code": str(row.get("code", "")).strip(),
             "why": str(row.get("why", "")).strip(),
+            # Fix 11-1: keep the new fields a row carries, so a save does not wipe them.
+            **{k: str(row[k]).strip() for k in ("program_type", "module_path") if k in row},
         }
         for row in rows
     ]
     return [row for row in cleaned if row["title"] or row["code"] or row["tags"] or row["why"]]
+
+
+def _with_saved_fields(row: dict, saved: dict[str, GoldenExample]) -> dict:
+    old = saved.get(str(row.get("title", "")).strip().lower())
+    if old is None:
+        return row
+    return {"program_type": old.program_type, "module_path": old.module_path, **row}
 
 
 def library_overlap_problems(policy: Policy) -> list[str]:
