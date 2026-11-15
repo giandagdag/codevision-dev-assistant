@@ -668,7 +668,8 @@ QUEUE_NOTE_TYPE = "adm-q-note"
 QUEUE_BLOCK_ID = "adm-queue"
 Q_CONFIRM = "confirm"
 Q_MOVE = "move"
-Q_APPLY = "apply"
+Q_APPROVE = "approve"  # take the suggested capability (the id's `cap` carries it)
+Q_APPLY ="apply"
 Q_APPLY_PATTERN = "apply_pattern"
 Q_CANCEL = "cancel"
 Q_SHOW_RESOLVED = "show_resolved"
@@ -840,7 +841,15 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
     if queue.get("dialog"):
         parts.append(_pattern_dialog(queue["dialog"]))
     if rows:
-        header = ("Path", "Developer's pick", "Request", "Waiting since", "Would match", "")
+        header = (
+            "Path",
+            "Developer's pick",
+            "Request",
+            "Waiting since",
+            "Would match",
+            "Suggestion",
+            "",
+        )
         parts.append(
             dmc.Table(
                 [
@@ -887,8 +896,26 @@ def _queue_row(row, capability_names: list[str], disabled: bool):
             dmc.TableTd(dmc.Text(_waiting_text(row), size="sm")),
             dmc.TableTd(dmc.Text(row.would_match or "(none)", size="sm")),
             dmc.TableTd(
+                [
+                    dmc.Text(row.suggested or "(none)", size="sm", fw=600),
+                    dmc.Text(row.reason, size="xs", style=da_styles.EMPTY_TEXT),
+                ]
+            ),
+            dmc.TableTd(
                 dmc.Group(
                     [
+                        *(
+                            [
+                                dmc.Button(
+                                    "Approve",
+                                    id=queue_button_id(Q_APPROVE, row.unassigned_id, row.suggested),
+                                    size="xs",
+                                    disabled=disabled,
+                                )
+                            ]
+                            if row.suggested
+                            else []
+                        ),
                         dmc.Button(
                             "Confirm",
                             id=queue_button_id(Q_CONFIRM, row.unassigned_id),

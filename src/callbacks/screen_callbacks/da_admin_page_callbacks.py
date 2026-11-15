@@ -73,6 +73,7 @@ from layouts.da_admin_page import (
     NOTE_ID_NAME,
     Q_APPLY,
     Q_APPLY_PATTERN,
+    Q_APPROVE,
     Q_CONFIRM,
     Q_MOVE,
     Q_SHOW_RESOLVED,
@@ -331,6 +332,8 @@ def run_queue_action(
     name, uid = action["action"], action["uid"]
     if name == Q_SHOW_RESOLVED:
         return _queue_tab(settings, show_resolved=True)
+    if name == Q_APPROVE:  # take the suggestion: same as Move to <suggested>
+        return _start_resolve(settings, Q_MOVE, uid, {uid: action["cap"]})
     if name in (Q_CONFIRM, Q_MOVE):
         return _start_resolve(settings, name, uid, picks)
     if name in (Q_APPLY, Q_APPLY_PATTERN):

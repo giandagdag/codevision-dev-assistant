@@ -16,6 +16,7 @@ from agents.da_admin_forms import (
     capability_rows,
     save_from_form,
 )
+from agents.da_admin_suggest import suggest_capability
 from agents.da_enhance_checks import lookup_capability
 from db_table_functions.da_db import open_db
 from db_table_functions.db_tbl_da_build import ensure_build_tables
@@ -42,6 +43,8 @@ class QueueRow:
     request_id: str
     waiting_since: datetime | None
     would_match: str  # capability a request would get today, or "" for none
+    suggested: str = ""  # capability it imports from most (AF-12), or "" for none
+    reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -68,17 +71,23 @@ def queue_rows(settings) -> list[QueueRow]:
     with open_db(settings.db_path) as conn:
         ensure_build_tables(conn)
         rows = list_unassigned(conn)
-    return [
-        QueueRow(
-            unassigned_id=row.unassigned_id,
-            path=row.path,
-            picked_capability=row.picked_capability,
-            request_id=row.request_id,
-            waiting_since=row.created_at,
-            would_match=would_match(row.path, catalog),
+    scope = active.rulebook.policy.index_folder_scope if active else ""
+    result = []
+    for row in rows:
+        suggested, reason = suggest_capability(row.path, catalog, scope)
+        result.append(
+            QueueRow(
+                unassigned_id=row.unassigned_id,
+                path=row.path,
+                picked_capability=row.picked_capability,
+                request_id=row.request_id,
+                waiting_since=row.created_at,
+                would_match=would_match(row.path, catalog),
+                suggested=suggested,
+                reason=reason,
+            )
         )
-        for row in rows
-    ]
+    return result
 
 
 def resolved_rows(settings, limit: int = RESOLVED_SHOWN) -> list[UnassignedFile]:
