@@ -67,6 +67,39 @@ Reference demos are already in `docs/admin-reference/`.
 18. **Close-out.** Full pytest, ruff, smoke check; AF-2 label scan across all tabs; code review (max 3
     rounds, panels compared to the reference demos); PR body.
 
+## Plan review round 1: fixes (these override the steps above where they differ)
+- **Step 0:** the merge is "not needed: already contained".
+- **Step 5 also builds the shared floating edit bar** (all tabs): "Editing <tab>. Nothing changes for
+  developers until you save." with Cancel and **Save as new version**; Save still asks for a note, stale
+  save still names the newer version. Proof: bar text and button label in edit view of each tab.
+- **Step 1 decision limit:** only `src/data/da_rulebook_seed.json` becomes 8. The Python default
+  `DEFAULT_MAX_MATERIAL_DECISIONS` stays 5, so old versions without the field keep 5 (D-F: existing
+  databases unchanged). Changed tests in `tests/test_da_rulebook_models.py`: the 1..10 bound (~line 524,
+  now 1..15) and the seed-value assert (~line 500, now 8). The old-version default test (~line 509)
+  stays as is. Step 1 `da_admin_styles.py` imports `NAVY` and `BLUE` from `da_styles.py`; the "no colour
+  code elsewhere" rule covers Admin screens only.
+- **Step 3 golden module path:** add `module_path` (default empty) to `GoldenExample`. Change in edit
+  mode picks a module from the index, sets `module_path`, and copies its first lines into `code`.
+  Seed examples set both. Resolve `src/data/da_fake_codevision` from the project root, not the cwd.
+- **Step 4 mapping:** "agents/ file with a run entry" = the file text contains `__main__` or a top-level
+  `def run`.
+- **Step 8 also tests AF-5** (Missing backup chip is built here); step 6 only tests that the Assign
+  button carries the target tab and filter.
+- **Reuse, named:** step 6 extends `da_admin_overview.py` (`attention_items`, `area_status`,
+  `server_settings_view`); steps 8 and 10 extend `da_admin_catalog.py` (`queue_rows`, `resolve_row`,
+  `would_match`); step 12 uses `da_admin_cited.py` `cited_counts` for "fires in N%"; step 14 extends
+  `da_admin_diff.py` (`area_of_path`, `build_timeline`); step 6 health tiles use `da_admin_metrics.py`.
+- **Proof lines:** 5 pill shows version, date, who, View history link; 6 six area rows each link to
+  their tab, tiles switch 30 days / all time; 7 meter colour at 79%, 80%, 100%, 101% (green, amber,
+  amber, red); 8 chips max 6 then "+N more", "×2"; 9 AF-10/11/12b; 10 AF-12; 11 AF-13; 12 AF-14/15/16;
+  13 AF-17 (rounds 1..5); 14 AF-18; 15 AF-6 (no files = "needs building"); 16 AF-7/8; 17 AF-20.
+- **Step 16:** embedder rule = reuse B1's: `DA_LLM_PROVIDER == onprem` gets `WorkEmbedder`, anything
+  else `FakeEmbedder`, via one small shared helper that `main()` also uses. Empty `index_folder_scope`
+  falls back to `DA_CODE_INDEX_SOURCE`, then B1's default (both tested). The lock file holds its start
+  time; a lock older than 2 hours, or left from before server start-up, is cleared (one test). The run
+  file stores only "path symbol" strings (`BuildSummary.skipped`), never code text.
+- **Step 18:** the AF-2 scan also draws all 8 tabs from an old stored version (AF-19).
+
 ## Risks
 - Big UI file (`da_admin_page.py`, 1251 lines): split per tab into new `da_admin_*_tab.py` layouts as
   each tab is redone, rather than growing it.
