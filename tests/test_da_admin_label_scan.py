@@ -20,14 +20,20 @@ CODE_NAMES = frozenset(
 )
 
 
-# Golden example code, rule examples, paths and module chips live here (Badge = module chip).
-CODE_CHIPS = ("Code", "CodeHighlight", "Badge")
+# Golden example code, rule examples and paths live in Code boxes. An outline Badge is a module
+# chip. A light Badge is a status or severity pill: its words are scanned like any other text.
+CODE_CHIPS = ("Code", "CodeHighlight")
+
+
+def _is_code_chip(node) -> bool:
+    name = type(node).__name__
+    return name in CODE_CHIPS or (name == "Badge" and getattr(node, "variant", None) == "outline")
 
 
 def _words(node):
     """Like walk(), but never goes inside a code chip: those may hold raw names on purpose."""
     yield node
-    if type(node).__name__ in CODE_CHIPS:
+    if _is_code_chip(node):
         return
     children = getattr(node, "children", None)
     if children is None:
@@ -46,7 +52,7 @@ def shown_text(node) -> str:
         if isinstance(item, str):
             parts.append(item)
             continue
-        if type(item).__name__ in CODE_CHIPS:
+        if _is_code_chip(item):
             continue
         parts += [str(v) for p in TEXT_PROPS if isinstance(v := getattr(item, p, None), str)]
     return "\n".join(parts)

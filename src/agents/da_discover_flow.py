@@ -59,7 +59,11 @@ from db_table_functions.db_tbl_da_enhance import (
 )
 from db_table_functions.db_tbl_da_handoff import refuse_if_locked
 from db_table_functions.db_tbl_da_requests import read_request, update_request
-from db_table_functions.db_tbl_da_rulebook import ensure_rulebook_tables, get_active_version
+from db_table_functions.db_tbl_da_rulebook import (
+    ensure_rulebook_tables,
+    get_active_version,
+    get_version,
+)
 from db_table_functions.db_tbl_da_understand import (
     STALE_MESSAGE,
     StaleRevisionError,
@@ -278,7 +282,8 @@ def _run_round(
         no_index_text = NO_INDEX_MESSAGE
     else:
         try:
-            searched, notes = _search(settings, record, hint, index)
+            pinned = request.rulebook_version or record.rulebook_version
+            searched, notes = _search(settings, record, hint, index, pinned)
         except IndexNotBuiltError as error:  # B1 I5: say so and carry on
             no_index_text = str(error)
     no_index = bool(no_index_text)
@@ -390,11 +395,20 @@ def _read_for_round(
     return request, record, rounds
 
 
-def _search(settings: Settings, record: RequestRecord, hint: str, index: SearchIndex | None):
+def _search(
+    settings: Settings,
+    record: RequestRecord,
+    hint: str,
+    index: SearchIndex | None,
+    pinned: int | None = None,
+):
     try:
         index = index or get_search_index(settings)
-        active = get_active_version(settings.db_path)
-        policy = active.rulebook.policy if active else None
+        # A request in progress keeps the rulebook version it started with (not today's active one).
+        version = (pinned and get_version(settings.db_path, pinned)) or get_active_version(
+            settings.db_path
+        )
+        policy = version.rulebook.policy if version else None
         found = run_searches(
             index,
             record,

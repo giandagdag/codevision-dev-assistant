@@ -95,6 +95,25 @@ def test_the_discovery_round_uses_the_active_catalog(make_settings, published_ru
     assert notes == []  # the capability is not a limitation, so an escalation reason is unchanged
 
 
+def test_a_request_keeps_the_catalog_of_the_version_it_is_pinned_to(
+    make_settings, published_rulebook
+):
+    """Review round 2: an Admin change to the catalog must not change a running request."""
+    from agents.da_discover_flow import _search
+    from db_table_functions.db_tbl_da_rulebook import save_new_version
+
+    settings = make_settings()
+    policy = published_rulebook.rulebook.policy.model_copy(update={"capabilities": CATALOG[1:]})
+    changed = published_rulebook.rulebook.model_copy(update={"policy": policy})
+    save_new_version(settings.db_path, changed, 1, "admin-0001", "No Limits capability")
+
+    pinned_v1, _ = _search(settings, record(), "", index(), 1)
+    active, _ = _search(settings, record(), "", index())
+
+    assert pinned_v1.capability == "Limits"
+    assert active.capability == ""  # v2 is active and has no Limits capability
+
+
 def test_the_module_filter_keeps_only_those_paths_in_the_pretend_index():
     hits = index().search("expiry report", "exact", SearchFilters(modules=[OTHER]), 5)
 

@@ -39,6 +39,11 @@ _REPOSITORY_FIELDS = (
     "new_file_name_pattern",
     "workspace_markers",
     "workspace_max_file_kb",
+    "index_repo",
+    "index_branch",
+    "index_folder_scope",
+    "index_refresh_mode",
+    "index_exclusions",
 )
 _CODING_FIELDS = ("approved_libraries", "build_blocked_imports", "sonar_severity_map")
 
@@ -142,6 +147,8 @@ def area_of_path(path: str) -> str:
         return AREA_UI if path.startswith("rules[CV-UI-") else AREA_CODING
     if path.startswith("golden_examples"):
         return AREA_CODING
+    if path.startswith("brand_constants"):
+        return AREA_UI
     if path.startswith("policy.capabilities"):
         return AREA_CATALOG
     name = path.split(".", 2)[1].split("[", 1)[0] if path.startswith("policy.") else ""

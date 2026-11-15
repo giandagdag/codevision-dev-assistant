@@ -99,6 +99,9 @@ def test_paths_map_to_their_console_tab():
     assert area_of_path("policy.capabilities[Limits].named_senior") == "Capability catalog"
     assert area_of_path("policy.allowed_folders[src/web]") == "Repository and index"
     assert area_of_path("policy.approved_libraries[pydantic]") == "Coding standards"
+    assert area_of_path("policy.index_folder_scope") == "Repository and index"
+    assert area_of_path("policy.index_exclusions[0].pattern") == "Repository and index"
+    assert area_of_path("brand_constants[NAVY].value") == "UI standards"
     assert area_of_path("policy.build_max_rounds") == "Build and test"
     assert area_of_path("policy.escalation_triggers[dispute].on") == "Build and test"
 
