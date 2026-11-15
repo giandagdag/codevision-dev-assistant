@@ -409,7 +409,8 @@ def _table_row(tab, table_id, columns, index, row, editable, kinds, static, mova
                 widget = dmc.Textarea(value=value, id=cell_id, autosize=True, minRows=1, size="xs")
             cells.append(dmc.TableTd(widget))
         else:
-            cells.append(dmc.TableTd(dmc.Text(value, size="sm", style={"whiteSpace": "pre-wrap"})))
+            shown = _plain(value) if col == "severity" else value
+            cells.append(dmc.TableTd(dmc.Text(shown, size="sm", style={"whiteSpace": "pre-wrap"})))
     if editable:
         buttons = [
             dmc.Button(
@@ -539,7 +540,13 @@ RULE_COLUMNS = (
     "source",
 )
 GOLDEN_COLUMNS = ("title", "tags", "code", "why")
-SEVERITY_CHOICES = ["must_fix", "should_fix", "fyi"]
+SEVERITY_WORDS = {"must_fix": "Must fix", "should_fix": "Should fix", "fyi": "FYI"}
+# The stored value stays must_fix (the server checks it); the person reads the plain words (AF-2).
+SEVERITY_CHOICES = [{"value": key, "label": words} for key, words in SEVERITY_WORDS.items()]
+
+
+def _plain(text: str) -> str:
+    return SEVERITY_WORDS.get(text, text)
 SONAR_FIELD_PREFIX = "sonar_"  # a field named sonar_MAJOR holds the severity for MAJOR
 RULES_TABLE = "rules"
 RULE_KIND_OF_TAB = {TAB_UI: "ui_convention", TAB_CODING: "judgement"}
@@ -661,7 +668,7 @@ def _sonar_map(policy: Policy, editable: bool, draft: dict | None):
                 )
             )
         else:
-            lines.append(dmc.Text(f"{key}: {value}", size="sm"))
+            lines.append(dmc.Text(f"{key}: {_plain(value)}", size="sm"))
     sample = sample_with_mapping(chosen)
     return html.Div(
         [
@@ -676,7 +683,7 @@ def _sonar_map(policy: Policy, editable: bool, draft: dict | None):
                         [
                             dmc.TableTr(
                                 [
-                                    dmc.TableTd(dmc.Text(row[k], size="xs"))
+                                    dmc.TableTd(dmc.Text(_plain(row[k]), size="xs"))
                                     for k in ("key", "name", "sonar", "mapped")
                                 ]
                             )
@@ -1145,7 +1152,7 @@ def _number_field(
 ):
     value = str(_draft(draft, name, getattr(policy, name)))
     hint = field_bounds(name)
-    label = NUMBER_LABELS.get(name, name)
+    label = NUMBER_LABELS.get(name) or field_label(name)
     if not editable:
         return dmc.Text(f"{label}: {value}" + (f"   (allowed: {hint})" if hint else ""), size="sm")
     # A number box with − / + buttons; the server still checks the bounds on save.

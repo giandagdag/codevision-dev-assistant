@@ -192,7 +192,7 @@ def test_10_47_the_build_tab_has_the_sixth_switch_and_the_advanced_limit(publish
     text = all_text(view)
     assert "Lock the developer's chat during an escalation" in text
     assert "handoff_summary_max_chars" in ADVANCED_LIMIT_FIELDS
-    assert "handoff_summary_max_chars" in text
+    assert "Handoff summary max chars" in text  # plain label, not the field name (AF-2)
     switches = [c for c in walk(view) if type(c).__name__ == "Switch"]
     assert len(switches) == 6
 
