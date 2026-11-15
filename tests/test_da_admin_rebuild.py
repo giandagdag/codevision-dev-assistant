@@ -81,7 +81,7 @@ def test_one_piece_skipped_is_named(tmp_path):
         (source / f"m{n}.py").write_text(f"def f{n}():\n    return 1\n", encoding="utf-8")
     _run(_policy(source), _FailFirst(1), out)
     row = recent_runs(out)[0]
-    assert row["saved"] and "⚠️ 1 pieces skipped" in run_line(row)
+    assert row["saved"] and "⚠️ 1 piece skipped" in run_line(row)
     assert row["skipped"] == ["m0.py f0"]
 
 
@@ -132,11 +132,30 @@ def test_failed_job_frees_the_lock_and_logs(tmp_path):
     assert not (out / rebuild.LOCK_NAME).exists()
 
 
-def test_embedder_follows_provider(monkeypatch):
-    monkeypatch.setenv("DA_LLM_PROVIDER", "onprem")
-    assert isinstance(rebuild.pick_embedder(), WorkEmbedder)
-    monkeypatch.setenv("DA_LLM_PROVIDER", "fake")
-    assert isinstance(rebuild.pick_embedder(), FakeEmbedder)
+def test_embedder_follows_provider():
+    assert isinstance(rebuild.pick_embedder("onprem"), WorkEmbedder)
+    assert isinstance(rebuild.pick_embedder("fake"), FakeEmbedder)
+
+
+def test_rebuild_click_passes_the_settings_provider_not_the_environment(monkeypatch):
+    """Review round 1: .env never fills os.environ, so the provider must come from the settings."""
+    from callbacks.screen_callbacks import da_admin_page_callbacks as admin_cb
+
+    monkeypatch.delenv("DA_LLM_PROVIDER", raising=False)
+    seen = {}
+
+    def fake_start(policy, who, provider=""):
+        seen["provider"] = provider
+        return True, "ok"
+
+    settings = type("S", (), {"developer_id": "a1", "llm_provider": "onprem", "db_path": "x"})()
+    monkeypatch.setattr(admin_cb, "is_admin", lambda *_: True)
+    monkeypatch.setattr(admin_cb, "get_active_version", lambda _db: type(
+        "V", (), {"rulebook": type("R", (), {"policy": None})()})())
+    monkeypatch.setattr(admin_cb, "start_rebuild", fake_start)
+    monkeypatch.setattr(admin_cb, "current_rebuild_status", lambda: "")
+    admin_cb.rebuild_action(settings, admin_cb.REBUILD_CONFIRM)
+    assert seen["provider"] == "onprem"
 
 
 def test_source_folder_order(monkeypatch, tmp_path):

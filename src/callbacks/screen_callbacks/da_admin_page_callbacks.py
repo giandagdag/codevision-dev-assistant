@@ -430,7 +430,9 @@ def rebuild_action(settings: Settings, button: str | None):
         raise PreventUpdate
     if button == REBUILD_CONFIRM:
         policy = get_active_version(settings.db_path).rulebook.policy
-        started, message = start_rebuild(policy, settings.developer_id)
+        started, message = start_rebuild(
+            policy, settings.developer_id, provider=settings.llm_provider
+        )
         if not started:
             return False, message
     return False, current_rebuild_status()

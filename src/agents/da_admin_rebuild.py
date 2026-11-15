@@ -34,9 +34,12 @@ def source_folder(policy: Policy) -> Path:
     return Path(os.environ.get("DA_CODE_INDEX_SOURCE") or SRC_FOLDER)
 
 
-def pick_embedder() -> Embedder:
-    """Work gets the real embedder, anything else the made-up one (never a fake index at work)."""
-    return WorkEmbedder() if os.environ.get("DA_LLM_PROVIDER") == "onprem" else FakeEmbedder()
+def pick_embedder(provider: str) -> Embedder:
+    """Work gets the real embedder, anything else the made-up one (never a fake index at work).
+
+    The provider comes from the settings (they read .env), not from os.environ: .env values never
+    reach os.environ, so reading it here would pick the made-up embedder at work."""
+    return WorkEmbedder() if provider == "onprem" else FakeEmbedder()
 
 
 def _lock_path(directory: Path | None) -> Path:
@@ -76,13 +79,14 @@ def _run(
     started: datetime,
     embedder: Embedder | None,
     directory: Path | None,
+    provider: str,
 ) -> None:
     out = directory or index_dir()
     try:
         summary = build_index(
             source_folder(policy),
             out,
-            embedder or pick_embedder(),
+            embedder or pick_embedder(provider),
             say=lambda _text: None,
             extra_exclusions=[e.pattern for e in policy.index_exclusions],
         )
@@ -104,13 +108,16 @@ def start_rebuild(
     embedder: Embedder | None = None,
     directory: Path | None = None,
     wait: bool = False,
+    provider: str = "",
 ) -> tuple[bool, str]:
-    """Start one background build. Returns (started, message). `wait` is for tests only."""
+    """Start one background build. Returns (started, message). `wait` is for tests only.
+
+    `provider` is the settings' llm_provider; empty (the default) means the made-up embedder."""
     started = now or datetime.now()
     if running_since(started, directory) is not None or not _take_lock(started, directory):
         return False, ALREADY_RUNNING
     job = threading.Thread(
-        target=_run, args=(policy, started_by, started, embedder, directory), daemon=True
+        target=_run, args=(policy, started_by, started, embedder, directory, provider), daemon=True
     )
     job.start()
     if wait:

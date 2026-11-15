@@ -116,5 +116,6 @@ def run_line(run: dict) -> str:
         return f"{when} {who}: ❌ Not saved: {run.get('message', '')}"
     skipped = run.get("skipped") or []
     if skipped:
-        return f"{when} {who}: ⚠️ {len(skipped)} pieces skipped ({run.get('count', 0)} saved)"
+        noun = "piece" if len(skipped) == 1 else "pieces"
+        return f"{when} {who}: ⚠️ {len(skipped)} {noun} skipped ({run.get('count', 0)} saved)"
     return f"{when} {who}: ✅ Done, {run.get('count', 0)} pieces"

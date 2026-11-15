@@ -15,7 +15,7 @@ from werkzeug.serving import make_server
 
 from agents import da_build_runner as build_runner
 from callbacks.screen_callbacks import da_developer_assistant_page_callbacks as cb
-from tests.da_browser import READ_JS, SEED_JS, SKIP_TEXT
+from tests.da_browser import READ_JS, SEED_JS
 from tests.da_build_play import MODIFY, ORIGINAL
 from tests.da_workspace_play import ready_to_build_id
 from web import da_home_web_server as server_module
@@ -32,29 +32,6 @@ NOTE = "# my own note, written by the developer\n"
 WAIT_MS = 15000
 RUN_WAIT_MS = 15000  # FX-1: the result shows within this time, with no reload
 FIRST_BUILD_WAIT_MS = 60000
-
-
-@pytest.fixture(scope="session")
-def _chromium():
-    """Overrides the shared fixture: Chromium first, then the installed Edge."""
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        pytest.skip(SKIP_TEXT)
-    playwright = sync_playwright().start()
-    browser = None
-    for channel in (None, "msedge"):
-        try:
-            browser = playwright.chromium.launch(channel=channel)
-            break
-        except Exception:  # this browser is missing or cannot start
-            continue
-    if browser is None:
-        playwright.stop()
-        pytest.skip(SKIP_TEXT)
-    yield browser
-    browser.close()
-    playwright.stop()
 
 
 @pytest.fixture
