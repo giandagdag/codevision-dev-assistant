@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CodeVision Admin Console (concept)</title>
+<!-- Self-contained, offline. Open in Edge or Chrome. Keys: Left/Right to switch screens, N for presenter notes. -->
+<style>
+:root{
+  --navy:#1E2B45; --blue:#1F6FE0; --blue-d:#1757B8; --blue-l:#EAF1FD; --blue-ll:#F4F8FE;
+  --ink:#2B3445; --muted:#6B7385; --line:#E3E7EE; --canvas:#F6F8FB; --white:#fff;
+  --green:#157F3B; --green-l:#E7F5EC; --amber:#9A5B00; --amber-l:#FFF3DF;
+  --red:#B42318; --red-l:#FDECEA; --violet:#5B4BC4; --violet-l:#EFEDFC;
+  --radius:10px;
+  --font:"Segoe UI","Segoe UI Variable",system-ui,-apple-system,Roboto,Arial,sans-serif;
+  --mono:Consolas,"Cascadia Mono","Courier New",monospace;
+  --emoji:"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji";
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:var(--font),var(--emoji);color:var(--ink);background:var(--canvas);font-size:15px;line-height:1.5}
+button{font:inherit;cursor:pointer}
+button:focus-visible,.tab:focus-visible{outline:3px solid #9CC0F5;outline-offset:2px}
+code,.mono{font-family:var(--mono);font-size:.9em}
+
+/* App frame (same as Developer Assistant demo) */
+.app{display:grid;grid-template-columns:86px 1fr;min-height:100vh}
+.rail{background:var(--white);border-right:1px solid var(--line);padding-top:74px;display:flex;flex-direction:column;align-items:center;gap:6px}
+.ri{width:72px;padding:10px 4px;border-radius:10px;display:flex;flex-direction:column;align-items:center;gap:4px;color:#7A8294;font-size:12px;text-align:center;line-height:1.2}
+.ri svg{width:24px;height:24px}
+.ri.active{background:var(--blue-l);color:var(--blue)}
+.ri.active span{font-weight:600}
+.main{display:flex;flex-direction:column;min-width:0}
+.top{height:62px;background:var(--white);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 28px}
+.brand{display:flex;align-items:center;gap:12px}
+.brand svg{width:44px;height:33px}
+.wordmark{font-weight:800;letter-spacing:.06em;color:var(--navy);font-size:19px}
+.brand .sep{width:1px;height:24px;background:var(--line)}
+.brand .prod{color:var(--muted);font-size:15px}
+.user{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:14px}
+.avatar{width:32px;height:32px;border-radius:50%;background:var(--blue-l);color:var(--blue);display:grid;place-items:center;font-weight:700;font-size:13px}
+
+/* Section tabs (sits where the stepper sits in the dev demo) */
+.tabs{background:var(--white);border-bottom:1px solid var(--line);padding:0 28px;display:flex;gap:4px;overflow-x:auto}
+.tab{border:0;background:none;padding:16px 12px 13px;color:var(--muted);font-size:13.5px;white-space:nowrap;border-bottom:3px solid transparent}
+.tab.on{color:var(--blue);border-bottom-color:var(--blue);font-weight:600}
+.tab.later{color:#A8AFBC;cursor:default}
+
+.screen{display:none;padding:26px 28px 110px;max-width:1360px;width:100%}
+.screen.on{display:block}
+.head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap;margin-bottom:20px}
+h1{margin:0;font-size:24px;color:var(--navy);font-weight:700;display:flex;align-items:center;gap:10px}
+.sub{margin:4px 0 0;color:var(--muted);max-width:62ch}
+.env{font-size:12px;font-weight:600;color:var(--violet);background:var(--violet-l);padding:2px 10px;border-radius:999px}
+
+.verpill{display:flex;align-items:center;gap:14px;background:var(--white);border:1px solid var(--line);border-radius:var(--radius);padding:10px 14px}
+.verpill .v{font-weight:700;color:var(--navy);font-size:16px}
+.verpill .d{font-size:12.5px;color:var(--muted)}
+.dotlive{width:10px;height:10px;border-radius:50%;background:#2E9B57;box-shadow:0 0 0 4px var(--green-l)}
+.btn{border:1.5px solid var(--blue);background:#fff;color:var(--blue-d);border-radius:999px;padding:6px 14px;font-weight:600;font-size:13.5px}
+.btn.solid{background:var(--blue);color:#fff}
+.btn.quiet{border-color:#C9CFD9;color:var(--ink)}
+
+.grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:18px}
+.panel{background:var(--white);border:1px solid var(--line);border-radius:var(--radius)}
+.ph{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px}
+.pt{font-weight:700;color:var(--navy)}
+.pm{font-size:12.5px;color:var(--muted)}
+
+/* Rulebook rows */
+.row{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:14px;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.ico{width:40px;height:40px;border-radius:10px;background:var(--blue-ll);display:grid;place-items:center;font-size:19px}
+.rn{font-weight:600;color:var(--navy)}
+.facts{display:flex;flex-wrap:wrap;gap:6px;margin-top:5px}
+.chip{font-size:12.5px;background:var(--canvas);border:1px solid var(--line);border-radius:6px;padding:1px 8px;color:var(--ink)}
+.st{font-size:12.5px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap}
+.st.ok{background:var(--green-l);color:var(--green)}
+.st.warn{background:var(--amber-l);color:var(--amber)}
+.upd{display:block;text-align:right;font-size:12px;color:var(--muted);margin-top:4px}
+
+/* Attention + health */
+.att{padding:12px 18px;border-bottom:1px solid var(--line);display:flex;gap:12px}
+.att:last-child{border-bottom:0}
+.att .e{font-size:18px;line-height:1.4}
+.att b{color:var(--navy);font-weight:600}
+.att p{margin:2px 0 6px;font-size:13.5px;color:var(--muted)}
+.health{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0}
+.hc{padding:14px 16px;border-right:1px solid var(--line)}
+.hc:last-child{border-right:0}
+.hc b{display:block;font-size:24px;color:var(--navy);line-height:1.2}
+.hc span{font-size:12.5px;color:var(--muted)}
+.hnote{padding:10px 16px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted);background:var(--blue-ll);border-radius:0 0 var(--radius) var(--radius)}
+
+/* Flow strip */
+.flow{margin-top:18px;padding:16px 18px}
+.flow .pt{margin-bottom:12px}
+.steps{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
+.sp{position:relative;background:var(--canvas);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.sp .n{width:24px;height:24px;border-radius:50%;background:var(--blue);color:#fff;display:grid;place-items:center;font-size:12.5px;font-weight:700;margin-bottom:6px}
+.sp b{display:block;font-size:13.5px;color:var(--navy)}
+.sp span{font-size:12.5px;color:var(--muted)}
+
+/* Version history */
+.vh{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.45fr);gap:18px;align-items:start}
+.tl{list-style:none;margin:0;padding:8px 0}
+.tli{display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px;padding:0 18px}
+.rail2{position:relative;display:flex;justify-content:center}
+.rail2::before{content:"";position:absolute;top:0;bottom:0;width:2px;background:var(--line)}
+.tli:first-child .rail2::before{top:22px}
+.tli:last-child .rail2::before{bottom:calc(100% - 22px)}
+.node{position:relative;margin-top:16px;width:14px;height:14px;border-radius:50%;background:#fff;border:3px solid #B9C2D0}
+.tli.active .node{border-color:#2E9B57;background:#2E9B57;box-shadow:0 0 0 4px var(--green-l)}
+.vcard{width:100%;text-align:left;background:#fff;border:1px solid transparent;border-radius:8px;padding:10px 12px;margin:4px 0}
+.vcard:hover{background:var(--blue-ll)}
+.vcard.sel{border-color:var(--blue);background:var(--blue-ll)}
+.vtop{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.vname{font-weight:700;color:var(--navy);font-size:16px}
+.vsum{font-size:13.5px;margin-top:2px}
+.vmeta{font-size:12.5px;color:var(--muted);margin-top:2px}
+.tags{display:flex;gap:6px}
+.btn:disabled{opacity:.4;cursor:default}
+.tag{font-size:11.5px;font-weight:600;padding:1px 8px;border-radius:999px}
+.tag.act{background:var(--green-l);color:var(--green)}
+.tag.rest{background:var(--violet-l);color:var(--violet)}
+
+.diff{font-family:var(--mono);font-size:12.6px;line-height:1.7;border:1px solid var(--line);border-radius:8px;overflow:auto;background:#FBFCFE;padding:6px 0;margin:14px 18px 0}
+.dl{display:block;white-space:pre;padding:0 12px}
+.dl.add{background:#E9F7EE;color:#135E2F}
+.dl.del{background:#FDEEEE;color:#9B1C12}
+.dl.hd{color:var(--blue-d);font-weight:700;padding-top:4px}
+.dl.ctx{color:#6B7385}
+.pin{padding:14px 18px 18px}
+.pin h4{margin:14px 0 8px;font-size:13px;color:var(--navy)}
+.pins{display:flex;flex-wrap:wrap;gap:6px}
+.pinc{font-size:12.5px;border:1px solid var(--line);background:#fff;border-radius:6px;padding:3px 9px;font-family:var(--mono)}
+.pinnote{font-size:13px;color:var(--muted);margin:8px 0 0}
+.empty{font-size:13px;color:#A8AFBC;font-style:italic}
+.actions{display:flex;gap:10px;align-items:center;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+
+/* Modal + toast */
+.scrim{position:fixed;inset:0;background:rgba(30,43,69,.45);display:none;place-items:center;z-index:40;padding:20px}
+.scrim.on{display:grid}
+.modal{background:#fff;border-radius:12px;max-width:460px;width:100%;padding:22px 24px;box-shadow:0 20px 60px rgba(30,43,69,.3)}
+.modal h3{margin:0 0 10px;color:var(--navy);font-size:18px}
+.modal ul{margin:0 0 18px;padding-left:18px;font-size:14px}
+.modal li{margin:4px 0}
+.mbtns{display:flex;justify-content:flex-end;gap:10px}
+.toast{position:fixed;left:50%;top:18px;transform:translate(-50%,-20px);opacity:0;background:var(--navy);color:#fff;padding:10px 18px;border-radius:999px;font-size:14px;z-index:50;transition:all .25s}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+@keyframes flash{0%{background:#DFF3E6}100%{background:#fff}}
+.vcard.new{animation:flash 1.6s ease-out}
+
+/* Presenter controls */
+.pres{position:fixed;right:20px;bottom:18px;display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:999px;padding:6px 8px;box-shadow:0 6px 20px rgba(30,43,69,.12);z-index:30}
+.pres span{font-size:13px;color:var(--muted);padding:0 6px}
+.notes{position:fixed;left:106px;right:20px;bottom:74px;background:var(--navy);color:#fff;border-radius:10px;padding:14px 18px;font-size:14px;display:none;z-index:29;max-width:900px}
+.notes.on{display:block}
+.notes b{color:#BFD6FA}
+.foot{font-size:12px;color:var(--muted);margin-top:18px}
+
+@media (max-width:1000px){
+  .grid,.vh{grid-template-columns:1fr}
+  .steps{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media (max-width:640px){
+  .app{grid-template-columns:1fr}.rail{display:none}.notes{left:20px}
+  .steps{grid-template-columns:1fr 1fr}.health{grid-template-columns:1fr}.hc{border-right:0;border-bottom:1px solid var(--line)}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+/* Extra components for the full Admin console */
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px}
+.col{display:flex;flex-direction:column;gap:18px;min-width:0}
+.pb{padding:14px 18px}
+.ex{font-size:11.5px;font-weight:600;color:var(--amber);background:var(--amber-l);padding:1px 8px;border-radius:999px}
+.hint{font-size:12.5px;color:var(--muted);margin:0 0 8px}
+.csec{padding:16px 18px;border-bottom:1px solid var(--line)}
+.csec:last-child{border-bottom:0}
+.csec h3{margin:0 0 2px;font-size:15px;color:var(--navy)}
+.fbox{border:1px solid var(--line);border-radius:8px;background:#FBFCFE;padding:10px 12px;font-size:14px}
+.fbox ul{margin:0;padding-left:18px}.fbox li{margin:2px 0}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.split h5{margin:0 0 4px;font-size:12.5px}
+.in h5{color:var(--green)}.out h5{color:var(--red)}
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px}
+.tbl th{text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:9px 18px;border-bottom:1px solid var(--line);background:#FBFCFE}
+.tbl td{padding:10px 18px;border-bottom:1px solid var(--line);vertical-align:top}
+.tbl tr:last-child td{border-bottom:0}
+.tbl.mini th,.tbl.mini td{padding:7px 10px}
+.pc{display:inline-block;font-family:var(--mono);font-size:12px;background:var(--canvas);border:1px solid var(--line);border-radius:5px;padding:0 6px;margin:1px 2px 1px 0}
+.more{font-size:12px;color:var(--muted)}
+.gate{padding:12px 18px;border-bottom:1px solid var(--line)}
+.gate:last-child{border-bottom:0}
+.gate q{display:block;font-style:italic;color:var(--ink);font-size:13.5px;quotes:none}
+.gate p{margin:6px 0 0;font-size:12.5px;color:var(--muted)}
+.st.bad{background:var(--red-l);color:var(--red)}
+.st.info{background:var(--blue-l);color:var(--blue-d)}
+.meter{min-width:170px}
+.meter .bar{height:6px;background:#E6E9EF;border-radius:3px;overflow:hidden;margin:6px 0 2px}
+.meter .bar i{display:block;height:100%;background:var(--blue);border-radius:3px}
+.fld{margin-bottom:12px}.fld:last-child{margin-bottom:0}
+.fl{font-size:12px;color:var(--muted);font-weight:600;margin-bottom:3px}
+.inp{border:1px solid var(--line);border-radius:6px;padding:8px 12px;background:#fff;font-size:14px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.inp .mono{font-size:13px}
+.lockn{font-size:12px;color:var(--muted)}
+.opts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.opt{border:1.5px solid var(--line);border-radius:8px;padding:10px 12px;background:#fff;font-size:13.5px}
+.opt b{display:block;color:var(--navy);font-weight:600}
+.opt span{font-size:12px;color:var(--muted)}
+.opt.on{border-color:var(--blue);background:var(--blue-ll)}
+.stat4{display:grid;grid-template-columns:1fr 1fr;gap:0}
+.stat4 .hc{border-bottom:1px solid var(--line)}
+.stat4 .hc:nth-child(2n){border-right:0}
+.stat4 .hc:nth-last-child(-n+2){border-bottom:0}
+.run{display:flex;justify-content:space-between;gap:10px;padding:10px 18px;border-bottom:1px solid var(--line);font-size:13.5px}
+.run:last-child{border-bottom:0}
+.run small{display:block;color:var(--muted);font-size:12px}
+.prop{padding:14px 18px;border-bottom:1px solid var(--line)}
+.prop:last-child{border-bottom:0}
+.prop .why{font-size:13px;color:var(--muted);margin:6px 0 10px}
+.prop .acts{display:flex;gap:8px}
+.arrowline{font-size:14px}
+.tbl td:nth-child(n+3){white-space:nowrap}
+.av2{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#E9ECF2;color:#4B5468;font-size:11px;font-weight:700;margin-right:6px}
+.sw{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:12px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
+.sw:last-child{border-bottom:0}
+.chipc{width:40px;height:40px;border-radius:8px;border:1px solid var(--line)}
+.chipc.tbd{background:repeating-linear-gradient(45deg,#F3F5F8,#F3F5F8 5px,#E6E9EF 5px,#E6E9EF 10px)}
+.swn{font-family:var(--mono);font-size:13px;color:var(--navy);font-weight:600}
+.swd{font-size:12.5px;color:var(--muted)}
+.yaml{background:#F7F9FC;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-family:var(--mono);font-size:12.5px;line-height:1.55;margin:0;white-space:pre;overflow:auto;color:var(--ink)}
+.yaml .k{color:var(--blue-d)}.yaml .c{color:#8A92A3}
+.rule{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:start;padding:10px 18px;border-bottom:1px solid var(--line);font-size:13.5px}
+.rule:last-child{border-bottom:0}
+.rid{font-family:var(--mono);font-size:12px;color:var(--blue-d);font-weight:700;padding-top:2px}
+.tagx{font-size:11.5px;color:var(--muted);margin-left:4px}
+.layers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-bottom:18px}
+.layer{padding:14px 18px}
+.layer .ln{font-size:12.5px;color:var(--muted)}
+.layer b{display:block;font-size:22px;color:var(--navy);line-height:1.3}
+.layer p{margin:4px 0 0;font-size:13px;color:var(--muted)}
+.rrow{width:100%;text-align:left;border:0;background:#fff;display:grid;grid-template-columns:78px minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 18px;border-bottom:1px solid var(--line);font-size:13.5px}
+.rrow:hover{background:var(--blue-ll)}
+.rrow.sel{background:var(--blue-ll);box-shadow:inset 3px 0 0 var(--blue)}
+.fire{font-size:12px;color:var(--muted);white-space:nowrap}
+.fire.hot{color:var(--amber);font-weight:600}
+.cardk{padding:16px 18px}
+.cardk .rid{font-size:13px}
+.cardk h3{margin:4px 0 10px;font-size:16px;color:var(--navy)}
+.kv{display:grid;grid-template-columns:110px minmax(0,1fr);gap:6px 12px;font-size:13.5px;margin-bottom:12px}
+.kv dt{color:var(--muted);font-size:12.5px;font-weight:600}.kv dd{margin:0}
+.snip{font-family:var(--mono);font-size:12.4px;white-space:pre;padding:8px 10px;border-radius:6px;overflow:auto;line-height:1.5;margin:4px 0 10px}
+.snip.b{background:#FDEEEE;color:#7A1A12}.snip.a{background:#E9F7EE;color:#135E2F}
+.sl{font-size:12.5px;font-weight:600}
+.lvl{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--line)}
+.lvl:last-child{border-bottom:0}
+.lb{width:52px;height:40px;border-radius:8px;display:grid;place-items:center;font-weight:800;color:var(--navy);background:var(--canvas);border:1px solid var(--line)}
+.lvl.def .lb{background:var(--blue);color:#fff;border-color:var(--blue)}
+.lvl.locked{opacity:.55}
+.lvl b{color:var(--navy);font-weight:600}
+.lvl p{margin:1px 0 0;font-size:12.5px;color:var(--muted)}
+.mk{display:flex;gap:6px}
+.zone{display:inline-flex;align-items:center;gap:6px;font-size:13px;background:var(--red-l);color:var(--red);border-radius:999px;padding:3px 10px;font-weight:600}
+.stepr{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.stepr span{padding:6px 16px;font-weight:700;color:var(--navy);font-size:16px}
+.stepr i{padding:6px 12px;background:var(--canvas);font-style:normal;color:var(--muted)}
+.tgl{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 18px;border-bottom:1px solid var(--line);font-size:13.5px}
+.tgl:last-child{border-bottom:0}
+.tgl small{display:block;color:var(--muted);font-size:12px}
+.sw2{flex:0 0 38px;width:38px;height:22px;border-radius:999px;background:#C9CFD9;position:relative;border:0;padding:0}
+.sw2::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .15s}
+.sw2.on{background:var(--blue)}.sw2.on::after{left:19px}
+.cap{font-size:12.5px;color:var(--muted);padding:10px 18px;border-top:1px solid var(--line);background:var(--blue-ll);border-radius:0 0 var(--radius) var(--radius)}
+@media (max-width:1000px){.grid2,.layers{grid-template-columns:1fr}.opts{grid-template-columns:1fr}.split{grid-template-columns:1fr}}
+
+.row.link{cursor:pointer}.row.link:hover{background:var(--blue-ll)}.row.link:focus-visible{outline:3px solid #9CC0F5;outline-offset:-3px}
+
+/* ===== v2 additions: edit mode, search, selectors ===== */
+.headr{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.eo{display:none!important}
+.editing .eo{display:revert!important}
+.editing .ro{display:none!important}
+.editing{position:relative}
+.editing .panel{border-color:#BFD3F5}
+[contenteditable=true]{outline:1.5px dashed #9CC0F5;outline-offset:2px;border-radius:4px;background:#fff;min-width:40px;display:inline-block}
+[contenteditable=true]:focus{outline:2px solid var(--blue)}
+[contenteditable=true]:empty::before{content:attr(data-ph);color:#A8AFBC}
+.fbox [contenteditable=true]{display:block}
+.xbtn{border:0;background:var(--red-l);color:var(--red);width:22px;height:22px;border-radius:50%;font-size:11px;line-height:22px;padding:0;margin-left:8px;vertical-align:middle;cursor:pointer}
+.pc .xbtn{width:16px;height:16px;line-height:16px;font-size:9px;margin-left:5px}
+.addbtn{border:1.5px dashed #9CC0F5;background:var(--blue-ll);color:var(--blue-d);border-radius:8px;padding:5px 12px;font-size:13px;font-weight:600;margin-top:8px;cursor:pointer}
+.tbl .addrow td{background:var(--blue-ll)}
+.cnt{font-size:10.5px;color:var(--blue-d);background:var(--blue-l);border-radius:4px;padding:0 4px;margin-left:4px;font-family:var(--font)}
+.sel{font:inherit;font-size:13px;border:1px solid #BFD3F5;border-radius:6px;padding:4px 6px;background:#fff;color:var(--ink)}
+.editbar{position:fixed;left:106px;right:20px;bottom:18px;background:var(--navy);color:#fff;border-radius:12px;padding:10px 16px;display:none;align-items:center;justify-content:space-between;gap:12px;z-index:31;box-shadow:0 10px 30px rgba(30,43,69,.3)}
+.editbar.on{display:flex}
+.editbar .btn.quiet{background:transparent;color:#fff;border-color:#5E6B85}
+.editbar .btn.solid{background:#fff;color:var(--blue-d);border-color:#fff}
+.edot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#F5B544;margin-right:8px}
+.cgrid{display:grid;grid-template-columns:1fr 1fr}
+.cgrid .csec:nth-child(odd){border-right:1px solid var(--line)}
+.fbox ul{list-style:none;padding-left:0}
+.fbox li{padding:3px 0 3px 16px;position:relative}
+.fbox li::before{content:"";position:absolute;left:2px;top:12px;width:5px;height:5px;border-radius:50%;background:#9AA3B5}
+.meter2{min-width:190px}
+.meter2 .v{font-size:14px}
+.meter2 .bar{height:7px;background:#E6E9EF;border-radius:4px;overflow:hidden;margin:6px 0 0}
+.meter2 .bar i{display:block;height:100%;border-radius:4px;transition:width .2s,background .2s}
+.lim-ok i{background:#2E9B57}.lim-warn i{background:#E59A1B}.lim-over i{background:var(--red)}
+.srch{display:flex;gap:10px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--line)}
+.srch .box{flex:1;position:relative}
+.srch .box span{position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:13px}
+.srch input{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 12px 8px 34px;font:inherit;font-size:14px;background:#fff}
+.srch input:focus{outline:2px solid #9CC0F5;border-color:var(--blue)}
+.fchip{border:1.5px solid var(--line);border-radius:999px;background:#fff;padding:5px 12px;font-size:13px;font-weight:600;color:var(--ink);white-space:nowrap}
+.fchip.on{border-color:var(--amber);background:var(--amber-l);color:var(--amber)}
+.nores{padding:16px 18px;color:var(--muted);font-size:13.5px;display:none}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;border-right:1px solid var(--line);background:#fff;padding:7px 16px;font-weight:700;color:var(--navy);font-size:14px;pointer-events:none}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--blue);color:#fff}
+.seg button.lock{color:#B6BCC8;background:#F7F8FA}
+.editing .seg button{pointer-events:auto;cursor:pointer}
+.segrow{display:flex;gap:28px;flex-wrap:wrap;padding:14px 18px;border-bottom:1px solid var(--line)}
+.segrow .fl{margin-bottom:6px}
+.sw2,.stepr i{pointer-events:none}
+.editing .sw2,.editing .stepr i{pointer-events:auto;cursor:pointer}
+.editing .stepr i{background:var(--blue-l);color:var(--blue-d)}
+.opt{cursor:default}
+.editing .opt{cursor:pointer}
+.zonecard{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:10px;background:#FBFCFE}
+.zonecard:last-of-type{margin-bottom:0}
+.zonecard .zt{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.zonecard p{margin:4px 0 0;font-size:13px}
+.zonecard .zx{font-size:12.5px;color:var(--muted);margin-top:4px}
+.zonecard .zx b{color:var(--ink);font-weight:600}
+.skip{border:0;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.mbody{font-size:14px;margin:0 0 18px}
+.mbody ul{margin:0;padding-left:18px}
+.mbody li{margin:4px 0}
+.ta,.inp2{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:14px}
+.ta{min-height:72px;resize:vertical}
+.ta:focus,.inp2:focus{outline:2px solid #9CC0F5;border-color:var(--blue)}
+.mfield{margin-bottom:12px}
+.mfield label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px}
+.btn:disabled{opacity:.4;cursor:default}
+.rrow{cursor:pointer}
+.rrow .xbtn{margin-left:4px}
+.sevtbl td:first-child{font-weight:600}
+.gold{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--line)}
+.gold:last-child{border-bottom:0}
+.gold .ico{width:40px;height:40px}
+.gold b{display:block;color:var(--navy);font-weight:600;font-size:13.5px}
+.attn{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line)}
+.attn:last-child{border-bottom:0}
+.attn .e{font-size:18px;margin-right:10px}
+.attn b{color:var(--navy);font-weight:600;font-size:14px}
+.sugg{padding:14px 18px;border-bottom:1px solid var(--line)}
+.sugg:last-child{border-bottom:0}
+.sugg .acts{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center}
+.sugg .meta{font-size:12.5px;color:var(--muted);margin-top:3px}
+@media (max-width:1000px){.cgrid{grid-template-columns:1fr}.cgrid .csec:nth-child(odd){border-right:0}.editbar{left:20px}}
+
+.muted{color:var(--muted)}
+
+.editing .fbox li{display:flex;align-items:center;gap:4px}
+.editing .fbox li>[data-edit]{flex:1}
+.pc{white-space:nowrap;display:inline-block}
+#s3 .grid{grid-template-columns:minmax(0,2.4fr) minmax(0,1fr)}
+#capTable{table-layout:fixed}
+#capTable th:nth-child(1){width:21%}#capTable th:nth-child(2){width:37%}#capTable th:nth-child(3),#capTable th:nth-child(4){width:19%}
+#capTable th:nth-child(5){width:44px}
+#capTable td:nth-child(n+3){white-space:normal}
+#capTable .sel,#constTable .sel{width:100%;max-width:100%}
+#props .acts{flex-wrap:wrap}
+#props .sel{flex:1;min-width:150px}
+.screen.editing{padding-bottom:140px}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="rail" aria-label="CodeVision navigation">
+    <div class="ri"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/></svg><span>Home</span></div>
+    <div class="ri"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-8l-4 3v-3H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg><span>Chat</span></div>
+    <div class="ri"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M14 4H7a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V9z"/><path d="M14 4v5h5"/><path d="M9 16l5-5 1.5 1.5-5 5H9z"/></svg><span>Create Docs</span></div>
+    <div class="ri"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7l-5 5 5 5"/><path d="M16 7l5 5-5 5"/><path d="M13.5 5l-3 14"/></svg><span>Developer Assistant</span></div>
+    <div class="ri active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg><span>Admin</span></div>
+  </aside>
+  <div class="main">
+    <header class="top">
+      <div class="brand"><svg viewBox="0 0 64 48" aria-hidden="true"><defs><linearGradient id="g1" x1="0" x2="1"><stop offset="0" stop-color="#1A4FC4"/><stop offset="1" stop-color="#3B86F0"/></linearGradient></defs><path d="M14 10L4 24l10 14" fill="none" stroke="url(#g1)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M50 10l10 14-10 14" fill="none" stroke="url(#g1)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="31" cy="21" r="12" fill="none" stroke="#1F5FD0" stroke-width="4"/><path d="M39.5 29.5L46 37" stroke="#1F5FD0" stroke-width="5" stroke-linecap="round"/><rect x="25" y="21" width="3" height="6" fill="#1F5FD0"/><rect x="29.5" y="17" width="3" height="10" fill="#1F5FD0"/><rect x="34" y="14" width="3" height="13" fill="#1F5FD0"/></svg><span class="wordmark">CODEVISION</span><span class="sep"></span><span class="prod">Admin Console</span></div>
+      <div class="user"><span>Chris Ong</span><span class="avatar">CO</span></div>
+    </header>
+    <div class="tabs" role="tablist" aria-label="Admin sections">
+      <button class="tab" data-go="0" role="tab">Overview</button>
+      <button class="tab" data-go="1" role="tab">Project charter</button>
+      <button class="tab" data-go="2" role="tab">Repository and index</button>
+      <button class="tab" data-go="3" role="tab">Capability catalog</button>
+      <button class="tab" data-go="4" role="tab">UI standards</button>
+      <button class="tab" data-go="5" role="tab">Coding standards</button>
+      <button class="tab" data-go="6" role="tab">Generation and review</button>
+      <button class="tab" data-go="7" role="tab">Version history</button>
+    </div>
+
+    <!-- ================= OVERVIEW ================= -->
+    <section class="screen" id="s0" data-name="Overview">
+      <div class="head">
+        <div><h1>Admin console <span class="env">Envisioned</span></h1>
+          <p class="sub">The rulebook the Developer Assistant follows.</p></div>
+        <div class="verpill">
+          <span class="dotlive" aria-hidden="true"></span>
+          <div><div class="v">Active rulebook <span class="activeVer">v3</span></div><div class="d activeDate">Published 29 Sep 2026, 14:35</div></div>
+          <button class="btn" data-go="7">View history</button>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="panel">
+          <div class="ph"><span class="pt">Rulebook</span><span class="pm">6 areas</span></div>
+          <div class="row link" data-go="1" tabindex="0" role="button"><div class="ico">📜</div>
+            <div><div class="rn">Project charter</div><div class="facts"><span class="chip">5 sections</span><span class="chip">Out of scope escalates to senior</span></div></div>
+            <div><span class="st ok">✅ Up to date</span><span class="upd">Updated 20 Sep</span></div></div>
+          <div class="row link" data-go="2" tabindex="0" role="button"><div class="ico">🗄️</div>
+            <div><div class="rn">Repository and index</div><div class="facts"><span class="chip">Branch: <b>main</b></span><span class="chip">Refreshes on every merge</span><span class="chip">6 exclusions</span></div></div>
+            <div><span class="st ok">✅ Fresh</span><span class="upd">Indexed 12 min ago</span></div></div>
+          <div class="row link" data-go="3" tabindex="0" role="button"><div class="ico">🗂️</div>
+            <div><div class="rn">Capability catalog</div><div class="facts"><span class="chip">6 capabilities</span><span class="chip">Senior and backup per capability</span></div></div>
+            <div><span class="st warn catStatus">⚠️ <span class="catN">2</span> to review</span><span class="upd">Updated 28 Sep</span></div></div>
+          <div class="row link" data-go="4" tabindex="0" role="button"><div class="ico">🎨</div>
+            <div><div class="rn">UI standards</div><div class="facts"><span class="chip">Brand constants in shared_styles.py</span><span class="chip">4 UI conventions</span></div></div>
+            <div><span class="st ok">✅ Up to date</span><span class="upd">Updated 29 Sep</span></div></div>
+          <div class="row link" data-go="5" tabindex="0" role="button"><div class="ico">🐍</div>
+            <div><div class="rn">Coding standards</div><div class="facts"><span class="chip">SonarQube checks</span><span class="chip">9 judgement rules</span><span class="chip">3 golden examples</span></div></div>
+            <div><span class="st warn suggStatus">⚠️ <span class="suggN">1</span> suggestion</span><span class="upd">Updated 29 Sep</span></div></div>
+          <div class="row link" data-go="6" tabindex="0" role="button"><div class="ico">⚙️</div>
+            <div><div class="rn">Generation and review</div><div class="facts"><span class="chip">Default L2, max L2</span><span class="chip">2 never-generate zones</span><span class="chip">3 rounds, then senior</span></div></div>
+            <div><span class="st ok">✅ Up to date</span><span class="upd">Updated 25 Sep</span></div></div>
+        </div>
+        <div class="col">
+          <div class="panel">
+            <div class="ph"><span class="pt">Needs attention</span></div>
+            <div class="attn catAttn"><div><span class="e">🗂️</span><b><span class="catN">2</span> catalog items to review</b></div><button class="btn" data-go="3">Review</button></div>
+            <div class="attn suggAttn"><div><span class="e">✨</span><b>1 AI rule suggestion</b></div><button class="btn" data-go="5">Review</button></div>
+            <div class="attn"><div><span class="e">🔎</span><b>CV-PY-007 fires in 64% of reviews</b></div><button class="btn quiet" data-go="5" data-rule="6">Open rule</button></div>
+            <div class="attn missAttn"><div><span class="e">👥</span><b>Vector DB has no backup senior</b></div><button class="btn quiet" data-go="3" data-missing>Assign</button></div>
+          </div>
+          <div class="panel">
+            <div class="ph"><span class="pt">Rulebook health</span><span class="pm">Last 30 days</span></div>
+            <div class="health">
+              <div class="hc"><b>1.8</b><span>Avg review rounds</span></div>
+              <div class="hc"><b>2</b><span>Escalations</span></div>
+              <div class="hc"><b>71%</b><span>AI code kept at handoff</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= PROJECT CHARTER ================= -->
+    <section class="screen" id="s1" data-name="Project charter">
+      <div class="head">
+        <div><h1>Project charter <span class="env">Envisioned</span></h1>
+          <p class="sub">What CodeVision is, what it isn't, and how it's built.</p></div>
+        <div class="headr">
+          <div class="verpill"><div class="meter2" id="meter"><div class="v"><span id="limPct">0%</span> of charter limit</div><div class="bar"><i></i></div></div></div>
+          <button class="btn solid ro" data-startedit>Edit charter</button>
+        </div>
+      </div>
+      <div class="panel" id="charterBody">
+        <div class="csec"><h3>Purpose</h3><p class="hint eo">One paragraph. What CodeVision is for.</p>
+          <div class="fbox"><span data-edit data-ph="Describe CodeVision's purpose">CodeVision helps the bank modernize hostcentric applications. It turns specifications, COBOL, RPG and CL source, and Control-M job flows into a searchable knowledge base, with AI tools built on top.</span></div></div>
+        <div class="csec"><h3>Scope</h3><p class="hint eo">What requests should and shouldn't touch.</p>
+          <div class="split">
+            <div class="fbox in"><h5>✅ In scope</h5><ul>
+              <li><span data-edit>Tools that analyze legacy source and specs</span><button class="xbtn eo" data-del="li">✕</button></li>
+              <li><span data-edit>Documentation generation</span><button class="xbtn eo" data-del="li">✕</button></li>
+              <li><span data-edit>Knowledge base ingestion and search</span><button class="xbtn eo" data-del="li">✕</button></li>
+              <li><span data-edit>CodeVision's own screens and tooling</span><button class="xbtn eo" data-del="li">✕</button></li>
+            </ul><button class="addbtn eo" data-add="li">+ Add item</button></div>
+            <div class="fbox out"><h5>🔴 Out of scope</h5><ul>
+              <li><span data-edit>Customer-facing features</span><button class="xbtn eo" data-del="li">✕</button></li>
+              <li><span data-edit>Changes to hostcentric production systems</span><button class="xbtn eo" data-del="li">✕</button></li>
+              <li><span data-edit>Processing live customer data</span><button class="xbtn eo" data-del="li">✕</button></li>
+            </ul><button class="addbtn eo" data-add="li">+ Add item</button></div>
+          </div></div>
+        <div class="cgrid">
+          <div class="csec"><h3>Architecture principles</h3><p class="hint eo">How CodeVision is built. One principle per line.</p>
+            <div class="fbox"><ul>
+              <li><span data-edit>Data classes live in <code>pydantic_classes/</code></span><button class="xbtn eo" data-del="li">✕</button></li>
+              <li><span data-edit>UI styles come from <code>shared_styles.py</code> brand constants</span><button class="xbtn eo" data-del="li">✕</button></li>
+              <li><span data-edit>Reuse helpers in <code>tools/</code> before writing new ones</span><button class="xbtn eo" data-del="li">✕</button></li>
+              <li><span data-edit>Paths and settings come from config</span><button class="xbtn eo" data-del="li">✕</button></li>
+            </ul><button class="addbtn eo" data-add="li">+ Add principle</button></div></div>
+          <div class="csec"><h3>Constraints</h3><p class="hint eo">Hard limits no request can break.</p>
+            <div class="fbox"><ul>
+              <li><span data-edit>Internal LLMs only (Qwen, Llama)</span><button class="xbtn eo" data-del="li">✕</button></li>
+              <li><span data-edit>Python only</span><button class="xbtn eo" data-del="li">✕</button></li>
+              <li><span data-edit>Approved libraries only</span><button class="xbtn eo" data-del="li">✕</button></li>
+            </ul><button class="addbtn eo" data-add="li">+ Add constraint</button></div></div>
+        </div>
+        <div class="csec"><h3>Glossary</h3><p class="hint eo">CodeVision's own terms, so Qwen names and reads them consistently.</p>
+          <div class="fbox" style="padding:0"><table class="tbl mini"><thead><tr><th style="width:28%">Term</th><th>Meaning</th><th class="eo"></th></tr></thead><tbody>
+            <tr><td><b data-edit>Capability</b></td><td><span data-edit>A CodeVision feature, e.g. Source Compare</span></td><td class="eo"><button class="xbtn" data-del="tr">✕</button></td></tr>
+            <tr><td><b data-edit>Application onboarding</b></td><td><span data-edit>Adding a legacy application's specs and source into CodeVision</span></td><td class="eo"><button class="xbtn" data-del="tr">✕</button></td></tr>
+            <tr><td><b data-edit>Hostcentric</b></td><td><span data-edit>Legacy applications written in COBOL, RPG or CL</span></td><td class="eo"><button class="xbtn" data-del="tr">✕</button></td></tr>
+            <tr><td><b data-edit>Control-M job flow</b></td><td><span data-edit>A scheduled sequence of batch jobs</span></td><td class="eo"><button class="xbtn" data-del="tr">✕</button></td></tr>
+          </tbody></table></div>
+          <button class="addbtn eo" data-add="term">+ Add term</button></div>
+      </div>
+    </section>
+
+    <!-- ================= REPOSITORY AND INDEX ================= -->
+    <section class="screen" id="s2" data-name="Repository and index">
+      <div class="head">
+        <div><h1>Repository and index <span class="env">Envisioned</span></h1>
+          <p class="sub">The code the assistant can search.</p></div>
+        <div class="headr">
+          <div class="verpill"><span class="dotlive" id="idxDot"></span><div><div class="v" style="font-size:14px" id="idxState">Index is fresh</div><div class="d" id="idxAge">Last indexed 12 min ago</div></div></div>
+          <button class="btn quiet ro" id="fullReindex">Full re-index</button>
+          <button class="btn solid ro" data-startedit>Edit</button>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="col">
+          <div class="panel">
+            <div class="ph"><span class="pt">Connection</span></div>
+            <div class="pb">
+              <div class="fld"><div class="fl">Bitbucket repository</div><div class="inp"><span class="mono" data-edit data-ph="repository name">codevision</span></div></div>
+              <div class="fld"><div class="fl">Branch indexed</div><div class="inp"><span class="mono">main</span><span class="lockn">🔒</span></div></div>
+              <div class="fld"><div class="fl">Folder scope</div><div class="inp"><span class="mono" data-edit data-ph="folder path">app/src</span></div></div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="ph"><span class="pt">Refresh</span></div>
+            <div class="pb"><div class="opts" id="refreshOpts">
+              <div class="opt on"><b>On every merge to main</b></div>
+              <div class="opt"><b>Nightly</b></div>
+              <div class="opt"><b>Manual</b></div>
+            </div></div>
+          </div>
+          <div class="panel">
+            <div class="ph"><span class="pt">Exclusions</span><span class="pm"><span id="exCount">6</span> patterns</span></div>
+            <table class="tbl" id="exTable"><thead><tr><th>Pattern</th><th>Reason</th><th>Type</th><th class="eo"></th></tr></thead><tbody>
+              <tr><td><span class="pc" data-edit>.env</span></td><td><span data-edit>Secrets and settings</span></td><td><span data-edit>Config</span></td><td class="eo"><button class="xbtn" data-del="tr">✕</button></td></tr>
+              <tr><td><span class="pc" data-edit>pip.conf</span></td><td><span data-edit>Environment setup</span></td><td><span data-edit>Config</span></td><td class="eo"><button class="xbtn" data-del="tr">✕</button></td></tr>
+              <tr><td><span class="pc" data-edit>__pycache__/</span></td><td><span data-edit>Generated build output</span></td><td><span data-edit>Build</span></td><td class="eo"><button class="xbtn" data-del="tr">✕</button></td></tr>
+              <tr><td><span class="pc" data-edit>*.zip</span></td><td><span data-edit>Binary archives</span></td><td><span data-edit>Build</span></td><td class="eo"><button class="xbtn" data-del="tr">✕</button></td></tr>
+              <tr><td><span class="pc" data-edit>scratch_db.py</span></td><td><span data-edit>Scratch script</span></td><td><span data-edit>Scratch</span></td><td class="eo"><button class="xbtn" data-del="tr">✕</button></td></tr>
+              <tr><td><span class="pc" data-edit>test_*.py</span></td><td><span data-edit>Experimental scripts</span></td><td><span data-edit>Scratch</span></td><td class="eo"><button class="xbtn" data-del="tr">✕</button></td></tr>
+            </tbody></table>
+            <div class="pb eo" style="padding-top:0"><button class="addbtn" data-add="exclusion">+ Add exclusion</button></div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="panel">
+            <div class="ph"><span class="pt">Index health</span></div>
+            <div class="stat4">
+              <div class="hc"><b class="mono" style="font-size:18px">a41c9e2</b><span>Last indexed commit</span></div>
+              <div class="hc"><b id="idxAgeN">12 min</b><span>Since last refresh</span></div>
+              <div class="hc"><b>48</b><span>Programs indexed</span></div>
+              <div class="hc" title="def blocks across all programs"><b>312</b><span>Functions found</span></div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="ph"><span class="pt">Recent refreshes</span></div>
+            <div id="runs">
+              <div class="run"><div>Merge to main<small>a41c9e2, today 14:23</small></div><span class="st ok">✅ Done</span></div>
+              <div class="run"><div>Merge to main<small>9be07d1, today 10:05</small></div><span class="st ok">✅ Done</span></div>
+              <div class="run"><div>Merge to main<small>77f3a2c, yesterday 17:48</small></div><button class="st warn skip" id="skipBtn">⚠️ 2 files skipped</button></div>
+              <div class="run"><div>Merge to main<small>c0d18e4, yesterday 11:30</small></div><span class="st ok">✅ Done</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= CAPABILITY CATALOG ================= -->
+    <section class="screen" id="s3" data-name="Capability catalog">
+      <div class="head">
+        <div><h1>Capability catalog <span class="env">Envisioned</span></h1>
+          <p class="sub">Which programs belong to which capability, and who handles escalations.</p></div>
+        <div class="headr"><button class="btn solid ro" data-startedit>Edit</button></div>
+      </div>
+      <div class="grid">
+        <div class="panel">
+          <div class="srch">
+            <div class="box"><span>🔍</span><input id="capq" type="search" placeholder="Search capability, program, senior or backup" aria-label="Search catalog"></div>
+            <button class="fchip" id="fMissing">⚠️ Missing backup</button>
+          </div>
+          <table class="tbl" id="capTable"><thead><tr><th>Capability</th><th>Programs</th><th>Senior</th><th>Backup</th><th class="eo"></th></tr></thead><tbody>
+            <tr data-cap="Application Onboarding"><td><b data-edit>Application Onboarding</b></td><td class="progs"><span class="pc">onboard_runner.py<button class="xbtn eo" data-del="pc">✕</button></span><span class="pc">shared_styles.py<button class="xbtn eo" data-del="pc">✕</button></span><button class="addbtn eo addprog" data-add="prog">+ Program</button></td><td><span class="ro"><span class="av2">AT</span>Alex Tan</span><select class="sel eo" data-person><option value="">Not assigned</option><option selected>Alex Tan</option><option>Bea Lim</option><option>Chris Ong</option><option>Dana Koh</option><option>Evan Ng</option></select></td><td><span class="ro"><span class="av2">BL</span>Bea Lim</span><select class="sel eo" data-person><option value="">Not assigned</option><option>Alex Tan</option><option selected>Bea Lim</option><option>Chris Ong</option><option>Dana Koh</option><option>Evan Ng</option></select></td><td class="eo"><button class="xbtn" data-del="cap">✕</button></td></tr>
+            <tr data-cap="Documentation Generation"><td><b data-edit>Documentation Generation</b></td><td class="progs"><span class="pc">docs_runner.py<button class="xbtn eo" data-del="pc">✕</button></span><span class="pc">docs_builder.py<button class="xbtn eo" data-del="pc">✕</button></span><span class="pc">md_writer.py<button class="xbtn eo" data-del="pc">✕</button></span><span class="pc">md_folder_writer.py<button class="xbtn eo" data-del="pc">✕</button></span><button class="addbtn eo addprog" data-add="prog">+ Program</button></td><td><span class="ro"><span class="av2">CO</span>Chris Ong</span><select class="sel eo" data-person><option value="">Not assigned</option><option>Alex Tan</option><option>Bea Lim</option><option selected>Chris Ong</option><option>Dana Koh</option><option>Evan Ng</option></select></td><td><span class="ro"><span class="av2">DK</span>Dana Koh</span><select class="sel eo" data-person><option value="">Not assigned</option><option>Alex Tan</option><option>Bea Lim</option><option>Chris Ong</option><option selected>Dana Koh</option><option>Evan Ng</option></select></td><td class="eo"><button class="xbtn" data-del="cap">✕</button></td></tr>
+            <tr data-cap="Vector DB" data-missing="1"><td><b data-edit>Vector DB</b></td><td class="progs"><span class="pc">vector_loader.py<button class="xbtn eo" data-del="pc">✕</button></span><span class="pc">vector_refresh.py<button class="xbtn eo" data-del="pc">✕</button></span><button class="addbtn eo addprog" data-add="prog">+ Program</button></td><td><span class="ro"><span class="av2">EN</span>Evan Ng</span><select class="sel eo" data-person><option value="">Not assigned</option><option>Alex Tan</option><option>Bea Lim</option><option>Chris Ong</option><option>Dana Koh</option><option selected>Evan Ng</option></select></td><td><span class="ro"><span class="st warn">⚠️ Missing</span></span><select class="sel eo" data-person><option value="">Not assigned</option><option>Alex Tan</option><option>Bea Lim</option><option>Chris Ong</option><option>Dana Koh</option><option>Evan Ng</option></select></td><td class="eo"><button class="xbtn" data-del="cap">✕</button></td></tr>
+            <tr data-cap="Source Compare"><td><b data-edit>Source Compare</b></td><td class="progs"><span class="pc">compare_runner.py<button class="xbtn eo" data-del="pc">✕</button></span><span class="pc">shared_styles.py<button class="xbtn eo" data-del="pc">✕</button></span><span class="pc">shared_callbacks.py<button class="xbtn eo" data-del="pc">✕</button></span><button class="addbtn eo addprog" data-add="prog">+ Program</button></td><td><span class="ro"><span class="av2">DK</span>Dana Koh</span><select class="sel eo" data-person><option value="">Not assigned</option><option>Alex Tan</option><option>Bea Lim</option><option>Chris Ong</option><option selected>Dana Koh</option><option>Evan Ng</option></select></td><td><span class="ro"><span class="av2">CO</span>Chris Ong</span><select class="sel eo" data-person><option value="">Not assigned</option><option>Alex Tan</option><option>Bea Lim</option><option selected>Chris Ong</option><option>Dana Koh</option><option>Evan Ng</option></select></td><td class="eo"><button class="xbtn" data-del="cap">✕</button></td></tr>
+            <tr data-cap="Markdown Processing"><td><b data-edit>Markdown Processing</b></td><td class="progs"><span class="pc">md_to_spec.py<button class="xbtn eo" data-del="pc">✕</button></span><span class="pc">md_gap_filler.py<button class="xbtn eo" data-del="pc">✕</button></span><span class="pc">md_structurer.py<button class="xbtn eo" data-del="pc">✕</button></span><button class="addbtn eo addprog" data-add="prog">+ Program</button></td><td><span class="ro"><span class="av2">BL</span>Bea Lim</span><select class="sel eo" data-person><option value="">Not assigned</option><option>Alex Tan</option><option selected>Bea Lim</option><option>Chris Ong</option><option>Dana Koh</option><option>Evan Ng</option></select></td><td><span class="ro"><span class="av2">EN</span>Evan Ng</span><select class="sel eo" data-person><option value="">Not assigned</option><option>Alex Tan</option><option>Bea Lim</option><option>Chris Ong</option><option>Dana Koh</option><option selected>Evan Ng</option></select></td><td class="eo"><button class="xbtn" data-del="cap">✕</button></td></tr>
+            <tr data-cap="Web UI"><td><b data-edit>Web UI</b></td><td class="progs"><span class="pc">app_server.py<button class="xbtn eo" data-del="pc">✕</button></span><span class="pc">shared_callbacks.py<button class="xbtn eo" data-del="pc">✕</button></span><span class="pc">shared_styles.py<button class="xbtn eo" data-del="pc">✕</button></span><button class="addbtn eo addprog" data-add="prog">+ Program</button></td><td><span class="ro"><span class="av2">AT</span>Alex Tan</span><select class="sel eo" data-person><option value="">Not assigned</option><option selected>Alex Tan</option><option>Bea Lim</option><option>Chris Ong</option><option>Dana Koh</option><option>Evan Ng</option></select></td><td><span class="ro"><span class="av2">CO</span>Chris Ong</span><select class="sel eo" data-person><option value="">Not assigned</option><option>Alex Tan</option><option>Bea Lim</option><option selected>Chris Ong</option><option>Dana Koh</option><option>Evan Ng</option></select></td><td class="eo"><button class="xbtn" data-del="cap">✕</button></td></tr>
+          </tbody></table>
+          <div class="nores" id="nores">No matches.</div>
+          <div class="pb eo"><button class="addbtn" data-add="capability">+ Add capability</button></div>
+        </div>
+        <div class="col">
+          <div class="panel" id="props">
+            <div class="ph"><span class="pt">AI proposals</span><span class="pm"><span class="catN">2</span> to review</span></div>
+            <div class="prop" data-f="diagram_renderer.py" data-to="Documentation Generation">
+              <div class="arrowline"><span class="pc">diagram_renderer.py</span> → <b>Documentation Generation</b></div>
+              <p class="why">Called by <code>docs_builder.py</code>. Confidence: high.</p>
+              <div class="acts"><button class="btn solid" data-prop="approve">Approve</button><button class="btn quiet" data-prop="reject">Reject</button></div></div>
+            <div class="prop" data-f="header_date_check.py">
+              <div class="arrowline"><span class="pc">header_date_check.py</span> → <span class="st warn">Unassigned</span></div>
+              <p class="why">No matching capability found.</p>
+              <div class="acts"><select class="sel" id="assignSel"><option>Application Onboarding</option><option>Documentation Generation</option><option>Vector DB</option><option>Source Compare</option><option selected>Markdown Processing</option><option>Web UI</option></select><button class="btn solid" data-prop="assign">Assign</button><button class="btn quiet" data-prop="newcap">New capability</button></div></div>
+            <div class="prop" id="noProps" style="display:none"><span class="st ok">✅ All caught up</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= UI STANDARDS ================= -->
+    <section class="screen" id="s4" data-name="UI standards">
+      <div class="head">
+        <div><h1>UI standards <span class="env">Envisioned</span></h1>
+          <p class="sub">How new CodeVision screens look and behave.</p></div>
+        <div class="headr"><button class="btn solid ro" data-startedit>Edit</button></div>
+      </div>
+      <div class="grid2">
+        <div class="panel">
+          <div class="ph"><span class="pt">Brand constants</span><span class="pm">shared_styles.py, part 1</span></div>
+          <table class="tbl" id="constTable"><thead><tr><th style="width:44px"></th><th>Constant</th><th>Value</th><th>Source</th><th class="eo"></th></tr></thead><tbody>
+            <tr><td><div class="chipc" style="background:#0073CF;width:28px;height:28px"></div></td><td><span class="mono" data-edit>BRAND_BLUE</span></td><td><span class="mono" data-edit>#0073CF</span></td><td><span class="ro">Bank brand guide</span><select class="sel eo" data-src><option selected>Bank brand guide</option><option>Core team</option></select></td><td class="eo"><button class="xbtn" data-del="tr">✕</button></td></tr>
+            <tr><td><div class="chipc" style="background:#fff;width:28px;height:28px"></div></td><td><span class="mono" data-edit>WHITE</span></td><td><span class="mono" data-edit>white</span></td><td><span class="ro">Bank brand guide</span><select class="sel eo" data-src><option selected>Bank brand guide</option><option>Core team</option></select></td><td class="eo"><button class="xbtn" data-del="tr">✕</button></td></tr>
+            <tr><td><div class="chipc tbd" style="width:28px;height:28px"></div></td><td><span class="mono" data-edit>SECONDARY</span></td><td><i class="muted" data-edit>Pending brand guide</i></td><td><span class="ro">Bank brand guide</span><select class="sel eo" data-src><option selected>Bank brand guide</option><option>Core team</option></select></td><td class="eo"><button class="xbtn" data-del="tr">✕</button></td></tr>
+            <tr><td><div class="chipc tbd" style="width:28px;height:28px"></div></td><td><span class="mono" data-edit>TEXT</span></td><td><i class="muted" data-edit>Pending brand guide</i></td><td><span class="ro">Bank brand guide</span><select class="sel eo" data-src><option selected>Bank brand guide</option><option>Core team</option></select></td><td class="eo"><button class="xbtn" data-del="tr">✕</button></td></tr>
+            <tr><td><div class="chipc tbd" style="width:28px;height:28px"></div></td><td><span class="mono" data-edit>SUCCESS, WARNING, ERROR</span></td><td><i class="muted" data-edit>Pending brand guide</i></td><td><span class="ro">Bank brand guide</span><select class="sel eo" data-src><option selected>Bank brand guide</option><option>Core team</option></select></td><td class="eo"><button class="xbtn" data-del="tr">✕</button></td></tr>
+            <tr><td><div class="chipc" style="width:28px;height:28px;display:grid;place-items:center;font-size:12px;background:var(--canvas)">Aa</div></td><td><span class="mono" data-edit>FONT_FAMILY</span></td><td><i class="muted" data-edit>Pending brand guide</i></td><td><span class="ro">Bank brand guide</span><select class="sel eo" data-src><option selected>Bank brand guide</option><option>Core team</option></select></td><td class="eo"><button class="xbtn" data-del="tr">✕</button></td></tr>
+            <tr><td><div class="chipc" style="width:28px;height:28px;display:grid;place-items:center;font-size:12px;font-weight:700;background:var(--canvas)">B</div></td><td><span class="mono" data-edit>FONT_BOLD</span></td><td><span class="mono" data-edit>600</span></td><td><span class="ro">Bank brand guide</span><select class="sel eo" data-src><option selected>Bank brand guide</option><option>Core team</option></select></td><td class="eo"><button class="xbtn" data-del="tr">✕</button></td></tr>
+            <tr><td><div class="chipc" style="width:28px;height:28px;display:grid;place-items:center;font-size:10px;color:var(--muted);background:var(--canvas)">↔</div></td><td><span class="mono" data-edit>SPACING</span></td><td><span class="mono" data-edit>4, 8, 16, 24</span></td><td><span class="ro">Core team</span><select class="sel eo" data-src><option>Bank brand guide</option><option selected>Core team</option></select></td><td class="eo"><button class="xbtn" data-del="tr">✕</button></td></tr>
+          </tbody></table>
+          <div class="pb eo"><button class="addbtn" data-add="constant">+ Add constant</button></div>
+        </div>
+        <div class="panel">
+          <div class="ph"><span class="pt">UI conventions</span><span class="pm">Tag: UI</span></div>
+          <div id="uiConv">
+            <div class="rule"><span class="rid">CV-UI-001</span><div><span data-edit>Primary button sits on the right</span></div><div><span class="ro"><span class="st warn">🟡 Should fix</span></span><select class="sel eo" data-sev><option value="must">🔴 Must fix</option><option value="should" selected>🟡 Should fix</option><option value="fyi">🔵 FYI</option></select><button class="xbtn eo" data-del="rule">✕</button></div></div>
+            <div class="rule"><span class="rid">CV-UI-002</span><div><span data-edit>Modals reuse <code>modal_style</code></span></div><div><span class="ro"><span class="st bad">🔴 Must fix</span></span><select class="sel eo" data-sev><option value="must" selected>🔴 Must fix</option><option value="should">🟡 Should fix</option><option value="fyi">🔵 FYI</option></select><button class="xbtn eo" data-del="rule">✕</button></div></div>
+            <div class="rule"><span class="rid">CV-UI-003</span><div><span data-edit>Error messages say what went wrong and how to fix it</span></div><div><span class="ro"><span class="st warn">🟡 Should fix</span></span><select class="sel eo" data-sev><option value="must">🔴 Must fix</option><option value="should" selected>🟡 Should fix</option><option value="fyi">🔵 FYI</option></select><button class="xbtn eo" data-del="rule">✕</button></div></div>
+            <div class="rule"><span class="rid">CV-UI-004</span><div><span data-edit>Tables paginate at 20 rows</span></div><div><span class="ro"><span class="st warn">🟡 Should fix</span></span><select class="sel eo" data-sev><option value="must">🔴 Must fix</option><option value="should" selected>🟡 Should fix</option><option value="fyi">🔵 FYI</option></select><button class="xbtn eo" data-del="rule">✕</button></div></div>
+          </div>
+          <div class="pb eo"><button class="addbtn" data-add="convention">+ Add convention</button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= CODING STANDARDS ================= -->
+    <section class="screen" id="s5" data-name="Coding standards">
+      <div class="head">
+        <div><h1>Coding standards <span class="env">Envisioned</span></h1>
+          <p class="sub">Judgement rules, SonarQube checks and golden examples.</p></div>
+        <div class="headr"><button class="btn solid ro" data-startedit>Edit</button></div>
+      </div>
+      <div class="grid">
+        <div class="panel">
+          <div class="ph"><span class="pt">Judgement rules</span><span class="pm"><span id="ruleCount">9</span> of 10 (pilot cap)</span></div>
+          <div id="rules"></div>
+          <div class="pb eo"><button class="addbtn" data-add="rule">+ Add rule</button></div>
+        </div>
+        <div class="panel" id="rcard"></div>
+      </div>
+      <div class="grid2" style="margin-top:18px">
+        <div class="panel" id="suggPanel">
+          <div class="ph"><span class="pt">AI rule suggestions</span><span class="pm">October run</span></div>
+          <div class="sugg" id="sugg1">
+            <div><span class="rid">NEW</span> <b style="color:var(--navy)">Ingestion scripts log a summary when they finish</b><span class="tagx">[logging]</span></div>
+            <div class="meta">Drafted from 5 PR comments</div>
+            <div class="acts"><button class="btn solid" data-sugg="approve">Approve</button><button class="btn quiet" data-sugg="reject">Reject</button></div>
+          </div>
+          <div class="sugg" id="noSugg" style="display:none"><span class="st ok">✅ No suggestions waiting</span></div>
+        </div>
+        <div class="panel">
+          <div class="ph"><span class="pt">Golden examples</span><span class="pm">One per program type</span></div>
+          <div class="gold"><div class="ico">🖥️</div><div><b>Screen</b><span class="pc">shared_callbacks.py</span></div><button class="btn quiet eo" data-toast="Pick a program from the index">Change</button></div>
+          <div class="gold"><div class="ico">⚙️</div><div><b>Batch or ingestion</b><span class="pc">vector_loader.py</span></div><button class="btn quiet eo" data-toast="Pick a program from the index">Change</button></div>
+          <div class="gold"><div class="ico">🧰</div><div><b>Utility</b><span class="pc">tools/file_helpers.py</span></div><button class="btn quiet eo" data-toast="Pick a program from the index">Change</button></div>
+        </div>
+      </div>
+      <div class="grid2" style="margin-top:18px">
+        <div class="panel">
+          <div class="ph"><span class="pt">Automatic checks</span><div class="headr"><span class="st info">Governed in SonarQube</span><button class="btn quiet" data-toast="Opens the SonarQube quality profile">Open in SonarQube</button></div></div>
+          <div class="rule"><span class="rid">SONAR</span><div>Hard-coded password or secret</div><span class="pm">Blocker</span></div>
+          <div class="rule"><span class="rid">SONAR</span><div>Exceptions caught and ignored</div><span class="pm">High</span></div>
+          <div class="rule"><span class="rid">SONAR</span><div>Function too complex</div><span class="pm">Medium</span></div>
+          <div class="rule"><span class="rid">SONAR</span><div>Unused imports and variables</div><span class="pm">Low</span></div>
+          <div class="rule"><span class="rid">SONAR</span><div>Naming not in snake_case</div><span class="pm">Info</span></div>
+        </div>
+        <div class="panel">
+          <div class="ph"><span class="pt">Severity mapping</span><span class="pm">SonarQube → CodeVision</span></div>
+          <table class="tbl sevtbl"><thead><tr><th>SonarQube</th><th>CodeVision</th></tr></thead><tbody>
+            <tr><td>Blocker</td><td><span class="ro"><span class="st bad">🔴 Must fix</span></span><select class="sel eo" data-sev><option value="must" selected>🔴 Must fix</option><option value="should">🟡 Should fix</option><option value="fyi">🔵 FYI</option></select></td></tr>
+            <tr><td>High</td><td><span class="ro"><span class="st bad">🔴 Must fix</span></span><select class="sel eo" data-sev><option value="must" selected>🔴 Must fix</option><option value="should">🟡 Should fix</option><option value="fyi">🔵 FYI</option></select></td></tr>
+            <tr><td>Medium</td><td><span class="ro"><span class="st warn">🟡 Should fix</span></span><select class="sel eo" data-sev><option value="must">🔴 Must fix</option><option value="should" selected>🟡 Should fix</option><option value="fyi">🔵 FYI</option></select></td></tr>
+            <tr><td>Low</td><td><span class="ro"><span class="st info">🔵 FYI</span></span><select class="sel eo" data-sev><option value="must">🔴 Must fix</option><option value="should">🟡 Should fix</option><option value="fyi" selected>🔵 FYI</option></select></td></tr>
+            <tr><td>Info</td><td><span class="ro"><span class="st info">🔵 FYI</span></span><select class="sel eo" data-sev><option value="must">🔴 Must fix</option><option value="should">🟡 Should fix</option><option value="fyi" selected>🔵 FYI</option></select></td></tr>
+          </tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= GENERATION AND REVIEW ================= -->
+    <section class="screen" id="s6" data-name="Generation and review">
+      <div class="head">
+        <div><h1>Generation and review <span class="env">Envisioned</span></h1>
+          <p class="sub">How much code Qwen writes, and how reviews loop and escalate.</p></div>
+        <div class="headr"><button class="btn solid ro" data-startedit>Edit</button></div>
+      </div>
+      <div class="grid2">
+        <div class="col">
+          <div class="panel">
+            <div class="ph"><span class="pt">Generation levels</span></div>
+            <div class="segrow">
+              <div><div class="fl">Default</div><div class="seg" data-seg="def"><button data-l="0">L0</button><button data-l="1">L1</button><button data-l="2">L2</button><button data-l="3" class="lock">L3 🔒</button></div></div>
+              <div><div class="fl">Max</div><div class="seg" data-seg="max"><button data-l="0">L0</button><button data-l="1">L1</button><button data-l="2">L2</button><button data-l="3" class="lock">L3 🔒</button></div></div>
+            </div>
+            <div class="lvl" data-lv="0"><div class="lb">L0</div><div><b>None</b><p>Context sheet only</p></div><div class="mk"></div></div>
+            <div class="lvl" data-lv="1"><div class="lb">L1</div><div><b>Skeleton</b><p>File layout, function names, descriptions, TODOs</p></div><div class="mk"></div></div>
+            <div class="lvl" data-lv="2"><div class="lb">L2</div><div><b>Scaffold</b><p>Skeleton plus config, logging and shared_styles layout</p></div><div class="mk"></div></div>
+            <div class="lvl locked" data-lv="3"><div class="lb">L3</div><div><b>Draft</b><p>Scaffold plus draft business logic</p></div><div class="mk"><span class="st" style="background:#EEF0F4;color:#5A6273">🔒 Locked for pilot</span></div></div>
+          </div>
+          <div class="panel">
+            <div class="ph"><span class="pt">Never-generate zones</span></div>
+            <div class="pb" id="zones">
+              <div class="zonecard"><div class="zt"><span class="zone">🚫 <span data-edit>Security</span></span><button class="xbtn eo" data-del="zone">✕</button></div>
+                <p data-edit data-ph="What this zone covers">Protecting data and access</p>
+                <div class="zx"><b>Examples:</b> <span data-edit data-ph="Comma-separated examples">encryption, tokens, secrets, permission checks</span></div></div>
+              <div class="zonecard"><div class="zt"><span class="zone">🚫 <span data-edit>Login</span></span><button class="xbtn eo" data-del="zone">✕</button></div>
+                <p data-edit data-ph="What this zone covers">Proving who a user is</p>
+                <div class="zx"><b>Examples:</b> <span data-edit data-ph="Comma-separated examples">authentication, sessions, password handling</span></div></div>
+              <button class="addbtn eo" data-add="zone">+ Add zone</button>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="panel">
+            <div class="ph"><span class="pt">Review rounds</span></div>
+            <div class="pb" style="display:flex;justify-content:space-between;align-items:center;gap:12px"><b style="color:var(--navy)">Max rounds before escalation</b><div class="stepr"><i data-step="-1">−</i><span id="rounds">3</span><i data-step="1">+</i></div></div>
+            <table class="tbl"><thead><tr><th>Severity</th><th>Can hand off?</th></tr></thead><tbody>
+              <tr><td><span class="st bad">🔴 Must fix</span></td><td>No, until fixed or escalated</td></tr>
+              <tr><td><span class="st warn">🟡 Should fix</span></td><td>Yes, listed in PR summary</td></tr>
+              <tr><td><span class="st info">🔵 FYI</span></td><td>Yes</td></tr></tbody></table>
+          </div>
+          <div class="panel">
+            <div class="ph"><span class="pt">Escalation triggers</span><span class="pm">Routes to the capability's named senior</span></div>
+            <div class="tgl"><div>Max rounds reached with a Must fix open</div><button class="sw2 on" aria-label="Max rounds trigger"></button></div>
+            <div class="tgl"><div>Request is out of scope</div><button class="sw2 on" aria-label="Out of scope trigger"></button></div>
+            <div class="tgl"><div>Developer disputes a finding</div><button class="sw2 on" aria-label="Dispute trigger"></button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= VERSION HISTORY ================= -->
+    <section class="screen" id="s7" data-name="Version history">
+      <div class="head">
+        <div><h1>Version history <span class="env">Envisioned</span></h1>
+          <p class="sub">Every save creates a new version. Restoring never deletes anything.</p></div>
+        <div class="verpill"><span class="dotlive" aria-hidden="true"></span>
+          <div><div class="v">Active rulebook <span class="activeVer">v3</span></div><div class="d activeDate">Published 29 Sep 2026, 14:35</div></div></div>
+      </div>
+      <div class="vh">
+        <div class="panel"><div class="ph"><span class="pt">Versions</span><span class="pm">Newest first</span></div><ul class="tl" id="tl"></ul></div>
+        <div class="panel" id="detail"></div>
+      </div>
+    </section>
+
+  </div>
+</div>
+<div class="scrim" id="scrim" role="dialog" aria-modal="true" aria-labelledby="mt">
+  <div class="modal"><h3 id="mt"></h3><div class="mbody" id="mbody"></div><div class="mbtns" id="mbtns"></div></div>
+</div>
+<div class="editbar" id="editbar"><div><span class="edot"></span>Editing <b id="ebName"></b></div><div style="display:flex;gap:10px"><button class="btn quiet" id="ebCancel">Cancel</button><button class="btn solid" id="ebSave">Save as new version</button></div></div>
+<div class="toast" id="toast" role="status"></div>
+<div class="notes" id="notes"></div>
+<div class="pres">
+  <button class="btn quiet" id="back">Back</button><span id="count">1 of 8</span>
+  <button class="btn solid" id="next">Next</button><button class="btn quiet" id="nt" title="Presenter notes (N)">Notes</button>
+</div>
+<script>
+
+const N=8;
+const PEOPLE=["Alex Tan","Bea Lim","Chris Ong","Dana Koh","Evan Ng"];
+const ini=n=>n.split(" ").map(w=>w[0]).slice(0,2).join("");
+const SEV={must:["bad","🔴 Must fix"],should:["warn","🟡 Should fix"],fyi:["info","🔵 FYI"]};
+const $=s=>document.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;")}
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("on");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("on"),2800)}
+
+const NOTES=[
+ "<b>Overview.</b> One rulebook in 6 areas, owned by the CodeVision core team. Qwen and the Independent Reviewer read the same rulebook. Click any row to open that area. <b>Needs attention</b> turns Admin into a feedback loop. <b>Rulebook health:</b> avg review rounds (uploads per request before handoff), escalations to seniors, and AI code kept at handoff (share of Qwen's starter lines still present at handoff). Read AI code kept together with findings: high % plus few findings is healthy, high % plus many findings may mean rubber-stamping. All data is illustrative.",
+ "<b>Project charter.</b> CodeVision's job description. The Readiness Gate checks every request against it: aligned continues, unclear asks the developer, out of scope escalates to the named senior. Click <b>Edit charter</b>: the whole charter becomes editable, one save creates one version with a change note. The meter shows size against the limit: green under 80%, amber 80 to 100%, red over 100%. A long charter makes the LLMs follow it less reliably. Content shown is example text, to be written by the core team.",
+ "<b>Repository and index.</b> Qwen never reads Bitbucket live. It searches an index built from <b>main</b> only (feature branches hold unapproved code). Each merge triggers an <b>incremental refresh</b> of changed files only. <b>Full re-index</b> rebuilds everything and is only needed after exclusion or scope changes, or a search model upgrade. Exclusions keep secrets, build output and scratch scripts out. Click <b>2 files skipped</b> to see which files the index could not read and why. Functions found = def blocks across all programs.",
+ "<b>Capability catalog.</b> Admin creates and names capabilities. AI only proposes which existing capability a new program belongs to, or flags it as Unassigned. A program can sit in several capabilities (the ×count). Escalations go to the senior of the capability the request is about, with a backup for leave. Try the search box, the Missing backup filter, and approving a proposal (each approval saves a new version). Groupings are guessed from file names.",
+ "<b>UI standards.</b> Admin mirrors the Bank brand guide into part 1 of shared_styles.py (brand constants). Developers add screen styles in part 2, built only from these constants. Source column shows where each value comes from. UI conventions are rules the Reviewer checks; a finding appears only when code breaks one. Rule IDs are generated automatically and never reused. Checks: raw colors outside shared_styles are flagged automatically, duplicate styles by the Reviewer.",
+ "<b>Coding standards.</b> Three layers. <b>Judgement rules</b>: CodeVision-specific rules the LLM Reviewer checks, capped at 10 for the pilot. Fires % = share of reviews in the last 30 days with at least one finding for that rule; over 50% means too strict or developers need guidance. AI drafts rules from past Bitbucket PR comments at setup and monthly; Admin approves. <b>Automatic checks</b> come from SonarQube and are governed there; Admin only maps severities. <b>Golden examples</b>: one existing program per type that Qwen imitates, and each must pass all rules.",
+ "<b>Generation and review.</b> Admin sets Default and Max. Developers pick a level up to Max on their own request screen. L3 (draft business logic) stays locked for the pilot because of rotating junior developers; AI code kept at handoff decides later. Never-generate zones carry a description and examples so Qwen can recognise them. One round = one developer upload reviewed. Escalation triggers are a fixed list of 3, on or off only; the system checks them in code, not the LLM.",
+ "<b>Version history.</b> Every save creates a new version with a change note. Click an older version to see what changed and which requests are pinned to it. <b>Restore</b> copies an older version into a new one, so nothing is deleted. Requests already in progress finish under their pinned version."
+];
+
+/* ---------- Versions ---------- */
+const V={
+ v3:{date:"29 Sep 2026, 14:35",by:"Bea Lim",sum:"Added a table pagination convention, retagged a logging rule",
+  diff:[["hd","ui_conventions"],["add","+ CV-UI-004  Tables paginate at 20 rows    tags: [UI]  severity: should_fix"],["hd","judgement_rules / CV-PY-007"],["del","- tags: [data]"],["add","+ tags: [data, logging]"]],pins:["CVDA-2026-0004","CVDA-2026-0005","CVDA-2026-0006"]},
+ v2:{date:"25 Sep 2026, 10:12",by:"Alex Tan",sum:"Raised review rounds to 3, added a file path rule",
+  diff:[["hd","review_policy"],["del","- max_review_rounds: 2"],["add","+ max_review_rounds: 3"],["hd","judgement_rules"],["add","+ CV-PY-009  File paths come from config    tags: [general]  severity: must_fix"]],pins:["CVDA-2026-0001"]},
+ v1:{date:"20 Sep 2026, 16:40",by:"Chris Ong",sum:"First rulebook published",
+  diff:[["hd","initial rulebook"],["add","+ charter: 5 sections"],["add","+ judgement_rules: 8"],["add","+ default_level: L2    max_level: L2"],["add","+ never_generate: [security, login]"]],pins:[]}
+};
+let order=["v3","v2","v1"],active="v3",sel="v3",vnum=3;
+function nowStr(){const d=new Date();return "25 Oct 2026, "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")}
+function addVersion(sum,diff,from){
+  vnum++;const id="v"+vnum;
+  V[id]={date:nowStr(),by:"Chris Ong (you)",sum,diff,from,pins:[]};
+  order.unshift(id);active=id;sel=id;
+  $$(".activeVer").forEach(e=>e.textContent=id);
+  $$(".activeDate").forEach(e=>e.textContent="Published "+V[id].date);
+  renderTL(id);renderDetail();return id;
+}
+function renderTL(newId){
+  const tl=$("#tl");
+  tl.innerHTML=order.map(id=>{const v=V[id];
+    return `<li class="tli ${id===active?"active":""}"><div class="rail2"><span class="node"></span></div>
+    <button class="vcard ${id===sel?"sel":""} ${id===newId?"new":""}" data-v="${id}">
+      <div class="vtop"><span class="vname">${id}</span><span class="tags">${id===active?'<span class="tag act">Active</span>':""}${v.from?`<span class="tag rest">Restored from ${v.from}</span>`:""}</span></div>
+      <div class="vsum">${esc(v.sum)}</div><div class="vmeta">${v.date}, ${esc(v.by)}</div></button></li>`}).join("");
+}
+function renderDetail(){
+  const v=V[sel];
+  const pins=v.pins.length?`<div class="pins">${v.pins.map(p=>`<span class="pinc">📌 ${p}</span>`).join("")}</div>`:`<div class="empty">No requests pinned to this version.</div>`;
+  const pinNote=sel===active?"New requests pin to this version.":(v.pins.length?"These requests finish under "+sel+".":"");
+  $("#detail").innerHTML=`<div class="ph"><span class="pt">What changed in ${sel}</span><span class="pm">${v.date}</span></div>
+   <div class="diff">${v.diff.map(l=>`<span class="dl ${l[0]}">${esc(l[1])}</span>`).join("")}</div>
+   <div class="pin"><h4>Requests pinned to ${sel}</h4>${pins}${pinNote?`<p class="pinnote">${pinNote}</p>`:""}
+   <div class="actions">${sel===active?'<span class="st ok">✅ Active rulebook</span>':`<button class="btn solid" id="restore">Restore ${sel}</button>`}</div></div>`;
+}
+
+/* ---------- Modal ---------- */
+function modal(title,body,buttons,focusSel){
+  $("#mt").textContent=title;$("#mbody").innerHTML=body;
+  const b=$("#mbtns");b.innerHTML="";
+  buttons.forEach(x=>{const e=document.createElement("button");e.className="btn "+(x.c||"quiet");e.textContent=x.t;if(x.id)e.id=x.id;e.onclick=x.f;b.append(e)});
+  $("#scrim").classList.add("on");
+  setTimeout(()=>{const f=focusSel?$(focusSel):b.lastChild;f&&f.focus()},30);
+}
+function closeModal(){$("#scrim").classList.remove("on")}
+
+/* ---------- Coding standards ---------- */
+let RULES=[
+ ["CV-PY-001","Data classes use pydantic_classes","data","must","12%","Keeps data shapes consistent and validated.","class AppInfo(BaseModel):  # in pydantic_classes/\n    app_id: str","app = {\"app_id\": ..., \"name\": ...}","Drafted from 5 PR comments"],
+ ["CV-PY-002","Reuse helpers in tools/ before writing new ones","general","should","21%","Stops duplicate helpers spreading across the repo.","from tools.file_utils import read_md","def read_md(path):  # already in tools/","Drafted from 9 PR comments"],
+ ["CV-PY-003","UI styles use shared_styles brand constants","UI","must","9%","One place to change when the brand changes.","style={\"color\": BRAND_BLUE}","style={\"color\": \"#0073CF\"}","Written by Admin"],
+ ["CV-PY-004","Functions state purpose, inputs and outputs","general","should","18%","Helps rotating developers and the knowledge base.","def load(path):\n    \"\"\"Load markdown. Returns list of sections.\"\"\"","def load(path):\n    ...","Drafted from 7 PR comments"],
+ ["CV-PY-005","Errors raise a clear message","general","must","11%","Silent failures hide broken ingestion runs.","raise ValueError(f\"No sections in {path}\")","except Exception:\n    pass","Drafted from 8 PR comments"],
+ ["CV-PY-006","Vector DB access goes through the shared loader","data","must","7%","One place for connection and retry logic.","db = get_vector_store()","db = chromadb.Client(...)  # direct","Written by Admin"],
+ ["CV-PY-007","Never log customer data, mask account numbers","data, logging","must","64%","Logs are widely readable. Customer data must not leak.","log.info(\"Acct %s\", mask(acct_no))","log.info(\"Acct %s\", acct_no)","Drafted from 11 PR comments"],
+ ["CV-PY-008","Long-running jobs report progress","general","fyi","5%","Users can tell a slow job from a stuck one.","log.info(\"Processed %d of %d\", i, total)","# silent loop over 10,000 files","Drafted from 3 PR comments"],
+ ["CV-PY-009","File paths come from config, never hardcoded","general","must","14%","Code must run the same on every machine and in Docker.","path = config.INPUT_DIR","path = \"C:\\\\Users\\\\data\\\\input\"","Drafted from 7 PR comments"]
+];
+let rsel=6,pyNext=10,uiNext=5;
+function renderRules(){
+  $("#rules").innerHTML=RULES.map((r,i)=>{const hot=parseInt(r[4])>50;
+    return `<div class="rrow ${i===rsel?"sel":""}" data-i="${i}" role="button" tabindex="0"><span class="rid">${r[0]}</span><span>${esc(r[1])}<span class="tagx">[${r[2]}]</span></span><span><span class="fire ${hot?"hot":""}" title="Share of reviews in the last 30 days with at least one finding for this rule">${hot?"⚠️ ":""}fires in ${r[4]}</span><button class="xbtn eo" data-delrule="${i}">✕</button></span></div>`}).join("");
+  $("#ruleCount").textContent=RULES.length;
+}
+function renderCard(){
+  if(!RULES.length){$("#rcard").innerHTML='<div class="ph"><span class="pt">Rule card</span></div><div class="pb empty">No rules.</div>';return}
+  if(rsel>=RULES.length)rsel=0;
+  const r=RULES[rsel],s=SEV[r[3]],hot=parseInt(r[4])>50;
+  $("#rcard").innerHTML=`<div class="ph"><span class="pt">Rule card</span><span class="st ${s[0]}">${s[1]}</span></div>
+  <div class="cardk"><span class="rid">${r[0]}</span><h3>${esc(r[1])}</h3>
+  <dl class="kv"><dt>Why</dt><dd>${esc(r[5])}</dd><dt>Tags</dt><dd>${r[2]}</dd><dt>Checked by</dt><dd>Independent Reviewer</dd><dt>Source</dt><dd>${r[8]}</dd><dt>Fires in</dt><dd>${r[4]} of reviews ${hot?"<span class='st warn'>⚠️ Review this rule</span>":""}</dd></dl>
+  ${r[6]?`<div class="sl" style="color:var(--green)">✅ Good</div><div class="snip a">${esc(r[6])}</div>`:""}
+  ${r[7]?`<div class="sl" style="color:var(--red)">❌ Bad</div><div class="snip b">${esc(r[7])}</div>`:""}</div>`;
+}
+
+/* ---------- Generation levels ---------- */
+let def=2,max=2;
+function renderSeg(){
+  $$('.seg[data-seg="def"] button').forEach(b=>b.classList.toggle("on",+b.dataset.l===def));
+  $$('.seg[data-seg="max"] button').forEach(b=>b.classList.toggle("on",+b.dataset.l===max));
+  $$(".lvl[data-lv]").forEach(l=>{const n=+l.dataset.lv;l.classList.toggle("def",n===def);
+    if(n<3){const mk=l.querySelector(".mk");mk.innerHTML=(n===def?'<span class="st info">Default</span>':"")+(n===max?'<span class="st ok">Max</span>':"")}});
+}
+
+/* ---------- Charter meter ---------- */
+const LIMIT=200;
+function meter(){
+  const words=$$("#charterBody [data-edit]").map(e=>e.textContent).join(" ").split(/\s+/).filter(Boolean).length;
+  const pct=Math.round(words/LIMIT*100);
+  $("#limPct").textContent=pct+"%";
+  const m=$("#meter");m.classList.remove("lim-ok","lim-warn","lim-over");
+  m.classList.add(pct>100?"lim-over":pct>=80?"lim-warn":"lim-ok");
+  m.querySelector(".bar i").style.width=Math.min(pct,100)+"%";
+}
+
+/* ---------- Edit mode ---------- */
+let editing=null,snap=null,snapState=null,dirtyEx=false;
+function startEdit(sec){
+  if(editing)return;
+  editing=sec;snap=sec.innerHTML;snapState={rules:RULES.map(r=>r.slice()),def,max,pyNext,uiNext,rsel};dirtyEx=false;
+  sec.classList.add("editing");
+  $$("[data-edit]",sec).forEach(e=>e.contentEditable="true");
+  $("#ebName").textContent=sec.dataset.name;
+  $("#editbar").classList.add("on");$(".pres").style.display="none";$("#notes").classList.remove("on");
+}
+function finishEdit(){
+  const sec=editing;sec.classList.remove("editing");
+  $$("[contenteditable]",sec).forEach(e=>e.removeAttribute("contenteditable"));
+  editing=null;$("#editbar").classList.remove("on");$(".pres").style.display="";
+}
+function cancelEdit(){
+  const sec=editing;sec.innerHTML=snap;
+  RULES=snapState.rules;def=snapState.def;max=snapState.max;pyNext=snapState.pyNext;uiNext=snapState.uiNext;rsel=snapState.rsel;
+  finishEdit();
+  if(sec.id==="s5"){renderRules();renderCard()}
+  if(sec.id==="s6")renderSeg();
+  if(sec.id==="s1")meter();
+  if(sec.id==="s3")filterCat();
+  toast("Changes discarded.");
+}
+function saveEdit(){
+  const name=editing.dataset.name;
+  modal("Save as new version?",
+   `<div class="mfield"><label for="cnote">Change note</label><textarea id="cnote" class="ta" placeholder="e.g. Added Remittance onboarding to scope"></textarea></div><ul><li>Applies to <b>new</b> requests only.</li><li>Requests in progress keep their pinned version.</li></ul>`,
+   [{t:"Back to editing",c:"quiet",f:closeModal},{t:"Save as "+("v"+(vnum+1)),c:"solid",id:"msave",f:()=>{
+      const note=$("#cnote").value.trim();if(!note)return;
+      const sec=editing;const id=addVersion(note,[["hd",name.toLowerCase()],["ctx","  "+note]]);
+      finishEdit();closeModal();toast(`Saved as ${id}. Applies to new requests.`);
+      if(sec.id==="s2"&&dirtyEx)setTimeout(askReindex,300);
+   }}],"#cnote");
+  $("#msave").disabled=true;
+  $("#cnote").addEventListener("input",e=>{$("#msave").disabled=!e.target.value.trim()});
+}
+function askReindex(){
+  modal("Run a full re-index?",`<ul><li>Exclusions changed, so the index must be rebuilt.</li><li>Re-reads all 48 programs. Takes a few minutes.</li></ul>`,
+   [{t:"Later",c:"quiet",f:closeModal},{t:"Run full re-index",c:"solid",f:runReindex}]);
+}
+function runReindex(){
+  closeModal();$("#idxState").textContent="Re-indexing…";$("#idxAge").textContent="Full re-index in progress";
+  setTimeout(()=>{$("#idxState").textContent="Index is fresh";$("#idxAge").textContent="Last indexed just now";$("#idxAgeN").textContent="0 min";
+    $("#runs").insertAdjacentHTML("afterbegin",'<div class="run"><div>Full re-index<small>a41c9e2, just now</small></div><span class="st ok">✅ Done</span></div>');toast("Full re-index complete.")},1600);
+}
+
+/* ---------- Catalog ---------- */
+let missingOnly=false;
+function filterCat(){
+  const q=($("#capq").value||"").toLowerCase().trim();let shown=0;
+  $$("#capTable tbody tr").forEach(r=>{
+    const txt=r.innerText.toLowerCase()+" "+$$("select",r).map(s=>s.value.toLowerCase()).join(" ");
+    const ok=(!q||txt.includes(q))&&(!missingOnly||r.dataset.missing==="1");
+    r.style.display=ok?"":"none";if(ok)shown++;
+  });
+  $("#nores").style.display=shown?"none":"block";
+}
+function personHTML(n){return n?`<span class="av2">${ini(n)}</span>${esc(n)}`:'<span class="st warn">⚠️ Missing</span>'}
+function selHTML(n){return `<select class="sel eo" data-person><option value="">Not assigned</option>${PEOPLE.map(p=>`<option${p===n?" selected":""}>${p}</option>`).join("")}</select>`}
+function chip(f){return `<span class="pc">${esc(f)}<button class="xbtn eo" data-del="pc">✕</button></span>`}
+function updCounts(){
+  const n=$$("#props .prop[data-f]").length;
+  $$(".catN").forEach(e=>e.textContent=n);
+  if(!n){$("#noProps").style.display="block";$$(".catAttn").forEach(e=>e.remove());const s=$(".catStatus");if(s){s.className="st ok";s.textContent="✅ Up to date"}}
+  const miss=$$('#capTable tr[data-missing="1"]').length;
+  if(!miss)$$(".missAttn").forEach(e=>e.remove());
+}
+function recount(){
+  const counts={};$$("#capTable .pc").forEach(p=>{const n=p.childNodes[0].textContent.trim();counts[n]=(counts[n]||0)+1});
+  $$("#capTable .pc").forEach(p=>{const n=p.childNodes[0].textContent.trim();let c=p.querySelector(".cnt");
+    if(counts[n]>1){if(!c){c=document.createElement("span");c.className="cnt";p.insertBefore(c,p.querySelector(".xbtn"))}c.textContent="×"+counts[n]}else if(c)c.remove()});
+}
+function addChipTo(capName,file){
+  const row=$$("#capTable tbody tr").find(r=>r.dataset.cap===capName);if(!row)return;
+  row.querySelector(".progs .addprog").insertAdjacentHTML("beforebegin",chip(file));recount();
+}
+
+/* ---------- Navigation ---------- */
+let screen=0;
+function go(n){
+  if(editing){toast("Save or cancel your changes first.");return}
+  screen=Math.max(0,Math.min(N-1,n));
+  $$(".screen").forEach(s=>s.classList.toggle("on",s.id==="s"+screen));
+  $$(".tab[data-go]").forEach(t=>t.classList.toggle("on",+t.dataset.go===screen));
+  const on=$(".tab.on");if(on)on.scrollIntoView({block:"nearest",inline:"nearest"});
+  $("#count").textContent=(screen+1)+" of "+N;$("#notes").innerHTML=NOTES[screen];
+  $("#back").disabled=screen===0;$("#next").disabled=screen===N-1;window.scrollTo(0,0);
+}
+
+/* ---------- Delegated events ---------- */
+document.addEventListener("click",e=>{
+  const t=e.target;let el;
+  if(t.closest(".modal")||t.closest("#editbar"))return;
+  if(el=t.closest("[data-startedit]")){startEdit(el.closest(".screen"));return}
+  if(el=t.closest("[data-del]")){
+    const k=el.dataset.del;
+    if(k==="pc"){el.closest(".pc").remove();recount();return}
+    if(k==="li"){el.closest("li").remove();meter();return}
+    if(k==="tr"){const tb=el.closest("table");el.closest("tr").remove();if(tb.id==="exTable"){dirtyEx=true;$("#exCount").textContent=$$("#exTable tbody tr").length}meter();return}
+    if(k==="rule"){el.closest(".rule").remove();return}
+    if(k==="zone"){el.closest(".zonecard").remove();return}
+    if(k==="cap"){const r=el.closest("tr");if(r.querySelector(".pc")){toast("Move or remove its programs first.");return}r.remove();return}
+  }
+  if(el=t.closest("[data-delrule]")){e.stopPropagation();RULES.splice(+el.dataset.delrule,1);renderRules();renderCard();return}
+  if(el=t.closest("[data-add]")){
+    const k=el.dataset.add;
+    if(k==="li"){const ul=el.parentElement.querySelector("ul");ul.insertAdjacentHTML("beforeend",'<li><span data-edit contenteditable="true" data-ph="New item"></span><button class="xbtn eo" data-del="li">✕</button></li>');ul.lastElementChild.querySelector("span").focus();return}
+    if(k==="term"){const tb=el.parentElement.querySelector("tbody");tb.insertAdjacentHTML("beforeend",'<tr><td><b data-edit contenteditable="true" data-ph="Term"></b></td><td><span data-edit contenteditable="true" data-ph="What it means in CodeVision"></span></td><td class="eo"><button class="xbtn" data-del="tr">✕</button></td></tr>');tb.lastElementChild.querySelector("b").focus();return}
+    if(k==="exclusion"){const tb=$("#exTable tbody");tb.insertAdjacentHTML("beforeend",'<tr><td><span class="pc" data-edit contenteditable="true" data-ph="pattern"></span></td><td><span data-edit contenteditable="true" data-ph="Why exclude it"></span></td><td><span data-edit contenteditable="true" data-ph="Type"></span></td><td class="eo"><button class="xbtn" data-del="tr">✕</button></td></tr>');tb.lastElementChild.querySelector(".pc").focus();dirtyEx=true;$("#exCount").textContent=$$("#exTable tbody tr").length;return}
+    if(k==="capability"){const tb=$("#capTable tbody");tb.insertAdjacentHTML("beforeend",`<tr data-cap="" data-missing="1"><td><b data-edit contenteditable="true" data-ph="Capability name"></b></td><td class="progs"><button class="addbtn eo addprog" data-add="prog">+ Program</button></td><td><span class="ro">${personHTML("")}</span>${selHTML("")}</td><td><span class="ro">${personHTML("")}</span>${selHTML("")}</td><td class="eo"><button class="xbtn" data-del="cap">✕</button></td></tr>`);tb.lastElementChild.querySelector("b").focus();return}
+    if(k==="prog"){el.insertAdjacentHTML("beforebegin",'<span class="pc"><span contenteditable="true" data-ph="program.py"></span><button class="xbtn eo" data-del="pc">✕</button></span>');el.previousElementSibling.firstChild.focus();return}
+    if(k==="constant"){const tb=$("#constTable tbody");tb.insertAdjacentHTML("beforeend",`<tr><td><div class="chipc tbd" style="width:28px;height:28px"></div></td><td><span class="mono" data-edit contenteditable="true" data-ph="NAME"></span></td><td><span class="mono" data-edit contenteditable="true" data-ph="value"></span></td><td><span class="ro">Core team</span><select class="sel eo" data-src><option>Bank brand guide</option><option selected>Core team</option></select></td><td class="eo"><button class="xbtn" data-del="tr">✕</button></td></tr>`);tb.lastElementChild.querySelector(".mono").focus();return}
+    if(k==="convention"){const id="CV-UI-"+String(uiNext++).padStart(3,"0");$("#uiConv").insertAdjacentHTML("beforeend",`<div class="rule"><span class="rid">${id}</span><div><span data-edit contenteditable="true" data-ph="Describe the convention"></span></div><div><span class="ro"><span class="st warn">🟡 Should fix</span></span><select class="sel eo" data-sev><option value="must">🔴 Must fix</option><option value="should" selected>🟡 Should fix</option><option value="fyi">🔵 FYI</option></select><button class="xbtn eo" data-del="rule">✕</button></div></div>`);$("#uiConv").lastElementChild.querySelector("[data-edit]").focus();return}
+    if(k==="zone"){el.insertAdjacentHTML("beforebegin",'<div class="zonecard"><div class="zt"><span class="zone">🚫 <span data-edit contenteditable="true" data-ph="Zone name"></span></span><button class="xbtn eo" data-del="zone">✕</button></div><p data-edit contenteditable="true" data-ph="What this zone covers"></p><div class="zx"><b>Examples:</b> <span data-edit contenteditable="true" data-ph="Comma-separated examples"></span></div></div>');el.previousElementSibling.querySelector("[data-edit]").focus();return}
+    if(k==="rule"){if(RULES.length>=10){toast("Pilot cap is 10 rules. Remove one first.");return}
+      modal("Add judgement rule",`<div class="mfield"><label>Rule</label><input id="nrText" class="inp2" placeholder="e.g. Excel outputs use the shared report writer"></div><div class="mfield"><label>Tags</label><input id="nrTags" class="inp2" placeholder="e.g. data, logging"></div><div class="mfield"><label>Severity</label><select id="nrSev" class="sel"><option value="must">🔴 Must fix</option><option value="should" selected>🟡 Should fix</option><option value="fyi">🔵 FYI</option></select></div><div class="mfield"><label>Good example</label><input id="nrGood" class="inp2 mono"></div><div class="mfield"><label>Bad example</label><input id="nrBad" class="inp2 mono"></div>`,
+       [{t:"Cancel",c:"quiet",f:closeModal},{t:"Add rule",c:"solid",f:()=>{const tx=$("#nrText").value.trim();if(!tx)return;
+         const id="CV-PY-"+String(pyNext++).padStart(3,"0");RULES.push([id,tx,$("#nrTags").value.trim()||"general",$("#nrSev").value,"0%","Added by Admin.",$("#nrGood").value,$("#nrBad").value,"Written by Admin"]);rsel=RULES.length-1;renderRules();renderCard();closeModal()}}],"#nrText");return}
+  }
+  if(el=t.closest(".rrow")){rsel=+el.dataset.i;renderRules();renderCard();return}
+  if(el=t.closest(".seg button")){
+    if(!editing)return;const l=+el.dataset.l,k=el.parentElement.dataset.seg;
+    if(l===3){toast("L3 is locked for the pilot.");return}
+    if(k==="max"){max=l;if(def>max)def=max}else{if(l>max){toast("Default can't be above Max.");return}def=l}
+    renderSeg();return}
+  if(el=t.closest(".stepr i")){const r=$("#rounds");r.textContent=Math.max(1,Math.min(5,+r.textContent+ +el.dataset.step));return}
+  if(el=t.closest(".sw2")){el.classList.toggle("on");return}
+  if(el=t.closest(".opt")){if(!editing)return;$$("#refreshOpts .opt").forEach(o=>o.classList.toggle("on",o===el));return}
+  if(el=t.closest(".vcard")){sel=el.dataset.v;renderTL();renderDetail();return}
+  if(t.id==="restore"){const src=sel;
+    modal(`Restore ${src} as v${vnum+1}?`,`<ul><li>v${vnum+1} becomes the active rulebook for <b>new</b> requests.</li><li>Requests in progress keep their pinned version.</li><li>${active} stays in history.</li></ul>`,
+     [{t:"Cancel",c:"quiet",f:closeModal},{t:`Restore as v${vnum+1}`,c:"solid",f:()=>{const was=active;const id=addVersion(`Restored the rules from ${src}`,[["hd","restored from "+src],["ctx","  Same rules as "+src+". "+was+" remains in history."]],src);closeModal();toast(`Restored. ${id} is now active, copied from ${src}.`)}}]);return}
+  if(t.id==="skipBtn"){modal("2 files skipped in 77f3a2c",`<table class="tbl mini"><tr><th>File</th><th>Reason</th></tr><tr><td><span class="pc">diagram_from_docs.py</span></td><td>Syntax error, line 84</td></tr><tr><td><span class="pc">field_def_reader.py</span></td><td>Encoding is not UTF-8</td></tr></table><p class="hint" style="margin:10px 0 0">Picked up on the next merge once fixed.</p>`,[{t:"Close",c:"solid",f:closeModal}]);return}
+  if(t.id==="fullReindex"){modal("Run a full re-index?",`<ul><li>Re-reads all 48 programs and rebuilds the index.</li><li>Takes a few minutes.</li><li>Needed only after exclusion or scope changes, or a search model upgrade.</li></ul>`,[{t:"Cancel",c:"quiet",f:closeModal},{t:"Run full re-index",c:"solid",f:runReindex}]);return}
+  if(el=t.closest("[data-prop]")){const p=el.closest(".prop"),f=p.dataset.f,a=el.dataset.prop;
+    if(a==="approve"){addChipTo(p.dataset.to,f);p.remove();updCounts();const id=addVersion(`Approved ${f} into ${p.dataset.to}`,[["hd","capability_catalog / "+p.dataset.to],["add","+ "+f]]);toast(`Approved. Saved as ${id}.`);return}
+    if(a==="reject"){p.remove();updCounts();toast(`Rejected. ${f} stays out of the catalog.`);return}
+    if(a==="assign"){const cap=$("#assignSel").value;addChipTo(cap,f);p.remove();updCounts();const id=addVersion(`Assigned ${f} to ${cap}`,[["hd","capability_catalog / "+cap],["add","+ "+f]]);toast(`Assigned to ${cap}. Saved as ${id}.`);return}
+    if(a==="newcap"){startEdit($("#s3"));$('[data-add="capability"]').click();toast("Name the new capability, then add the program.");return}}
+  if(el=t.closest("[data-sugg]")){
+    if(el.dataset.sugg==="approve"){if(RULES.length>=10){toast("Pilot cap reached (10 of 10). Retire a rule first, then approve.");return}
+      const id="CV-PY-"+String(pyNext++).padStart(3,"0");RULES.push([id,"Ingestion scripts log a summary when they finish","logging","should","0%","Shows files read, skipped and failed at a glance.","log.info(\"Done: %d read, %d skipped\", ok, skipped)","# script ends silently","Drafted from 5 PR comments"]);
+      rsel=RULES.length-1;renderRules();renderCard();const v=addVersion(`Approved AI rule suggestion ${id}`,[["hd","judgement_rules"],["add","+ "+id+"  Ingestion scripts log a summary    tags: [logging]  severity: should_fix"]]);toast(`Approved as ${id}. Saved as ${v}.`)}
+    else toast("Rejected. It won't be suggested again.");
+    $("#sugg1").remove();$("#noSugg").style.display="block";$$(".suggAttn").forEach(x=>x.remove());const s=$(".suggStatus");if(s){s.className="st ok";s.textContent="✅ Up to date"}return}
+  if(el=t.closest("[data-toast]")){toast(el.dataset.toast);return}
+  if(el=t.closest("[data-go]")){
+    if(el.hasAttribute("data-rule")){rsel=+el.dataset.rule;renderRules();renderCard()}
+    go(+el.dataset.go);
+    if(el.hasAttribute("data-missing")&&!editing){missingOnly=true;$("#fMissing").classList.add("on");filterCat()}
+    return}
+  if(t.id==="fMissing"){missingOnly=!missingOnly;t.classList.toggle("on",missingOnly);filterCat();return}
+});
+document.addEventListener("change",e=>{
+  const t=e.target;
+  if(t.matches("[data-person]")){t.previousElementSibling.innerHTML=personHTML(t.value);const r=t.closest("tr");if(r&&t.parentElement===r.children[3])r.dataset.missing=t.value?"0":"1";updCounts();}
+  if(t.matches("[data-sev]")){const s=SEV[t.value];t.previousElementSibling.innerHTML=`<span class="st ${s[0]}">${s[1]}</span>`}
+  if(t.matches("[data-src]")){t.previousElementSibling.textContent=t.value}
+});
+document.addEventListener("input",e=>{
+  if(e.target.id==="capq"){filterCat();return}
+  if(e.target.closest&&e.target.closest("#charterBody"))meter();
+  if(e.target.closest&&e.target.closest("#exTable"))dirtyEx=true;
+  if(e.target.closest&&e.target.closest("#capTable b[data-edit]")){const r=e.target.closest("tr");r.dataset.cap=e.target.textContent.trim()}
+});
+$("#ebCancel").onclick=cancelEdit;$("#ebSave").onclick=saveEdit;
+$("#scrim").onclick=e=>{if(e.target.id==="scrim")closeModal()};
+$("#back").onclick=()=>go(screen-1);$("#next").onclick=()=>go(screen+1);
+$("#nt").onclick=()=>$("#notes").classList.toggle("on");
+document.addEventListener("keydown",e=>{
+  if($("#scrim").classList.contains("on")){if(e.key==="Escape")closeModal();return}
+  const tg=e.target;if(editing||tg.isContentEditable||/INPUT|SELECT|TEXTAREA/.test(tg.tagName))return;
+  if(e.key==="Enter"&&tg.matches(".row.link,.rrow")){tg.click();return}
+  if(e.key==="ArrowRight")go(screen+1);
+  if(e.key==="ArrowLeft")go(screen-1);
+  if(e.key==="n"||e.key==="N")$("#notes").classList.toggle("on");
+});
+renderRules();renderCard();renderTL();renderDetail();renderSeg();recount();meter();go(0);
+
+</script>
+</body>
+</html>
