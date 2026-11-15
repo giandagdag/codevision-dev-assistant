@@ -64,7 +64,7 @@ def test_confirm_starts_a_build(make_settings, published_rulebook, monkeypatch):
     settings = settings_for(make_settings)
     started = []
     monkeypatch.setattr(
-        cb, "start_rebuild", lambda policy, who: started.append(who) or (True, "ok")
+        cb, "start_rebuild", lambda policy, who, provider="": started.append(who) or (True, "ok")
     )
     cb.rebuild_action(settings, REBUILD_CONFIRM)
     assert started == [settings.developer_id]

@@ -80,7 +80,8 @@ def test_compare_lists_the_changed_path(make_settings, seed_rulebook, published_
 
     text = all_text(content)
     assert "What changed v1 to v2" in text
-    assert "policy.build_max_rounds" in text
+    assert "Max fix rounds" in text
+    assert "build_max_rounds" not in text  # AF-2: plain words only
 
 
 def test_restore_asks_first_with_the_note_filled_in_and_writes_nothing(

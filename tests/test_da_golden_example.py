@@ -21,7 +21,19 @@ def contract():
 
 def _example(kind: str) -> GoldenExample:
     body = "\n".join(f"line_{n} = {n}" for n in range(200))
-    return GoldenExample(title="Made-up model", code=body, program_type=kind, why="Short.")
+    return GoldenExample(title=f"Made-up {kind} model", code=body, program_type=kind, why="Short.")
+
+
+@pytest.mark.parametrize(
+    ("given", "tags", "expected"),
+    [("", ["screen"], "Screen"), ("", ["batch or ingestion"], "Batch or ingestion"),
+     ("", ["loans"], "Utility"), ("", [], "Utility"), ("Screen", [], "Screen"),
+     ("typo", [], "Utility")],
+)
+def test_program_type_is_always_one_of_the_three(given, tags, expected):
+    """Review round 1: a free-text type never silently drops the example from the prompt."""
+    example = GoldenExample(title="t", code="x", tags=tags, program_type=given)
+    assert example.program_type == expected
 
 
 @pytest.mark.parametrize(
@@ -47,7 +59,8 @@ def test_the_code_prompt_gets_the_first_80_lines_of_the_matching_example(
     )
     prompt = agent.build_code_prompt(context, contract, "src/layouts/da_x.py", "create", 1, "T", "")
 
-    assert HEADING in prompt and "Made-up model" in prompt
+    assert HEADING in prompt and "Made-up Screen model" in prompt
+    assert "Made-up Utility model" not in prompt  # only the matching type is sent
     assert f"line_{MAX_LINES - 1} = " in prompt and f"line_{MAX_LINES} = " not in prompt
 
 

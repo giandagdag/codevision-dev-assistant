@@ -52,7 +52,7 @@ def test_runs_keep_the_last_ten_and_never_store_code_text(tmp_path):
 
     assert len(runs) == KEPT_RUNS and runs[0]["saved"] is False
     assert "❌ Not saved" in run_line(runs[0])
-    assert "⚠️ 1 pieces skipped" in run_line(runs[1])
+    assert "⚠️ 1 piece skipped" in run_line(runs[1])
 
 
 def test_repo_view_shows_connection_refresh_and_fixed_skips(
@@ -63,7 +63,7 @@ def test_repo_view_shows_connection_refresh_and_fixed_skips(
     text = all_text(repo_view(published_rulebook, [("DA_SEARCH_TOP_K", "20")]))
 
     assert "Branch indexed: main 🔒" in text
-    assert "Folder scope: src/data/da_fake_codevision" in text
+    assert "Folder scope:" in text and "src/data/da_fake_codevision" in text  # path in a code chip
     assert "On every merge to main" in text and "Not connected yet" in text
     assert "🔒 da_*" in text and "Always skipped." in text
     assert "Search results per query: 20" in text

@@ -118,9 +118,12 @@ class Capability(_RulebookPart):
     path_patterns: list[str] = Field(min_length=1)
 
 
+PROGRAM_TYPES = ("Screen", "Batch or ingestion", "Utility")
+
+
 class GoldenExample(_RulebookPart):
-    """A model piece of code Admin keeps as a good example. Stored only in Phase 11: it is not
-    sent to any AI call yet (decision D-H)."""
+    """A model piece of code Admin keeps as a good example. Since fix 11-1 the Generator's code
+    prompt gets the example of the file's program type (never the Tester or Understand)."""
 
     title: str = Field(min_length=1)
     tags: list[str] = Field(default_factory=list)
@@ -134,8 +137,10 @@ class GoldenExample(_RulebookPart):
 
     @model_validator(mode="after")
     def _default_program_type(self):
-        if not self.program_type.strip():
-            self.program_type = self.tags[0] if self.tags else "Utility"
+        # Only the three real types count; a first tag like "screen" maps to "Screen", anything
+        # else to Utility, so an example is never silently left out of the Generator prompt.
+        wanted = (self.program_type.strip() or (self.tags[0] if self.tags else "")).lower()
+        self.program_type = next((t for t in PROGRAM_TYPES if t.lower() == wanted), "Utility")
         return self
 
 

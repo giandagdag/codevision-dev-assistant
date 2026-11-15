@@ -19,7 +19,7 @@ import dash_mantine_components as dmc
 from dash import dcc, html
 
 from agents.da_admin_access import NOT_ADMIN_MESSAGE
-from agents.da_admin_diff import text_line_diff
+from agents.da_admin_diff import plain_diff_lines
 from agents.da_admin_forms import (
     ADVANCED_LIMIT_FIELDS,
     CORE_BUILD_FIELDS,
@@ -51,6 +51,7 @@ from layouts.da_admin_index_panels import (
 )
 from layouts.da_admin_ui_standards import brand_panel, convention_rows, rule_cards
 from pydantic_classes.da_rulebook_models import (
+    PROGRAM_TYPES,
     SONAR_SEVERITY_KEYS,
     Charter,
     Policy,
@@ -343,6 +344,7 @@ def saved_notice(version_number: int, warnings: list[str]):
 # --- Shared list table (zones, protected files, glossary, charter lists; 11b reuses it) ---
 
 
+CODE_COLUMNS = ("good_example", "bad_example", "code")  # drawn in a code box in the read view
 READONLY = "readonly"  # a cell kind: a disabled input that is still read back like any cell
 
 
@@ -410,7 +412,12 @@ def _table_row(tab, table_id, columns, index, row, editable, kinds, static, mova
             cells.append(dmc.TableTd(widget))
         else:
             shown = _plain(value) if col == "severity" else value
-            cells.append(dmc.TableTd(dmc.Text(shown, size="sm", style={"whiteSpace": "pre-wrap"})))
+            if col in CODE_COLUMNS or table_id == "protected_files":  # code and paths: code box
+                cells.append(dmc.TableTd(dmc.Code(shown, block=True)))
+            else:
+                cells.append(
+                    dmc.TableTd(dmc.Text(shown, size="sm", style={"whiteSpace": "pre-wrap"}))
+                )
     if editable:
         buttons = [
             dmc.Button(
@@ -539,7 +546,7 @@ RULE_COLUMNS = (
     "bad_example",
     "source",
 )
-GOLDEN_COLUMNS = ("title", "tags", "code", "why")
+GOLDEN_COLUMNS = ("title", "program_type", "module_path", "tags", "code", "why")
 SEVERITY_WORDS = {"must_fix": "Must fix", "should_fix": "Should fix", "fyi": "FYI"}
 # The stored value stays must_fix (the server checks it); the person reads the plain words (AF-2).
 SEVERITY_CHOICES = [{"value": key, "label": words} for key, words in SEVERITY_WORDS.items()]
@@ -645,10 +652,44 @@ def _coding_extras(version: RulebookVersion, editable: bool, draft: dict | None)
         ),
         _section("SonarQube severity map", _sonar_map(policy, editable, draft)),
         _section(
-            "Golden examples (stored only, not sent to any AI call yet)",
-            list_table(TAB_CODING, "golden_examples", GOLDEN_COLUMNS, golden, editable),
+            "Golden examples (the Generator follows the one that matches the program type)",
+            list_table(
+                TAB_CODING,
+                "golden_examples",
+                GOLDEN_COLUMNS,
+                golden,
+                editable,
+                kinds={"program_type": list(PROGRAM_TYPES), "module_path": READONLY},
+            )
+            if editable
+            else _golden_cards(golden),
         ),
     ]
+
+
+def _golden_cards(examples: list[dict]):
+    """Read view: one card per example, with its program type, module and the code in a box."""
+    if not examples:
+        return dmc.Text("No golden examples yet.", style=da_styles.EMPTY_TEXT)
+    cards = []
+    for g in examples:
+        head = [
+            dmc.Text(g["title"], fw=600, size="sm"),
+            dmc.Badge(g["program_type"], variant="light"),
+        ]
+        if g.get("module_path"):
+            head.append(dmc.Badge(g["module_path"], variant="outline", tt="none"))
+        cards.append(
+            html.Div(
+                [
+                    dmc.Group(head, gap="xs"),
+                    dmc.Text(g["why"], size="xs", c=da_styles.MUTED),
+                    dmc.Code("\n".join(g["code"].splitlines()[:12]), block=True),
+                ],
+                style=da_styles.PANEL_SECTION,
+            )
+        )
+    return dmc.Stack(cards, gap="xs")
 
 
 def _sonar_map(policy: Policy, editable: bool, draft: dict | None):
@@ -1294,7 +1335,9 @@ def _connection(policy: Policy, editable: bool, draft: dict | None):
             )
         )
     else:
-        lines.append(dmc.Text(f"Folder scope: {scope or '(default)'}", size="sm"))
+        lines.append(
+            dmc.Group([dmc.Text("Folder scope:", size="sm"), dmc.Code(scope or "(default)")], gap=4)
+        )
     return dmc.Stack(lines, gap=2)
 
 
@@ -1519,16 +1562,8 @@ def _diff_lines(old_number: int, new_number: int, diff):
     title = dmc.Text(f"What changed v{old_number} to v{new_number}", size="sm", fw=600, mt="sm")
     if diff.is_empty:
         return html.Div([title, dmc.Text("No changes.", size="sm")])
-    lines: list = [title]
-    for path, value in diff.added.items():
-        lines.append(dmc.Text(f"+ {path}: {value}", size="xs"))
-    for path, value in diff.removed.items():
-        lines.append(dmc.Text(f"- {path}: {value}", size="xs"))
-    for path, (old, new) in diff.changed.items():
-        lines.append(dmc.Text(f"~ {path}: {old} -> {new}", size="xs"))
-        for line in text_line_diff(old, new):
-            lines.append(dmc.Text(line, size="xs", style={"whiteSpace": "pre-wrap"}))
-    return html.Div(lines)
+    # Same plain words as the side panel: headings and + / - lines, no raw field names (AF-2).
+    return html.Div([title, *_plain_diff(plain_diff_lines(diff))])
 
 
 def _section(title: str, body):
@@ -1590,7 +1625,10 @@ def _areas_table(areas):
                 dmc.TableTd(_chips(row.summary)),
                 dmc.TableTd(
                     dmc.Badge(
-                        row.status, style=admin_styles.pill_style(row.status), variant="light"
+                        STATUS_WORDS.get(row.status, row.status),
+                        style=admin_styles.pill_style(row.status),
+                        variant="light",
+                        tt="none",
                     )
                 ),
                 dmc.TableTd(row.last_changed),
@@ -1601,6 +1639,8 @@ def _areas_table(areas):
     return dmc.Table([head, dmc.TableTbody(rows)])
 
 
+# The status colour is a code value; an Admin reads these words, not "green" or "amber".
+STATUS_WORDS = {"green": "✅ Up to date", "amber": "⚠️ To review", "red": "❌ Needs fixing"}
 AREA_ICONS = {
     "Project charter": "📜",
     "Repository and index": "🗂",
@@ -1625,9 +1665,10 @@ def _attention_list(items):
             dmc.Group(
                 [
                     dmc.Badge(
-                        item.level,
+                        STATUS_WORDS.get(item.level, "ℹ️ For your information"),
                         style=admin_styles.pill_style("red" if item.level == "red" else "amber"),
                         variant="light",
+                        tt="none",
                     ),
                     dmc.Text(item.text, size="sm"),
                     dmc.Button(
