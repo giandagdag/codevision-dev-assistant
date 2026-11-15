@@ -8,8 +8,10 @@ Record N in one is key N in the other, so both are saved together or not at all.
 import json
 import os
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from fnmatch import fnmatch
 from pathlib import Path
 
 import faiss
@@ -45,14 +47,23 @@ def _is_product_code(path: str) -> bool:
     return not any(part.startswith("da_") for part in Path(path).parts)
 
 
+def _is_excluded(path: str, patterns: Sequence[str]) -> bool:
+    # The leading "/" lets a pattern like "*/build/*" match a top-level build folder too.
+    return any(fnmatch(path, p) or fnmatch("/" + path, p) for p in patterns)
+
+
 def build_index(
     source: Path,
     out_dir: Path,
     embedder: Embedder,
     now: datetime | None = None,
     say=print,
+    extra_exclusions: Sequence[str] = (),
 ) -> BuildSummary:
-    pieces = [p for p in split_folder(source) if _is_product_code(p.path)]
+    pieces = [
+        p for p in split_folder(source)
+        if _is_product_code(p.path) and not _is_excluded(p.path, extra_exclusions)
+    ]
     vectors: list[list[float]] = []
     kept = []
     skipped: list[str] = []

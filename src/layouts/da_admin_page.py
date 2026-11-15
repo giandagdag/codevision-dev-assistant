@@ -38,12 +38,14 @@ from agents.da_admin_modules import (
     modules_by_capability,
     share_counts,
 )
+from agents.da_admin_rebuild import running_since
 from agents.da_admin_sonar import SAMPLE_BANNER, sample_with_mapping
 from layouts.da_admin_index_panels import (
     REFRESH_MODES,
     fixed_skip_rows,
     health_tiles,
     index_pill,
+    rebuild_controls,
     recent_refreshes,
     refresh_tiles,
 )
@@ -241,6 +243,7 @@ def tab_content(
     server: list[tuple[str, str]] | None = None,
     modules: list[str] | None = None,
     fires: dict[str, int] | None = None,
+    ask_rebuild: bool = False,
 ):
     """One editable tab: notice lines, the view or the form, and the buttons that fit the mode.
 
@@ -248,7 +251,7 @@ def tab_content(
     the Unassigned queue data for the Capability catalog tab (see queue_block). `server` is the
     read-only server settings list of the Repository and index tab."""
     if tab == TAB_REPO:
-        body = repo_view(version, server, editable, draft, active)
+        body = repo_view(version, server, editable, draft, active, ask_rebuild)
     elif tab in (TAB_UI, TAB_CODING):
         body = rules_view(tab, version, editable, draft, active, cited or {}, fires or {})
     elif tab == TAB_CAPABILITY:
@@ -1171,6 +1174,7 @@ def repo_view(
     editable: bool = False,
     draft: dict | None = None,
     active: bool = True,
+    ask_rebuild: bool = False,
 ):
     """Read-only server settings, then the four editable fields. `server` is (name, shown value)."""
     policy = version.rulebook.policy
@@ -1192,6 +1196,7 @@ def repo_view(
         [
             version_line(version, active),
             index_pill(health, datetime.now()),
+            rebuild_controls(running_since(), recent_runs(), ask_rebuild),
             _section("Index health", health_tiles(health)),
             _section("Recent refreshes", recent_refreshes(recent_runs())),
             _section("Connection", _connection(policy, editable, draft)),

@@ -4,6 +4,7 @@ fixed skips (fix 11-1, AF-6). The editable tables stay in da_admin_page (they ne
 from datetime import datetime
 
 import dash_mantine_components as dmc
+from dash import dcc
 
 from agents.da_admin_index import FIXED_SKIPS, NEEDS_BUILDING, IndexHealth, run_line
 from styles import da_admin_styles as admin_styles
@@ -14,6 +15,54 @@ REFRESH_MODES = (
     ("nightly", "Nightly", "Not connected yet"),
     ("manual", "Manual", "Runs when you press Rebuild index"),
 )
+
+
+REBUILD_BTN = "adm-rebuild-btn"
+REBUILD_CONFIRM = "adm-rebuild-confirm"
+REBUILD_LATER = "adm-rebuild-later"
+REBUILD_MODAL = "adm-rebuild-modal"
+REBUILD_STATUS = "adm-rebuild-status"
+REBUILD_POLL = "adm-rebuild-poll"
+REBUILD_ASK = "Rebuild the index now?"
+REBUILD_EXPLAIN = (
+    "Re-reads the folder scope and rebuilds the index. Takes a few minutes. "
+    "Discovery keeps using the old index until the new one is saved."
+)
+
+
+def rebuild_status(started: datetime | None, runs: list[dict]) -> str:
+    """The line next to the button: running since, else the newest refresh."""
+    if started is not None:
+        return f"Rebuilding… started {started:%H:%M}"
+    return run_line(runs[0]) if runs else ""
+
+
+def rebuild_controls(started: datetime | None, runs: list[dict], ask_now: bool = False):
+    """Rebuild index button, its confirm box (open at once after a scope or exclusion save), the
+    status line and a poll that refreshes the status while a build runs."""
+    return dmc.Group(
+        [
+            dmc.Button("Rebuild index", id=REBUILD_BTN, disabled=started is not None, size="xs"),
+            dmc.Text(rebuild_status(started, runs), id=REBUILD_STATUS, size="sm"),
+            dcc.Interval(id=REBUILD_POLL, interval=3000),
+            dmc.Modal(
+                dmc.Stack(
+                    [
+                        dmc.Text(REBUILD_EXPLAIN, size="sm"),
+                        dmc.Group(
+                            [
+                                dmc.Button("Later", id=REBUILD_LATER, variant="default"),
+                                dmc.Button("Rebuild", id=REBUILD_CONFIRM),
+                            ]
+                        ),
+                    ]
+                ),
+                id=REBUILD_MODAL,
+                title=REBUILD_ASK if ask_now else "Rebuild the index?",
+                opened=ask_now,
+            ),
+        ]
+    )
 
 
 def index_pill(health: IndexHealth, now: datetime):

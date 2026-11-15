@@ -28,6 +28,7 @@ from agents.da_admin_forms import (
     move_row,
     save_from_form,
 )
+from agents.da_admin_index import recent_runs
 from agents.da_admin_metrics import WINDOW_ALL, WINDOW_LABELS, health_report
 from agents.da_admin_modules import module_paths
 from agents.da_admin_overview import (
@@ -35,12 +36,22 @@ from agents.da_admin_overview import (
     build_overview,
     server_settings_view,
 )
+from agents.da_admin_rebuild import running_since, start_rebuild
 from configs.da_config import Settings, load_settings
 from db_table_functions.db_tbl_da_rulebook import (
     RulebookError,
     get_active_version,
     get_version,
     restore_version,
+)
+from layouts.da_admin_index_panels import (
+    REBUILD_BTN,
+    REBUILD_CONFIRM,
+    REBUILD_LATER,
+    REBUILD_MODAL,
+    REBUILD_POLL,
+    REBUILD_STATUS,
+    rebuild_status,
 )
 from layouts.da_admin_page import (
     ACTION_CANCEL,
@@ -404,13 +415,71 @@ def _with_new_rule(settings: Settings, tab: str, form: dict):
     return {**form, RULES_TABLE: [*rows, new]}, None
 
 
+def _index_source_changed(before, after) -> bool:
+    """Only a new folder scope or new exclusions make the old index out of date."""
+    old, new = before.rulebook.policy, after.rulebook.policy
+    return (old.index_folder_scope, old.index_exclusions) != (
+        new.index_folder_scope,
+        new.index_exclusions,
+    )
+
+
+def rebuild_action(settings: Settings, button: str | None):
+    """Rebuild index clicks. Returns (modal opened, status line). Only Rebuild starts a job."""
+    if not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    if button == REBUILD_CONFIRM:
+        policy = get_active_version(settings.db_path).rulebook.policy
+        started, message = start_rebuild(policy, settings.developer_id)
+        if not started:
+            return False, message
+    return False, current_rebuild_status()
+
+
+def current_rebuild_status() -> str:
+    return rebuild_status(running_since(), recent_runs())
+
+
+def _register_rebuild(app) -> None:
+    @app.callback(
+        Output(REBUILD_MODAL, "opened"),
+        Input(REBUILD_BTN, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def open_confirm(clicks):
+        return bool(clicks)
+
+    @app.callback(
+        Output(REBUILD_MODAL, "opened", allow_duplicate=True),
+        Output(REBUILD_STATUS, "children", allow_duplicate=True),
+        Output(REBUILD_BTN, "disabled", allow_duplicate=True),
+        Input(REBUILD_CONFIRM, "n_clicks"),
+        Input(REBUILD_LATER, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def answer_confirm(_confirm, _later):
+        if not ctx.triggered[0]["value"]:
+            raise PreventUpdate
+        opened, status = rebuild_action(get_admin_settings(), ctx.triggered_id)
+        return opened, status, running_since() is not None
+
+    @app.callback(
+        Output(REBUILD_STATUS, "children"),
+        Output(REBUILD_BTN, "disabled"),
+        Input(REBUILD_POLL, "n_intervals"),
+    )
+    def poll(_ticks):
+        return current_rebuild_status(), running_since() is not None
+
+
 def _save(settings, tab, form, note, base_version, active):
     base_number = base_version or active.version_number
     result = save_from_form(settings.db_path, tab, form, base_number, settings.developer_id, note)
     if result.kind == RESULT_SAVED:
         saved = get_active_version(settings.db_path)
         notice = saved_notice(saved.version_number, result.warnings)
-        return _content(settings, tab, saved, notice=[notice]), False
+        ask = tab == TAB_REPO and _index_source_changed(active, saved)
+        return _content(settings, tab, saved, notice=[notice], ask_rebuild=ask), False
     base = get_version(settings.db_path, base_number) or active
     if result.kind == RESULT_PROBLEMS:
         notice = problem_notice(result.problems)
@@ -506,6 +575,7 @@ def register_da_admin_page_callbacks(app) -> None:
     _register_queue(app)
     _register_overview(app)
     _register_catalog_filter(app)
+    _register_rebuild(app)
 
 
 def refresh_overview(settings: Settings, tab: str | None):
