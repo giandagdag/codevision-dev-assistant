@@ -24,3 +24,9 @@ PILL_COLOURS = {
     "blue": (BLUE, BLUE_LIGHT),
     "navy": (NAVY, BLUE_LIGHT),
 }
+
+
+def pill_style(name: str) -> dict:
+    """Inline style for a status pill; an unknown word gets the blue pill."""
+    text, background = PILL_COLOURS.get(name, PILL_COLOURS["blue"])
+    return {"color": text, "backgroundColor": background}

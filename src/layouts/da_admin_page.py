@@ -36,6 +36,7 @@ from pydantic_classes.da_rulebook_models import (
     RulebookVersion,
     check_charter_size,
 )
+from styles import da_admin_styles as admin_styles
 from styles import da_styles
 
 ADMIN_PATH = "/admin"
@@ -1208,27 +1209,53 @@ def overview_view(version: RulebookVersion, overview, report, active: bool = Tru
 
 def _areas_table(areas):
     head = dmc.TableThead(
-        dmc.TableTr([dmc.TableTh(name) for name in ("Area", "Summary", "Status", "Last changed")])
+        dmc.TableTr([dmc.TableTh(name) for name in ("Area", "Summary", "Status", "Updated")])
     )
     rows = [
         dmc.TableTr(
             [
                 dmc.TableTd(
-                    dmc.Button(
-                        row.area,
-                        id=goto_id(_tab_of_area(row.area), 1000 + index),
-                        variant="subtle",
-                        size="xs",
+                    dmc.Group(
+                        [
+                            dmc.Text(AREA_ICONS.get(row.area, "•")),
+                            dmc.Button(
+                                row.area,
+                                id=goto_id(_tab_of_area(row.area), 1000 + index),
+                                variant="subtle",
+                                size="xs",
+                            ),
+                        ],
+                        gap=4,
                     )
                 ),
-                dmc.TableTd(row.summary),
-                dmc.TableTd(dmc.Badge(row.status, color=STATUS_COLORS.get(row.status, "gray"))),
+                dmc.TableTd(_chips(row.summary)),
+                dmc.TableTd(
+                    dmc.Badge(
+                        row.status, style=admin_styles.pill_style(row.status), variant="light"
+                    )
+                ),
                 dmc.TableTd(row.last_changed),
             ]
         )
         for index, row in enumerate(areas)
     ]
     return dmc.Table([head, dmc.TableTbody(rows)])
+
+
+AREA_ICONS = {
+    "Project charter": "📜",
+    "Repository and index": "🗂",
+    "Capability catalog": "🧩",
+    "UI standards": "🎨",
+    "Coding standards": "📏",
+    "Build and test": "🛠",
+}
+
+
+def _chips(summary: str):
+    """A summary line such as "3 capabilities, 2 Unassigned" as small chips."""
+    parts = [p.strip() for p in summary.replace(";", ",").split(",") if p.strip()]
+    return dmc.Group([dmc.Badge(p, variant="outline", tt="none") for p in parts], gap=4)
 
 
 def _attention_list(items):
@@ -1238,11 +1265,19 @@ def _attention_list(items):
         [
             dmc.Group(
                 [
-                    dmc.Badge(item.level, color="red" if item.level == "red" else "yellow"),
+                    dmc.Badge(
+                        item.level,
+                        style=admin_styles.pill_style("red" if item.level == "red" else "amber"),
+                        variant="light",
+                    ),
                     dmc.Text(item.text, size="sm"),
                     dmc.Button(
-                        f"Open {item.area}",
-                        id=goto_id(_tab_of_area(item.area), index),
+                        "Assign" if item.filter else f"Open {item.area}",
+                        # n carries the catalog filter: the callback reads only "tab" for now.
+                        id=goto_id(
+                            _tab_of_area(item.area),
+                            f"{item.filter}-{index}" if item.filter else index,
+                        ),
                         variant="subtle",
                         size="xs",
                     ),
@@ -1269,7 +1304,7 @@ def health_block(report, window: str = WINDOW_ALL):
 
 
 def health_numbers(report):
-    lines = []
+    tiles = []
     for metric in report.all_metrics:
         parts = [dmc.Text(f"{metric.label}: {metric.text}", size="sm")]
         if metric.items:
@@ -1277,5 +1312,5 @@ def health_numbers(report):
             parts.append(dmc.Text(shown, size="xs", c=da_styles.MUTED))
         if metric.note:
             parts.append(dmc.Text(metric.note, size="xs", c=da_styles.MUTED))
-        lines.append(html.Div(parts))
-    return dmc.Stack(lines, gap="xs")
+        tiles.append(dmc.Paper(parts, withBorder=True, p="sm"))
+    return dmc.SimpleGrid(tiles, cols=3, spacing="sm")

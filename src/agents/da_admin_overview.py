@@ -44,6 +44,7 @@ STATUS_AMBER = "amber"
 STATUS_RED = "red"
 NOTHING_TO_DO = "Nothing needs attention."
 NEVER_CHANGED = "not changed since v1"
+MISSING_BACKUP_FILTER = "missing_backup"
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,8 @@ class AttentionItem:
     area: str
     level: str  # LEVEL_INFO or LEVEL_RED
     text: str
+    # Names a catalog filter the jump button should open (step 8 reads it); "" for none.
+    filter: str = ""
 
 
 @dataclass(frozen=True)
@@ -117,7 +120,12 @@ def attention_items(
     items += _rule_count_items(rulebook)
     items += _queue_items(waiting_since, policy.admin_unassigned_stale_days, now)
     items += [
-        AttentionItem(AREA_CATALOG, LEVEL_INFO, f"Capability '{name}' has no backup senior.")
+        AttentionItem(
+            AREA_CATALOG,
+            LEVEL_INFO,
+            f"Capability '{name}' has no backup senior.",
+            MISSING_BACKUP_FILTER,
+        )
         for name in capabilities_without_backup(policy)
     ]
     items += [
