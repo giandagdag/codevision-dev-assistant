@@ -9,6 +9,7 @@ import re
 import dash_mantine_components as dmc
 from dash import html
 
+from agents.da_admin_cited import FIRES_AMBER_ABOVE
 from styles import da_admin_styles as pal
 
 HEX_COLOUR = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
@@ -64,6 +65,56 @@ def convention_rows(rules: list[dict]):
     ]
     return html.Div(
         [dmc.Text("UI conventions", fw=600, c=pal.NAVY, size="sm", mt="sm"), *rows]
+    )
+
+
+def fires_text(rule_id: str, fires: dict[str, int]) -> str:
+    """"fires in 60%" (with a warning sign over 50%); "never fired" when no review cited it."""
+    percent = fires.get(rule_id)
+    if percent is None:
+        return "not cited in the last 30 days"
+    return ("⚠️ " if percent > FIRES_AMBER_ABOVE else "") + f"fires in {percent}%"
+
+
+def rule_cards(rules: list[dict], fires: dict[str, int]):
+    """One clickable row per judgement rule; opening it shows the rule card (AF-14, AF-15)."""
+    items = []
+    for r in rules:
+        rid = r["rule_id"]
+        amber = fires.get(rid, 0) > FIRES_AMBER_ABOVE
+        label = dmc.Group(
+            [
+                dmc.Code(rid),
+                dmc.Text(r["title"], size="sm"),
+                severity_pill(r["severity"]),
+                dmc.Badge(
+                    fires_text(rid, fires),
+                    variant="light",
+                    style=pal.pill_style("amber" if amber else "green"),
+                ),
+            ],
+            gap="xs",
+        )
+        facts = [
+            ("Why", r["why"]),
+            ("Tags", ", ".join(r["tags"])),
+            ("Checked by", "Tester (a model reads the code against this rule)"),
+            ("Source", r["source"]),
+            ("Fires in", fires_text(rid, fires)),
+            ("Good", r["good_example"]),
+            ("Bad", r["bad_example"]),
+        ]
+        panel = dmc.Stack(
+            [
+                dmc.Group([dmc.Text(k, fw=600, size="sm", w=90), dmc.Text(v, size="sm")], gap="xs")
+                for k, v in facts
+            ],
+            gap=2,
+        )
+        parts = [dmc.AccordionControl(label), dmc.AccordionPanel(panel)]
+        items.append(dmc.AccordionItem(parts, value=rid))
+    return html.Div(
+        [dmc.Text("Rule cards", fw=600, c=pal.NAVY, size="sm", mt="sm"), dmc.Accordion(items)]
     )
 
 

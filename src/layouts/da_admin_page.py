@@ -36,7 +36,7 @@ from agents.da_admin_modules import (
     share_counts,
 )
 from agents.da_admin_sonar import SAMPLE_BANNER, sample_with_mapping
-from layouts.da_admin_ui_standards import brand_panel, convention_rows
+from layouts.da_admin_ui_standards import brand_panel, convention_rows, rule_cards
 from pydantic_classes.da_rulebook_models import (
     SONAR_SEVERITY_KEYS,
     Charter,
@@ -121,6 +121,7 @@ def admin_page(
     overview=None,
     report=None,
     server: list[tuple[str, str]] | None = None,
+    fires: dict[str, int] | None = None,
 ) -> html.Div:
     """The console: 8 tabs, Overview first. A tab not built yet shows a plain "comes later" line.
     `overview` and `report` (Phase 11c) fill the Overview tab; without them it says so."""
@@ -138,7 +139,15 @@ def admin_page(
                     *[
                         dmc.TabsPanel(
                             _tab_body(
-                                tab, version, history_rows, cited, queue, overview, report, server
+                                tab,
+                                version,
+                                history_rows,
+                                cited,
+                                queue,
+                                overview,
+                                report,
+                                server,
+                                fires,
                             ),
                             value=tab,
                             pt="md",
@@ -196,11 +205,12 @@ def _tab_body(
     overview=None,
     report=None,
     server=None,
+    fires=None,
 ):
     if tab == TAB_OVERVIEW and overview is not None and report is not None:
         return html.Div(overview_view(version, overview, report), id=body_id(TAB_OVERVIEW))
     if tab in EDITABLE_TABS:
-        content = tab_content(tab, version, cited=cited, queue=queue, server=server)
+        content = tab_content(tab, version, cited=cited, queue=queue, server=server, fires=fires)
         return html.Div(content, id=body_id(tab))
     if tab == TAB_HISTORY:
         return html.Div(history_view(rows), id=body_id(TAB_HISTORY))
@@ -219,6 +229,7 @@ def tab_content(
     queue: dict | None = None,
     server: list[tuple[str, str]] | None = None,
     modules: list[str] | None = None,
+    fires: dict[str, int] | None = None,
 ):
     """One editable tab: notice lines, the view or the form, and the buttons that fit the mode.
 
@@ -228,7 +239,7 @@ def tab_content(
     if tab == TAB_REPO:
         body = repo_view(version, server, editable, draft, active)
     elif tab in (TAB_UI, TAB_CODING):
-        body = rules_view(tab, version, editable, draft, active, cited or {})
+        body = rules_view(tab, version, editable, draft, active, cited or {}, fires or {})
     elif tab == TAB_CAPABILITY:
         if modules is None:
             modules = module_paths(version.rulebook.policy.index_folder_scope)
@@ -542,6 +553,7 @@ def rules_view(
     draft: dict | None = None,
     active: bool = True,
     cited: dict[str, int] | None = None,
+    fires: dict[str, int] | None = None,
 ):
     """UI standards (ui_convention rules) or Coding standards (judgement rules plus lists)."""
     kind = RULE_KIND_OF_TAB[tab]
@@ -578,6 +590,8 @@ def rules_view(
         if not editable:
             parts.append(convention_rows(rows))
     if tab == TAB_CODING:
+        if not editable:
+            parts.append(rule_cards(rows, fires or {}))
         parts += _coding_extras(version, editable, draft)
     return html.Div(parts)
 

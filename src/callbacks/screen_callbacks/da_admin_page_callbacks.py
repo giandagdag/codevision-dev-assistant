@@ -18,7 +18,7 @@ from agents.da_admin_catalog import (
     resolve_row,
     resolved_rows,
 )
-from agents.da_admin_cited import cited_counts
+from agents.da_admin_cited import cited_counts, fires_in
 from agents.da_admin_diff import build_timeline, diff_rulebooks
 from agents.da_admin_forms import (
     RESULT_PROBLEMS,
@@ -166,6 +166,7 @@ def admin_content(settings: Settings, pathname: str | None):
         build_overview(settings),
         health_report(settings.db_path, WINDOW_ALL),
         server_settings_view(settings),
+        fires_in(settings.db_path),
     )
 
 
@@ -297,7 +298,8 @@ def _content(settings: Settings, tab: str, version, **kwargs):
     cited = cited_counts(settings.db_path) if tab == TAB_CODING else None
     queue = queue_data(settings) if tab == TAB_CAPABILITY else None
     server = server_settings_view(settings) if tab == TAB_REPO else None
-    return tab_content(tab, version, cited=cited, queue=queue, server=server, **kwargs)
+    fires = fires_in(settings.db_path) if tab == TAB_CODING else None
+    return tab_content(tab, version, cited=cited, queue=queue, server=server, fires=fires, **kwargs)
 
 
 # --- Unassigned queue ---
