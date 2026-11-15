@@ -44,6 +44,8 @@ class SearchFilters(_Shape):
     languages: list[str] = Field(default_factory=lambda: ["python"])
     include_deprecated: bool = False
     include_restricted: bool = False
+    # Fix 11-1: only these file paths (a capability's modules). Empty = the whole index.
+    modules: list[str] = Field(default_factory=list)
 
 
 class SearchHit(_Shape):
@@ -63,6 +65,8 @@ class SearchHit(_Shape):
     # The index reports these so our own safety filter can drop such hits (spec 3.1, rule R3).
     deprecated: bool = False
     restricted: bool = False
+    # Fix 11-1: the capability this file belongs to, when Discover narrowed the search to one.
+    capability: str = ""
 
 
 class Finding(_Shape):

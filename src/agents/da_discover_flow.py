@@ -15,6 +15,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
+from agents.da_admin_modules import module_paths
 from agents.da_discover_agent import (
     DiscoverSummary,
     fallback_summary,
@@ -58,7 +59,7 @@ from db_table_functions.db_tbl_da_enhance import (
 )
 from db_table_functions.db_tbl_da_handoff import refuse_if_locked
 from db_table_functions.db_tbl_da_requests import read_request, update_request
-from db_table_functions.db_tbl_da_rulebook import ensure_rulebook_tables
+from db_table_functions.db_tbl_da_rulebook import ensure_rulebook_tables, get_active_version
 from db_table_functions.db_tbl_da_understand import (
     STALE_MESSAGE,
     StaleRevisionError,
@@ -392,7 +393,16 @@ def _read_for_round(
 def _search(settings: Settings, record: RequestRecord, hint: str, index: SearchIndex | None):
     try:
         index = index or get_search_index(settings)
-        found = run_searches(index, record, hint, settings.search_top_k)
+        active = get_active_version(settings.db_path)
+        policy = active.rulebook.policy if active else None
+        found = run_searches(
+            index,
+            record,
+            hint,
+            settings.search_top_k,
+            policy.capabilities if policy else None,
+            module_paths(policy.index_folder_scope) if policy else None,
+        )
         return found, list(getattr(index, "notes", []))
     except IndexNotBuiltError:
         raise

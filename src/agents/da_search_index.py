@@ -151,8 +151,12 @@ class FakeSearchIndex:
         if not words:
             return []
         permitted = [piece for piece in self._data.pieces if _allowed_by_flags(piece, filters)]
-        candidates = [piece for piece in permitted if _allowed_by_language(piece, filters)]
-        if mode == "meaning" and not candidates:
+        candidates = [
+            piece
+            for piece in permitted
+            if _allowed_by_language(piece, filters) and _allowed_by_modules(piece, filters)
+        ]
+        if mode == "meaning" and not candidates and not filters.modules:
             # CodeVision's own fallback is switched off, so an empty filter returns nothing there.
             # We search all permitted pieces instead (spec 3.2).
             candidates = permitted
@@ -257,7 +261,11 @@ class CodeVisionSearchIndex:
         ]
         pieces = words_index._data.pieces
         permitted = [(pieces[n], d) for n, d in near if _allowed_by_flags(pieces[n], filters)]
-        wanted = [(p, d) for p, d in permitted if _allowed_by_language(p, filters)]
+        wanted = [
+            (p, d)
+            for p, d in permitted
+            if _allowed_by_language(p, filters) and _allowed_by_modules(p, filters)
+        ]
         # Filters come after the vector search; a filter that matches nothing must not hide
         # everything, so we fall back to all permitted pieces (as the practice index does).
         chosen = (wanted or permitted)[:top_k]
@@ -312,6 +320,10 @@ def _allowed_by_flags(piece: IndexPiece, filters: SearchFilters) -> bool:
     if piece.deprecated and not filters.include_deprecated:
         return False
     return not (piece.restricted and not filters.include_restricted)
+
+
+def _allowed_by_modules(piece: IndexPiece, filters: SearchFilters) -> bool:
+    return not filters.modules or piece.path in filters.modules
 
 
 def _allowed_by_language(piece: IndexPiece, filters: SearchFilters) -> bool:
