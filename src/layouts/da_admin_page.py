@@ -36,6 +36,7 @@ from agents.da_admin_modules import (
     share_counts,
 )
 from agents.da_admin_sonar import SAMPLE_BANNER, sample_with_mapping
+from layouts.da_admin_ui_standards import brand_panel, convention_rows
 from pydantic_classes.da_rulebook_models import (
     SONAR_SEVERITY_KEYS,
     Charter,
@@ -572,6 +573,10 @@ def rules_view(
     ]
     if editable:
         parts.append(dmc.Text(RULE_ID_HINT, size="xs", c=da_styles.MUTED))
+    if tab == TAB_UI:
+        parts.insert(1, brand_panel(version.rulebook.brand_constants))
+        if not editable:
+            parts.append(convention_rows(rows))
     if tab == TAB_CODING:
         parts += _coding_extras(version, editable, draft)
     return html.Div(parts)
