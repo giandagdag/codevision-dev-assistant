@@ -1079,8 +1079,36 @@ def build_view(
                     editable,
                 ),
             ),
+            _section("Tests", _tests_card()),
+            _section("Can a request be handed off?", _severity_table()),
         ]
     )
+
+
+# Read only: how the build and test loop works (fixed in code, not set by an Admin).
+TEST_FACTS = (
+    "Requirement tests from the criteria, frozen before the code",
+    "Code tests after the build, for branches and edge cases",
+    "Tests run only in the server sandbox, never in the developer's folder",
+    "A test with no result counts as Not proven and blocks the pass",
+)
+SEVERITY_HANDOFF = (
+    ("Must fix", "No"),
+    ("Should fix", "Yes, listed in the PR summary"),
+    ("FYI", "Yes"),
+)
+
+
+def _tests_card():
+    return dmc.Stack([dmc.Text(f"✅ {fact}", size="sm") for fact in TEST_FACTS], gap=2)
+
+
+def _severity_table():
+    head = dmc.TableThead(dmc.TableTr([dmc.TableTh("Severity"), dmc.TableTh("Can hand off?")]))
+    body = dmc.TableTbody(
+        [dmc.TableTr([dmc.TableTd(s), dmc.TableTd(answer)]) for s, answer in SEVERITY_HANDOFF]
+    )
+    return dmc.Table([head, body], withTableBorder=True)
 
 
 # Plain names for the three core limits (spec section 8, "Shown as").
@@ -1089,6 +1117,7 @@ NUMBER_LABELS = {
     "build_max_rounds": "Max fix rounds",
     "build_test_timeout_seconds": "Test time limit (seconds)",
     "max_files": "Max files per request",
+    "max_material_decisions": "Decision limit",
     "workspace_max_file_kb": "Largest file the scan reads (KB)",
 }
 
@@ -1105,10 +1134,11 @@ def _number_field(
     label = NUMBER_LABELS.get(name, name)
     if not editable:
         return dmc.Text(f"{label}: {value}" + (f"   (allowed: {hint})" if hint else ""), size="sm")
-    return dmc.TextInput(
+    # A number box with − / + buttons; the server still checks the bounds on save.
+    return dmc.NumberInput(
         label=label,
         description=f"allowed: {hint}" if hint else None,
-        value=value,
+        value=int(value) if value.lstrip("-").isdigit() else value,
         id={"type": "adm-field", "tab": tab, "name": name},
         size="xs",
     )

@@ -48,7 +48,12 @@ RESULT_UNCHANGED = "unchanged"
 RESULT_REFUSED_NOTE = "refused_note"
 
 # Shown on the Build and test tab as plain fields, in this order.
-CORE_BUILD_FIELDS: tuple[str, ...] = ("build_max_rounds", "build_test_timeout_seconds", "max_files")
+CORE_BUILD_FIELDS: tuple[str, ...] = (
+    "build_max_rounds",
+    "build_test_timeout_seconds",
+    "max_files",
+    "max_material_decisions",
+)
 # Collapsed under "Advanced limits": every other number on the policy (spec section 8).
 ADVANCED_LIMIT_FIELDS: tuple[str, ...] = (
     "build_max_prompt_chars",
@@ -69,7 +74,6 @@ ADVANCED_LIMIT_FIELDS: tuple[str, ...] = (
     "safety_net_max_corrections",
     "impact_max_callers",
     "max_design_choices",
-    "max_material_decisions",
     "admin_unassigned_stale_days",
     "handoff_summary_max_chars",  # Phase 10
 )

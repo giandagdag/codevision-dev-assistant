@@ -110,6 +110,24 @@ def test_build_view_shows_limits_with_bounds_and_advanced_collapsed(published_ru
     assert len(switches) == 6  # five triggers plus Phase 10's "lock the developer's chat"
 
 
+def test_build_view_has_decision_limit_tests_and_severity_table(published_rulebook):
+    text = all_text(build_view(published_rulebook))
+
+    assert "Decision limit: 8   (allowed: 1 to 15)" in text
+    assert "Max fix rounds: 3   (allowed: 1 to 5)" in text
+    assert "✅ A test with no result counts as Not proven and blocks the pass" in text
+    assert "Should fix" in text and "Yes, listed in the PR summary" in text
+
+
+def test_build_edit_view_uses_steppers(published_rulebook):
+    view = build_view(published_rulebook, editable=True)
+
+    boxes = [c for c in walk(view) if type(c).__name__ == "NumberInput"]
+    names = {b.id["name"]: b.value for b in boxes}
+    assert names["build_max_rounds"] == 3
+    assert names["max_material_decisions"] == 8
+
+
 def test_no_screen_shows_a_retired_field(published_rulebook):
     for view in (
         admin_page(published_rulebook),
