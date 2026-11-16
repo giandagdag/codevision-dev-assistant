@@ -699,7 +699,9 @@ QUEUE_BLOCK_ID = "adm-queue"
 Q_CONFIRM = "confirm"
 Q_MOVE = "move"
 Q_APPROVE = "approve"  # take the suggested capability (the id's `cap` carries it)
-Q_APPLY ="apply"
+Q_REJECT = "reject"  # the file belongs in no capability: closes the row as rejected
+Q_NEW = "new_capability"  # open the catalog in edit mode with one new row for this file
+Q_APPLY = "apply"
 Q_APPLY_PATTERN = "apply_pattern"
 Q_CANCEL = "cancel"
 Q_SHOW_RESOLVED = "show_resolved"
@@ -950,6 +952,21 @@ def _queue_card(row, capability_names: list[str], disabled: bool):
                             id=queue_button_id(Q_MOVE, row.unassigned_id),
                             size="xs",
                             variant="default",
+                            disabled=disabled,
+                        ),
+                        dmc.Button(
+                            "New capability",
+                            id=queue_button_id(Q_NEW, row.unassigned_id),
+                            size="xs",
+                            variant="default",
+                            disabled=disabled,
+                        ),
+                        dmc.Button(
+                            "Reject",
+                            id=queue_button_id(Q_REJECT, row.unassigned_id),
+                            size="xs",
+                            variant="default",
+                            color="red",
                             disabled=disabled,
                         ),
                     ],

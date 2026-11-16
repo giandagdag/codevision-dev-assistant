@@ -3,8 +3,9 @@
 Which capability a path belongs to is decided here with the same function the developer flow uses
 (lookup_capability: first match wins), so Admin sees exactly what a request would get. No AI.
 
-A resolved row is closed as `confirmed` (the developer's pick stands) or `changed` (Admin moved the
-file). The request's own record is never touched (spec 11-31): only da_unassigned_files changes.
+A resolved row is closed as `confirmed` (the developer's pick stands), `changed` (Admin moved the
+file) or `rejected` (the file belongs in no capability; a later change reopens it).
+The request's own record is never touched (spec 11-31): only da_unassigned_files changes.
 """
 
 from dataclasses import dataclass, field
@@ -133,6 +134,8 @@ def resolve_row(
         return ResolveResult("refused", problems=["That Unassigned row is not open any more."])
     active = get_active_version(settings.db_path)
     catalog = active.rulebook.policy.capabilities
+    if state == "rejected":
+        add_pattern = False  # a rejected file joins no capability
     if state == "changed" and capability.lower() not in {c.name.lower() for c in catalog}:
         problem = f"Capability '{capability}' is not in the catalog."
         return ResolveResult("refused", problems=[problem])

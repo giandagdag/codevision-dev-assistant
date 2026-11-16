@@ -25,6 +25,7 @@ from agents.da_admin_forms import (
     RESULT_SAVED,
     RESULT_STALE,
     add_rule_row,
+    capability_rows,
     move_row,
     save_from_form,
 )
@@ -96,6 +97,8 @@ from layouts.da_admin_page import (
     Q_APPROVE,
     Q_CONFIRM,
     Q_MOVE,
+    Q_NEW,
+    Q_REJECT,
     Q_SHOW_RESOLVED,
     QUEUE_BUTTON_TYPE,
     QUEUE_NOTE_TYPE,
@@ -357,11 +360,44 @@ def run_queue_action(
         return _queue_tab(settings, show_resolved=True)
     if name == Q_APPROVE:  # take the suggestion: same as Move to <suggested>
         return _start_resolve(settings, Q_MOVE, uid, {uid: action["cap"]})
+    if name == Q_REJECT:
+        return _reject(settings, uid)
+    if name == Q_NEW:
+        return _new_capability(settings, uid)
     if name in (Q_CONFIRM, Q_MOVE):
         return _start_resolve(settings, name, uid, picks)
     if name in (Q_APPLY, Q_APPLY_PATTERN):
         return _apply_resolve(settings, action, notes.get(uid, ""), base_version)
     return _queue_tab(settings)  # Cancel, Hide resolved
+
+
+def _reject(settings: Settings, uid: int):
+    """Reject: the file belongs in no capability. Closes the row; a later change reopens it."""
+    result = resolve_row(settings, uid, "rejected", "", settings.developer_id)
+    if result.kind == "resolved":
+        return _queue_tab(settings, notice=[message_notice("Rejected.", color="green")])
+    return _queue_tab(settings, notice=[problem_notice(result.problems or [result.message])])
+
+
+def _new_capability(settings: Settings, uid: int):
+    """New capability: the catalog in edit mode with one extra row whose pattern is the file's
+    folder. The name stays empty (the suggestion is an existing capability); Save is the normal
+    Save with a note, and the queue row stays open until Admin resolves it."""
+    row = next((r for r in queue_rows(settings) if r.unassigned_id == uid), None)
+    if row is None:
+        notice = [message_notice("That Unassigned row is not open any more.")]
+        return _queue_tab(settings, notice=notice)
+    active = get_active_version(settings.db_path)
+    folder, _, _ = row.path.replace("\\", "/").rpartition("/")
+    new = {
+        "name": "",
+        "description": "",
+        "named_senior": "",
+        "backup_senior": "",
+        "path_patterns": f"{folder}/*" if folder else row.path,
+    }
+    rows = [*capability_rows(active.rulebook.policy), new]
+    return _content(settings, TAB_CAPABILITY, active, editable=True, draft={CATALOG_TABLE: rows})
 
 
 def _start_resolve(settings: Settings, name: str, uid: int, picks: dict):
@@ -791,6 +827,10 @@ def _register_queue(app) -> None:
 
     @app.callback(
         Output(body_id(TAB_CAPABILITY), "children", allow_duplicate=True),
+        *[
+            Output(tab_button_id(name), "disabled", allow_duplicate=True)
+            for name, _, _ in ADMIN_TABS
+        ],
         Input(button, "n_clicks"),
         State({"type": QUEUE_PICK_TYPE, "uid": ALL}, "value"),
         State({"type": QUEUE_NOTE_TYPE, "uid": ALL}, "value"),
@@ -805,7 +845,10 @@ def _register_queue(app) -> None:
         if not is_admin(settings, settings.developer_id):
             raise PreventUpdate
         picks, notes = queue_inputs_from_states(ctx.states_list)
-        return run_queue_action(settings, triggered, picks, notes, base_version)
+        content = run_queue_action(settings, triggered, picks, notes, base_version)
+        if triggered["action"] == Q_NEW:  # now editing: lock the other tabs (11-4)
+            return (content, *tabs_disabled(TAB_CAPABILITY))
+        return (content, *[no_update] * len(ADMIN_TABS))
 
 
 def _register_tab(app, tab: str) -> None:

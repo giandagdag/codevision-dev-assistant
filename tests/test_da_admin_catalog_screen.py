@@ -91,7 +91,9 @@ def test_catalog_table_left_and_queue_cards_right(make_settings, published_ruleb
     assert "Backup senior" in all_text(left) and "Unassigned queue" not in all_text(left)
     cards = [n for n in walk(right) if type(n).__name__ == "Paper"]
     assert len(cards) == 2 and "src/x/zzz.py" in all_text(cards[0]) + all_text(cards[1])
-    assert len(q_buttons(right)) == 5  # Confirm and Move to... per card, plus Show resolved
+    # Confirm, Move to..., New capability and Reject per card, plus Show resolved
+    assert len(q_buttons(right)) == 9
+    assert "Reject" in all_text(right) and "New capability" in all_text(right)
 
 
 def test_queue_buttons_are_disabled_in_edit_mode(make_settings, published_rulebook):
@@ -313,3 +315,40 @@ def test_the_queue_wrapper_reads_picks_and_notes_from_three_states():
     picks, notes = queue_inputs_from_states(states)
 
     assert picks == {4: "Limits"} and notes == {4: ""}
+
+
+def test_reject_moves_the_row_to_resolved_and_a_later_change_reopens_it(
+    make_settings, published_rulebook
+):
+    settings = settings_for(make_settings)
+    row = add_row(settings.db_path, "src/x/zzz.py", "Uploads")
+
+    shown = run_queue_action(settings, queue_button_id("reject", row.unassigned_id), {}, {}, 1)
+
+    assert "Rejected." in all_text(shown)
+    assert queue_rows(settings) == []
+    done = resolved_rows(settings)
+    assert done[0].state == "rejected" and done[0].resolved_by == ADMIN
+    assert done[0].resolved_capability == ""
+    add_row(settings.db_path, "src/x/zzz.py", "Uploads")  # the same file changes again
+    assert len(queue_rows(settings)) == 1
+    again = run_queue_action(settings, queue_button_id("reject", row.unassigned_id), {}, {}, 1)
+    assert "not open any more" in all_text(again)  # the old row cannot be closed twice
+
+
+def test_new_capability_opens_edit_mode_with_one_prefilled_row(make_settings, published_rulebook):
+    settings = settings_for(make_settings)
+    row = add_row(settings.db_path, "src/x/zzz.py", "Uploads")
+    before = len(capability_rows(published_rulebook.rulebook.policy))
+
+    content = run_queue_action(
+        settings, queue_button_id("new_capability", row.unassigned_id), {}, {}, 1
+    )
+
+    cells = cells_of(content)
+    last = max(c["id"]["row"] for c in cells if c["id"]["table"] == "capabilities")
+    assert last == before  # rows are numbered from 0: one more than before
+    new_row = {c["id"]["col"]: c["value"] for c in cells if c["id"].get("row") == last}
+    assert new_row["name"] == "" and new_row["path_patterns"] == "src/x/*"
+    assert len(list_versions(settings.db_path)) == 1  # nothing saved yet
+    assert len(queue_rows(settings)) == 1  # the queue row stays open
