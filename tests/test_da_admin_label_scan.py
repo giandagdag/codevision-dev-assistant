@@ -109,3 +109,30 @@ def test_no_raw_names_on_any_tab(make_settings, published_rulebook, old):
     version = _old_version(published_rulebook) if old else published_rulebook
 
     assert _raw_names(version, _overview_and_history(settings)) == []
+
+
+def test_fix2_new_parts_show_no_raw_names():
+    """AG-15: the AI scan cards, the confirm box and the meaning results use plain words."""
+    from agents.da_admin_meaning import FROM_CODE, ModuleHit
+    from agents.da_admin_tag_cards import AiCard
+    from layouts.da_admin_catalog_meaning import meaning_results, mode_switch, no_hits_line
+    from layouts.da_admin_catalog_tab import queue_block
+
+    cards = [
+        AiCard("src/agents/docs_folder_to_md.py", "Documents", "high", "Writes markdown", "fits"),
+        AiCard("src/agents/odd_tool.py", "", "low", "Unclear", "none fits"),
+    ]
+    queue = {
+        "rows": [], "resolved": None, "dialog": None, "notice": [],
+        "ai_cards": cards, "ai_confirm": {"counts": {"Documents": 1}},
+    }
+    path = "src/agents/docs_folder_to_md.py"
+    hit = ModuleHit(path, ("convert",), "Documents", "Writes", FROM_CODE, 1.0)
+    parts = [
+        queue_block(queue, ["Documents"]), meaning_results([hit]), meaning_results([], "x"),
+        mode_switch(), no_hits_line(),
+    ]
+    text = "\n".join(shown_text(p) for p in parts)
+    # A module path on a result button is the program itself, like a code chip: skip exact paths.
+    lines = [ln for ln in text.splitlines() if ln != path]
+    assert not [ln for ln in lines if raw_names_in(ln, CODE_NAMES)]

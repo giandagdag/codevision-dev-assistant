@@ -19,6 +19,7 @@ from db_table_functions.db_tbl_da_build import ensure_build_tables
 from db_table_functions.db_tbl_da_enhance import add_unassigned
 from db_table_functions.db_tbl_da_requests import create_request
 from db_table_functions.db_tbl_da_rulebook import save_new_version
+from layouts.da_admin_common import TAB_CAPABILITY, TAB_CODING
 from layouts.da_admin_page import ADMIN_PATH, ADMIN_TABS, EDITABLE_TABS
 from web import da_home_web_server as server_module
 
@@ -88,3 +89,27 @@ def test_af20_sixteen_screenshots_are_saved(make_live_page, live):
             # Overview and History have no edit view: the second picture is the whole page.
             page.screenshot(path=str(OUT / f"{stem}-full.png"), full_page=True)
     assert len(list(OUT.glob("*.png"))) == 16
+
+
+def test_ag16_fix2_screenshots_are_saved(make_live_page, live):
+    """AG-16: the catalog in both search modes, the queue, and Coding standards with SonarQube.
+    They go in a sub folder so the sixteen above stay sixteen."""
+    folder = OUT / "fix2"
+    folder.mkdir(parents=True, exist_ok=True)
+    labels = {tab: label for tab, label, _ in ADMIN_TABS}
+    page = make_live_page(live)
+    page.set_viewport_size(VIEWPORT)
+    page.get_by_role("tab", name=labels[TAB_CAPABILITY], exact=True).click()
+    page.locator(f"#adm-body-{TAB_CAPABILITY}").wait_for(timeout=15000)
+    page.wait_for_timeout(500)
+    page.screenshot(path=str(folder / "catalog-names.png"))
+    page.get_by_text("What the code does", exact=True).click()
+    page.get_by_placeholder("Search capability, module, senior or backup").fill("write markdown")
+    page.wait_for_timeout(1500)
+    page.screenshot(path=str(folder / "catalog-meaning.png"))
+    page.locator("#adm-queue").screenshot(path=str(folder / "queue.png"))
+    page.get_by_role("tab", name=labels[TAB_CODING], exact=True).click()
+    page.locator(f"#adm-body-{TAB_CODING}").wait_for(timeout=15000)
+    page.wait_for_timeout(500)
+    page.screenshot(path=str(folder / "coding-sonar.png"), full_page=True)
+    assert len(list(folder.glob("*.png"))) == 4
