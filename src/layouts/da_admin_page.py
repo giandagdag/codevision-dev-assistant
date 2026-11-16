@@ -38,7 +38,7 @@ from agents.da_admin_modules import (
 )
 from agents.da_admin_rebuild import running_since
 from agents.da_admin_sonar import SAMPLE_BANNER, sample_with_mapping
-from layouts.da_admin_coding_tab import rule_panel_div
+from layouts.da_admin_coding_tab import golden_cards, library_chips, rule_panel_div
 from layouts.da_admin_common import (
     ADMIN_TABS,
     GOTO_TYPE,  # noqa: F401 (re-exported: the callbacks import it from here)
@@ -52,7 +52,9 @@ from layouts.da_admin_common import (
     TAB_UI,
     act_id,
     body_id,
+    two_columns,
     version_pill,
+    word_chips,
 )
 from layouts.da_admin_common import section as _section
 from layouts.da_admin_index_panels import (
@@ -223,7 +225,9 @@ def tab_content(
     if tab == TAB_REPO:
         body = repo_view(version, server, editable, draft, active, ask_rebuild)
     elif tab in (TAB_UI, TAB_CODING):
-        body = rules_view(tab, version, editable, draft, active, cited or {}, fires or {})
+        if modules is None and tab == TAB_CODING and editable:  # the golden module picker
+            modules = module_paths(version.rulebook.policy.index_folder_scope)
+        body = rules_view(tab, version, editable, draft, active, cited or {}, fires or {}, modules)
     elif tab == TAB_CAPABILITY:
         if modules is None:
             modules = module_paths(version.rulebook.policy.index_folder_scope)
@@ -375,7 +379,9 @@ def _table_row(tab, table_id, columns, index, row, editable, kinds, static, mova
             if kind == READONLY:
                 widget = dmc.TextInput(value=value, id=cell_id, disabled=True, size="xs")
             elif kind:
-                widget = dmc.Select(data=kind, value=value or None, id=cell_id, size="xs")
+                widget = dmc.Select(
+                    data=kind, value=value or None, id=cell_id, size="xs", searchable=True
+                )
             else:
                 widget = dmc.Textarea(value=value, id=cell_id, autosize=True, minRows=1, size="xs")
             cells.append(dmc.TableTd(widget))
@@ -551,6 +557,7 @@ def rules_view(
     active: bool = True,
     cited: dict[str, int] | None = None,
     fires: dict[str, int] | None = None,
+    modules: list[str] | None = None,
 ):
     """UI standards (ui_convention rules) or Coding standards (judgement rules plus lists)."""
     kind = RULE_KIND_OF_TAB[tab]
@@ -585,39 +592,37 @@ def rules_view(
     if editable:
         parts.append(dmc.Text(RULE_ID_HINT, size="xs", c=da_styles.MUTED))
     if tab == TAB_UI:
-        parts.insert(1, brand_panel(version.rulebook.brand_constants))
-        if not editable:
-            parts.append(convention_rows(rows))
+        brand = brand_panel(version.rulebook.brand_constants)
+        # Read view: brand constants left 2/3, UI conventions right 1/3. Edit keeps them stacked.
+        parts.insert(1, brand if editable else two_columns(brand, convention_rows(rows)))
     if tab == TAB_CODING:
-        parts += _coding_extras(version, editable, draft)
+        parts += _coding_extras(version, editable, draft, modules)
     return html.Div(parts)
 
 
-def _coding_extras(version: RulebookVersion, editable: bool, draft: dict | None):
+def _coding_extras(
+    version: RulebookVersion, editable: bool, draft: dict | None, modules: list[str] | None
+):
     policy = version.rulebook.policy
     golden = _draft(
         draft, "golden_examples", [g.model_dump() for g in version.rulebook.golden_examples]
     )
+    approved = _draft(draft, "approved_libraries", policy.approved_libraries)
+    blocked = _draft(draft, "blocked_imports", policy.build_blocked_imports)
+    # The picker lists the index plus each example's own path (it may have left the index).
+    picks = sorted({*(modules or []), *(g.get("module_path", "") for g in golden)} - {""})
     return [
         _section(
             "Approved libraries",
-            list_table(
-                TAB_CODING,
-                "approved_libraries",
-                (TEXT_COLUMN,),
-                _text_rows(_draft(draft, "approved_libraries", policy.approved_libraries)),
-                editable,
-            ),
+            list_table(TAB_CODING, "approved_libraries", (TEXT_COLUMN,), _text_rows(approved), True)
+            if editable
+            else library_chips(approved),
         ),
         _section(
             "Blocked imports",
-            list_table(
-                TAB_CODING,
-                "blocked_imports",
-                (TEXT_COLUMN,),
-                _text_rows(_draft(draft, "blocked_imports", policy.build_blocked_imports)),
-                editable,
-            ),
+            list_table(TAB_CODING, "blocked_imports", (TEXT_COLUMN,), _text_rows(blocked), True)
+            if editable
+            else library_chips(blocked, blocked=True),
         ),
         _section("SonarQube severity map", _sonar_map(policy, editable, draft)),
         _section(
@@ -628,37 +633,12 @@ def _coding_extras(version: RulebookVersion, editable: bool, draft: dict | None)
                 GOLDEN_COLUMNS,
                 golden,
                 editable,
-                kinds={"program_type": list(PROGRAM_TYPES), "module_path": READONLY},
+                kinds={"program_type": list(PROGRAM_TYPES), "module_path": picks},
             )
             if editable
-            else _golden_cards(golden),
+            else golden_cards(golden),
         ),
     ]
-
-
-def _golden_cards(examples: list[dict]):
-    """Read view: one card per example, with its program type, module and the code in a box."""
-    if not examples:
-        return dmc.Text("No golden examples yet.", style=da_styles.EMPTY_TEXT)
-    cards = []
-    for g in examples:
-        head = [
-            dmc.Text(g["title"], fw=600, size="sm"),
-            dmc.Badge(g["program_type"], variant="light"),
-        ]
-        if g.get("module_path"):
-            head.append(dmc.Badge(g["module_path"], variant="outline", tt="none"))
-        cards.append(
-            html.Div(
-                [
-                    dmc.Group(head, gap="xs"),
-                    dmc.Text(g["why"], size="xs", c=da_styles.MUTED),
-                    dmc.Code("\n".join(g["code"].splitlines()[:12]), block=True),
-                ],
-                style=da_styles.PANEL_SECTION,
-            )
-        )
-    return dmc.Stack(cards, gap="xs")
 
 
 def _sonar_map(policy: Policy, editable: bool, draft: dict | None):
@@ -1209,66 +1189,70 @@ def repo_view(
     else:
         pattern_widget = dmc.Text(f"New file name pattern: {pattern}", size="sm")
     health = read_health()
+    left = [
+        _section("Connection", _connection(policy, editable, draft)),
+        _section(
+            "Refresh",
+            refresh_tiles(_draft(draft, "index_refresh_mode", policy.index_refresh_mode)),
+        ),
+        _section(
+            "Exclusions",
+            dmc.Stack(
+                [
+                    fixed_skip_rows(),
+                    list_table(
+                        TAB_REPO,
+                        "index_exclusions",
+                        EXCLUSION_COLUMNS,
+                        _draft(draft, "index_exclusions", _exclusion_rows(policy)),
+                        editable,
+                        kinds={"kind": list(EXCLUSION_KINDS)},
+                    ),
+                ]
+            ),
+        ),
+        *[
+            _section(title, _repo_list(table, policy, editable, draft))
+            for table, title in REPO_LIST_TABLES
+        ],
+        _section("New file name pattern", pattern_widget),
+        _section(
+            "Largest file the laptop scan reads",
+            _number_field(policy, REPO_SIZE, editable, draft, TAB_REPO),
+        ),
+        dmc.Accordion(
+            [
+                dmc.AccordionItem(
+                    [
+                        dmc.AccordionControl("Server settings (read only, set in .env)"),
+                        dmc.AccordionPanel(dmc.Stack(settings_lines, gap=2)),
+                    ],
+                    value="server",
+                )
+            ],
+            value=None,
+        ),
+    ]
+    right = [
+        _section("Index health", health_tiles(health)),
+        _section("Recent refreshes", recent_refreshes(recent_runs())),
+    ]
     return html.Div(
         [
             version_line(version, active),
             index_pill(health, datetime.now()),
             rebuild_controls(running_since(), recent_runs(), ask_rebuild),
-            _section("Index health", health_tiles(health)),
-            _section("Recent refreshes", recent_refreshes(recent_runs())),
-            _section("Connection", _connection(policy, editable, draft)),
-            _section(
-                "Refresh",
-                refresh_tiles(_draft(draft, "index_refresh_mode", policy.index_refresh_mode)),
-            ),
-            _section(
-                "Exclusions",
-                dmc.Stack(
-                    [
-                        fixed_skip_rows(),
-                        list_table(
-                            TAB_REPO,
-                            "index_exclusions",
-                            EXCLUSION_COLUMNS,
-                            _draft(draft, "index_exclusions", _exclusion_rows(policy)),
-                            editable,
-                            kinds={"kind": list(EXCLUSION_KINDS)},
-                        ),
-                    ]
-                ),
-            ),
-            *[
-                _section(
-                    title,
-                    list_table(
-                        TAB_REPO,
-                        table,
-                        (TEXT_COLUMN,),
-                        _text_rows(_draft(draft, table, getattr(policy, table))),
-                        editable,
-                    ),
-                )
-                for table, title in REPO_LIST_TABLES
-            ],
-            _section("New file name pattern", pattern_widget),
-            _section(
-                "Largest file the laptop scan reads",
-                _number_field(policy, REPO_SIZE, editable, draft, TAB_REPO),
-            ),
-            dmc.Accordion(
-                [
-                    dmc.AccordionItem(
-                        [
-                            dmc.AccordionControl("Server settings (read only, set in .env)"),
-                            dmc.AccordionPanel(dmc.Stack(settings_lines, gap=2)),
-                        ],
-                        value="server",
-                    )
-                ],
-                value=None,
-            ),
+            two_columns(html.Div(left), html.Div(right)),  # spec 7: connection left, health right
         ]
     )
+
+
+def _repo_list(table: str, policy: Policy, editable: bool, draft: dict | None):
+    """Allowed folders and markers: chips to read, a table to edit."""
+    words = _draft(draft, table, getattr(policy, table))
+    if not editable:
+        return word_chips(words)
+    return list_table(TAB_REPO, table, (TEXT_COLUMN,), _text_rows(words), True)
 
 
 EXCLUSION_COLUMNS = ("pattern", "reason", "kind")

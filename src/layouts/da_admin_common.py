@@ -63,6 +63,15 @@ def chips(summary: str):
     return dmc.Group([dmc.Badge(p, variant="outline", tt="none") for p in parts], gap=4)
 
 
+def word_chips(words: list[str], style: dict | None = None):
+    """One small chip per word (folders, markers, libraries). `style` colours them."""
+    if not words:
+        return dmc.Text("None.", style=da_styles.EMPTY_TEXT)
+    return dmc.Group(
+        [dmc.Badge(w, variant="light", tt="none", style=style) for w in words], gap=4
+    )
+
+
 def two_columns(left, right, left_share: int = 2):
     """Left `left_share`/3, right the rest (spec 14.1: 2/3 and 1/3). Inline style only."""
     columns = f"minmax(0, {left_share}fr) minmax(0, {3 - left_share}fr)"

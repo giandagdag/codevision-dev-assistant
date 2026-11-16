@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SHOWN_MODULES = 6
 
 
-def _scope_folder(folder_scope: str) -> Path:
+def scope_folder(folder_scope: str) -> Path:
     """The folder scope, else B1's DA_CODE_INDEX_SOURCE, else B1's default (the src folder)."""
     if folder_scope.strip():
         return PROJECT_ROOT / folder_scope.strip()
@@ -34,7 +34,7 @@ def module_paths(folder_scope: str = "", index_dir: Path | None = None) -> list[
         return sorted({str(piece["path"]) for piece in raw["pieces"]})
     except OSError, ValueError, KeyError, TypeError:
         pass  # no usable index: fall back to the files themselves
-    root = _scope_folder(folder_scope)
+    root = scope_folder(folder_scope)
     return sorted(p.relative_to(root).as_posix() for p in root.rglob("*.py") if p.is_file())
 
 

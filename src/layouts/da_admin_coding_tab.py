@@ -5,10 +5,13 @@ import dash_mantine_components as dmc
 from dash import html
 
 from agents.da_admin_cited import FIRES_AMBER_ABOVE
-from layouts.da_admin_common import two_columns
+from agents.da_admin_modules import scope_folder
+from layouts.da_admin_common import two_columns, word_chips
 from layouts.da_admin_ui_standards import fires_text, severity_pill
 from styles import da_admin_styles as pal
+from styles import da_styles
 
+GOLDEN_CHANGE_TYPE = "adm-golden-change"
 RULE_PICK_TYPE = "adm-rule-pick"
 RULE_PANEL_ID = "adm-rule-panel"
 
@@ -98,6 +101,54 @@ def rule_panel(rules: list[dict], fires: dict[str, int], selected: str | None = 
     chosen = next((r for r in rules if r["rule_id"] == selected), rules[0] if rules else None)
     left = rule_list(rules, fires, chosen["rule_id"] if chosen else "")
     return two_columns(left, rule_card(chosen, fires))
+
+
+def library_chips(words: list[str], blocked: bool = False):
+    """Approved libraries as grey chips, blocked imports as red chips (read view)."""
+    return word_chips(words, pal.pill_style("red") if blocked else None)
+
+
+def golden_cards(examples: list[dict]):
+    """Read view: one card per example, with its program type, module, the code and a Change
+    button (it opens the edit form, where the module is picked from the index)."""
+    if not examples:
+        return dmc.Text("No golden examples yet.", style=da_styles.EMPTY_TEXT)
+    cards = []
+    for i, g in enumerate(examples):
+        head = [
+            dmc.Text(g["title"], fw=600, size="sm"),
+            dmc.Badge(g["program_type"], variant="light"),
+        ]
+        if g.get("module_path"):
+            head.append(dmc.Badge(g["module_path"], variant="outline", tt="none"))
+        head.append(
+            dmc.Button(
+                "Change",
+                id={"type": GOLDEN_CHANGE_TYPE, "n": i},
+                size="compact-xs",
+                variant="default",
+            )
+        )
+        cards.append(
+            html.Div(
+                [
+                    dmc.Group(head, gap="xs"),
+                    dmc.Text(g["why"], size="xs", c=da_styles.MUTED),
+                    dmc.Code("\n".join(g["code"].splitlines()[:12]), block=True),
+                ],
+                style=da_styles.PANEL_SECTION,
+            )
+        )
+    return dmc.Stack(cards, gap="xs")
+
+
+def module_start(path: str, folder_scope: str = "", lines: int = 12) -> str:
+    """The first lines of an indexed module, for a golden example's code (empty if unreadable)."""
+    try:
+        text = (scope_folder(folder_scope) / path).read_text(encoding="utf-8")
+    except OSError, ValueError:
+        return ""
+    return "\n".join(text.splitlines()[:lines])
 
 
 def rule_panel_div(rules: list[dict], fires: dict[str, int], selected: str | None = None):

@@ -8,7 +8,7 @@ tests call without Dash; the Dash wrappers at the bottom only read ids and value
 from functools import lru_cache
 
 import dash_mantine_components as dmc
-from dash import ALL, Input, Output, State, ctx, html
+from dash import ALL, Input, Output, State, ctx, html, no_update
 from dash.exceptions import PreventUpdate
 
 from agents.da_admin_access import is_admin
@@ -44,7 +44,13 @@ from db_table_functions.db_tbl_da_rulebook import (
     get_version,
     restore_version,
 )
-from layouts.da_admin_coding_tab import RULE_PANEL_ID, RULE_PICK_TYPE, rule_panel
+from layouts.da_admin_coding_tab import (
+    GOLDEN_CHANGE_TYPE,
+    RULE_PANEL_ID,
+    RULE_PICK_TYPE,
+    module_start,
+    rule_panel,
+)
 from layouts.da_admin_index_panels import (
     REBUILD_BTN,
     REBUILD_CONFIRM,
@@ -579,6 +585,7 @@ def register_da_admin_page_callbacks(app) -> None:
     _register_overview(app)
     _register_catalog_filter(app)
     _register_rule_pick(app)
+    _register_golden(app)
     _register_rebuild(app)
 
 
@@ -651,6 +658,51 @@ def pick_rule(settings: Settings, rule_id: str):
         if r.kind == RULE_KIND_OF_TAB[TAB_CODING]
     ]
     return rule_panel(mine, fires_in(settings.db_path), rule_id)
+
+
+def open_coding_edit(settings: Settings):
+    """The golden card's Change button: the same as Edit on the Coding standards tab."""
+    if not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    action = {"type": "adm-act", "action": ACTION_EDIT}
+    content, _editing = run_action(settings, TAB_CODING, action, {}, "", None)
+    return content
+
+
+def codes_for_modules(settings: Settings, modules: list, codes: list) -> list:
+    """The code box of each golden row after a module pick: a blank box gets the module's first
+    lines; a box with code in it is left alone (also when the form is just drawn)."""
+    if not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    scope = get_active_version(settings.db_path).rulebook.policy.index_folder_scope
+    return [
+        module_start(module, scope) if module and not (code or "").strip() else no_update
+        for module, code in zip(modules, codes, strict=True)
+    ]
+
+
+def _register_golden(app) -> None:
+    cell = {"type": "adm-cell", "tab": TAB_CODING, "table": "golden_examples", "row": ALL}
+
+    @app.callback(
+        Output(body_id(TAB_CODING), "children", allow_duplicate=True),
+        *[Output(tab_button_id(n), "disabled", allow_duplicate=True) for n, _, _ in ADMIN_TABS],
+        Input({"type": GOLDEN_CHANGE_TYPE, "n": ALL}, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def on_golden_change(_clicks):
+        if not ctx.triggered or not ctx.triggered[0]["value"]:
+            raise PreventUpdate
+        return (open_coding_edit(get_admin_settings()), *tabs_disabled(TAB_CODING))
+
+    @app.callback(
+        Output({**cell, "col": "code"}, "value"),
+        Input({**cell, "col": "module_path"}, "value"),
+        State({**cell, "col": "code"}, "value"),
+        prevent_initial_call=True,
+    )
+    def on_golden_module(modules, codes):
+        return codes_for_modules(get_admin_settings(), modules, codes)
 
 
 def _register_rule_pick(app) -> None:
