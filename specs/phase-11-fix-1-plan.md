@@ -114,3 +114,85 @@ Reference demos are already in `docs/admin-reference/`.
   each tab is redone, rather than growing it.
 - Golden example size in the Generator prompt (Q7, context limit, open at work).
 - Window width: reviewed at 1366 by 768 only.
+
+## Addendum: section 14, layout rework L1 to L8 (16 Nov 2026)
+Layout only: ids, callbacks, data and old behaviour stay. Old tests keep passing; a test that must
+change is named under its step. No new library, no AI call. Colours only from `da_admin_styles.py`.
+A step's PNG is checked against the matching tab of both demos in `docs/admin-reference/`.
+
+**Split rule.** New `layouts/da_admin_common.py` holds what every tab shares: `section`, `goto_id`,
+`GOTO_TYPE`, `version_pill`, `two_columns(left, right)` (CSS grid 2fr 1fr, inline style) and `chip`.
+`da_admin_page.py` re-imports them under the old names, so old tests and callbacks still find them.
+Each redone tab moves into its own `da_admin_<tab>_tab.py` (imports common, never `da_admin_page`, so
+no circular import); `da_admin_page.py` calls it and re-exports the old names.
+
+Steps (numbering continues after 18):
+19. **L1 + L2.** `version_pill` replaces `version_line` on all 8 tabs, Version history included (its
+    view gets the version): green dot, "Active rulebook vN", "Published <date>, <who>", **View history**
+    button (same `goto` id, callback unchanged). A stale-save form says "Started from vN" instead of
+    Active. Overview moves to `da_admin_overview_tab.py`: grid with the Rulebook panel (rows stay
+    clickable) left 2/3; Needs attention then Health tiles stacked right 1/3. Tests: pill text and
+    button on all 8 tabs; Overview child order; old overview tests unchanged (the old "Showing vN" text
+    asserts, if any, are listed when changed).
+20. **L3 + L4.** Coding standards to `da_admin_coding_tab.py`: left 2/3 rule list, right 1/3 rule card
+    of the selected row; golden examples as cards with a working **Change** button (module picker from
+    the index, P29); approved libraries as chips, blocked imports as red chips. UI standards (existing
+    `da_admin_ui_standards.py`): brand constants left, UI conventions right. Tests: column order, chips,
+    Change button per card.
+21. **L5 + L6.** Repository and index to `da_admin_repo_tab.py`: left/right columns as spec section 7;
+    index health as tiles, allowed folders and markers as chips in the read view (edit view keeps its
+    tables). Capability catalog to `da_admin_catalog_tab.py`: table left, Unassigned queue as cards on
+    the right with **New capability** and **Reject** (P28). Tests: column order, chips, cards, buttons.
+22. **L7 + L8.** Version history to `da_admin_history_tab.py`: left vertical timeline (green filled dot =
+    active, newest first, Active / "Restored from vM" tags), right side panel "What changed in vN" with
+    coloured plain-word diff, Requests pinned chips and **Restore vN** with the section 3 confirm text;
+    the From/To number boxes leave the view. Build and test: compare with the demo, move any panel not
+    in place into `da_admin_build_tab.py`. Tests: timeline order and tags, side panel parts, Restore
+    confirm. Any old compare test that used the number boxes is changed and listed.
+23. **Proof.** Screenshot seed gets 2 versions (v1 seed, v2 with a change note); re-run the script for
+    16 PNGs at 1366 by 768. Full pytest, ruff, smoke check. Code review: each PNG next to both demo
+    tabs (max 3 rounds). Update the PR body (remove P31 from Known gaps, list changes), open the
+    `gian-later` issue "Phase 11 fix 1: screenshots ready for your sign-off", stop. Never merge PR #77.
+
+Run size: this run builds 19, 20, 21; the next run 22 and 23.
+Risk: CSS grid is inline-style only (no stylesheet); checked in the PNGs.
+
+### Addendum, plan review round 1: fixes (override the steps above where they differ)
+- **Header line:** "existing callbacks stay". New callbacks are named under their step (M1).
+- **Common file (M3).** `da_admin_common.py` holds: the `TAB_*` constants, `ADMIN_TABS`, `body_id`,
+  `act_id`, `goto_id`, `GOTO_TYPE`, `section`, `chips` (the existing `_chips`, reused as the chip helper),
+  `two_columns`, `version_pill` (with its own id counter, history target `TAB_HISTORY`), and the shared
+  list table (`list_table`, `_table_row`, `_cell_text`, `_text_rows`, `_draft`). Each tab file takes its
+  own private helpers and constants with it. `da_admin_page.py` re-exports with an `__all__` list (ruff
+  F401 clean). One test imports every `da_admin_*_tab.py` and `da_admin_common.py` alone in a fresh
+  interpreter (no ImportError). `version_line` stays as an alias of `version_pill`.
+- **Version for History (S2).** `history_content` (callbacks file, line ~510) passes the active version
+  to `history_view` as a new argument; this one line is changed and named.
+- **Steps renumbered (S4), small and one per concern:**
+  19 L1 common file and pill on all 8 tabs. 20 L2 Overview grid. 21 L3a Coding standards two-column
+  layout and rule-card selection (new callback `adm-rule-pick` on a rule row click fills the card;
+  card text comes from the existing `rule_cards`). **Next run:** 22 L3b golden Change button (new
+  callback: in edit mode, picks a module from `module_paths`, sets `module_path` and copies the first
+  lines into `code` in the draft) and libraries/blocked chips. 23 L4 UI standards. 24 L5 Repository and
+  index. **Run after:** 25 L6a catalog table plus queue cards. 26 L6b Reject and New capability.
+  27 L7 History. 28 L8 Build and test. **Last:** 29 Proof (as step 23 above).
+- **Reject (M2), smallest meaning.** Reject adds a fourth resolved state `rejected` to
+  `UnassignedState` and to the guard in `resolve_unassigned` (`db_tbl_da_enhance.py` line ~395); the
+  state column is plain text, so no table change. A rejected file leaves the open queue, shows in the
+  Resolved list as "Rejected", and a later change to the same file opens a new row (as for confirmed
+  rows). Files touched: `da_enhance_models.py`, `db_tbl_da_enhance.py`, `da_admin_catalog.py`,
+  `da_admin_page_callbacks.py` and the queue card. **New capability** opens the Capability catalog in
+  edit mode with one new row: name from the suggestion (or empty), path pattern = the file's folder
+  pattern; saving follows the normal Save with a note. Tests: reject moves the row to Resolved; a
+  later change reopens it; New capability pre-fills one row. This is my reading of P28; Gian can
+  change it at sign-off.
+- **Changed tests (S1), named now.** Step 19: the "Showing v1 (active)" asserts in
+  `test_da_admin_catalog_screen.py:70`, `test_da_admin_overview_screen.py:31`,
+  `test_da_admin_repo_screen.py:52`, `test_da_admin_rule_screen.py:74`, `test_da_admin_edit.py:121,125`
+  (now "Active rulebook v1" / "Started from v1"); `test_da_admin_header.py` keeps `version_line`
+  through the alias, with its asserts updated to the pill text. Step 20: `test_da_admin_overview_screen.py:83`
+  ("Rulebook areas" becomes "Rulebook"). Step 27: `test_da_admin_history.py:75-82` and
+  `test_da_admin_label_scan.py:88-91` (compare by clicking a timeline row).
+- **L8 (S3).** Step 28 is decided after I read the Build and test tab of the demos at step 28; the plan
+  names the panels and one test for card order then.
+- **Close-out (FYI).** Mark P28, P29, P31 DONE in `specs/parked-items.md`.
