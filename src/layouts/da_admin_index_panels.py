@@ -83,7 +83,10 @@ def health_tiles(health: IndexHealth):
     return dmc.SimpleGrid(
         [
             dmc.Paper(
-                [dmc.Text(name, size="xs", c="dimmed"), dmc.Text(value, fw=600, size="sm", style={"wordBreak": "break-all"})],
+                [
+                    dmc.Text(name, size="xs", c="dimmed"),
+                    dmc.Text(value, fw=600, size="sm", style={"wordBreak": "break-all"}),
+                ],
                 withBorder=True,
                 p="xs",
             )

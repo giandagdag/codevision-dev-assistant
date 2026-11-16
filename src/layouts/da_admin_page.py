@@ -245,11 +245,15 @@ def tab_content(
     else:
         view = charter_view if tab == TAB_CHARTER else build_view
         body = view(version, editable, draft, active)
+    buttons = _buttons(tab, version, editable)
+    if not editable:  # Edit sits top right, beside the version pill (a float, so the pill shrinks)
+        buttons = html.Div(buttons, style={"float": "right", "marginLeft": "8px"})
     return html.Div(
         [
             *(notice or []),
+            *([] if editable else [buttons]),
             body,
-            _buttons(tab, version, editable),
+            *([buttons] if editable else []),
             dcc.Store(id={"type": BASE_STORE_TYPE, "tab": tab}, data=version.version_number),
         ]
     )
@@ -257,7 +261,7 @@ def tab_content(
 
 def _buttons(tab: str, version: RulebookVersion, editable: bool):
     if not editable:
-        return dmc.Button("Edit", id=act_id(tab, ACTION_EDIT), mt="md")
+        return dmc.Button("Edit", id=act_id(tab, ACTION_EDIT))
     label = next(name for tab_id, name, _ in ADMIN_TABS if tab_id == tab)
     # The shared edit bar (AF-3): stays at the bottom of the window while the Admin scrolls.
     return dmc.Paper(
@@ -833,15 +837,18 @@ def catalog_list(capabilities, paths: list[str], search: str = "", missing_backu
                 [
                     dmc.TableTd(dmc.Text(c.name, fw=600, size="sm")),
                     dmc.TableTd(dmc.Text(c.description, size="sm")),
-                    dmc.TableTd(dmc.Text(c.named_senior, size="sm")),
+                    dmc.TableTd(_person(c.named_senior)),
                     dmc.TableTd(
-                        dmc.Badge(
-                            backup,
-                            variant="light",
-                            style=admin_styles.pill_style("green" if c.backup_senior else "amber"),
+                        _person(c.backup_senior)
+                        if c.backup_senior.strip()
+                        else dmc.Badge(
+                            backup, variant="light", style=admin_styles.pill_style("amber")
                         )
                     ),
-                    dmc.TableTd(dmc.Group(chips or [dmc.Text("none", size="xs")], gap=4)),
+                    dmc.TableTd(
+                        dmc.Group(chips or [dmc.Text("none", size="xs")], gap=4),
+                        style={"minWidth": "240px"},  # keeps the chips from being clipped
+                    ),
                 ]
             )
         )
@@ -857,6 +864,16 @@ def catalog_list(capabilities, paths: list[str], search: str = "", missing_backu
     if not rows:
         parts.append(dmc.Text("No capability matches.", style=da_styles.EMPTY_TEXT))
     return html.Div(parts)
+
+
+def _person(name: str):
+    """A senior as a small initials circle and the full name (it wraps, never cut off)."""
+    initials = "".join(word[0] for word in name.split()[:2]).upper()
+    return dmc.Group(
+        [dmc.Avatar(initials, size="sm", radius="xl", color="blue"), dmc.Text(name, size="sm")],
+        gap="xs",
+        wrap="nowrap",
+    )
 
 
 def _add_module_panel(names: list[str], paths: list[str]):
