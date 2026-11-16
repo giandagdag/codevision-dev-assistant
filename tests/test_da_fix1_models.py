@@ -28,8 +28,8 @@ def test_a_version_saved_before_the_fix_loads_with_defaults(seed_rulebook):
     assert loaded.policy.index_exclusions == []
     assert loaded.policy.index_folder_scope == ""
     assert loaded.brand_constants == []
-    # No program type stored: the first tag ("data"), as the spec says.
-    assert loaded.golden_examples[0].program_type == "data"
+    # No program type stored: the first tag if it is a real type, else Utility ("data" is not one).
+    assert loaded.golden_examples[0].program_type == "Utility"
     assert loaded.golden_examples[0].module_path == ""
 
 
