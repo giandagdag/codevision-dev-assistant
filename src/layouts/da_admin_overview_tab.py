@@ -1,5 +1,6 @@
-"""The Overview tab (fix 11-1, L2): Rulebook panel on the left 2/3, Needs attention and Health
-numbers stacked on the right 1/3. Read only. Imports da_admin_common, never da_admin_page."""
+"""The Overview tab (fix 11-1, L2 and section 15): Rulebook panel on the left 2/3, Needs attention
+on the right 1/3, and Health numbers as one full-width row of tiles underneath (Gian, 16 Nov: no
+empty space at the lower left). Read only. Imports da_admin_common, never da_admin_page."""
 
 import dash_mantine_components as dmc
 from dash import html
@@ -10,6 +11,9 @@ from styles import da_admin_styles as admin_styles
 from styles import da_styles
 
 HEALTH_ID = "adm-health"
+HEALTH_ROW_ID = "adm-health-row"
+# Section 15: the tiles run across the page, 5 per row on a 1366 wide screen.
+HEALTH_COLS = {"base": 2, "md": 3, "lg": 5}
 WINDOW_ID = "adm-window"
 STATUS_COLORS = {"green": "green", "amber": "yellow", "red": "red"}
 
@@ -40,17 +44,15 @@ def _card(title: str, body):
 
 def overview_view(version, overview, report, active: bool = True):
     """The Overview tab. `overview` is an Overview (da_admin_overview), `report` a HealthReport."""
-    right = dmc.Stack(
-        [
-            _card("⚠️ Needs attention", _attention_list(overview.attention)),
-            _card("📈 Health numbers", health_block(report)),
-        ],
-        gap="md",
-    )
     return html.Div(
         [
             version_pill(version, active),
-            two_columns(_card("📚 Rulebook", _areas_table(overview.areas)), right),
+            two_columns(
+                _card("📚 Rulebook", _areas_table(overview.areas)),
+                _card("⚠️ Needs attention", _attention_list(overview.attention)),
+            ),
+            html.Div(_card("📈 Health numbers", health_block(report)), id=HEALTH_ROW_ID,
+                     style={"marginTop": "16px"}),
         ]
     )
 
@@ -160,4 +162,4 @@ def health_numbers(report):
         if metric.note:
             parts.append(dmc.Text(metric.note, size="xs", c=da_styles.MUTED))
         tiles.append(dmc.Paper(parts, withBorder=True, p="sm"))
-    return dmc.SimpleGrid(tiles, cols=2, spacing="sm")
+    return dmc.SimpleGrid(tiles, cols=HEALTH_COLS, spacing="sm")

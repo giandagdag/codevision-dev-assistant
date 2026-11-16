@@ -77,9 +77,10 @@ def test_refresh_only_when_the_overview_tab_opens(make_settings, published_ruleb
     assert "Rulebook" in all_text(html.Div(children))
 
 
-def test_overview_is_a_two_column_grid_rulebook_left_attention_and_health_right(
+def test_overview_is_a_two_column_grid_rulebook_left_attention_right_health_below(
     make_settings, published_rulebook
 ):
+    """Section 15 (16 Nov): Health numbers moved out of the right column to a full-width row."""
     content = admin_content(admin_settings(make_settings), ADMIN_PATH)
 
     grid = next(
@@ -92,9 +93,10 @@ def test_overview_is_a_two_column_grid_rulebook_left_attention_and_health_right(
     )
     left, right = grid.children
     assert "📚 Rulebook" in all_text(left) and "Needs attention" not in all_text(left)
-    right_text = all_text(right)
-    assert right_text.index("Needs attention") < right_text.index("Health numbers")
-    assert "Health numbers" not in all_text(left)
+    assert "Needs attention" in all_text(right)
+    assert "Health numbers" not in all_text(left) and "Health numbers" not in all_text(right)
+    text = all_text(content)
+    assert text.index("Needs attention") < text.index("Health numbers")
 
 
 def test_overview_no_longer_says_comes_in(make_settings, published_rulebook):

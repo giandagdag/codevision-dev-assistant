@@ -1,6 +1,6 @@
 # Phase 11 fix 1: Admin console redesign (match the agreed design)
 
-Version 1.2 APPROVED, 16 Nov 2026 (07:16 SGT): section 14 added (layout rework). v1.1 approved 15 Nov 2026 (11:41 SGT). Gian: "Yes go ahead. Do your recommendations. Ensure that it
+Version 1.3 APPROVED, 16 Nov 2026 (23:20 SGT): section 15 added (Overview health row). v1.2 (07:16 SGT): section 14 (layout rework). v1.1 approved 15 Nov 2026 (11:41 SGT). Gian: "Yes go ahead. Do your recommendations. Ensure that it
 doesn't mess up with our Phase 10 progress." All D-x below are option 1 (the recommended one).
 
 Branch `phase-11-fix-1` (from `auto/phases-7-10`). PR into `auto/phases-7-10`; the chief merges it.
@@ -284,3 +284,16 @@ P30 (refresh on merge or nightly), P32 except the file split, P27 (Windows sandb
 **Nobody merges PR #77 until Gian comments that he approves the screenshots** (section 10.2). When
 the build and review are done: update the PR body (remove P31 from Known gaps, list what changed),
 then open a `gian-later` issue "Phase 11 fix 1: screenshots ready for your sign-off" and stop.
+
+## 15. Overview: Health numbers as a full-width row (v1.3, 16 Nov 2026)
+
+Gian, 16 Nov 23:14 SGT, after looking at the screenshots: "Notice that there's a lot of unused space
+on the lower left. Can we position the health numbers horizontally, occupying the lower area of the
+page?" Approved with full authority at 23:20.
+
+- Top: Rulebook (left 2/3) and Needs attention (right 1/3), as section 14 L2.
+- Below, full width: **Health numbers**, the Last 30 days / All time switch, then the tiles in a grid
+  of 5 per row at 1366 wide (`{"base": 2, "md": 3, "lg": 5}`).
+- Built in the cloud on 16 Nov (`src/layouts/da_admin_overview_tab.py`, two tests). The builder only
+  retakes the 16 screenshots and checks `01-overview-read.png`: the tiles run across the page under
+  both panels.

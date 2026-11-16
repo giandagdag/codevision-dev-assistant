@@ -78,3 +78,20 @@ def test_health_numbers_are_tiles_and_keep_handoffs_and_escalations(
     assert "Handoffs: No data yet" in text and "Escalations: No data yet" in text
     window = next(c for c in walk(view) if type(c).__name__ == "SegmentedControl")
     assert [d["label"] for d in window.data] == ["Last 30 days", "All time"]
+
+
+def test_section_15_health_numbers_are_a_full_width_row_under_the_two_columns(
+    make_settings, published_rulebook
+):
+    """Gian, 16 Nov: no empty space at the lower left; the tiles run across the page."""
+    from layouts.da_admin_overview_tab import HEALTH_ID, HEALTH_ROW_ID
+
+    _, view = _view(make_settings, published_rulebook, _report(make_settings))
+
+    top = view.children
+    assert getattr(top[-1], "id", None) == HEALTH_ROW_ID  # last, under the two columns
+    row_ids = [getattr(c, "id", None) for c in walk(top[-2])]
+    assert HEALTH_ID not in row_ids  # not inside the right column any more
+    grid = next(c for c in walk(top[-1]) if type(c).__name__ == "SimpleGrid")
+    assert grid.cols["lg"] == 5
+    assert "Needs attention" in all_text(top[-2])
