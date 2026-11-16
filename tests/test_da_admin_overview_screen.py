@@ -28,7 +28,7 @@ def test_overview_is_the_first_tab_and_shows_the_header_line(make_settings, publ
 
     tabs = next(c for c in walk(content) if type(c).__name__ == "Tabs")
     assert tabs.value == TAB_OVERVIEW
-    assert "Showing v1 (active)" in all_text(content)
+    assert "Active rulebook v1" in all_text(content)
 
 
 def test_areas_table_has_six_rows_with_a_status_badge(make_settings, published_rulebook):
@@ -74,13 +74,33 @@ def test_refresh_only_when_the_overview_tab_opens(make_settings, published_ruleb
     with pytest.raises(PreventUpdate):
         refresh_overview(settings, TAB_UI)
     children = refresh_overview(settings, TAB_OVERVIEW)
-    assert "Rulebook areas" in all_text(html.Div(children))
+    assert "Rulebook" in all_text(html.Div(children))
+
+
+def test_overview_is_a_two_column_grid_rulebook_left_attention_and_health_right(
+    make_settings, published_rulebook
+):
+    content = admin_content(admin_settings(make_settings), ADMIN_PATH)
+
+    grid = next(
+        c
+        for c in walk(content)
+        if isinstance(getattr(c, "style", None), dict)
+        and c.style.get("display") == "grid"
+        and "2fr" in c.style["gridTemplateColumns"]
+        and "Needs attention" in all_text(c)
+    )
+    left, right = grid.children
+    assert "📚 Rulebook" in all_text(left) and "Needs attention" not in all_text(left)
+    right_text = all_text(right)
+    assert right_text.index("Needs attention") < right_text.index("Health numbers")
+    assert "Health numbers" not in all_text(left)
 
 
 def test_overview_no_longer_says_comes_in(make_settings, published_rulebook):
     text = all_text(admin_content(admin_settings(make_settings), ADMIN_PATH))
 
-    assert "Rulebook areas" in text
+    assert "📚 Rulebook" in text
     assert [name for name, _, _ in ADMIN_TABS][0] == TAB_OVERVIEW
 
 

@@ -71,7 +71,7 @@ def rule_ids(rows):
 def test_both_tabs_build_from_the_seed_and_show_the_header_line(published_rulebook):
     for tab in (TAB_UI, TAB_CODING):
         text = all_text(tab_content(tab, published_rulebook))
-        assert "Showing v1 (active)" in text  # 11-3
+        assert "Active rulebook v1" in text  # 11-3
         assert "Edit" in text
         assert "Nothing here yet" not in text.split("Approved libraries")[0]
 

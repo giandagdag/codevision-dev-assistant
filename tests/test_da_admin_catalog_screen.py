@@ -67,7 +67,7 @@ def test_the_tab_builds_with_and_without_queue_rows(make_settings, published_rul
     settings = settings_for(make_settings)
     empty = tab_content(TAB, published_rulebook, queue=queue_data(settings))
     assert "No Unassigned files are waiting." in all_text(empty)
-    assert "Showing v1 (active)" in all_text(empty)  # 11-3
+    assert "Active rulebook v1" in all_text(empty)  # 11-3
 
     add_row(settings.db_path, "src/x/zzz.py", "Uploads")
     full = tab_content(TAB, published_rulebook, queue=queue_data(settings))

@@ -118,11 +118,11 @@ def test_a_stale_save_offers_reload_with_the_newer_version(make_settings, publis
     assert editing is True
     assert "Reload v2" in text
     # The form still shows v1, which is no longer the active version.
-    assert "Showing v1 (the version you started from)" in text
+    assert "Started from v1" in text
 
     reloaded, editing = run_action(settings, "build", act("reload"), {}, "", 1)
     assert editing is False
-    assert "Showing v2" in all_text(reloaded)
+    assert "Active rulebook v2" in all_text(reloaded)
 
 
 def test_add_row_and_remove_keep_the_typed_form(make_settings, published_rulebook):

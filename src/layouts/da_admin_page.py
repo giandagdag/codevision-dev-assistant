@@ -12,7 +12,6 @@ Ids the callbacks read back (all dictionaries, CodeVision's habit for repeated c
   adm-act    Edit, Save, Cancel, Reload  {"type","tab","action"}
 """
 
-import itertools
 from datetime import datetime
 
 import dash_mantine_components as dmc
@@ -30,7 +29,6 @@ from agents.da_admin_forms import (
 )
 from agents.da_admin_index import read_health, recent_runs
 from agents.da_admin_labels import label as field_label
-from agents.da_admin_metrics import WINDOW_ALL, WINDOW_LABELS
 from agents.da_admin_modules import (
     matches_search,
     module_chips,
@@ -40,6 +38,22 @@ from agents.da_admin_modules import (
 )
 from agents.da_admin_rebuild import running_since
 from agents.da_admin_sonar import SAMPLE_BANNER, sample_with_mapping
+from layouts.da_admin_common import (
+    ADMIN_TABS,
+    GOTO_TYPE,  # noqa: F401 (re-exported: the callbacks import it from here)
+    TAB_BUILD,
+    TAB_CAPABILITY,
+    TAB_CHARTER,
+    TAB_CODING,
+    TAB_HISTORY,
+    TAB_OVERVIEW,
+    TAB_REPO,
+    TAB_UI,
+    act_id,
+    body_id,
+    version_pill,
+)
+from layouts.da_admin_common import section as _section
 from layouts.da_admin_index_panels import (
     REFRESH_MODES,
     fixed_skip_rows,
@@ -48,6 +62,13 @@ from layouts.da_admin_index_panels import (
     rebuild_controls,
     recent_refreshes,
     refresh_tiles,
+)
+from layouts.da_admin_overview_tab import (  # noqa: F401 (callbacks import these)
+    HEALTH_ID,
+    WINDOW_ID,
+    _attention_list,  # noqa: F401 (a test imports it)
+    health_numbers,
+    overview_view,
 )
 from layouts.da_admin_ui_standards import brand_panel, convention_rows, rule_cards
 from pydantic_classes.da_rulebook_models import (
@@ -65,26 +86,6 @@ ADMIN_PATH = "/admin"
 ADMIN_CONTENT_ID = "da-admin-content"
 ADMIN_TABS_ID = "da-admin-tabs"
 
-TAB_OVERVIEW = "overview"
-TAB_CHARTER = "charter"
-TAB_REPO = "repo"
-TAB_CAPABILITY = "capability"
-TAB_UI = "ui"
-TAB_CODING = "coding"
-TAB_BUILD = "build"
-TAB_HISTORY = "history"
-
-# (id, label, the phase that builds it). Overview comes first (spec section 3).
-ADMIN_TABS: tuple[tuple[str, str, str], ...] = (
-    (TAB_OVERVIEW, "Overview", "11c"),
-    (TAB_CHARTER, "Project charter", "11a"),
-    (TAB_REPO, "Repository and index", "11c"),
-    (TAB_CAPABILITY, "Capability catalog", "11b"),
-    (TAB_UI, "UI standards", "11b"),
-    (TAB_CODING, "Coding standards", "11b"),
-    (TAB_BUILD, "Build and test", "11a"),
-    (TAB_HISTORY, "Version history", "11a"),
-)
 EDITABLE_TABS = (TAB_CHARTER, TAB_REPO, TAB_CAPABILITY, TAB_UI, TAB_CODING, TAB_BUILD)
 
 CHARTER_LISTS: tuple[tuple[str, str], ...] = (
@@ -117,14 +118,6 @@ BASE_STORE_TYPE = "adm-base"
 
 def tab_button_id(tab: str) -> dict:
     return {"type": "adm-tab", "tab": tab}
-
-
-def body_id(tab: str) -> str:
-    return f"adm-body-{tab}"
-
-
-def act_id(tab: str, action: str) -> dict:
-    return {"type": "adm-act", "tab": tab, "action": action}
 
 
 def admin_page(
@@ -182,32 +175,7 @@ def refusal_page() -> html.Div:
     return html.Div(dmc.Text(NOT_ADMIN_MESSAGE, c=da_styles.MUTED), style=da_styles.PAGE)
 
 
-_HISTORY_LINK_COUNTER = itertools.count(5000)  # each link needs its own id (all tabs are drawn)
-
-
-def version_line(version: RulebookVersion, active: bool = True) -> dmc.Group:
-    """The version pill on every tab (AF-3): version, date, who, note and a View history link."""
-    saved = version.saved_at.strftime("%Y-%m-%d %H:%M")
-    # After a stale save the form shows the version the Admin started from, which is not active.
-    state = "active" if active else "the version you started from"
-    return dmc.Group(
-        [
-            dmc.Badge(f"v{version.version_number}", color="blue", variant="light"),
-            dmc.Text(
-                f"Showing v{version.version_number} ({state}), saved by {version.saved_by} "
-                f"on {saved}: {version.change_note}",
-                size="sm",
-                c=da_styles.MUTED,
-            ),
-            dmc.Button(
-                "View history",
-                id=goto_id(TAB_HISTORY, next(_HISTORY_LINK_COUNTER)),
-                size="compact-xs",
-                variant="subtle",
-            ),
-        ],
-        gap="xs",
-    )
+version_line = version_pill  # the old name (AF-3) still works
 
 
 def _tab_body(
@@ -1409,9 +1377,11 @@ def history_view(
     """
     numbers = [str(row.version_number) for row in rows]
     chosen = next((row for row in rows if row.version_number == selected), None)
-    active = next((row.version_number for row in rows if row.is_active), 0)
+    active_row = next((row for row in rows if row.is_active), None)
+    active = active_row.version_number if active_row else 0
     return html.Div(
         [
+            *([version_pill(active_row)] if active_row else []),
             *(notice or []),
             *([_restore_dialog(restore_target, active)] if restore_target else []),
             dmc.Grid(
@@ -1564,153 +1534,3 @@ def _diff_lines(old_number: int, new_number: int, diff):
         return html.Div([title, dmc.Text("No changes.", size="sm")])
     # Same plain words as the side panel: headings and + / - lines, no raw field names (AF-2).
     return html.Div([title, *_plain_diff(plain_diff_lines(diff))])
-
-
-def _section(title: str, body):
-    return html.Div(
-        [dmc.Text(title, fw=600, c=da_styles.NAVY, size="sm"), body], style=da_styles.PANEL_SECTION
-    )
-
-
-# --- Overview (Phase 11c): rulebook areas, Needs attention, health numbers. Read only. ---
-
-HEALTH_ID = "adm-health"
-WINDOW_ID = "adm-window"
-GOTO_TYPE = "adm-goto"
-STATUS_COLORS = {"green": "green", "amber": "yellow", "red": "red"}
-
-
-def goto_id(tab: str, n: int) -> dict:
-    # n keeps every id unique; the callback reads only "tab" from the clicked button.
-    return {"type": GOTO_TYPE, "tab": tab, "n": n}
-
-
-def _tab_of_area(area: str) -> str:
-    return next(tab for tab, label, _ in ADMIN_TABS if label == area)
-
-
-def overview_view(version: RulebookVersion, overview, report, active: bool = True):
-    """The Overview tab. `overview` is an Overview (da_admin_overview), `report` a HealthReport."""
-    return html.Div(
-        [
-            version_line(version, active),
-            _section("Rulebook areas", _areas_table(overview.areas)),
-            _section("Needs attention", _attention_list(overview.attention)),
-            _section("Health numbers", health_block(report)),
-        ]
-    )
-
-
-def _areas_table(areas):
-    head = dmc.TableThead(
-        dmc.TableTr([dmc.TableTh(name) for name in ("Area", "Summary", "Status", "Updated")])
-    )
-    rows = [
-        dmc.TableTr(
-            [
-                dmc.TableTd(
-                    dmc.Group(
-                        [
-                            dmc.Text(AREA_ICONS.get(row.area, "•")),
-                            dmc.Button(
-                                row.area,
-                                id=goto_id(_tab_of_area(row.area), 1000 + index),
-                                variant="subtle",
-                                size="xs",
-                            ),
-                        ],
-                        gap=4,
-                    )
-                ),
-                dmc.TableTd(_chips(row.summary)),
-                dmc.TableTd(
-                    dmc.Badge(
-                        STATUS_WORDS.get(row.status, row.status),
-                        style=admin_styles.pill_style(row.status),
-                        variant="light",
-                        tt="none",
-                    )
-                ),
-                dmc.TableTd(row.last_changed),
-            ]
-        )
-        for index, row in enumerate(areas)
-    ]
-    return dmc.Table([head, dmc.TableTbody(rows)])
-
-
-# The status colour is a code value; an Admin reads these words, not "green" or "amber".
-STATUS_WORDS = {"green": "✅ Up to date", "amber": "⚠️ To review", "red": "❌ Needs fixing"}
-AREA_ICONS = {
-    "Project charter": "📜",
-    "Repository and index": "🗂",
-    "Capability catalog": "🧩",
-    "UI standards": "🎨",
-    "Coding standards": "📏",
-    "Build and test": "🛠",
-}
-
-
-def _chips(summary: str):
-    """A summary line such as "3 capabilities, 2 Unassigned" as small chips."""
-    parts = [p.strip() for p in summary.replace(";", ",").split(",") if p.strip()]
-    return dmc.Group([dmc.Badge(p, variant="outline", tt="none") for p in parts], gap=4)
-
-
-def _attention_list(items):
-    if not items:
-        return dmc.Text("Nothing needs attention.", size="sm", c=da_styles.MUTED)
-    return dmc.Stack(
-        [
-            dmc.Group(
-                [
-                    dmc.Badge(
-                        STATUS_WORDS.get(item.level, "ℹ️ For your information"),
-                        style=admin_styles.pill_style("red" if item.level == "red" else "amber"),
-                        variant="light",
-                        tt="none",
-                    ),
-                    dmc.Text(item.text, size="sm"),
-                    dmc.Button(
-                        "Assign" if item.filter else f"Open {item.area}",
-                        # n carries the catalog filter: the callback reads only "tab" for now.
-                        id=goto_id(
-                            _tab_of_area(item.area),
-                            f"{item.filter}-{index}" if item.filter else index,
-                        ),
-                        variant="subtle",
-                        size="xs",
-                    ),
-                ]
-            )
-            for index, item in enumerate(items)
-        ],
-        gap="xs",
-    )
-
-
-def health_block(report, window: str = WINDOW_ALL):
-    """The window chooser plus the numbers. The chooser re-draws only the part inside adm-health."""
-    return html.Div(
-        [
-            dmc.SegmentedControl(
-                id=WINDOW_ID,
-                value=window,
-                data=[{"value": key, "label": label} for key, label in WINDOW_LABELS.items()],
-            ),
-            html.Div(health_numbers(report), id=HEALTH_ID),
-        ]
-    )
-
-
-def health_numbers(report):
-    tiles = []
-    for metric in report.all_metrics:
-        parts = [dmc.Text(f"{metric.label}: {metric.text}", size="sm")]
-        if metric.items:
-            shown = ", ".join(f"{name} {count}" for name, count in metric.items)
-            parts.append(dmc.Text(shown, size="xs", c=da_styles.MUTED))
-        if metric.note:
-            parts.append(dmc.Text(metric.note, size="xs", c=da_styles.MUTED))
-        tiles.append(dmc.Paper(parts, withBorder=True, p="sm"))
-    return dmc.SimpleGrid(tiles, cols=3, spacing="sm")
