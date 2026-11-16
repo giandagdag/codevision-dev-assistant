@@ -40,6 +40,7 @@ from agents.da_admin_overview import (
     server_settings_view,
 )
 from agents.da_admin_rebuild import running_since, start_rebuild
+from agents.da_admin_sonar import refresh_snapshot
 from agents.da_admin_tag_cards import (
     ai_cards,
     approve_all_high,
@@ -132,6 +133,8 @@ from layouts.da_admin_page import (
     RULE_KIND_OF_TAB,
     RULES_TABLE,
     SONAR_FIELD_PREFIX,
+    SONAR_REFRESH_BTN,
+    SONAR_STATUS,
     TAB_BUILD,
     TAB_CAPABILITY,
     TAB_CHARTER,
@@ -671,6 +674,21 @@ def register_da_admin_page_callbacks(app) -> None:
     _register_golden(app)
     _register_rebuild(app)
     register_scan(app, lambda: get_admin_settings())  # looked up late so tests can replace it
+
+    @app.callback(
+        Output(SONAR_STATUS, "children"),
+        Input(SONAR_REFRESH_BTN, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def refresh_sonar(clicks):
+        return sonar_refresh_action(get_admin_settings(), clicks)
+
+
+def sonar_refresh_action(settings: Settings, clicks):
+    """Admin only. The message says saved, or why not; the old list stays on any error."""
+    if not clicks or not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    return refresh_snapshot(settings)
 
 
 def refresh_overview(settings: Settings, tab: str | None):

@@ -18,7 +18,9 @@ from dash import dcc, html
 from agents.da_admin_access import NOT_ADMIN_MESSAGE
 from agents.da_admin_forms import rule_counter_text
 from agents.da_admin_modules import module_paths
-from agents.da_admin_sonar import SAMPLE_BANNER, sample_with_mapping
+from agents.da_admin_sonar import SAMPLE_BANNER, load_snapshot, sample_with_mapping, source_pill
+from agents.da_sonar_client import NOT_CONNECTED, sonar_configured
+from configs.da_config import load_settings
 from layouts.da_admin_build_tab import (  # noqa: F401 (callbacks and tests import these)
     NUMBER_LABELS,
     SEVERITY_HANDOFF,
@@ -456,6 +458,8 @@ GOLDEN_COLUMNS = ("title", "program_type", "module_path", "tags", "code", "why")
 SEVERITY_CHOICES = [{"value": key, "label": words} for key, words in SEVERITY_WORDS.items()]
 
 
+SONAR_REFRESH_BTN = "adm-sonar-refresh-btn"
+SONAR_STATUS = "adm-sonar-status"
 SONAR_FIELD_PREFIX = "sonar_"  # a field named sonar_MAJOR holds the severity for MAJOR
 RULES_TABLE = "rules"
 RULE_KIND_OF_TAB = {TAB_UI: "ui_convention", TAB_CODING: "judgement"}
@@ -574,7 +578,23 @@ def _coding_extras(
         "Automatic checks (SonarQube)",
         html.Div(
             [
-                dmc.Badge("Governed in SonarQube", variant="light", tt="none"),
+                dmc.Group(
+                    [
+                        dmc.Badge("Governed in SonarQube", variant="light", tt="none"),
+                        dmc.Badge(source_pill(load_snapshot()), variant="outline", tt="none"),
+                        dmc.Button(
+                            "Refresh from SonarQube",
+                            id=SONAR_REFRESH_BTN,
+                            size="xs",
+                            disabled=not sonar_configured(load_settings()),
+                        ),
+                        dmc.Text(
+                            "" if sonar_configured(load_settings()) else NOT_CONNECTED,
+                            id=SONAR_STATUS,
+                            size="xs",
+                        ),
+                    ]
+                ),
                 _sonar_sample(chosen),
             ]
         ),
@@ -617,7 +637,12 @@ def _sonar_sample(chosen: dict):
     sample = sample_with_mapping(chosen)
     return html.Div(
         [
-            dmc.Text(SAMPLE_BANNER, size="xs", c=da_styles.MUTED, mt="sm"),
+            dmc.Text(
+                SAMPLE_BANNER if load_snapshot() is None else "",
+                size="xs",
+                c=da_styles.MUTED,
+                mt="sm",
+            ),
             dmc.Table(
                 [
                     dmc.TableThead(
