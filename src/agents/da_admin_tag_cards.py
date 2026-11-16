@@ -94,7 +94,10 @@ def approve_pairs(
         new_version = saved.version_number
     _mark([p for p, _c in pairs], STATE_APPROVED, directory)
     # name the capability that already holds a path, so Admin sees where it really is
-    held = [pattern_offer(p, catalog, c) for p, c in pairs if p not in {n for n, _c in needed}]
+    needed_paths = {n for n, _c in needed}
+    held = [pattern_offer(p, catalog, c) for p, c in pairs if p not in needed_paths]
+    if len(held) > 1:  # bulk approve: one summary line, not one sentence per program
+        held = [f"{len(held)} programs were already matched by a capability; no pattern needed."]
     return ResolveResult("resolved", message=" ".join(held), new_version=new_version)
 
 

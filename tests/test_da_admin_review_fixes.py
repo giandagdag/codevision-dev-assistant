@@ -11,7 +11,11 @@ from callbacks.screen_callbacks.da_admin_scan_callbacks import confirm_state
 from layouts.da_admin_scan_controls import HIDDEN, SCAN_NEW_BTN, SHOWN
 from pydantic_classes.da_rulebook_models import Capability
 
-CAPS = [Capability(name="Reports", description="Reports.", named_senior="s3", path_patterns=["*report*"])]
+CAPS = [
+    Capability(
+        name="Reports", description="Reports.", named_senior="s3", path_patterns=["*report*"]
+    )
+]
 GOOD = {"summary": "Does a thing.", "capability": "Reports", "confidence": "high", "reason": "ok"}
 
 
@@ -82,7 +86,7 @@ def test_approving_a_path_another_capability_holds_names_that_capability(
     result = approve_card(make_settings(), path, "Uploads", "admin-0001", 1, directory=tmp_path)
 
     assert result.kind == "resolved" and result.new_version is None
-    assert "already matches" in result.message
+    assert "already matches" in result.message and "'" in result.message  # names the capability
 
 
 def test_the_confirm_box_text_follows_the_button():
