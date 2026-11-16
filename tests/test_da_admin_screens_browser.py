@@ -3,6 +3,7 @@
 The code reviewer opens these next to docs/admin-reference/. Skipped, not failed, when Playwright
 or its browser is missing. The PNGs go to logs/admin-screens/ (Git ignores logs)."""
 
+import json
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
@@ -10,6 +11,8 @@ from pathlib import Path
 import pytest
 from werkzeug.serving import make_server
 
+from agents.da_admin_index import record_run
+from agents.da_code_index import PIECES_NAME
 from callbacks.screen_callbacks import da_admin_page_callbacks as admin_cb
 from db_table_functions.da_db import open_db
 from db_table_functions.db_tbl_da_build import ensure_build_tables
@@ -42,9 +45,18 @@ def seed_for_pictures(settings, rulebook):
 
 
 @pytest.fixture
-def live(make_settings, monkeypatch, seed_rulebook):
+def live(make_settings, monkeypatch, seed_rulebook, tmp_path):
     settings = make_settings(admin_ids=(ADMIN,), developer_id=ADMIN)
     seed_for_pictures(settings, seed_rulebook)
+    # A built index, so Index health shows its tiles and Recent refreshes has a run.
+    monkeypatch.setenv("DA_CODE_INDEX_DIR", str(tmp_path))
+    built = {
+        "built_at": datetime.now().isoformat(timespec="seconds"),
+        "source": "src/data/da_fake_codevision",
+        "pieces": [{"path": "limits_batch.py"}, {"path": "limits_batch.py"}, {"path": "menu.py"}],
+    }
+    (tmp_path / PIECES_NAME).write_text(json.dumps(built), encoding="utf-8")
+    record_run(ADMIN, datetime.now(), True, 3, [], "ok", tmp_path)
     monkeypatch.setattr(admin_cb, "get_admin_settings", lambda: settings)
     monkeypatch.setattr(server_module, "get_settings", lambda: settings)
     server = make_server("127.0.0.1", 0, server_module.create_app().server, threaded=True)

@@ -14,8 +14,9 @@ from agents.da_admin_index import (
 )
 from agents.da_code_index import PIECES_NAME
 from db_table_functions.db_tbl_da_rulebook import get_active_version
+from layouts.da_admin_index_panels import health_tiles
 from layouts.da_admin_page import repo_view
-from tests.test_da_admin_page import all_text
+from tests.test_da_admin_page import all_text, walk
 
 NOW = datetime(2026, 11, 15, 12, 0)
 
@@ -41,6 +42,16 @@ def test_health_comes_from_the_piece_list(tmp_path):
 
     assert (health.modules, health.pieces) == (2, 3)
     assert health.is_fresh(NOW) and health.pill(NOW) == "Index is fresh, built 3 hours ago"
+
+
+def test_built_index_health_is_four_tiles(tmp_path):
+    record = {"built_at": "2026-11-15T09:00:00", "source": "src/x", "pieces": [{"path": "a.py"}]}
+    (tmp_path / PIECES_NAME).write_text(json.dumps(record), encoding="utf-8")
+
+    tiles = [n for n in walk(health_tiles(read_health(tmp_path))) if type(n).__name__ == "Paper"]
+
+    assert len(tiles) == 4
+    assert "Modules indexed" in all_text(tiles[1]) and "Source folder" in all_text(tiles[3])
 
 
 def test_runs_keep_the_last_ten_and_never_store_code_text(tmp_path):

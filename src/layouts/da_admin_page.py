@@ -621,38 +621,59 @@ def _coding_extras(
     blocked = _draft(draft, "blocked_imports", policy.build_blocked_imports)
     # The picker lists the index plus each example's own path (it may have left the index).
     picks = sorted({*(modules or []), *(g.get("module_path", "") for g in golden)} - {""})
+    libraries = _section(
+        "Approved libraries",
+        list_table(TAB_CODING, "approved_libraries", (TEXT_COLUMN,), _text_rows(approved), True)
+        if editable
+        else library_chips(approved),
+    )
+    imports = _section(
+        "Blocked imports",
+        list_table(TAB_CODING, "blocked_imports", (TEXT_COLUMN,), _text_rows(blocked), True)
+        if editable
+        else library_chips(blocked, blocked=True),
+    )
+    examples = _section(
+        "Golden examples (the Generator follows the one that matches the program type)",
+        list_table(
+            TAB_CODING,
+            "golden_examples",
+            GOLDEN_COLUMNS,
+            golden,
+            editable,
+            kinds={"program_type": list(PROGRAM_TYPES), "module_path": picks},
+        )
+        if editable
+        else golden_cards(golden),
+    )
+    if editable:  # the edit form stays one column of tables
+        sonar = _section("SonarQube severity map", _sonar_map(policy, True, draft))
+        return [libraries, imports, sonar, examples]
+    # Read view, as in the demo: two rows of two side-by-side panels (equal halves).
+    chosen = policy.sonar_severity_map
+    checks = _section(
+        "Automatic checks (SonarQube)",
+        html.Div(
+            [
+                dmc.Badge("Governed in SonarQube", variant="light", tt="none"),
+                _sonar_sample(chosen),
+            ]
+        ),
+    )
+    severity = _section("SonarQube severity map", _sonar_lines(chosen, False))
     return [
-        _section(
-            "Approved libraries",
-            list_table(TAB_CODING, "approved_libraries", (TEXT_COLUMN,), _text_rows(approved), True)
-            if editable
-            else library_chips(approved),
-        ),
-        _section(
-            "Blocked imports",
-            list_table(TAB_CODING, "blocked_imports", (TEXT_COLUMN,), _text_rows(blocked), True)
-            if editable
-            else library_chips(blocked, blocked=True),
-        ),
-        _section("SonarQube severity map", _sonar_map(policy, editable, draft)),
-        _section(
-            "Golden examples (the Generator follows the one that matches the program type)",
-            list_table(
-                TAB_CODING,
-                "golden_examples",
-                GOLDEN_COLUMNS,
-                golden,
-                editable,
-                kinds={"program_type": list(PROGRAM_TYPES), "module_path": picks},
-            )
-            if editable
-            else golden_cards(golden),
-        ),
+        two_columns(examples, html.Div([libraries, imports]), 1.5),
+        two_columns(checks, severity, 1.5),
     ]
 
 
 def _sonar_map(policy: Policy, editable: bool, draft: dict | None):
+    """Edit view: the severity boxes and the sample table in one block."""
     chosen = _draft(draft, "sonar_map", policy.sonar_severity_map)
+    return html.Div([_sonar_lines(chosen, editable), _sonar_sample(chosen)])
+
+
+def _sonar_lines(chosen: dict, editable: bool):
     lines = []
     for key in SONAR_SEVERITY_KEYS:
         value = chosen.get(key, "")
@@ -669,10 +690,14 @@ def _sonar_map(policy: Policy, editable: bool, draft: dict | None):
             )
         else:
             lines.append(dmc.Text(f"{key}: {_plain(value)}", size="sm"))
+    return dmc.Stack(lines, gap=2)
+
+
+def _sonar_sample(chosen: dict):
+    """The sample checks with the severity each would get under the map."""
     sample = sample_with_mapping(chosen)
     return html.Div(
         [
-            dmc.Stack(lines, gap=2),
             dmc.Text(SAMPLE_BANNER, size="xs", c=da_styles.MUTED, mt="sm"),
             dmc.Table(
                 [
@@ -1057,10 +1082,9 @@ def build_view(
     active: bool = True,
 ):
     policy = version.rulebook.policy
-    return html.Div(
+    limits = dmc.Stack(
         [
-            version_line(version, active),
-            _section("Limits", _number_fields(policy, CORE_BUILD_FIELDS, editable, draft)),
+            _number_fields(policy, CORE_BUILD_FIELDS, editable, draft),
             dmc.Accordion(
                 [
                     dmc.AccordionItem(
@@ -1075,6 +1099,12 @@ def build_view(
                 ],
                 value=None,
             ),
+        ],
+        gap="xs",
+    )
+    cards = [
+        _section("Limits", limits),
+        *[
             _section(
                 "Model per role",
                 dmc.Stack(
@@ -1110,8 +1140,11 @@ def build_view(
             ),
             _section("Tests", _tests_card()),
             _section("Can a request be handed off?", _severity_table()),
-        ]
-    )
+        ],
+    ]
+    # Read view: cards in two equal columns, as in the demo. Edit keeps one column of forms.
+    body = html.Div(cards) if editable else dmc.SimpleGrid(cards, cols=2, spacing="md")
+    return html.Div([version_line(version, active), body])
 
 
 # Read only: how the build and test loop works (fixed in code, not set by an Admin).

@@ -80,7 +80,18 @@ def health_tiles(health: IndexHealth):
         ("Pieces (functions and classes)", str(health.pieces)),
         ("Source folder", health.source),
     )
-    return dmc.Stack([dmc.Text(f"{name}: {value}", size="sm") for name, value in tiles], gap=2)
+    return dmc.SimpleGrid(
+        [
+            dmc.Paper(
+                [dmc.Text(name, size="xs", c="dimmed"), dmc.Text(value, fw=600, size="sm", style={"wordBreak": "break-all"})],
+                withBorder=True,
+                p="xs",
+            )
+            for name, value in tiles
+        ],
+        cols=2,
+        spacing="xs",
+    )
 
 
 def recent_refreshes(runs: list[dict]):
