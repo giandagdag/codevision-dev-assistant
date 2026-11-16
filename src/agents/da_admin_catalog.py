@@ -144,7 +144,7 @@ def resolve_row(
     if add_pattern and not pattern_offer(row.path, catalog, capability):
         version = base_version or active.version_number
         saved = _add_pattern(
-            settings, active.rulebook.policy, row.path, capability, version, admin_id, note
+            settings, active.rulebook.policy, [(row.path, capability)], version, admin_id, note
         )
         if saved.kind != RESULT_SAVED:
             return ResolveResult(
@@ -176,11 +176,13 @@ def _open_row_by_id(settings, unassigned_id: int) -> UnassignedFile | None:
         return next((r for r in list_unassigned(conn) if r.unassigned_id == unassigned_id), None)
 
 
-def _add_pattern(settings, policy, path, capability, base_version, admin_id, note):
+def _add_pattern(settings, policy, pairs, base_version, admin_id, note):
+    """Add each (path, capability) pair as an exact-path pattern and save ONE new version."""
     rows = capability_rows(policy)
-    for row in rows:
-        if row["name"].lower() == capability.lower():
-            row["path_patterns"] = row["path_patterns"] + "\n" + path
+    for path, capability in pairs:
+        for row in rows:
+            if row["name"].lower() == capability.lower():
+                row["path_patterns"] = row["path_patterns"] + "\n" + path
     return save_from_form(
         settings.db_path, TAB_CAPABILITY, {"capabilities": rows}, base_version, admin_id, note
     )

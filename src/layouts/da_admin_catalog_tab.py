@@ -5,11 +5,13 @@ from dash import html
 
 from agents.da_admin_forms import capability_rows
 from agents.da_admin_modules import (
+    SHOWN_MODULES,
     matches_search,
     module_chips,
     modules_by_capability,
     share_counts,
 )
+from agents.da_admin_tag_store import read_tags
 from agents.da_admin_tagger_job import scan_running, status_line, tags_out_of_date
 from layouts.da_admin_common import (
     TAB_CAPABILITY,
@@ -39,6 +41,8 @@ Q_NEW = "new_capability"  # open the catalog in edit mode with one new row for t
 Q_APPLY = "apply"
 Q_APPLY_PATTERN = "apply_pattern"
 Q_CANCEL = "cancel"
+Q_AI_APPROVE, Q_AI_ASSIGN, Q_AI_REJECT = "ai_approve", "ai_assign", "ai_reject"  # fix 11-2
+Q_AI_ALL, Q_AI_ALL_DO = "ai_all", "ai_all_do"  # ask first, then approve every sure proposal
 Q_SHOW_RESOLVED = "show_resolved"
 Q_HIDE_RESOLVED = "hide_resolved"
 CATALOG_HINT = (
@@ -47,7 +51,7 @@ CATALOG_HINT = (
 )
 
 
-def queue_button_id(action: str, uid: int = 0, cap: str = "", state: str = "") -> dict:
+def queue_button_id(action: str, uid: int | str = 0,cap: str = "", state: str = "") -> dict:
     # Every queue button has the same four keys so one callback pattern matches them all.
     return {"type": QUEUE_BUTTON_TYPE, "action": action, "uid": uid, "cap": cap, "state": state}
 
@@ -121,6 +125,7 @@ def catalog_list(capabilities, paths: list[str], search: str = "", missing_backu
     A module claimed by two capabilities shows "×2". Search matches name, description or module."""
     by_capability = modules_by_capability(list(capabilities), paths)
     counts = share_counts(by_capability)
+    summaries = {p: str(e.get("summary", "")) for p, e in read_tags().items()}  # fix 11-2 tooltips
     rows = []
     for c in capabilities:
         mine = by_capability[c.name]
@@ -131,7 +136,10 @@ def catalog_list(capabilities, paths: list[str], search: str = "", missing_backu
         ):
             continue
         labels, more = module_chips(mine, counts)
-        chips = [dmc.Badge(label, variant="outline", tt="none") for label in labels]
+        chips = [
+            _chip(label, summaries.get(path, ""))
+            for label, path in zip(labels, mine[:SHOWN_MODULES], strict=False)
+        ]
         if more:
             chips.append(dmc.Badge(f"+{more} more", variant="light", tt="none"))
         backup = c.backup_senior.strip() or "none"
@@ -167,6 +175,12 @@ def catalog_list(capabilities, paths: list[str], search: str = "", missing_backu
     if not rows:
         parts.append(dmc.Text("No capability matches.", style=da_styles.EMPTY_TEXT))
     return html.Div(parts)
+
+
+def _chip(label: str, summary: str):
+    """A module chip; the AI summary (when the scan has one) shows as a tooltip."""
+    badge = dmc.Badge(label, variant="outline", tt="none")
+    return dmc.Tooltip(badge, label=summary, multiline=True, w=260) if summary else badge
 
 
 def _person(name: str):
@@ -229,10 +243,14 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
     ]
     if queue.get("dialog"):
         parts.append(_pattern_dialog(queue["dialog"]))
+    ai_cards = queue.get("ai_cards", [])
     if rows:
+        parts.append(dmc.Text("From a request", size="xs", fw=600, c=da_styles.MUTED))
         parts.extend(_queue_card(r, capability_names, disabled) for r in rows)
-    else:
+    elif not ai_cards:
         parts.append(dmc.Text("No Unassigned files are waiting.", style=da_styles.EMPTY_TEXT))
+    if ai_cards:
+        parts.extend(_ai_section(ai_cards, capability_names, disabled, queue.get("ai_confirm")))
     if queue.get("resolved") is None:
         parts.append(
             dmc.Button(
@@ -329,6 +347,103 @@ def _queue_card(row, capability_names: list[str], disabled: bool):
                 ),
                 style={"marginTop": "8px"},
             ),
+        ],
+        withBorder=True,
+        p="sm",
+        mb="xs",
+    )
+
+
+def _ai_section(cards, capability_names: list[str], disabled: bool, confirm: dict | None):
+    """The "From the AI scan" cards, and the Approve all box when sure proposals exist.
+    The card's path rides in the button id's `uid` (rows from a request use a number there)."""
+    sure = [c for c in cards if c.confidence == "high" and c.capability]
+    parts: list = [dmc.Text("From the AI scan", size="xs", fw=600, c=da_styles.MUTED)]
+    if confirm:
+        lines = ", ".join(f"{name}: {n}" for name, n in confirm["counts"].items())
+        parts.append(
+            dmc.Paper(
+                [
+                    dmc.Text(
+                        f"Approve {sum(confirm['counts'].values())} programs? {lines}", size="sm"
+                    ),
+                    dmc.Group(
+                        [
+                            dmc.Button("Approve all", id=queue_button_id(Q_AI_ALL_DO), size="xs"),
+                            dmc.Button(
+                                "Cancel", id=queue_button_id(Q_CANCEL), size="xs", variant="default"
+                            ),
+                        ]
+                    ),
+                ],
+                withBorder=True,
+                p="sm",
+                mb="xs",
+            )
+        )
+    elif sure:
+        parts.append(
+            dmc.Button(
+                f"Approve all high-confidence ({len(sure)})",
+                id=queue_button_id(Q_AI_ALL),
+                size="xs",
+                disabled=disabled,
+            )
+        )
+    parts.extend(_ai_card(c, capability_names, disabled) for c in cards)
+    return parts
+
+
+def _ai_card(card, capability_names: list[str], disabled: bool):
+    target = card.capability or "No capability fits"
+    buttons = []
+    if card.capability:  # no Approve when the AI found no fit
+        buttons.append(
+            dmc.Button(
+                "Approve",
+                id=queue_button_id(Q_AI_APPROVE, card.path, card.capability),
+                size="xs",
+                disabled=disabled,
+            )
+        )
+    buttons += [
+        dmc.Select(
+            data=capability_names,
+            value=card.capability if card.capability in capability_names else None,
+            id={"type": QUEUE_PICK_TYPE, "uid": card.path},
+            size="xs",
+            w=150,
+            disabled=disabled,
+        ),
+        dmc.Button(
+            "Assign to",
+            id=queue_button_id(Q_AI_ASSIGN, card.path),
+            size="xs",
+            variant="default",
+            disabled=disabled,
+        ),
+        dmc.Button(
+            "Reject",
+            id=queue_button_id(Q_AI_REJECT, card.path),
+            size="xs",
+            variant="default",
+            color="red",
+            disabled=disabled,
+        ),
+    ]
+    return dmc.Paper(
+        [
+            dmc.Group(
+                [
+                    dmc.Code(card.path),
+                    dmc.Text(f"→ {target}", size="sm", fw=600),
+                    dmc.Badge(card.confidence, variant="light", tt="none"),
+                ],
+                gap="xs",
+            ),
+            dmc.Text(card.summary, size="sm"),
+            dmc.Text(card.reason, size="xs", style=da_styles.EMPTY_TEXT),
+            html.Div(dmc.Group(buttons, gap="xs"), style={"marginTop": "8px"}),
         ],
         withBorder=True,
         p="sm",

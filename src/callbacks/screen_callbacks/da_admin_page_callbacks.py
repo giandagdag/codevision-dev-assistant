@@ -38,6 +38,13 @@ from agents.da_admin_overview import (
     server_settings_view,
 )
 from agents.da_admin_rebuild import running_since, start_rebuild
+from agents.da_admin_tag_cards import (
+    ai_cards,
+    approve_all_high,
+    approve_card,
+    high_confidence_counts,
+    reject_card,
+)
 from callbacks.screen_callbacks.da_admin_scan_callbacks import register_scan
 from configs.da_config import Settings, load_settings
 from db_table_functions.db_tbl_da_rulebook import (
@@ -45,6 +52,13 @@ from db_table_functions.db_tbl_da_rulebook import (
     get_active_version,
     get_version,
     restore_version,
+)
+from layouts.da_admin_catalog_tab import (
+    Q_AI_ALL,
+    Q_AI_ALL_DO,
+    Q_AI_APPROVE,
+    Q_AI_ASSIGN,
+    Q_AI_REJECT,
 )
 from layouts.da_admin_coding_tab import (
     GOLDEN_CHANGE_TYPE,
@@ -329,14 +343,46 @@ def _content(settings: Settings, tab: str, version, **kwargs):
 # --- Unassigned queue ---
 
 
-def queue_data(settings: Settings, show_resolved: bool = False, dialog=None, notice=None) -> dict:
+def queue_data(
+    settings: Settings, show_resolved: bool = False, dialog=None, notice=None, ai_confirm=False
+) -> dict:
     """What the layout needs to draw the queue block."""
     return {
         "rows": queue_rows(settings),
         "resolved": resolved_rows(settings) if show_resolved else None,
         "dialog": dialog,
         "notice": notice or [],
+        "ai_cards": ai_cards(),
+        "ai_confirm": {"counts": high_confidence_counts()} if ai_confirm else None,
     }
+
+
+def _ai_action(
+    settings: Settings, name: str, path: str, picks: dict, base_version: int | None, cap: str
+):
+    """Approve, Assign to, Reject and Approve all on the AI scan cards."""
+    if name == Q_AI_ALL:
+        return _queue_tab(settings, ai_confirm=True)
+    if name == Q_AI_REJECT:
+        reject_card(path)
+        return _queue_tab(settings, notice=[message_notice("Rejected.", color="green")])
+    if name == Q_AI_ALL_DO:
+        result = approve_all_high(settings, settings.developer_id, base_version)
+    else:
+        target = cap if name == Q_AI_APPROVE else (picks.get(path) or "")
+        if not target:
+            return _queue_tab(settings, notice=[message_notice("Choose a capability first.")])
+        result = approve_card(settings, path, target, settings.developer_id, base_version)
+    if result.kind == "resolved":
+        text = "Approved."
+        if result.new_version:
+            text += f" The catalog is now v{result.new_version}."
+        return _queue_tab(settings, notice=[message_notice(text, color="green")])
+    if result.stale:
+        newest = get_active_version(settings.db_path).version_number
+        notice = message_notice(result.message, reload_tab=TAB_CAPABILITY, newest=newest)
+        return _queue_tab(settings, notice=[notice])
+    return _queue_tab(settings, notice=[problem_notice(result.problems or [result.message])])
 
 
 def _queue_tab(settings: Settings, **kwargs):
@@ -356,6 +402,8 @@ def run_queue_action(
     `picks` is {unassigned_id: chosen capability}, `notes` {unassigned_id: change note}. Writes only
     on Resolve (and, with the pattern, one new catalog version)."""
     name, uid = action["action"], action["uid"]
+    if name in (Q_AI_APPROVE, Q_AI_ASSIGN, Q_AI_REJECT, Q_AI_ALL, Q_AI_ALL_DO):
+        return _ai_action(settings, name, uid, picks, base_version, action["cap"])
     if name == Q_SHOW_RESOLVED:
         return _queue_tab(settings, show_resolved=True)
     if name == Q_APPROVE:  # take the suggestion: same as Move to <suggested>

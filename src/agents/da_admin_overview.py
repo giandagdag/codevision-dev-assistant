@@ -21,6 +21,7 @@ from agents.da_admin_diff import (
     build_timeline,
 )
 from agents.da_admin_forms import capabilities_without_backup
+from agents.da_admin_tag_cards import ai_cards
 from db_table_functions.da_db import open_db
 from db_table_functions.db_tbl_da_build import ensure_build_tables
 from db_table_functions.db_tbl_da_escalation import list_escalations
@@ -79,7 +80,8 @@ def build_overview(settings, now: datetime | None = None) -> Overview | None:
         return None
     waiting = [row.waiting_since for row in queue_rows(settings)]
     return overview_from(
-        active, waiting, build_timeline(settings.db_path), now, open_escalations(settings)
+        active, waiting, build_timeline(settings.db_path), now, open_escalations(settings),
+        len(ai_cards()),
     )
 
 
@@ -96,10 +98,15 @@ def overview_from(
     timeline: list[TimelineRow],
     now: datetime | None = None,
     escalations: list[EscalationRow] | None = None,
+    ai_proposals: int = 0,
 ) -> Overview:
     """The pure part: given the version, the open queue's ages and the timeline, no database."""
     rulebook = version.rulebook
     items = attention_items(rulebook, waiting_since, now)
+    if ai_proposals:  # fix 11-2: the AI scan's open cards
+        noun = "proposal" if ai_proposals == 1 else "proposals"
+        text = f"{ai_proposals} AI {noun} to review (Capability catalog tab)."
+        items.append(AttentionItem(AREA_CATALOG, LEVEL_INFO, text))
     items += escalation_items(escalations or [], rulebook.policy.admin_unassigned_stale_days, now)
     summaries = area_summaries(rulebook, len(waiting_since))
     changed = last_changed(timeline)
