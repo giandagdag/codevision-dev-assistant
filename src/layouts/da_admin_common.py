@@ -138,3 +138,128 @@ def version_pill(version, active: bool = True) -> html.Div:
     )
     right = {"display": "flex", "justifyContent": "flex-end", "marginBottom": "8px"}
     return html.Div(pill, style=right)
+
+
+TEXT_COLUMN = "text"  # a one-column table holds a list of plain strings
+MOVE_TYPE = "adm-move"
+SEVERITY_WORDS = {"must_fix": "Must fix", "should_fix": "Should fix", "fyi": "FYI"}
+
+
+def _plain(text: str) -> str:
+    return SEVERITY_WORDS.get(text, text)
+
+
+# --- Shared list table (zones, protected files, glossary, charter lists; 11b reuses it) ---
+
+
+CODE_COLUMNS = ("good_example", "bad_example", "code")  # drawn in a code box in the read view
+READONLY = "readonly"  # a cell kind: a disabled input that is still read back like any cell
+
+
+def list_table(
+    tab: str,
+    table_id: str,
+    columns: tuple[str, ...],
+    rows: list[dict],
+    editable: bool,
+    kinds: dict | None = None,
+    static: tuple[str, ...] = (),
+    movable: bool = False,
+):
+    """A table drawn from column names. Read mode is plain text; edit mode adds Add row and Remove.
+
+    Edit cells carry pattern-matching ids so the callbacks can read them back.
+    `kinds` says a column is READONLY or a dropdown (a list of choices). A `static` column is plain
+    text in both modes and is never read back (the Cited counts).
+    """
+    kinds = kinds or {}
+    head = dmc.TableThead(
+        dmc.TableTr([dmc.TableTh(col.replace("_", " ").capitalize()) for col in columns])
+    )
+    body = dmc.TableTbody(
+        [
+            _table_row(tab, table_id, columns, i, row, editable, kinds, static, movable)
+            for i, row in enumerate(rows)
+        ]
+    )
+    parts: list = [dmc.Table([head, body], withTableBorder=True, withColumnBorders=True)]
+    if not rows:
+        parts.append(dmc.Text("Nothing here yet.", style=da_styles.EMPTY_TEXT))
+    if editable:
+        parts.append(
+            dmc.Button(
+                "Add row",
+                id={"type": "adm-add", "tab": tab, "table": table_id, "index": 0},
+                variant="default",
+                size="xs",
+                mt="xs",
+            )
+        )
+    return html.Div(parts)
+
+
+def _table_row(tab, table_id, columns, index, row, editable, kinds, static, movable=False):
+    cells = []
+    for col in columns:
+        value = _cell_text(row.get(col, ""))
+        if editable and col not in static:
+            cell_id = {
+                "type": "adm-cell",
+                "tab": tab,
+                "table": table_id,
+                "row": index,
+                "col": col,
+            }
+            kind = kinds.get(col)
+            if kind == READONLY:
+                widget = dmc.TextInput(value=value, id=cell_id, disabled=True, size="xs")
+            elif kind:
+                widget = dmc.Select(
+                    data=kind, value=value or None, id=cell_id, size="xs", searchable=True
+                )
+            else:
+                widget = dmc.Textarea(value=value, id=cell_id, autosize=True, minRows=1, size="xs")
+            cells.append(dmc.TableTd(widget))
+        else:
+            shown = _plain(value) if col == "severity" else value
+            if col in CODE_COLUMNS or table_id == "protected_files":  # code and paths: code box
+                cells.append(dmc.TableTd(dmc.Code(shown, block=True)))
+            else:
+                cells.append(
+                    dmc.TableTd(dmc.Text(shown, size="sm", style={"whiteSpace": "pre-wrap"}))
+                )
+    if editable:
+        buttons = [
+            dmc.Button(
+                "Remove",
+                id={"type": "adm-remove", "tab": tab, "table": table_id, "index": index},
+                variant="subtle",
+                color="red",
+                size="xs",
+            )
+        ]
+        if movable:
+            for label, step in (("Move up", -1), ("Move down", 1)):
+                move_id = {
+                    "type": MOVE_TYPE,
+                    "tab": tab,
+                    "table": table_id,
+                    "index": index,
+                    "step": step,
+                }
+                buttons.append(dmc.Button(label, id=move_id, variant="default", size="xs"))
+        cells.append(dmc.TableTd(dmc.Group(buttons, gap="xs") if movable else buttons[0]))
+    return dmc.TableTr(cells)
+
+
+def _cell_text(value) -> str:
+    # A list cell (examples, path patterns) is one item per line.
+    return "\n".join(value) if isinstance(value, list) else str(value)
+
+
+def _text_rows(items) -> list[dict]:
+    return [{TEXT_COLUMN: item} for item in items]
+
+
+def _draft(draft: dict | None, key: str, default):
+    return default if draft is None or key not in draft else draft[key]
