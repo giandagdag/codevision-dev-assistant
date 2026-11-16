@@ -76,52 +76,6 @@ def fires_text(rule_id: str, fires: dict[str, int]) -> str:
     return ("⚠️ " if percent > FIRES_AMBER_ABOVE else "") + f"fires in {percent}%"
 
 
-def _fact_row(label: str, value: str):
-    """Good and Bad examples are code: a green or red box, so names inside are not field names."""
-    if label in ("Good", "Bad"):
-        colour = pal.GREEN_LIGHT if label == "Good" else pal.RED_LIGHT
-        body = dmc.Code(value, block=True, style={"background": colour, "whiteSpace": "pre-wrap"})
-    else:
-        body = dmc.Text(value, size="sm")
-    return dmc.Group([dmc.Text(label, fw=600, size="sm", w=90), body], gap="xs", align="flex-start")
-
-
-def rule_cards(rules: list[dict], fires: dict[str, int]):
-    """One clickable row per judgement rule; opening it shows the rule card (AF-14, AF-15)."""
-    items = []
-    for r in rules:
-        rid = r["rule_id"]
-        amber = fires.get(rid, 0) > FIRES_AMBER_ABOVE
-        label = dmc.Group(
-            [
-                dmc.Code(rid),
-                dmc.Text(r["title"], size="sm"),
-                severity_pill(r["severity"]),
-                dmc.Badge(
-                    fires_text(rid, fires),
-                    variant="light",
-                    style=pal.pill_style("amber" if amber else "green"),
-                ),
-            ],
-            gap="xs",
-        )
-        facts = [
-            ("Why", r["why"]),
-            ("Tags", ", ".join(r["tags"])),
-            ("Checked by", "Tester (a model reads the code against this rule)"),
-            ("Source", r["source"]),
-            ("Fires in", fires_text(rid, fires)),
-            ("Good", r["good_example"]),
-            ("Bad", r["bad_example"]),
-        ]
-        panel = dmc.Stack([_fact_row(k, v) for k, v in facts], gap=2)
-        parts = [dmc.AccordionControl(label), dmc.AccordionPanel(panel)]
-        items.append(dmc.AccordionItem(parts, value=rid))
-    return html.Div(
-        [dmc.Text("Rule cards", fw=600, c=pal.NAVY, size="sm", mt="sm"), dmc.Accordion(items)]
-    )
-
-
 def brand_panel(constants):
     """The Brand constants table: swatch, name, value, source."""
     rows = [

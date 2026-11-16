@@ -44,6 +44,7 @@ from db_table_functions.db_tbl_da_rulebook import (
     get_version,
     restore_version,
 )
+from layouts.da_admin_coding_tab import RULE_PANEL_ID, RULE_PICK_TYPE, rule_panel
 from layouts.da_admin_index_panels import (
     REBUILD_BTN,
     REBUILD_CONFIRM,
@@ -577,6 +578,7 @@ def register_da_admin_page_callbacks(app) -> None:
     _register_queue(app)
     _register_overview(app)
     _register_catalog_filter(app)
+    _register_rule_pick(app)
     _register_rebuild(app)
 
 
@@ -635,6 +637,33 @@ def filtered_catalog(settings: Settings, search: str | None, missing_backup: boo
     policy = get_active_version(settings.db_path).rulebook.policy
     paths = module_paths(policy.index_folder_scope)
     return catalog_list(policy.capabilities, paths, search or "", bool(missing_backup))
+
+
+def pick_rule(settings: Settings, rule_id: str):
+    """The Coding standards rule list and card with `rule_id` selected (L3, read view only)."""
+    if not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    rules = get_active_version(settings.db_path).rulebook.rules
+    cited = cited_counts(settings.db_path)
+    mine = [
+        {**r.model_dump(), "cited": cited.get(r.rule_id, 0)}
+        for r in rules
+        if r.kind == RULE_KIND_OF_TAB[TAB_CODING]
+    ]
+    return rule_panel(mine, fires_in(settings.db_path), rule_id)
+
+
+def _register_rule_pick(app) -> None:
+    @app.callback(
+        Output(RULE_PANEL_ID, "children"),
+        Input({"type": RULE_PICK_TYPE, "rule": ALL}, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def on_rule_pick(_clicks):
+        triggered = ctx.triggered_id
+        if not isinstance(triggered, dict) or not ctx.triggered[0]["value"]:
+            raise PreventUpdate
+        return pick_rule(get_admin_settings(), triggered["rule"])
 
 
 def _register_catalog_filter(app) -> None:

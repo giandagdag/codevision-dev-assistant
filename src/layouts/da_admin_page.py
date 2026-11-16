@@ -38,6 +38,7 @@ from agents.da_admin_modules import (
 )
 from agents.da_admin_rebuild import running_since
 from agents.da_admin_sonar import SAMPLE_BANNER, sample_with_mapping
+from layouts.da_admin_coding_tab import rule_panel_div
 from layouts.da_admin_common import (
     ADMIN_TABS,
     GOTO_TYPE,  # noqa: F401 (re-exported: the callbacks import it from here)
@@ -70,7 +71,7 @@ from layouts.da_admin_overview_tab import (  # noqa: F401 (callbacks import thes
     health_numbers,
     overview_view,
 )
-from layouts.da_admin_ui_standards import brand_panel, convention_rows, rule_cards
+from layouts.da_admin_ui_standards import brand_panel, convention_rows
 from pydantic_classes.da_rulebook_models import (
     PROGRAM_TYPES,
     SONAR_SEVERITY_KEYS,
@@ -568,7 +569,9 @@ def rules_view(
             fw=600,
             mt="xs",
         ),
-        list_table(
+        rule_panel_div(rows, fires or {})  # read view of Coding standards: list left, card right
+        if tab == TAB_CODING and not editable
+        else list_table(
             tab,
             RULES_TABLE,
             columns,
@@ -586,8 +589,6 @@ def rules_view(
         if not editable:
             parts.append(convention_rows(rows))
     if tab == TAB_CODING:
-        if not editable:
-            parts.append(rule_cards(rows, fires or {}))
         parts += _coding_extras(version, editable, draft)
     return html.Div(parts)
 
