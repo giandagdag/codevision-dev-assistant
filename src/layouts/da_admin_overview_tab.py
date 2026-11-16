@@ -84,8 +84,11 @@ def _areas_table(areas):
                         style={
                             **admin_styles.pill_style(row.status),
                             "maxWidth": "none",
+                            "width": "max-content",
                             "overflow": "visible",
                         },
+                        # Mantine clips the inner label with "..." unless told not to.
+                        styles={"label": {"overflow": "visible", "textOverflow": "clip"}},
                         variant="light",
                         tt="none",
                     ),

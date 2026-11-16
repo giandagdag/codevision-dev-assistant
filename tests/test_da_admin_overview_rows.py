@@ -36,6 +36,22 @@ def test_six_area_rows_each_link_to_their_tab_with_chips_and_a_pill(
     assert len(tabs) == 6
 
 
+def test_status_pills_in_the_rows_are_never_clipped(make_settings, published_rulebook):
+    _, view = _view(make_settings, published_rulebook, _report(make_settings))
+
+    body = next(c for c in walk(view) if type(c).__name__ == "TableTbody")
+    pills = [
+        c
+        for row in body.children
+        for c in walk(row)
+        if type(c).__name__ == "Badge" and c.variant == "light" and c.style.get("width")
+    ]
+    assert len(pills) == 6
+    for pill in pills:
+        assert pill.style["width"] == "max-content" and pill.style["maxWidth"] == "none"
+        assert pill.styles["label"]["textOverflow"] == "clip"
+
+
 def test_the_missing_backup_line_has_an_assign_button_that_carries_tab_and_filter(
     make_settings, published_rulebook
 ):
