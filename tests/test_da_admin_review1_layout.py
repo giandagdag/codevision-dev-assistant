@@ -64,3 +64,29 @@ def test_coding_edit_view_stays_one_column_of_forms(published_rulebook):
 
     assert not grids(shown)
     assert "Automatic checks (SonarQube)" not in all_text(shown)
+
+
+def test_round2_zones_are_cards_in_the_read_view_and_a_table_in_edit(published_rulebook):
+    zones = published_rulebook.rulebook.policy.flag_review_zones
+    read = [n for n in walk(build_view(published_rulebook)) if type(n).__name__ == "Paper"]
+    zone_cards = [n for n in read if any(z.name in all_text(n) for z in zones)]
+    assert len(zone_cards) >= len(zones) > 0
+    edit = build_view(published_rulebook, editable=True)
+    assert [n for n in walk(edit) if type(n).__name__ == "Table"]
+
+
+def test_round2_ui_read_view_has_no_second_rules_table(published_rulebook):
+    from layouts.da_admin_page import TAB_UI
+
+    shown = rules_view(TAB_UI, published_rulebook)
+
+    add_id = {"type": "adm-add", "tab": TAB_UI, "table": "rules", "index": 0}
+    assert not [n for n in walk(shown) if getattr(n, "id", None) == add_id]
+    assert "UI rules" in all_text(shown)
+
+
+def test_round2_catalog_search_finds_a_senior_by_name():
+    from agents.da_admin_modules import matches_search
+
+    assert matches_search("Limits", "x", [], "alice", ("Alice Tan", ""))
+    assert not matches_search("Limits", "x", [], "bob", ("Alice Tan", ""))

@@ -505,6 +505,8 @@ def rules_view(
         ),
         rule_panel_div(rows, fires or {})  # read view of Coding standards: list left, card right
         if tab == TAB_CODING and not editable
+        else html.Div()  # UI read view: the conventions are in the right column, not twice
+        if tab == TAB_UI and not editable
         else list_table(
             tab,
             RULES_TABLE,

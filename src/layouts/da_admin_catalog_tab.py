@@ -11,7 +11,6 @@ from agents.da_admin_modules import (
     share_counts,
 )
 from layouts.da_admin_common import (
-    MOVE_TYPE,  # noqa: F401 (re-exported through the page)
     TAB_CAPABILITY,
     _draft,
     list_table,
@@ -80,7 +79,9 @@ def catalog_view(
                 dmc.Group(
                     [
                         dmc.TextInput(
-                            id=CAP_SEARCH_ID, placeholder="Search name or module", size="xs"
+                            id=CAP_SEARCH_ID,
+                            placeholder="Search capability, module, senior or backup",
+                            size="xs",
                         ),
                         dmc.Chip("Missing backup", id=CAP_MISSING_ID, checked=missing_backup),
                     ],
@@ -120,7 +121,9 @@ def catalog_list(capabilities, paths: list[str], search: str = "", missing_backu
         mine = by_capability[c.name]
         if missing_backup and c.backup_senior.strip():
             continue
-        if not matches_search(c.name, c.description, mine, search):
+        if not matches_search(
+            c.name, c.description, mine, search, (c.named_senior, c.backup_senior)
+        ):
             continue
         labels, more = module_chips(mine, counts)
         chips = [dmc.Badge(label, variant="outline", tt="none") for label in labels]
@@ -255,7 +258,7 @@ def _queue_card(row, capability_names: list[str], disabled: bool):
     start = row.would_match or row.picked_capability
     return dmc.Paper(
         [
-            dmc.Text(row.path, size="sm", fw=600),
+            dmc.Code(row.path),
             dmc.Text(f"Developer's pick: {row.picked_capability}", size="xs", c=da_styles.MUTED),
             dmc.Text(
                 f"Request {row.request_id}, waiting since {_waiting_text(row)}",

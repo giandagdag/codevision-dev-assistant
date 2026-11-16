@@ -21,6 +21,7 @@ from layouts.da_admin_common import (
 )
 from layouts.da_admin_common import section as _section
 from pydantic_classes.da_rulebook_models import Policy, RulebookVersion
+from styles import da_styles
 
 TRIGGER_LABELS = {
     "cap_hit_twice": "Cap hit twice in a row",
@@ -85,8 +86,10 @@ def build_view(
                     "zones",
                     ZONE_COLUMNS,
                     _draft(draft, "zones", [z.model_dump() for z in policy.flag_review_zones]),
-                    editable,
-                ),
+                    True,
+                )
+                if editable
+                else _zone_cards(policy.flag_review_zones),
             ),
             _section(
                 "Protected files",
@@ -107,6 +110,28 @@ def build_view(
     # Read view: cards in two equal columns, as in the demo. Edit keeps one column of forms.
     body = html.Div(cards) if editable else dmc.SimpleGrid(cards, cols=2, spacing="md")
     return html.Div([version_pill(version, active), body])
+
+
+def _zone_cards(zones):
+    """Read view: one card per zone, the name as a pill, then description, examples, patterns."""
+    if not zones:
+        return dmc.Text("Nothing here yet.", style=da_styles.EMPTY_TEXT)
+    return dmc.Stack(
+        [
+            dmc.Paper(
+                [
+                    dmc.Badge(z.name, variant="light", tt="none"),
+                    dmc.Text(z.description, size="sm", mt=4),
+                    word_chips(list(z.examples), variant="outline"),
+                    word_chips(list(z.path_patterns), variant="outline"),
+                ],
+                withBorder=True,
+                p="xs",
+            )
+            for z in zones
+        ],
+        gap="xs",
+    )
 
 
 # Read only: how the build and test loop works (fixed in code, not set by an Admin).

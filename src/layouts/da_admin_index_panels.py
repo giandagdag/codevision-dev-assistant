@@ -85,7 +85,10 @@ def health_tiles(health: IndexHealth):
             dmc.Paper(
                 [
                     dmc.Text(name, size="xs", c="dimmed"),
-                    dmc.Text(value, fw=600, size="sm", style={"wordBreak": "break-all"}),
+                    # a path is shown as code, like every path on the console (AF-2)
+                    dmc.Code(value, style={"wordBreak": "break-all"})
+                    if name == "Source folder"
+                    else dmc.Text(value, fw=600, size="sm"),
                 ],
                 withBorder=True,
                 p="xs",

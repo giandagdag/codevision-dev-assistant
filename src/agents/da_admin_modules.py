@@ -69,8 +69,10 @@ def module_chips(paths: list[str], counts: dict[str, int]) -> tuple[list[str], i
     return labels, max(0, len(paths) - SHOWN_MODULES)
 
 
-def matches_search(name: str, description: str, paths: list[str], text: str) -> bool:
-    """The catalog search: capability name, description or one of its module names."""
+def matches_search(
+    name: str, description: str, paths: list[str], text: str, seniors: tuple[str, ...] = ()
+) -> bool:
+    """The catalog search: capability name, description, a module name or a senior's name."""
     needle = text.strip().lower()
     if not needle:
         return True
@@ -78,4 +80,5 @@ def matches_search(name: str, description: str, paths: list[str], text: str) -> 
         needle in name.lower()
         or needle in description.lower()
         or any(needle in Path(p).name.lower() for p in paths)
+        or any(needle in s.lower() for s in seniors)
     )

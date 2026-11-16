@@ -80,10 +80,16 @@ def _areas_table(areas):
                 dmc.TableTd(
                     dmc.Badge(
                         STATUS_WORDS.get(row.status, row.status),
-                        style=admin_styles.pill_style(row.status),
+                        # The pill grows to its text; the cell never wraps (it was cut at 1366).
+                        style={
+                            **admin_styles.pill_style(row.status),
+                            "maxWidth": "none",
+                            "overflow": "visible",
+                        },
                         variant="light",
                         tt="none",
-                    )
+                    ),
+                    style={"whiteSpace": "nowrap"},
                 ),
                 dmc.TableTd(row.last_changed),
             ]
