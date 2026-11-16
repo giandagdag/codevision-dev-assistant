@@ -14,8 +14,8 @@ from da_logging import get_logger
 
 logger = get_logger(__name__)
 
-Role = Literal["generator", "reviewer", "tester"]
-ROLES = ("generator", "reviewer", "tester")
+Role = Literal["generator", "reviewer", "tester", "tagger"]
+ROLES = ("generator", "reviewer", "tester", "tagger")
 
 # Room for a full request record in one reply (Phase 2), so it is not cut off.
 CLAUDE_MAX_TOKENS = 2048
@@ -334,7 +334,7 @@ def _make_claude_client(role: Role, settings: Settings, admin_model: str = "") -
             "or set DA_LLM_PROVIDER=fake to work without Claude."
         )
     model_setting = f"DA_CLAUDE_{role.upper()}_MODEL"
-    if role == "generator":
+    if role in ("generator", "tagger"):  # the tagger uses the generator's model until Admin picks
         model = settings.claude_generator_model
     elif role == "tester":
         # Empty means the generator's model, until the bake-off decides (redesign M1).

@@ -80,7 +80,7 @@ ADVANCED_LIMIT_FIELDS: tuple[str, ...] = (
 # Phase 10: the sixth switch sits with the five triggers on the screen, but it is a plain Policy
 # yes/no field, not a trigger (it is taken out of the trigger rows when the form is saved).
 LOCK_CHAT_SWITCH = "escalation_lock_chat"
-_MODEL_FIELDS = ("generator_model", "tester_model")
+_MODEL_FIELDS = ("generator_model", "tester_model", "tagger_model")
 # Repository and index (Phase 11c): the four editable Policy fields (spec 11).
 REPO_LIST_FIELDS = ("allowed_folders", "workspace_markers")
 REPO_NUMBER_FIELD = "workspace_max_file_kb"

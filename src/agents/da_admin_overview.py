@@ -138,6 +138,7 @@ def attention_items(
     for label, value in (
         ("Generator model", policy.generator_model),
         ("Tester model", policy.tester_model),
+        ("Program tagger model", policy.tagger_model),
     ):
         if not value.strip():
             text = f"{label}: uses the server default."

@@ -90,6 +90,13 @@ class Settings:
     # senior in the active catalog; "codevision" = placeholder until the work source (WF-1).
     senior_source: str = DEFAULT_SENIOR_SOURCE
     senior_ids: tuple[str, ...] = ()
+    # Phase 11 fix 2: the AI program tagger's cap per run, and the read-only SonarQube link.
+    # All SonarQube values are empty by default (work fact WF-4); the token never prints.
+    tagger_max_modules: int = 500
+    sonar_url: str = ""
+    sonar_token: str = field(default="", repr=False)
+    sonar_profile: str = ""
+    sonar_language: str = "py"
 
 
 def load_settings(
@@ -152,6 +159,13 @@ def load_settings(
         admin_ids=tuple(item.strip() for item in read("DA_ADMIN_IDS").split(",") if item.strip()),
         senior_source=_parse_senior_source(read("DA_SENIOR_SOURCE")),
         senior_ids=tuple(item.strip() for item in read("DA_SENIOR_IDS").split(",") if item.strip()),
+        tagger_max_modules=_parse_whole_number(
+            "DA_TAGGER_MAX_MODULES", read("DA_TAGGER_MAX_MODULES"), 500, 1, 100000
+        ),
+        sonar_url=read("DA_SONAR_URL").rstrip("/"),
+        sonar_token=read("DA_SONAR_TOKEN"),
+        sonar_profile=read("DA_SONAR_PROFILE"),
+        sonar_language=read("DA_SONAR_LANGUAGE", "py"),
     )
 
 

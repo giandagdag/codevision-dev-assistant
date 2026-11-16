@@ -284,6 +284,7 @@ class Policy(_RulebookPart):
     # Phase 11 (Admin console). Empty model name = use the .env model for that role (D-G).
     generator_model: str = ""
     tester_model: str = ""
+    tagger_model: str = ""  # fix 11-2: the AI that proposes a capability per program
     # Days an Unassigned file may wait before the Overview turns red (used by Phase 11c).
     admin_unassigned_stale_days: int = Field(default=14, ge=1, le=365)
     # Phase 10 (spec section 12). Defaults keep older rulebook versions loadable.

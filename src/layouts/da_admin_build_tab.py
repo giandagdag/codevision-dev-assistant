@@ -74,6 +74,7 @@ def build_view(
                     [
                         _model_field(policy, "generator_model", "Generator model", editable, draft),
                         _model_field(policy, "tester_model", "Tester model", editable, draft),
+                        _model_field(policy, "tagger_model", "Program tagger", editable, draft),
                     ],
                     gap=2,
                 ),
