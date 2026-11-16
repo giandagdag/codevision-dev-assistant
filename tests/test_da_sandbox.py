@@ -324,6 +324,7 @@ def test_a_process_that_dies_without_results_is_reported_as_an_error():
     assert result.tests[0].name == "(test run)"
 
 
+@pytest.mark.skip(reason="PARKED (SO-2): P31, Windows-only sandbox child-process test")
 def test_a_child_left_running_by_a_test_that_ended_normally_is_still_ended(tmp_path):
     """Code review round 1: the whole process group is ended after every run, not only on a
     timeout."""
