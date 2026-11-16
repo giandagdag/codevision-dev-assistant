@@ -17,7 +17,9 @@ MODES = (
     {"value": MODE_NAMES, "label": "Names and people"},
     {"value": MODE_MEANING, "label": "What the code does"},
 )
-NO_HITS = "No program matches that description."
+NAMES_PLACEHOLDER = "Search capability, module, senior or backup"
+MEANING_PLACEHOLDER = "Describe what the code does, for example: creates markdown"
+NO_HITS ="No program matches that description."
 
 
 def mode_switch(value: str = MODE_NAMES):

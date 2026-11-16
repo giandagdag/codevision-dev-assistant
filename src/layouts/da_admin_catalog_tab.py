@@ -13,7 +13,7 @@ from agents.da_admin_modules import (
 )
 from agents.da_admin_tag_store import read_tags
 from agents.da_admin_tagger_job import scan_running, status_line, tags_out_of_date
-from layouts.da_admin_catalog_meaning import CAP_MEANING_ID, mode_switch
+from layouts.da_admin_catalog_meaning import CAP_MEANING_ID, NAMES_PLACEHOLDER, mode_switch
 from layouts.da_admin_common import (
     TAB_CAPABILITY,
     _draft,
@@ -52,7 +52,7 @@ CATALOG_HINT = (
 )
 
 
-def queue_button_id(action: str, uid: int | str = 0,cap: str = "", state: str = "") -> dict:
+def queue_button_id(action: str, uid: int | str = 0, cap: str = "", state: str = "") -> dict:
     # Every queue button has the same four keys so one callback pattern matches them all.
     return {"type": QUEUE_BUTTON_TYPE, "action": action, "uid": uid, "cap": cap, "state": state}
 
@@ -84,14 +84,15 @@ def catalog_view(
         table = html.Div(
             [
                 scan_controls(
-                    scan_running() is not None, status_line(), tags_out_of_date()
+                    scan_running() is not None, status_line(), tags_out_of_date(), len(paths)
                 ),
                 dmc.Group(
                     [
                         mode_switch(),
                         dmc.TextInput(
                             id=CAP_SEARCH_ID,
-                            placeholder="Search capability, module, senior or backup",
+                            placeholder=NAMES_PLACEHOLDER,
+                            debounce=400,  # a meaning search calls the embedder: wait for typing
                             size="xs",
                         ),
                         dmc.Chip("Missing backup", id=CAP_MISSING_ID, checked=missing_backup),

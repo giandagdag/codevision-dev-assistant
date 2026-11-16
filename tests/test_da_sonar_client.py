@@ -92,6 +92,41 @@ def test_old_list_stays_after_failed_refresh(sonar_settings, index_folder):
     assert json.loads(before)["profile"] == "Mine"
 
 
+class OddSession:
+    """Answers 200 with something that is not a SonarQube reply."""
+
+    def __init__(self, body=None, broken_json=False):
+        self.body, self.broken_json = body, broken_json
+
+    def get(self, url, params=None, auth=None, timeout=None):
+        reply = FakeReply(body=self.body)
+        if self.broken_json:
+
+            def fail():
+                raise ValueError("not json: <html>login</html>")
+
+            reply.json = fail
+        return reply
+
+
+@pytest.mark.parametrize(
+    "session",
+    [OddSession(broken_json=True), OddSession(body={"nothing": 1}), OddSession(body=[1])],
+)
+def test_odd_replies_give_a_plain_message(sonar_settings, session):
+    assert refresh_snapshot(sonar_settings, session=session) == "SonarQube did not answer"
+
+
+def test_server_settings_show_sonar_but_never_the_token(sonar_settings):
+    from agents.da_admin_overview import server_settings_view
+
+    rows = dict(server_settings_view(sonar_settings))
+    assert rows["DA_SONAR_TOKEN"] == "set"
+    assert rows["DA_SONAR_URL"] == "set"
+    assert TOKEN not in str(rows)
+    assert "sonar.example" not in str(rows)
+
+
 def test_profile_not_found(sonar_settings):
     with pytest.raises(SonarError, match="Profile not found"):
         fetch_active_rules(replace(sonar_settings, sonar_profile="Other"), FakeSession())

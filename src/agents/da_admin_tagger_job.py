@@ -67,7 +67,8 @@ def _run(policy, settings, started_by, only_changed, started, directory, client)
         root = source_folder(policy)
         paths = module_paths(policy.index_folder_scope, directory)
         todo, waiting = paths_to_tag(
-            paths, read_store(directory), root, only_changed, settings.tagger_max_modules
+            paths, read_store(directory), root, only_changed, settings.tagger_max_modules,
+            [e.pattern for e in policy.index_exclusions],
         )
         PROGRESS.update(done=0, total=len(todo))
 
@@ -86,7 +87,7 @@ def _run(policy, settings, started_by, only_changed, started, directory, client)
         LAST_MESSAGE["text"] = text
     except Exception as error:  # a failed job must still free the lock
         logger.warning("AI scan failed: %s", type(error).__name__)
-        LAST_MESSAGE["text"] = f"The scan failed: {error}"
+        LAST_MESSAGE["text"] = "The scan stopped because of a problem. The old tags stay."
     finally:
         _lock_path(out, TAGGER_LOCK_NAME).unlink(missing_ok=True)
 

@@ -49,6 +49,18 @@ def test_ag1_both_markdown_modules_are_in_the_top_3_by_their_words(index):
     assert top[EXPORT].symbols == ("write_report_file",)
 
 
+def test_ag1_shipped_index_and_shipped_script_find_both_markdown_modules():
+    """The files that ship with the app, not an index built here (review 1, item 9)."""
+    from agents.da_admin_tagger import FAKE_SCRIPT_FILE
+
+    replies = json.loads(FAKE_SCRIPT_FILE.read_text(encoding="utf-8"))["replies"]
+    tags = {p: {"summary": r["summary"]} for p, r in replies.items()}
+
+    hits = modules_by_meaning("creates markdown", FakeSearchIndex.from_file(), [], tags)
+
+    assert {EXPORT, CONVERT} <= {h.path for h in hits[:3]}
+
+
 def test_ag1_the_search_never_calls_an_llm(index, monkeypatch):
     def boom(*_args, **_kwargs):
         raise AssertionError("an LLM was called")

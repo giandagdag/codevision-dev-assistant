@@ -55,7 +55,14 @@ def fetch_active_rules(settings: Settings, session=None) -> tuple[str, list[dict
     """(profile name, rules as key / name / severity). Raises SonarError with a plain message."""
     if not sonar_configured(settings):
         raise SonarError(NOT_CONNECTED)
-    session = session or requests.Session()
+    try:
+        return _fetch(session or requests.Session(), settings)
+    except (ValueError, KeyError, TypeError, AttributeError) as error:
+        # HTML login page from a proxy, or a reply of the wrong shape
+        raise SonarError("SonarQube did not answer") from error
+
+
+def _fetch(session, settings: Settings) -> tuple[str, list[dict]]:
     key, name = _profile_key(session, settings)
     rules: list[dict] = []
     for page in range(1, MAX_PAGES + 1):

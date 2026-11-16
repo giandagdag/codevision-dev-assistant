@@ -40,7 +40,7 @@ from agents.da_admin_overview import (
     server_settings_view,
 )
 from agents.da_admin_rebuild import running_since, start_rebuild
-from agents.da_admin_sonar import refresh_snapshot
+from agents.da_admin_sonar import load_snapshot, refresh_snapshot, source_pill
 from agents.da_admin_tag_cards import (
     ai_cards,
     approve_all_high,
@@ -61,7 +61,9 @@ from layouts.da_admin_catalog_meaning import (
     CAP_MEANING_ID,
     CAP_MODE_ID,
     HIT_TYPE,
+    MEANING_PLACEHOLDER,
     MODE_MEANING,
+    NAMES_PLACEHOLDER,
     meaning_results,
     no_hits_line,
 )
@@ -133,6 +135,7 @@ from layouts.da_admin_page import (
     RULE_KIND_OF_TAB,
     RULES_TABLE,
     SONAR_FIELD_PREFIX,
+    SONAR_PILL,
     SONAR_REFRESH_BTN,
     SONAR_STATUS,
     TAB_BUILD,
@@ -388,9 +391,10 @@ def _ai_action(
             return _queue_tab(settings, notice=[message_notice("Choose a capability first.")])
         result = approve_card(settings, path, target, settings.developer_id, base_version)
     if result.kind == "resolved":
-        text = "Approved."
         if result.new_version:
-            text += f" The catalog is now v{result.new_version}."
+            text = f"Approved. The catalog is now v{result.new_version}."
+        else:  # every path was already matched: no new version was made
+            text = "Card closed. A capability already matches it, so the catalog is unchanged."
         return _queue_tab(settings, notice=[message_notice(text, color="green")])
     if result.stale:
         newest = get_active_version(settings.db_path).version_number
@@ -677,11 +681,13 @@ def register_da_admin_page_callbacks(app) -> None:
 
     @app.callback(
         Output(SONAR_STATUS, "children"),
+        Output(SONAR_PILL, "children"),
         Input(SONAR_REFRESH_BTN, "n_clicks"),
         prevent_initial_call=True,
     )
     def refresh_sonar(clicks):
-        return sonar_refresh_action(get_admin_settings(), clicks)
+        message = sonar_refresh_action(get_admin_settings(), clicks)
+        return message, source_pill(load_snapshot())  # the pill shows the new list at once
 
 
 def sonar_refresh_action(settings: Settings, clicks):
@@ -853,6 +859,13 @@ def _register_catalog_filter(app) -> None:
     )
     def on_catalog_filter(search, missing_backup, mode):
         return catalog_search(get_admin_settings(), search, missing_backup, mode)
+
+    @app.callback(
+        Output(CAP_SEARCH_ID, "placeholder"),
+        Input(CAP_MODE_ID, "value"),
+    )
+    def on_mode_placeholder(mode):
+        return MEANING_PLACEHOLDER if mode == MODE_MEANING else NAMES_PLACEHOLDER
 
     @app.callback(
         Output(CAP_LIST_ID, "children", allow_duplicate=True),

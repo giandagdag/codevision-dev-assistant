@@ -111,11 +111,22 @@ class ScriptedTaggerClient:
 
 
 def paths_to_tag(
-    paths: list[str], store: dict, root: Path, only_changed: bool, limit: int
+    paths: list[str],
+    store: dict,
+    root: Path,
+    only_changed: bool,
+    limit: int,
+    exclusions: list[str] | None = None,
 ) -> tuple[list[str], int]:
-    """(paths for this run, how many wait for the next run). New or changed only when asked."""
+    """(paths for this run, how many wait for the next run). New or changed only when asked.
+
+    Programs that are never sent do not use up places; untagged ones go first, so every scan
+    makes progress over the rest."""
     todo = []
-    for path in paths:
+    for path in sorted(
+        (p for p in paths if is_sendable(p, exclusions or [])),
+        key=lambda p: p in store["modules"],  # False (untagged) sorts first; sort is stable
+    ):
         if only_changed:
             entry = store["modules"].get(path)
             try:
@@ -143,7 +154,6 @@ def run_tagging(
 ) -> TagRun:
     """Tag the given modules. Saved together or not at all (over 10% skipped = not saved)."""
     when = (now or datetime.now()).isoformat(timespec="seconds")
-    store = read_store(directory)
     sendable = [p for p in paths if is_sendable(p, exclusions or [])]
     entries: dict[str, dict] = {}
     skipped: list[str] = []
@@ -160,7 +170,13 @@ def run_tagging(
     if scanned and len(skipped) / scanned > MAX_SKIPPED_SHARE:
         logger.warning("Tagger run not saved: %d of %d modules skipped", len(skipped), scanned)
         return TagRun(False, scanned, proposed, skipped, NOT_SAVED)
-    store["modules"].update(entries)
+    store = read_store(directory)  # read again: Admin may have decided cards during the scan
+    for path, entry in entries.items():
+        current = store["modules"].get(path, {})
+        decided = current.get("state") in (STATE_APPROVED, STATE_REJECTED)
+        if decided and current.get("file_hash") == entry["file_hash"]:
+            continue  # keep the Admin's decision on unchanged code
+        store["modules"][path] = entry
     run = {"started_by": started_by, "started_at": when, "scanned": scanned,
            "proposed": proposed, "skipped": skipped}
     store["runs"] = [run, *store["runs"]][:KEPT_RUNS]

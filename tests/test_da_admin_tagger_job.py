@@ -108,7 +108,7 @@ def test_the_catalog_tab_shows_the_scan_buttons():
     from layouts.da_admin_scan_controls import scan_controls
 
     shown = str(scan_controls(False, "", True))
-    assert "Scan with AI" in shown and "Tag new or changed" in shown
+    assert "Scan all programs" in shown and "Tag new or changed" in shown
 
 
 def test_the_tagger_role_and_its_model_are_used_at_work(monkeypatch, make_settings):

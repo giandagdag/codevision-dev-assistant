@@ -12,6 +12,7 @@ import pytest
 from werkzeug.serving import make_server
 
 from agents.da_admin_index import record_run
+from agents.da_admin_tagger import ScriptedTaggerClient, run_tagging
 from agents.da_code_index import PIECES_NAME
 from callbacks.screen_callbacks import da_admin_page_callbacks as admin_cb
 from db_table_functions.da_db import open_db
@@ -58,6 +59,13 @@ def live(make_settings, monkeypatch, seed_rulebook, tmp_path):
     }
     (tmp_path / PIECES_NAME).write_text(json.dumps(built), encoding="utf-8")
     record_run(ADMIN, datetime.now(), True, 3, [], "ok", tmp_path)
+    # The AI scan (made-up script), so the queue has AI cards and "creates markdown" finds modules.
+    fake_root = Path(__file__).resolve().parents[1] / "src" / "data" / "da_fake_codevision"
+    fake_paths = sorted(p.relative_to(fake_root).as_posix() for p in fake_root.rglob("*.py"))
+    run_tagging(
+        fake_paths, fake_root, seed_rulebook.policy.capabilities, ScriptedTaggerClient(),
+        ADMIN, directory=tmp_path,
+    )
     monkeypatch.setattr(admin_cb, "get_admin_settings", lambda: settings)
     monkeypatch.setattr(server_module, "get_settings", lambda: settings)
     server = make_server("127.0.0.1", 0, server_module.create_app().server, threaded=True)
@@ -104,7 +112,7 @@ def test_ag16_fix2_screenshots_are_saved(make_live_page, live):
     page.wait_for_timeout(500)
     page.screenshot(path=str(folder / "catalog-names.png"))
     page.get_by_text("What the code does", exact=True).click()
-    page.get_by_placeholder("Search capability, module, senior or backup").fill("write markdown")
+    page.get_by_placeholder("Describe what the code does", exact=False).fill("creates markdown")
     page.wait_for_timeout(1500)
     page.screenshot(path=str(folder / "catalog-meaning.png"))
     page.locator("#adm-queue").screenshot(path=str(folder / "queue.png"))

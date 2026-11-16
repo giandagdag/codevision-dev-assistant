@@ -279,6 +279,12 @@ def server_settings_view(settings) -> list[tuple[str, str]]:
         ("DA_DISCOVERY_MAX_ROUNDS", str(settings.discovery_max_rounds)),
         ("DA_MAIN_SOURCE", str(settings.main_source)),
         ("DA_SANDBOX_SOURCE_DIR", "set" if settings.sandbox_source_dir else "not set"),
+        ("DA_TAGGER_MAX_MODULES", str(settings.tagger_max_modules)),
+        # URL and token are only "set" / "not set": never the value
+        ("DA_SONAR_URL", "set" if settings.sonar_url else "not set"),
+        ("DA_SONAR_TOKEN", "set" if settings.sonar_token else "not set"),
+        ("DA_SONAR_PROFILE", settings.sonar_profile or "default profile"),
+        ("DA_SONAR_LANGUAGE", settings.sonar_language),
     ]
 
 

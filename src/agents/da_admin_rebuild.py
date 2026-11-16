@@ -21,6 +21,7 @@ logger = get_logger(__name__)
 LOCK_NAME = "da_code_index.lock"
 TAGGER_LOCK_NAME = "da_tagger.lock"
 LOCK_MAX_AGE = timedelta(hours=2)
+TAGGER_LOCK_MAX_AGE = timedelta(hours=12)  # 500 modules on a slow model take hours
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_FOLDER = Path(__file__).resolve().parents[1]  # B1's default source when nothing is set
 SERVER_STARTED = datetime.now()  # a lock from before this moment belongs to a dead server
@@ -60,7 +61,8 @@ def running_since(
     except ValueError, KeyError, TypeError:
         path.unlink(missing_ok=True)
         return None
-    if started < SERVER_STARTED or (now or datetime.now()) - started > LOCK_MAX_AGE:
+    max_age = TAGGER_LOCK_MAX_AGE if name == TAGGER_LOCK_NAME else LOCK_MAX_AGE
+    if started < SERVER_STARTED or (now or datetime.now()) - started > max_age:
         path.unlink(missing_ok=True)
         return None
     return started

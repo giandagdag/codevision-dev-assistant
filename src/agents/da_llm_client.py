@@ -336,6 +336,7 @@ def _make_claude_client(role: Role, settings: Settings, admin_model: str = "") -
     model_setting = f"DA_CLAUDE_{role.upper()}_MODEL"
     if role in ("generator", "tagger"):  # the tagger uses the generator's model until Admin picks
         model = settings.claude_generator_model
+        model_setting = "DA_CLAUDE_GENERATOR_MODEL"
     elif role == "tester":
         # Empty means the generator's model, until the bake-off decides (redesign M1).
         model = settings.claude_tester_model or settings.claude_generator_model

@@ -460,6 +460,7 @@ SEVERITY_CHOICES = [{"value": key, "label": words} for key, words in SEVERITY_WO
 
 SONAR_REFRESH_BTN = "adm-sonar-refresh-btn"
 SONAR_STATUS = "adm-sonar-status"
+SONAR_PILL = "adm-sonar-pill"
 SONAR_FIELD_PREFIX = "sonar_"  # a field named sonar_MAJOR holds the severity for MAJOR
 RULES_TABLE = "rules"
 RULE_KIND_OF_TAB = {TAB_UI: "ui_convention", TAB_CODING: "judgement"}
@@ -581,7 +582,12 @@ def _coding_extras(
                 dmc.Group(
                     [
                         dmc.Badge("Governed in SonarQube", variant="light", tt="none"),
-                        dmc.Badge(source_pill(load_snapshot()), variant="outline", tt="none"),
+                        dmc.Badge(
+                            source_pill(load_snapshot()),
+                            id=SONAR_PILL,
+                            variant="outline",
+                            tt="none",
+                        ),
                         dmc.Button(
                             "Refresh from SonarQube",
                             id=SONAR_REFRESH_BTN,
