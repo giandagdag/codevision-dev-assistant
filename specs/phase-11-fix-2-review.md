@@ -1,5 +1,12 @@
 # Phase 11 fix 2: code review findings
 
+## Round 2: PASS, 0 Must fix. 4 Should fix, all fixed in round 2's commit
+- S1 confirm box said "every program" for Tag new or changed: two texts, switched by the button.
+- S2 Refresh left the rules table and banner old: table now redrawn in the same callback. The panel still reads `load_settings()` for the button state (known gap, env-based, not data).
+- S3 no tests for items 4, 5, 6: `tests/test_da_admin_review_fixes.py`.
+- S4 "already matches" did not name the capability: message now carries the sentence from `pattern_offer`.
+- FYI left open: proposals count before merge; AG-16 test only counts files; spacing nits; queue picture crop.
+
 ## Round 1 (3 Must fix, 9 Should fix, 6 Nice to have)
 
 Checks seen by reviewer: ruff clean, smoke check passed (steps 1 to 40), many pytest subsets passed. Full suite not finished by the reviewer (about 40 minutes).

@@ -137,6 +137,7 @@ from layouts.da_admin_page import (
     SONAR_FIELD_PREFIX,
     SONAR_PILL,
     SONAR_REFRESH_BTN,
+    SONAR_SAMPLE_ID,
     SONAR_STATUS,
     TAB_BUILD,
     TAB_CAPABILITY,
@@ -159,6 +160,7 @@ from layouts.da_admin_page import (
     problem_notice,
     refusal_page,
     saved_notice,
+    sonar_sample_view,
     tab_button_id,
     tab_content,
 )
@@ -391,10 +393,11 @@ def _ai_action(
             return _queue_tab(settings, notice=[message_notice("Choose a capability first.")])
         result = approve_card(settings, path, target, settings.developer_id, base_version)
     if result.kind == "resolved":
+        text = "Card closed."
         if result.new_version:
             text = f"Approved. The catalog is now v{result.new_version}."
-        else:  # every path was already matched: no new version was made
-            text = "Card closed. A capability already matches it, so the catalog is unchanged."
+        if result.message:  # some paths were already matched: say by which capability
+            text += f" {result.message}"
         return _queue_tab(settings, notice=[message_notice(text, color="green")])
     if result.stale:
         newest = get_active_version(settings.db_path).version_number
@@ -682,12 +685,16 @@ def register_da_admin_page_callbacks(app) -> None:
     @app.callback(
         Output(SONAR_STATUS, "children"),
         Output(SONAR_PILL, "children"),
+        Output(SONAR_SAMPLE_ID, "children"),
         Input(SONAR_REFRESH_BTN, "n_clicks"),
         prevent_initial_call=True,
     )
     def refresh_sonar(clicks):
-        message = sonar_refresh_action(get_admin_settings(), clicks)
-        return message, source_pill(load_snapshot())  # the pill shows the new list at once
+        settings = get_admin_settings()
+        message = sonar_refresh_action(settings, clicks)
+        chosen = get_active_version(settings.db_path).rulebook.policy.sonar_severity_map
+        # pill, banner and table all show the new list at once
+        return message, source_pill(load_snapshot()), sonar_sample_view(chosen)
 
 
 def sonar_refresh_action(settings: Settings, clicks):

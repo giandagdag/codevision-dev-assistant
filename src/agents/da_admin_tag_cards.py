@@ -93,7 +93,9 @@ def approve_pairs(
             )
         new_version = saved.version_number
     _mark([p for p, _c in pairs], STATE_APPROVED, directory)
-    return ResolveResult("resolved", new_version=new_version)
+    # name the capability that already holds a path, so Admin sees where it really is
+    held = [pattern_offer(p, catalog, c) for p, c in pairs if p not in {n for n, _c in needed}]
+    return ResolveResult("resolved", message=" ".join(held), new_version=new_version)
 
 
 def approve_card(

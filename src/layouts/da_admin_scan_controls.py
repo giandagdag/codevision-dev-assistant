@@ -12,6 +12,16 @@ SCAN_MODAL = "adm-scan-modal"
 SCAN_STATUS = "adm-scan-status"
 SCAN_POLL = "adm-scan-poll"
 SCAN_MODE = "adm-scan-mode"  # remembers which button opened the box: "all" or "new"
+SCAN_TEXT_ALL = "adm-scan-text-all"
+SCAN_TEXT_NEW = "adm-scan-text-new"
+SCAN_NEW_EXPLAIN = (
+    "Asks the AI to read only the programs that are new or changed since the last scan, "
+    "and propose a capability. Runs in the background; you can leave the page. "
+    "Nothing changes until you approve a proposal."
+)
+SHOWN, HIDDEN = {}, {"display": "none"}
+
+
 def scan_explain(count: int) -> str:
     return (
         "Asks the AI to read every program once and propose a capability. "
@@ -44,7 +54,8 @@ def scan_controls(running: bool, status: str, out_of_date: bool = False, count: 
             dmc.Modal(
                 dmc.Stack(
                     [
-                        dmc.Text(scan_explain(count), size="sm"),
+                        dmc.Text(scan_explain(count), id=SCAN_TEXT_ALL, size="sm"),
+                        dmc.Text(SCAN_NEW_EXPLAIN, id=SCAN_TEXT_NEW, size="sm", style=HIDDEN),
                         dmc.Group(
                             [
                                 dmc.Button("Later", id=SCAN_LATER, variant="default"),

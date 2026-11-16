@@ -8,6 +8,7 @@ from agents.da_admin_tagger_job import scan_running, start_scan, status_line
 from configs.da_config import Settings, load_settings
 from db_table_functions.db_tbl_da_rulebook import get_active_version
 from layouts.da_admin_scan_controls import (
+    HIDDEN,
     SCAN_ALL_BTN,
     SCAN_CONFIRM,
     SCAN_LATER,
@@ -16,6 +17,9 @@ from layouts.da_admin_scan_controls import (
     SCAN_NEW_BTN,
     SCAN_POLL,
     SCAN_STATUS,
+    SCAN_TEXT_ALL,
+    SCAN_TEXT_NEW,
+    SHOWN,
 )
 
 
@@ -33,12 +37,21 @@ def scan_action(settings: Settings, button: str | None, mode: str):
     return False, status_line()
 
 
+def confirm_state(button: str):
+    """(box opened, mode, style of the full-scan text, style of the new-or-changed text)."""
+    if button == SCAN_NEW_BTN:
+        return True, "new", HIDDEN, SHOWN
+    return True, "all", SHOWN, HIDDEN
+
+
 def register_scan(app, get_settings=load_settings) -> None:
     """`get_settings` is passed in so the page's test-replaceable settings reader is used."""
 
     @app.callback(
         Output(SCAN_MODAL, "opened"),
         Output(SCAN_MODE, "data"),
+        Output(SCAN_TEXT_ALL, "style"),
+        Output(SCAN_TEXT_NEW, "style"),
         Input(SCAN_ALL_BTN, "n_clicks"),
         Input(SCAN_NEW_BTN, "n_clicks"),
         prevent_initial_call=True,
@@ -46,7 +59,7 @@ def register_scan(app, get_settings=load_settings) -> None:
     def open_confirm(_all, _new):
         if not ctx.triggered[0]["value"]:
             raise PreventUpdate
-        return True, "new" if ctx.triggered_id == SCAN_NEW_BTN else "all"
+        return confirm_state(ctx.triggered_id)
 
     @app.callback(
         Output(SCAN_MODAL, "opened", allow_duplicate=True),
@@ -61,7 +74,7 @@ def register_scan(app, get_settings=load_settings) -> None:
     def answer_confirm(_confirm, _later, mode):
         if not ctx.triggered[0]["value"]:
             raise PreventUpdate
-        opened, status = scan_action(get_settings(),ctx.triggered_id, mode)
+        opened, status = scan_action(get_settings(), ctx.triggered_id, mode)
         busy = scan_running() is not None
         return opened, status, busy, busy
 

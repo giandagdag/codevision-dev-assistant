@@ -461,6 +461,7 @@ SEVERITY_CHOICES = [{"value": key, "label": words} for key, words in SEVERITY_WO
 SONAR_REFRESH_BTN = "adm-sonar-refresh-btn"
 SONAR_STATUS = "adm-sonar-status"
 SONAR_PILL = "adm-sonar-pill"
+SONAR_SAMPLE_ID = "adm-sonar-sample"
 SONAR_FIELD_PREFIX = "sonar_"  # a field named sonar_MAJOR holds the severity for MAJOR
 RULES_TABLE = "rules"
 RULE_KIND_OF_TAB = {TAB_UI: "ui_convention", TAB_CODING: "judgement"}
@@ -601,7 +602,7 @@ def _coding_extras(
                         ),
                     ]
                 ),
-                _sonar_sample(chosen),
+                html.Div(sonar_sample_view(chosen), id=SONAR_SAMPLE_ID),
             ]
         ),
     )
@@ -615,7 +616,7 @@ def _coding_extras(
 def _sonar_map(policy: Policy, editable: bool, draft: dict | None):
     """Edit view: the severity boxes and the sample table in one block."""
     chosen = _draft(draft, "sonar_map", policy.sonar_severity_map)
-    return html.Div([_sonar_lines(chosen, editable), _sonar_sample(chosen)])
+    return html.Div([_sonar_lines(chosen, editable), sonar_sample_view(chosen)])
 
 
 def _sonar_lines(chosen: dict, editable: bool):
@@ -638,7 +639,7 @@ def _sonar_lines(chosen: dict, editable: bool):
     return dmc.Stack(lines, gap=2)
 
 
-def _sonar_sample(chosen: dict):
+def sonar_sample_view(chosen: dict):
     """The sample checks with the severity each would get under the map."""
     sample = sample_with_mapping(chosen)
     return html.Div(
