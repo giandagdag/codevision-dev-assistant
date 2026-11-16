@@ -63,12 +63,13 @@ def chips(summary: str):
     return dmc.Group([dmc.Badge(p, variant="outline", tt="none") for p in parts], gap=4)
 
 
-def word_chips(words: list[str], style: dict | None = None):
-    """One small chip per word (folders, markers, libraries). `style` colours them."""
+def word_chips(words: list[str], style: dict | None = None, variant: str = "light"):
+    """One small chip per word (folders, markers, libraries). `style` colours them; paths use
+    variant "outline" (the code-chip look the label scan skips)."""
     if not words:
         return dmc.Text("None.", style=da_styles.EMPTY_TEXT)
     return dmc.Group(
-        [dmc.Badge(w, variant="light", tt="none", style=style) for w in words], gap=4
+        [dmc.Badge(w, variant=variant, tt="none", style=style) for w in words], gap=4
     )
 
 

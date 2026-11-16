@@ -1098,13 +1098,15 @@ def build_view(
             ),
             _section(
                 "Protected files",
-                list_table(
+                list_table(  # edit keeps the table; the read view is chips, as in the demo
                     TAB_BUILD,
                     "protected_files",
                     (TEXT_COLUMN,),
                     _text_rows(_draft(draft, "protected_files", policy.protected_files)),
-                    editable,
-                ),
+                    True,
+                )
+                if editable
+                else word_chips(policy.protected_files, variant="outline"),
             ),
             _section("Tests", _tests_card()),
             _section("Can a request be handed off?", _severity_table()),

@@ -119,6 +119,17 @@ def test_build_view_has_decision_limit_tests_and_severity_table(published_rulebo
     assert "Should fix" in text and "Yes, listed in the PR summary" in text
 
 
+def test_protected_files_are_chips_to_read_and_a_table_to_edit(published_rulebook):
+    files = published_rulebook.rulebook.policy.protected_files
+
+    read = [c for c in walk(build_view(published_rulebook)) if type(c).__name__ == "Badge"]
+    edit = build_view(published_rulebook, editable=True)
+
+    assert [b.children for b in read if b.children in files] == files
+    assert not [c for c in walk(edit) if type(c).__name__ == "Badge" and c.children in files]
+    assert any(type(c).__name__ == "Table" for c in walk(edit))
+
+
 def test_build_edit_view_uses_steppers(published_rulebook):
     view = build_view(published_rulebook, editable=True)
 
