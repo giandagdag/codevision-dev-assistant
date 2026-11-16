@@ -4,12 +4,18 @@ The code reviewer opens these next to docs/admin-reference/. Skipped, not failed
 or its browser is missing. The PNGs go to logs/admin-screens/ (Git ignores logs)."""
 
 import threading
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from werkzeug.serving import make_server
 
 from callbacks.screen_callbacks import da_admin_page_callbacks as admin_cb
+from db_table_functions.da_db import open_db
+from db_table_functions.db_tbl_da_build import ensure_build_tables
+from db_table_functions.db_tbl_da_enhance import add_unassigned
+from db_table_functions.db_tbl_da_requests import create_request
+from db_table_functions.db_tbl_da_rulebook import save_new_version
 from layouts.da_admin_page import ADMIN_PATH, ADMIN_TABS, EDITABLE_TABS
 from web import da_home_web_server as server_module
 
@@ -20,9 +26,25 @@ OUT = Path(__file__).resolve().parents[1] / "logs" / "admin-screens"
 VIEWPORT = {"width": 1366, "height": 768}
 
 
+def seed_for_pictures(settings, rulebook):
+    """v2 and v3 with change notes (History diff, Restore) and one waiting Unassigned file."""
+    # History opens on the version before the active one, so it needs a v3 to show a diff.
+    notes = ((1, 4, "Allow four build rounds"), (2, 5, "Allow five build rounds"))
+    for base, rounds, note in notes:
+        policy = rulebook.policy.model_copy(update={"build_max_rounds": rounds})
+        updated = rulebook.model_copy(update={"policy": policy})
+        save_new_version(settings.db_path, updated, base, ADMIN, note)
+    request = create_request(settings.db_path, "Change the upload limit", "dev-0001")
+    with open_db(settings.db_path) as conn:
+        ensure_build_tables(conn)
+        now = datetime.now(UTC)
+        add_unassigned(conn, "src/uploads/da_scan.py", "Limits", request.request_id, now)
+
+
 @pytest.fixture
-def live(make_settings, monkeypatch):
+def live(make_settings, monkeypatch, seed_rulebook):
     settings = make_settings(admin_ids=(ADMIN,), developer_id=ADMIN)
+    seed_for_pictures(settings, seed_rulebook)
     monkeypatch.setattr(admin_cb, "get_admin_settings", lambda: settings)
     monkeypatch.setattr(server_module, "get_settings", lambda: settings)
     server = make_server("127.0.0.1", 0, server_module.create_app().server, threaded=True)
