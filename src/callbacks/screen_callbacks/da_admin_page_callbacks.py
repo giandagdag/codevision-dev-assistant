@@ -6,6 +6,7 @@ tests call without Dash; the Dash wrappers at the bottom only read ids and value
 """
 
 from functools import lru_cache
+from pathlib import PurePosixPath
 
 import dash_mantine_components as dmc
 from dash import ALL, Input, Output, State, ctx, html, no_update
@@ -30,6 +31,7 @@ from agents.da_admin_forms import (
     save_from_form,
 )
 from agents.da_admin_index import recent_runs
+from agents.da_admin_meaning import meaning_search
 from agents.da_admin_metrics import WINDOW_ALL, WINDOW_LABELS, health_report
 from agents.da_admin_modules import module_paths
 from agents.da_admin_overview import (
@@ -45,6 +47,7 @@ from agents.da_admin_tag_cards import (
     high_confidence_counts,
     reject_card,
 )
+from agents.da_admin_tag_store import read_tags
 from callbacks.screen_callbacks.da_admin_scan_callbacks import register_scan
 from configs.da_config import Settings, load_settings
 from db_table_functions.db_tbl_da_rulebook import (
@@ -52,6 +55,14 @@ from db_table_functions.db_tbl_da_rulebook import (
     get_active_version,
     get_version,
     restore_version,
+)
+from layouts.da_admin_catalog_meaning import (
+    CAP_MEANING_ID,
+    CAP_MODE_ID,
+    HIT_TYPE,
+    MODE_MEANING,
+    meaning_results,
+    no_hits_line,
 )
 from layouts.da_admin_catalog_tab import (
     Q_AI_ALL,
@@ -719,6 +730,28 @@ def filtered_catalog(settings: Settings, search: str | None, missing_backup: boo
     return catalog_list(policy.capabilities, paths, search or "", bool(missing_backup))
 
 
+def catalog_search(settings: Settings, search: str | None, missing_backup: bool | None, mode: str):
+    """(table, results). "Names and people" is the old filter; "What the code does" keeps the whole
+    table and lists the programs the search finds (fix 11-2, AG-1 to AG-3)."""
+    if mode != MODE_MEANING:
+        return filtered_catalog(settings, search, missing_backup), None
+    table = filtered_catalog(settings, "", missing_backup)
+    policy = get_active_version(settings.db_path).rulebook.policy
+    hits, message = meaning_search(search or "", settings, policy.capabilities, read_tags())
+    if search and search.strip() and not hits and not message:
+        return table, no_hits_line()
+    return table, meaning_results(hits, message)
+
+
+def catalog_for_module(settings: Settings, path: str):
+    """A clicked result: the table shows only the capability that holds this module."""
+    if not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    policy = get_active_version(settings.db_path).rulebook.policy
+    paths = module_paths(policy.index_folder_scope)
+    return catalog_list(policy.capabilities, paths, PurePosixPath(path).name, False)
+
+
 def pick_rule(settings: Settings, rule_id: str):
     """The Coding standards rule list and card with `rule_id` selected (L3, read view only)."""
     if not is_admin(settings, settings.developer_id):
@@ -794,12 +827,25 @@ def _register_rule_pick(app) -> None:
 def _register_catalog_filter(app) -> None:
     @app.callback(
         Output(CAP_LIST_ID, "children"),
+        Output(CAP_MEANING_ID, "children"),
         Input(CAP_SEARCH_ID, "value"),
         Input(CAP_MISSING_ID, "checked"),
+        Input(CAP_MODE_ID, "value"),
         prevent_initial_call=True,
     )
-    def on_catalog_filter(search, missing_backup):
-        return filtered_catalog(get_admin_settings(), search, missing_backup)
+    def on_catalog_filter(search, missing_backup, mode):
+        return catalog_search(get_admin_settings(), search, missing_backup, mode)
+
+    @app.callback(
+        Output(CAP_LIST_ID, "children", allow_duplicate=True),
+        Input({"type": HIT_TYPE, "path": ALL}, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def on_meaning_hit(_clicks):
+        triggered = ctx.triggered_id
+        if not isinstance(triggered, dict) or not ctx.triggered[0]["value"]:
+            raise PreventUpdate
+        return catalog_for_module(get_admin_settings(), triggered["path"])
 
     @app.callback(
         Output(CAP_MISSING_ID, "checked"),

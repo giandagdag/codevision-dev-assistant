@@ -13,6 +13,7 @@ from agents.da_admin_modules import (
 )
 from agents.da_admin_tag_store import read_tags
 from agents.da_admin_tagger_job import scan_running, status_line, tags_out_of_date
+from layouts.da_admin_catalog_meaning import CAP_MEANING_ID, mode_switch
 from layouts.da_admin_common import (
     TAB_CAPABILITY,
     _draft,
@@ -87,6 +88,7 @@ def catalog_view(
                 ),
                 dmc.Group(
                     [
+                        mode_switch(),
                         dmc.TextInput(
                             id=CAP_SEARCH_ID,
                             placeholder="Search capability, module, senior or backup",
@@ -96,6 +98,7 @@ def catalog_view(
                     ],
                     mb="xs",
                 ),
+                html.Div(id=CAP_MEANING_ID),
                 html.Div(
                     catalog_list(policy.capabilities, paths, "", missing_backup), id=CAP_LIST_ID
                 ),
