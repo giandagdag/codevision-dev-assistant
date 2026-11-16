@@ -18,7 +18,6 @@ import dash_mantine_components as dmc
 from dash import dcc, html
 
 from agents.da_admin_access import NOT_ADMIN_MESSAGE
-from agents.da_admin_diff import plain_diff_lines
 from agents.da_admin_forms import (
     ADVANCED_LIMIT_FIELDS,
     CORE_BUILD_FIELDS,
@@ -57,6 +56,17 @@ from layouts.da_admin_common import (
     word_chips,
 )
 from layouts.da_admin_common import section as _section
+from layouts.da_admin_history_tab import (  # noqa: F401 (callbacks import these)
+    HIST_CANCEL,
+    HIST_CONFIRM,
+    HIST_PICK_TYPE,
+    HIST_RESTORE,
+    HIST_TYPE,
+    HIST_VIEW,
+    hist_id,
+    history_view,
+    pick_id,
+)
 from layouts.da_admin_index_panels import (
     REFRESH_MODES,
     fixed_skip_rows,
@@ -1332,196 +1342,3 @@ def _triggers(policy: Policy, editable: bool, draft: dict | None):
         ],
         gap=4,
     )
-
-
-# --- Version history ---
-
-HIST_TYPE = "adm-hist"
-HIST_PICK_TYPE = "adm-hist-pick"
-HIST_COMPARE = "compare"
-HIST_RESTORE = "restore"
-HIST_CONFIRM = "confirm"
-HIST_CANCEL = "cancel"
-HIST_VIEW = "view"
-
-
-def hist_id(action: str, version: int = 0) -> dict:
-    return {"type": HIST_TYPE, "action": action, "version": version}
-
-
-def pick_id(name: str) -> dict:
-    return {"type": HIST_PICK_TYPE, "name": name}
-
-
-def history_view(
-    rows,
-    diff=None,
-    restore_target: int | None = None,
-    notice=None,
-    selected: int | None = None,
-    selected_changes=None,
-):
-    """Timeline on the left, the selected version's side panel on the right, then the picker.
-
-    `diff` is (from_number, to_number, RulebookDiff) or None. `selected_changes` is the plain
-    (kind, text) lines for the selected version (see plain_diff_lines).
-    """
-    numbers = [str(row.version_number) for row in rows]
-    chosen = next((row for row in rows if row.version_number == selected), None)
-    active_row = next((row for row in rows if row.is_active), None)
-    active = active_row.version_number if active_row else 0
-    return html.Div(
-        [
-            *([version_pill(active_row)] if active_row else []),
-            *(notice or []),
-            *([_restore_dialog(restore_target, active)] if restore_target else []),
-            dmc.Grid(
-                [
-                    dmc.GridCol(
-                        dmc.Stack(
-                            [_timeline_row(row, row is chosen) for row in rows], gap="xs"
-                        ),
-                        span=6,
-                    ),
-                    dmc.GridCol(_side_panel(chosen, selected_changes), span=6),
-                ]
-            ),
-            _section("What changed", _compare_picker(numbers, diff)),
-        ]
-    )
-
-
-def _side_panel(row, changes):
-    if row is None:
-        return dmc.Text("Pick a version to see what changed.", style=da_styles.EMPTY_TEXT)
-    number = row.version_number
-    parts = [dmc.Text(f"What changed in v{number}", fw=600, size="sm", c=da_styles.NAVY)]
-    parts.extend(_plain_diff(changes or []))
-    parts.append(dmc.Text("Requests pinned", fw=600, size="sm", mt="sm"))
-    chips = [dmc.Badge(r, variant="light") for r in row.pinned_request_ids]
-    parts.append(dmc.Group(chips) if chips else dmc.Text("None", size="xs", c=da_styles.MUTED))
-    if not row.is_active:
-        parts.append(
-            dmc.Button(f"Restore v{number}", id=hist_id(HIST_RESTORE, number), size="xs", mt="sm")
-        )
-    return html.Div(parts, style=da_styles.PANEL_SECTION)
-
-
-def _plain_diff(changes):
-    if not changes:
-        return [dmc.Text("No changes.", size="sm")]
-    style = {
-        "area": {"color": admin_styles.BLUE, "fontWeight": 600},
-        "+": {"color": admin_styles.GREEN, "background": admin_styles.GREEN_LIGHT},
-        "-": {"color": admin_styles.RED, "background": admin_styles.RED_LIGHT},
-    }
-    marks = {"area": "", "+": "+ ", "-": "− "}
-    return [dmc.Text(marks[k] + text, size="xs", style=style[k]) for k, text in changes]
-
-
-def _timeline_row(row, selected: bool = False):
-    saved = row.saved_at.strftime("%Y-%m-%d %H:%M")
-    head = f"v{row.version_number}  {saved}  {row.saved_by}"
-    if row.is_active:
-        head += "  (active)"
-    lines = [dmc.Text(head, fw=600, size="sm"), dmc.Text(row.change_note, size="sm")]
-    lines.append(
-        dmc.Button(
-            "View", id=hist_id(HIST_VIEW, row.version_number), size="xs", variant="subtle"
-        )
-    )
-    if row.restored_from is not None:
-        lines.append(dmc.Text(f"Restored from v{row.restored_from}", size="xs", c=da_styles.MUTED))
-    if row.areas:
-        lines.append(dmc.Text("Touched: " + ", ".join(row.areas), size="xs", c=da_styles.MUTED))
-    lines.append(_pinned(row))
-    if not row.is_active and not selected:  # the selected version's Restore is in the side panel
-        lines.append(
-            dmc.Button(
-                "Restore",
-                id=hist_id(HIST_RESTORE, row.version_number),
-                size="xs",
-                variant="default",
-            )
-        )
-    return html.Div(lines, style=da_styles.PANEL_SECTION)
-
-
-def _pinned(row):
-    count = row.pinned_count
-    if not count:
-        return dmc.Text("No requests pinned", size="xs", c=da_styles.MUTED)
-    label = f"{count} request{'s' if count != 1 else ''} pinned"
-    return dmc.Accordion(
-        [
-            dmc.AccordionItem(
-                [
-                    dmc.AccordionControl(label),
-                    dmc.AccordionPanel(dmc.Text(", ".join(row.pinned_request_ids), size="xs")),
-                ],
-                value="pinned",
-            )
-        ],
-        value=None,
-    )
-
-
-def _restore_dialog(number: int, active: int = 0):
-    return dmc.Alert(
-        [
-            dmc.Text(f"Restore v{number} as a new version?", size="sm", fw=600),
-            dmc.Text(
-                f"v{active + 1} becomes active for new requests. Requests in progress keep "
-                f"their version. v{active} stays in history.",
-                size="xs",
-            ),
-            dmc.TextInput(
-                label="Change note (required)",
-                id=pick_id("note"),
-                value=f"Restored from v{number}",
-            ),
-            dmc.Group(
-                [
-                    dmc.Button("Restore", id=hist_id(HIST_CONFIRM, number), size="xs"),
-                    dmc.Button(
-                        "Cancel", id=hist_id(HIST_CANCEL, number), size="xs", variant="default"
-                    ),
-                ],
-                mt="xs",
-            ),
-        ],
-        color="blue",
-        mb="sm",
-    )
-
-
-def _compare_picker(numbers: list[str], diff):
-    # Newest first: the default compares the newest version with the one before it.
-    first = numbers[1] if len(numbers) > 1 else (numbers[0] if numbers else None)
-    parts: list = [
-        dmc.Group(
-            [
-                dmc.Select(label="From", data=numbers, value=first, id=pick_id("from"), w=100),
-                dmc.Select(
-                    label="To",
-                    data=numbers,
-                    value=numbers[0] if numbers else None,
-                    id=pick_id("to"),
-                    w=100,
-                ),
-                dmc.Button("Compare", id=hist_id(HIST_COMPARE), size="xs"),
-            ],
-            align="flex-end",
-        )
-    ]
-    if diff is not None:
-        parts.append(_diff_lines(*diff))
-    return html.Div(parts)
-
-
-def _diff_lines(old_number: int, new_number: int, diff):
-    title = dmc.Text(f"What changed v{old_number} to v{new_number}", size="sm", fw=600, mt="sm")
-    if diff.is_empty:
-        return html.Div([title, dmc.Text("No changes.", size="sm")])
-    # Same plain words as the side panel: headings and + / - lines, no raw field names (AF-2).
-    return html.Div([title, *_plain_diff(plain_diff_lines(diff))])

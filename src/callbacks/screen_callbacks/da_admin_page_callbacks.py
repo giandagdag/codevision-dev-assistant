@@ -82,7 +82,6 @@ from layouts.da_admin_page import (
     GOLDEN_COLUMNS,
     GOTO_TYPE,
     HEALTH_ID,
-    HIST_COMPARE,
     HIST_CONFIRM,
     HIST_PICK_TYPE,
     HIST_RESTORE,
@@ -542,15 +541,13 @@ def _save(settings, tab, form, note, base_version, active):
 # --- Version history ---
 
 
-def history_content(
-    settings: Settings, diff=None, restore_target=None, notice=None, selected=None
-):
+def history_content(settings: Settings, restore_target=None, notice=None, selected=None):
     rows = build_timeline(settings.db_path)
     if selected is None and rows:
         # Default: the newest older version (the one an Admin most likely wants to look at).
         selected = rows[1].version_number if len(rows) > 1 else rows[0].version_number
     changes = _selected_changes(settings, rows, selected)
-    return history_view(rows, diff, restore_target, notice, selected, changes)
+    return history_view(rows, restore_target, notice, selected, changes)
 
 
 def _selected_changes(settings: Settings, rows, selected):
@@ -563,7 +560,7 @@ def _selected_changes(settings: Settings, rows, selected):
     return plain_diff_lines(diff_rulebooks(old.rulebook, new.rulebook))
 
 
-def run_history_action(settings: Settings, action: dict, from_number, to_number, note: str | None):
+def run_history_action(settings: Settings, action: dict, note: str | None):
     """One click on the Version history tab. Writes only on a confirmed Restore."""
     name = action["action"]
     number = action.get("version") or 0
@@ -571,19 +568,9 @@ def run_history_action(settings: Settings, action: dict, from_number, to_number,
         return history_content(settings, selected=number)
     if name == HIST_RESTORE:
         return history_content(settings, restore_target=number, selected=number)
-    if name == HIST_COMPARE:
-        return history_content(settings, diff=_compare(settings, from_number, to_number))
     if name == HIST_CONFIRM:
         return _restore(settings, number, note)
     return history_content(settings)  # Cancel, or anything else: back to the plain timeline
-
-
-def _compare(settings: Settings, from_number, to_number):
-    old = get_version(settings.db_path, int(from_number)) if from_number else None
-    new = get_version(settings.db_path, int(to_number)) if to_number else None
-    if old is None or new is None:
-        return None
-    return old.version_number, new.version_number, diff_rulebooks(old.rulebook, new.rulebook)
 
 
 def _restore(settings: Settings, number: int, note: str | None):
@@ -808,9 +795,7 @@ def _register_history(app) -> None:
         if not is_admin(settings, settings.developer_id):
             raise PreventUpdate
         picks = {item["id"]["name"]: item.get("value") for item in ctx.states_list[0]}
-        return run_history_action(
-            settings, triggered, picks.get("from"), picks.get("to"), picks.get("note")
-        )
+        return run_history_action(settings, triggered, picks.get("note"))
 
 
 def queue_inputs_from_states(states_list: list) -> tuple[dict, dict]:

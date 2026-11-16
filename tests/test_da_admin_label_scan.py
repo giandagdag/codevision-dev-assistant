@@ -86,8 +86,7 @@ def _overview_and_history(settings):
     rows = build_timeline(settings.db_path)
     old, new = (get_version(settings.db_path, n).rulebook for n in (1, 2))
     drawn.append(history_view(
-        rows, diff=(1, 2, diff_rulebooks(old, new)), selected=2,
-        selected_changes=plain_diff_lines(diff_rulebooks(old, new)),
+        rows, selected=2, selected_changes=plain_diff_lines(diff_rulebooks(old, new)),
     ))
     return drawn
 
