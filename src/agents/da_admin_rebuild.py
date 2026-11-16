@@ -19,11 +19,13 @@ from pydantic_classes.da_rulebook_models import Policy
 logger = get_logger(__name__)
 
 LOCK_NAME = "da_code_index.lock"
+TAGGER_LOCK_NAME = "da_tagger.lock"
 LOCK_MAX_AGE = timedelta(hours=2)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_FOLDER = Path(__file__).resolve().parents[1]  # B1's default source when nothing is set
 SERVER_STARTED = datetime.now()  # a lock from before this moment belongs to a dead server
 ALREADY_RUNNING = "A rebuild is already running. Wait for it to finish."
+ONE_JOB_AT_A_TIME = "One job at a time: wait for the other one to finish."
 
 
 def source_folder(policy: Policy) -> Path:
@@ -42,13 +44,15 @@ def pick_embedder(provider: str) -> Embedder:
     return WorkEmbedder() if provider == "onprem" else FakeEmbedder()
 
 
-def _lock_path(directory: Path | None) -> Path:
-    return (directory or index_dir()) / LOCK_NAME
+def _lock_path(directory: Path | None, name: str = LOCK_NAME) -> Path:
+    return (directory or index_dir()) / name
 
 
-def running_since(now: datetime | None = None, directory: Path | None = None) -> datetime | None:
-    """Start time of the running build, or None. A stale or unreadable lock is cleared."""
-    path = _lock_path(directory)
+def running_since(
+    now: datetime | None = None, directory: Path | None = None, name: str = LOCK_NAME
+) -> datetime | None:
+    """Start time of the running job, or None. A stale or unreadable lock is cleared."""
+    path = _lock_path(directory, name)
     try:
         started = datetime.fromisoformat(json.loads(path.read_text(encoding="utf-8"))["started"])
     except OSError:
@@ -62,8 +66,8 @@ def running_since(now: datetime | None = None, directory: Path | None = None) ->
     return started
 
 
-def _take_lock(started: datetime, directory: Path | None) -> bool:
-    path = _lock_path(directory)
+def _take_lock(started: datetime, directory: Path | None, name: str = LOCK_NAME) -> bool:
+    path = _lock_path(directory, name)
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         with path.open("x", encoding="utf-8") as lock:  # "x" fails if it exists: one winner
@@ -114,6 +118,8 @@ def start_rebuild(
 
     `provider` is the settings' llm_provider; empty (the default) means the made-up embedder."""
     started = now or datetime.now()
+    if running_since(started, directory, TAGGER_LOCK_NAME) is not None:
+        return False, ONE_JOB_AT_A_TIME
     if running_since(started, directory) is not None or not _take_lock(started, directory):
         return False, ALREADY_RUNNING
     job = threading.Thread(

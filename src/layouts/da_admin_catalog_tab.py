@@ -10,6 +10,7 @@ from agents.da_admin_modules import (
     modules_by_capability,
     share_counts,
 )
+from agents.da_admin_tagger_job import scan_running, status_line, tags_out_of_date
 from layouts.da_admin_common import (
     TAB_CAPABILITY,
     _draft,
@@ -17,6 +18,7 @@ from layouts.da_admin_common import (
     two_columns,
     version_pill,
 )
+from layouts.da_admin_scan_controls import scan_controls
 from pydantic_classes.da_rulebook_models import RulebookVersion
 from styles import da_admin_styles as admin_styles
 from styles import da_styles
@@ -76,6 +78,9 @@ def catalog_view(
     else:
         table = html.Div(
             [
+                scan_controls(
+                    scan_running() is not None, status_line(), tags_out_of_date()
+                ),
                 dmc.Group(
                     [
                         dmc.TextInput(

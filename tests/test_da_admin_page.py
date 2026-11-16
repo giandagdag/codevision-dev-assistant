@@ -183,7 +183,11 @@ def _admin_files():
 
 def test_the_console_makes_no_ai_call():
     banned = ("get_llm_client", "get_build_client", "get_tester_client", ".complete(")
+    # fix 11-2: only the AI scan (tagger and its job) may call the AI; it proposes, never decides
+    scan_files = ("da_admin_tagger.py", "da_admin_tagger_job.py")
     for file in _admin_files():
+        if file.name in scan_files:
+            continue
         text = file.read_text(encoding="utf-8")
         for word in banned:
             assert word not in text, (file, word)

@@ -38,6 +38,7 @@ from agents.da_admin_overview import (
     server_settings_view,
 )
 from agents.da_admin_rebuild import running_since, start_rebuild
+from callbacks.screen_callbacks.da_admin_scan_callbacks import register_scan
 from configs.da_config import Settings, load_settings
 from db_table_functions.db_tbl_da_rulebook import (
     RulebookError,
@@ -610,6 +611,7 @@ def register_da_admin_page_callbacks(app) -> None:
     _register_rule_pick(app)
     _register_golden(app)
     _register_rebuild(app)
+    register_scan(app, lambda: get_admin_settings())  # looked up late so tests can replace it
 
 
 def refresh_overview(settings: Settings, tab: str | None):
