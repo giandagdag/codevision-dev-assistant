@@ -77,6 +77,23 @@ def test_the_tab_builds_with_and_without_queue_rows(make_settings, published_rul
     assert "Backup senior" in text and "First match wins" in text
 
 
+def test_catalog_table_left_and_queue_cards_right(make_settings, published_rulebook):
+    settings = settings_for(make_settings)
+    add_row(settings.db_path, "src/x/zzz.py", "Uploads")
+    add_row(settings.db_path, "src/x/yyy.py", "Uploads")
+
+    view = tab_content(TAB, published_rulebook, queue=queue_data(settings))
+
+    grid = next(
+        n for n in walk(view) if "gridTemplateColumns" in (getattr(n, "style", None) or {})
+    )
+    left, right = grid.children
+    assert "Backup senior" in all_text(left) and "Unassigned queue" not in all_text(left)
+    cards = [n for n in walk(right) if type(n).__name__ == "Paper"]
+    assert len(cards) == 2 and "src/x/zzz.py" in all_text(cards[0]) + all_text(cards[1])
+    assert len(q_buttons(right)) == 5  # Confirm and Move to... per card, plus Show resolved
+
+
 def test_queue_buttons_are_disabled_in_edit_mode(make_settings, published_rulebook):
     settings = settings_for(make_settings)
     add_row(settings.db_path, "src/x/zzz.py", "Uploads")

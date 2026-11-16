@@ -759,8 +759,10 @@ def catalog_view(
         [
             version_line(version, active),
             dmc.Text(CATALOG_HINT, size="xs", c=da_styles.MUTED),
-            table,
-            queue_block(queue, [c.name for c in policy.capabilities], disabled=editable),
+            two_columns(
+                table,
+                queue_block(queue, [c.name for c in policy.capabilities], disabled=editable),
+            ),
         ]
     )
 
@@ -871,24 +873,7 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
     if queue.get("dialog"):
         parts.append(_pattern_dialog(queue["dialog"]))
     if rows:
-        header = (
-            "Path",
-            "Developer's pick",
-            "Request",
-            "Waiting since",
-            "Would match",
-            "Suggestion",
-            "",
-        )
-        parts.append(
-            dmc.Table(
-                [
-                    dmc.TableThead(dmc.TableTr([dmc.TableTh(h) for h in header])),
-                    dmc.TableTbody([_queue_row(r, capability_names, disabled) for r in rows]),
-                ],
-                withTableBorder=True,
-            )
-        )
+        parts.extend(_queue_card(r, capability_names, disabled) for r in rows)
     else:
         parts.append(dmc.Text("No Unassigned files are waiting.", style=da_styles.EMPTY_TEXT))
     if queue.get("resolved") is None:
@@ -916,22 +901,22 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
     return html.Div(parts, id=QUEUE_BLOCK_ID, style=da_styles.PANEL_SECTION)
 
 
-def _queue_row(row, capability_names: list[str], disabled: bool):
+def _queue_card(row, capability_names: list[str], disabled: bool):
+    """One Unassigned file as a card (L6): facts on top, the same buttons below."""
     start = row.would_match or row.picked_capability
-    return dmc.TableTr(
+    return dmc.Paper(
         [
-            dmc.TableTd(dmc.Text(row.path, size="sm")),
-            dmc.TableTd(dmc.Text(row.picked_capability, size="sm")),
-            dmc.TableTd(dmc.Text(row.request_id, size="sm")),
-            dmc.TableTd(dmc.Text(_waiting_text(row), size="sm")),
-            dmc.TableTd(dmc.Text(row.would_match or "(none)", size="sm")),
-            dmc.TableTd(
-                [
-                    dmc.Text(row.suggested or "(none)", size="sm", fw=600),
-                    dmc.Text(row.reason, size="xs", style=da_styles.EMPTY_TEXT),
-                ]
+            dmc.Text(row.path, size="sm", fw=600),
+            dmc.Text(f"Developer's pick: {row.picked_capability}", size="xs", c=da_styles.MUTED),
+            dmc.Text(
+                f"Request {row.request_id}, waiting since {_waiting_text(row)}",
+                size="xs",
+                c=da_styles.MUTED,
             ),
-            dmc.TableTd(
+            dmc.Text(f"Would match: {row.would_match or '(none)'}", size="xs", c=da_styles.MUTED),
+            dmc.Text(f"Suggestion: {row.suggested or '(none)'}", size="xs", fw=600),
+            dmc.Text(row.reason, size="xs", style=da_styles.EMPTY_TEXT),
+            html.Div(
                 dmc.Group(
                     [
                         *(
@@ -969,9 +954,13 @@ def _queue_row(row, capability_names: list[str], disabled: bool):
                         ),
                     ],
                     gap="xs",
-                )
+                ),
+                style={"marginTop": "8px"},
             ),
-        ]
+        ],
+        withBorder=True,
+        p="sm",
+        mb="xs",
     )
 
 
