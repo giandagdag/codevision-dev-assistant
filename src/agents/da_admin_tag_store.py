@@ -29,6 +29,15 @@ def read_store(directory: Path | None = None) -> dict:
     return {"modules": {}, "runs": []}
 
 
+def save_store(store: dict, directory: Path | None = None) -> None:
+    """Write all or nothing: a temp file first, then swap it in (never a half-written file)."""
+    path = tags_path(directory)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_suffix(".tmp")
+    temp.write_text(json.dumps(store, indent=1), encoding="utf-8")
+    temp.replace(path)
+
+
 def read_tags(directory: Path | None = None) -> dict[str, dict]:
     """Module path to its entry (summary, proposed capability, state ...)."""
     return {p: e for p, e in read_store(directory)["modules"].items() if isinstance(e, dict)}
