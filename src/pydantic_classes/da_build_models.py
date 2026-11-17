@@ -116,6 +116,18 @@ class LayerAResult(_Shape):
 # --- Layer B (the sandbox) ---
 
 
+class EvidenceLine(_Shape):
+    """One recorded check inside a test (Fix D1): what went in, what was expected, what came out.
+    Each value is the repr() text, cut at 500 characters (`cut` says so)."""
+
+    label: str
+    given: str
+    expected: str
+    actual: str
+    match: bool
+    cut: bool = False
+
+
 class TestOutcome(_Shape):
     """What one test did. The runner writes these into results.json."""
 
@@ -126,6 +138,8 @@ class TestOutcome(_Shape):
     message: str = ""
     # The last 20 lines of the traceback, cut by the runner.
     traceback_tail: list[str] = Field(default_factory=list, max_length=20)
+    # Fix D1: empty for a row saved before D1 (so it still loads) or a test that recorded none.
+    evidence: list[EvidenceLine] = Field(default_factory=list)
 
 
 # Every result that blocks a pass but was reported (Not proven is the app's problem, not these).

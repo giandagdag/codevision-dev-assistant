@@ -29,6 +29,7 @@ class RecordingResult(unittest.TestResult):
 
     def startTest(self, test):
         super().startTest(test)
+        _take_evidence()  # lines left by a sub-test row that was skipped must not leak on
         _write(os.path.join(self._root, "running.txt"), _name(test))
 
     def addSuccess(self, test):
@@ -66,9 +67,26 @@ class RecordingResult(unittest.TestResult):
         if any(row["name"] == _name(test) for row in self.outcomes):
             return
         self.outcomes.append(
-            {"name": _name(test), "result": result, "message": message, "traceback_tail": tail}
+            {
+                "name": _name(test),
+                "result": result,
+                "message": message,
+                "traceback_tail": tail,
+                "evidence": _take_evidence(),
+            }
         )
         _write(os.path.join(self._root, "results.json"), json.dumps({"tests": self.outcomes}))
+
+
+def _take_evidence() -> list[dict]:
+    """The evidence lines the test just recorded, then clear them. The helper is only there if a
+    test imported it (an older frozen test never does), so it is read from sys.modules."""
+    helper = sys.modules.get("da_evidence")
+    if helper is None:
+        return []
+    taken = list(helper.lines)
+    helper.lines.clear()
+    return taken
 
 
 def _name(test) -> str:
