@@ -21,6 +21,7 @@ from pathlib import Path
 
 import stall
 import usage_guard
+import work_queue
 
 ROOT = Path(__file__).resolve().parent.parent
 TITLE = "🤖 Team status"
@@ -329,6 +330,7 @@ class Inputs:
     warnings: list[str] = field(default_factory=list)
     later: list[Issue] = field(default_factory=list)  # fix 7: `gian-later`, never blocks
     fix: FixWork | None = None  # a fix branch at work after all phases merged (16 Nov)
+    queue: work_queue.QueueView | None = None  # the fix queue bar (17 Nov)
 
 
 @dataclass
@@ -469,6 +471,11 @@ def build_body(i: Inputs) -> str:
         out.append(f"| Phases 7 to 11 | `{bar(i.overall)}` {i.overall}% "
                    f"(now: Phase {i.facts.phase}; order {', '.join(map(str, PHASES))}) |")
         out.append(f"| Phase {i.facts.phase} | {progress.line()} |")
+    if i.queue:  # 17 Nov: share of the agreed fix list done, from ops/work_queue.json
+        out.append(i.queue.row(bar))
+        then = i.queue.next_row()
+        if then:
+            out.append(then)
     five = i.usage.five_hour if i.usage else 0
     weekly = i.usage.weekly if i.usage else 0
     out.append(_usage_row("Usage 5h", five, usage_guard.FIVE_HOUR_STOP, i))
@@ -585,7 +592,15 @@ def gather(result: str, gh: Gh, alive=None, git: Git = run_git, now: float | Non
                   _issues(gh, "needs-gian"), _issues(gh, "needs-work-test"), branch, commits,
                   facts, merged, overall, stall.read_stall() if result == "idle" else None,
                   _warnings(git), _later(gh),
-                  fix=fix_work(branch, git) if facts is None else None)
+                  fix=fix_work(branch, git) if facts is None else None,
+                  queue=_queue(git, root))
+
+
+def _queue(git: Git, root: Path) -> work_queue.QueueView | None:
+    try:
+        return work_queue.view(git, root, MERGE_BASE)
+    except Exception:  # noqa: BLE001 - the queue bar is nice to have, never breaks the board
+        return None
 
 
 # ---- writing the issue ----
