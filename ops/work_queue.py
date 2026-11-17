@@ -114,10 +114,12 @@ def _plan_steps(git: Git, root: Path, entry: Entry) -> int:
 
 def _running(git: Git, root: Path, entry: Entry, base: str) -> tuple[Fraction, str]:
     """(share of this entry done, short text). Steps and review rounds from its own commits."""
+    # origin/ first: the laptop's local base branch can be stale, and then commits that are
+    # already merged (another batch's "C1/C2:" or "review round 1") would be counted here.
     out = None
-    for ref in (entry.branch, f"origin/{entry.branch}"):
-        for target in (base, f"origin/{base}"):
-            out = _try(git, ["log", f"{target}..{ref}", "--format=%s", "-300"])
+    for ref in (f"origin/{entry.branch}", entry.branch):
+        for target in (f"origin/{base}", base):
+            out = _try(git, ["log", f"{target}..{ref}", "--no-merges", "--format=%s", "-300"])
             if out is not None:
                 break
         if out is not None:
