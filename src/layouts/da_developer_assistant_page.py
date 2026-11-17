@@ -1094,6 +1094,11 @@ def _discovery_panel(view: DiscoveryView) -> list:
     if result.summary_source == "fallback" and result.hits:
         parts_list.append(parts.fallback_banner())
     hits_by_id = {hit.hit_id: hit for hit in result.hits}
+    named = next((hit.capability for hit in result.hits if hit.capability), "")
+    if named:  # fix 11-1: say which capability the searches went to first
+        parts_list.append(
+            dmc.Text(f"Searched first in capability: {named}", size="xs", c=da_styles.MUTED)
+        )
     parts_list += [parts.finding_card(finding, hits_by_id) for finding in result.findings]
     if not result.findings:
         parts_list.append(dmc.Text("No findings in this round.", style=da_styles.EMPTY_TEXT))

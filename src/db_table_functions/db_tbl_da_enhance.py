@@ -388,12 +388,12 @@ def resolve_unassigned(
     now: datetime,
     resolved_capability: str = "",
 ) -> None:
-    """Close an open row as `confirmed` or `changed`. Phase 11's Admin screen calls this.
+    """Close an open row as `confirmed`, `changed` or `rejected` (Phase 11's Admin screen).
 
     resolved_capability is the capability Admin moved the file to (state `changed`); empty when
-    the developer's pick stands."""
-    if state not in ("confirmed", "changed"):
-        raise EnhanceError("An Unassigned row is resolved as confirmed or changed.")
+    the developer's pick stands or the file is rejected (it belongs in no capability)."""
+    if state not in ("confirmed", "changed", "rejected"):
+        raise EnhanceError("An Unassigned row is resolved as confirmed, changed or rejected.")
     cursor = conn.execute(
         "UPDATE da_unassigned_files SET state = ?, resolved_by = ?, resolved_at = ?,"
         " resolved_capability = ? WHERE unassigned_id = ? AND state = 'open'",

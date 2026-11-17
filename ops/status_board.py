@@ -328,6 +328,44 @@ class Inputs:
     stall: str | None = None  # why the last idle tick found the team stalled
     warnings: list[str] = field(default_factory=list)
     later: list[Issue] = field(default_factory=list)  # fix 7: `gian-later`, never blocks
+    fix: FixWork | None = None  # a fix branch at work after all phases merged (16 Nov)
+
+
+@dataclass
+class FixWork:
+    """A fix branch (for example phase-11-fix-1) is not a phase, so the phase bar said 100%."""
+    name: str
+    step: str
+    review: int
+    last: str
+
+
+def _fix_name(branch: str) -> str:
+    m = re.fullmatch(r"(?:auto/)?phase-(\w+?)-fix-(\d+)", branch)
+    return f"Phase {m.group(1)} fix {m.group(2)}" if m else branch
+
+
+def fix_work(branch: str, git: Git) -> FixWork | None:
+    """Step and review round from the branch's own commits (not yet in the merge base)."""
+    phase_branches = {f"auto/phase-{p}" for p in PHASES}
+    if branch in {"", "HEAD", "main", "master", MERGE_BASE} | phase_branches:
+        return None
+    out = None
+    for base in (MERGE_BASE, f"origin/{MERGE_BASE}"):
+        out = _try(git, ["log", f"{base}..{branch}", "--format=%ct|%s", "-300"])
+        if out is not None:
+            break
+    rows = [line.partition("|") for line in (out or "").splitlines()]
+    rows = [(stamp, subject) for stamp, _, subject in rows if stamp.isdigit()]
+    if not rows:
+        return None
+    steps = [int(n) for _, s in rows
+             for m in [re.search(r"\bsteps? (\d+)(?: (?:and|to) (\d+))?", s, re.IGNORECASE)] if m
+             for n in m.groups() if n]
+    reviews = [int(m.group(1)) for _, s in rows
+               if (m := re.search(r"\breview (?:round )?(\d+)\b", s, re.IGNORECASE))]
+    return FixWork(_fix_name(branch), str(max(steps, default=0)) if steps else "",
+                   max(reviews, default=0), _clock(float(rows[0][0]))[:5])
 
 
 def _cut(text: str, limit: int) -> str:
@@ -349,6 +387,10 @@ def _next_is_none(text: str) -> bool:
     return not text or text.strip().lower().startswith("none")
 
 
+# 16 Nov (#82): the chief wrote "wait for Gian on #82" and the board stayed blue.
+WAIT_FOR_GIAN = re.compile(r"\bwait(?:ing)? for gian\b")
+
+
 def top_line(i: Inputs) -> str:
     """First match wins (spec section 3)."""
     nxt = i.next_text.lower()
@@ -356,7 +398,7 @@ def top_line(i: Inputs) -> str:
     asked = [x for x in i.needs_gian if not stall.is_stall_title(x.title)]
     # Fix 5e: open questions block the team only when the Next line says so, or when there is
     # no next step and no worker. Otherwise the team keeps working and the questions are listed.
-    blocked = "waiting for gian" in nxt or (asked and _next_is_none(i.next_text)
+    blocked = bool(WAIT_FOR_GIAN.search(nxt)) or (asked and _next_is_none(i.next_text)
                                             and not i.running)
     if blocked:
         count = f" ({len(asked)} open)" if asked else ""
@@ -416,6 +458,12 @@ def build_body(i: Inputs) -> str:
     out += ["", "| Progress | |", "|---|---|"]
     if i.facts is None:
         out.append(f"| Phases 7 to 11 | `{bar(100)}` 100% (all merged) |")
+        if i.fix:
+            parts = [f"step {i.fix.step}" if i.fix.step else "started"]
+            if i.fix.review:
+                parts.append(f"code review round {i.fix.review} fixes in")
+            parts.append(f"last commit {i.fix.last}")
+            out.append(f"| Now: {i.fix.name} | {' · '.join(parts)} |")
     else:
         progress = phase_progress(i.facts)
         out.append(f"| Phases 7 to 11 | `{bar(i.overall)}` {i.overall}% "
@@ -536,7 +584,8 @@ def gather(result: str, gh: Gh, alive=None, git: Git = run_git, now: float | Non
     return Inputs(result, now, next_text, log, read_running(alive, now), usage, fresh,
                   _issues(gh, "needs-gian"), _issues(gh, "needs-work-test"), branch, commits,
                   facts, merged, overall, stall.read_stall() if result == "idle" else None,
-                  _warnings(git), _later(gh))
+                  _warnings(git), _later(gh),
+                  fix=fix_work(branch, git) if facts is None else None)
 
 
 # ---- writing the issue ----

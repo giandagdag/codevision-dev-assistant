@@ -1,0 +1,11 @@
+{
+  "_about": "Made-up replies of the program tagger for the made-up CodeVision folder (home only). One per module.",
+  "replies": {
+    "src/layouts/limits_menu.py": {"summary": "Shows the made-up limits menu.", "capability": "Limits", "confidence": "high", "reason": "Menu for limit set-up."},
+    "src/layouts/limits_screen.py": {"summary": "Shows the made-up limits screen with expiry dates.", "capability": "Limits", "confidence": "high", "reason": "Screen for customer limits."},
+    "src/agents/limits_batch.py": {"summary": "Runs the made-up expiry report for a list of customers.", "capability": "Limits", "confidence": "high", "reason": "Batch over customer limits."},
+    "src/agents/limits_expiry_report.py": {"summary": "Builds one report line per customer limit and counts days left.", "capability": "Reports", "confidence": "medium", "reason": "Builds report lines."},
+    "src/agents/docs_markdown_export.py": {"summary": "Creates a Markdown file with a heading and one bullet per line.", "capability": "Reports", "confidence": "high", "reason": "Writes a report document."},
+    "src/agents/docs_folder_to_md.py": {"summary": "Creates one Markdown file for each text note in a folder.", "capability": "none", "confidence": "low", "reason": "No capability covers notes."}
+  }
+}

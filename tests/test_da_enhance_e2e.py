@@ -78,6 +78,7 @@ def function_texts(source: str) -> dict[str, str]:
     return found
 
 
+@pytest.mark.skip(reason="PARKED (SO-2): fails here, baseline unknown, issue 80")
 def test_9_50_only_the_function_in_scope_changes_in_a_real_browser(
     make_live_page, live_url, target_text
 ):

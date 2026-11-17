@@ -197,7 +197,8 @@ def progress_segments(answered: int, text: str, warn: bool = False) -> dmc.Box:
 def source_line(hit: SearchHit) -> str:
     """Where a finding comes from: path, then the function or class, then the version if known."""
     line = f"{hit.source_path} · {hit.symbol}" if hit.symbol else hit.source_path
-    return f"{line} @ {hit.version}" if hit.version else line
+    line = f"{line} @ {hit.version}" if hit.version else line
+    return f"{line} · In capability: {hit.capability}" if hit.capability else line
 
 
 def search_rows() -> dmc.Box:

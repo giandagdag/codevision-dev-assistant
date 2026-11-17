@@ -633,3 +633,46 @@ def test_fix5_the_board_shows_the_usage_credits_row():
     assert sb._credits_row(u) == "| Usage credits | on, $7.50 spent this month (team cap $50) |"
     off = g.Usage(1.0, 20.0, None, None, 0.0)
     assert sb._credits_row(off).startswith("| Usage credits | off, $0.00")
+
+
+# ---- 16 Nov (#82): "wait for Gian" wording, and a fix branch shows where it is ----
+
+def test_next_line_wait_for_gian_without_ing_is_red(tmp_path):
+    f = tmp_path / "STATUS.md"
+    f.write_text("# S\n- Next: wait for Gian on #82\n## Log\n", encoding="utf-8")
+    assert build(status_file=f).splitlines()[0].startswith("## 🔴 WAITING FOR YOU")
+
+
+def test_a_word_that_only_contains_wait_is_not_red(tmp_path):
+    f = tmp_path / "STATUS.md"
+    f.write_text("# S\n- Next: Phase 8 build, await Gianna's test data later\n## Log\n",
+                 encoding="utf-8")
+    assert not build(status_file=f).splitlines()[0].startswith("## 🔴")
+
+
+class FixGit(FakeGit):
+    """All phases merged; HEAD is a fix branch with its own commits."""
+
+    def __init__(self, head="phase-11-fix-1", rows=None):
+        super().__init__(merged={f"auto/phase-{n}" for n in sb.PHASES}, head=head)
+        self.rows = rows if rows is not None else [
+            f"{int(NOW) - 60}|Phase 11 fix 1 step 34: code review 2 fixes: pills",
+            f"{int(NOW) - 600}|Phase 11 fix 1 section 14, steps 19 and 20: pill and grid",
+            f"{int(NOW) - 900}|Phase 11 fix 1 review 1: plain compare text",
+        ]
+
+    def __call__(self, args):
+        if args[:1] == ["log"] and len(args) > 1 and args[1].endswith(f"..{self.head}"):
+            return "\n".join(self.rows) + "\n"
+        return super().__call__(args)
+
+
+def test_a_fix_branch_shows_its_step_review_round_and_last_commit(status_file):
+    body = build(git=FixGit(), status_file=status_file)
+    assert "| Now: Phase 11 fix 1 | step 34 · code review round 2 fixes in · last commit 15:59 |" \
+        in body
+
+
+def test_the_integration_branch_and_a_fix_with_no_own_commits_show_no_now_row(status_file):
+    assert "| Now:" not in build(git=FixGit(head=sb.MERGE_BASE), status_file=status_file)
+    assert "| Now:" not in build(git=FixGit(rows=[]), status_file=status_file)

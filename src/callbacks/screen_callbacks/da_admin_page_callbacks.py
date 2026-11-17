@@ -6,9 +6,10 @@ tests call without Dash; the Dash wrappers at the bottom only read ids and value
 """
 
 from functools import lru_cache
+from pathlib import PurePosixPath
 
 import dash_mantine_components as dmc
-from dash import ALL, Input, Output, State, ctx, html
+from dash import ALL, Input, Output, State, ctx, html, no_update
 from dash.exceptions import PreventUpdate
 
 from agents.da_admin_access import is_admin
@@ -18,24 +19,76 @@ from agents.da_admin_catalog import (
     resolve_row,
     resolved_rows,
 )
-from agents.da_admin_cited import cited_counts
-from agents.da_admin_diff import build_timeline, diff_rulebooks
+from agents.da_admin_cited import cited_counts, fires_in
+from agents.da_admin_diff import build_timeline, diff_rulebooks, plain_diff_lines
 from agents.da_admin_forms import (
     RESULT_PROBLEMS,
     RESULT_SAVED,
     RESULT_STALE,
     add_rule_row,
+    capability_rows,
     move_row,
     save_from_form,
 )
+from agents.da_admin_index import recent_runs
+from agents.da_admin_meaning import meaning_search
 from agents.da_admin_metrics import WINDOW_ALL, WINDOW_LABELS, health_report
-from agents.da_admin_overview import build_overview, server_settings_view
+from agents.da_admin_modules import module_paths
+from agents.da_admin_overview import (
+    MISSING_BACKUP_FILTER,
+    build_overview,
+    server_settings_view,
+)
+from agents.da_admin_rebuild import running_since, start_rebuild
+from agents.da_admin_sonar import load_snapshot, refresh_snapshot, source_pill
+from agents.da_admin_tag_cards import (
+    ai_cards,
+    approve_all_high,
+    approve_card,
+    high_confidence_counts,
+    reject_card,
+)
+from agents.da_admin_tag_store import read_tags
+from callbacks.screen_callbacks.da_admin_scan_callbacks import register_scan
 from configs.da_config import Settings, load_settings
 from db_table_functions.db_tbl_da_rulebook import (
     RulebookError,
     get_active_version,
     get_version,
     restore_version,
+)
+from layouts.da_admin_catalog_meaning import (
+    CAP_MEANING_ID,
+    CAP_MODE_ID,
+    HIT_TYPE,
+    MEANING_PLACEHOLDER,
+    MODE_MEANING,
+    NAMES_PLACEHOLDER,
+    meaning_results,
+    no_hits_line,
+)
+from layouts.da_admin_catalog_tab import (
+    Q_AI_ALL,
+    Q_AI_ALL_DO,
+    Q_AI_APPROVE,
+    Q_AI_ASSIGN,
+    Q_AI_REJECT,
+)
+from layouts.da_admin_coding_tab import (
+    GOLDEN_CHANGE_TYPE,
+    RULE_PANEL_ID,
+    RULE_PICK_TYPE,
+    module_start,
+    rule_panel,
+)
+from layouts.da_admin_index_panels import (
+    REBUILD_BTN,
+    REBUILD_CONFIRM,
+    REBUILD_LATER,
+    REBUILD_MODAL,
+    REBUILD_POLL,
+    REBUILD_STATUS,
+    rebuild_status,
 )
 from layouts.da_admin_page import (
     ACTION_CANCEL,
@@ -47,24 +100,33 @@ from layouts.da_admin_page import (
     ADMIN_TABS,
     ADMIN_TABS_ID,
     BASE_STORE_TYPE,
+    CAP_LIST_ID,
+    CAP_MISSING_ID,
+    CAP_SEARCH_ID,
     CATALOG_COLUMNS,
     CATALOG_TABLE,
     EDITABLE_TABS,
+    EXCLUSION_COLUMNS,
     GLOSSARY_COLUMNS,
     GOLDEN_COLUMNS,
     GOTO_TYPE,
     HEALTH_ID,
-    HIST_COMPARE,
     HIST_CONFIRM,
     HIST_PICK_TYPE,
     HIST_RESTORE,
     HIST_TYPE,
+    HIST_VIEW,
+    MODULE_COLUMNS,
+    MODULE_TABLE,
     MOVE_TYPE,
     NOTE_ID_NAME,
     Q_APPLY,
     Q_APPLY_PATTERN,
+    Q_APPROVE,
     Q_CONFIRM,
     Q_MOVE,
+    Q_NEW,
+    Q_REJECT,
     Q_SHOW_RESOLVED,
     QUEUE_BUTTON_TYPE,
     QUEUE_NOTE_TYPE,
@@ -73,6 +135,10 @@ from layouts.da_admin_page import (
     RULE_KIND_OF_TAB,
     RULES_TABLE,
     SONAR_FIELD_PREFIX,
+    SONAR_PILL,
+    SONAR_REFRESH_BTN,
+    SONAR_SAMPLE_ID,
+    SONAR_STATUS,
     TAB_BUILD,
     TAB_CAPABILITY,
     TAB_CHARTER,
@@ -86,6 +152,7 @@ from layouts.da_admin_page import (
     ZONE_COLUMNS,
     admin_page,
     body_id,
+    catalog_list,
     health_numbers,
     history_view,
     message_notice,
@@ -93,6 +160,7 @@ from layouts.da_admin_page import (
     problem_notice,
     refusal_page,
     saved_notice,
+    sonar_sample_view,
     tab_button_id,
     tab_content,
 )
@@ -118,8 +186,8 @@ TABLES: dict[str, tuple[str, ...]] = {
     TAB_BUILD: ("zones", "protected_files"),
     TAB_UI: (RULES_TABLE,),
     TAB_CODING: (RULES_TABLE, "approved_libraries", "blocked_imports", "golden_examples"),
-    TAB_CAPABILITY: (CATALOG_TABLE,),
-    TAB_REPO: ("allowed_folders", "workspace_markers"),
+    TAB_CAPABILITY: (CATALOG_TABLE, MODULE_TABLE),
+    TAB_REPO: ("allowed_folders", "workspace_markers", "index_exclusions"),
 }
 TABLE_COLUMNS = {  # the rest hold one "text"
     "glossary": GLOSSARY_COLUMNS,
@@ -127,6 +195,8 @@ TABLE_COLUMNS = {  # the rest hold one "text"
     RULES_TABLE: RULE_COLUMNS,
     "golden_examples": GOLDEN_COLUMNS,
     CATALOG_TABLE: CATALOG_COLUMNS,
+    MODULE_TABLE: MODULE_COLUMNS,
+    "index_exclusions": EXCLUSION_COLUMNS,
 }
 
 
@@ -144,9 +214,7 @@ def admin_content(settings: Settings, pathname: str | None):
         return refusal_page()
     active = get_active_version(settings.db_path)
     if active is None:
-        return html.Div(
-            dmc.Text(NO_RULEBOOK_MESSAGE, c=da_styles.MUTED), style=da_styles.PAGE
-        )
+        return html.Div(dmc.Text(NO_RULEBOOK_MESSAGE, c=da_styles.MUTED), style=da_styles.PAGE)
     return admin_page(
         active,
         build_timeline(settings.db_path),
@@ -155,6 +223,7 @@ def admin_content(settings: Settings, pathname: str | None):
         build_overview(settings),
         health_report(settings.db_path, WINDOW_ALL),
         server_settings_view(settings),
+        fires_in(settings.db_path),
     )
 
 
@@ -225,6 +294,19 @@ def _with_new_row(form: dict, table: str) -> dict:
     return {**form, table: [*form.get(table, []), new]}
 
 
+def with_added_module(form: dict) -> dict:
+    """Add module: the picked path becomes an exact pattern on the picked capability. The picker's
+    own row is dropped from the form. An empty pick changes nothing."""
+    form = dict(form)
+    pick = (form.pop(MODULE_TABLE, None) or [{}])[0]
+    capability, path = pick.get("capability", ""), pick.get("path", "")
+    for row in form.get(CATALOG_TABLE, []):
+        patterns = row["path_patterns"].splitlines()
+        if capability and path and row["name"] == capability and path not in patterns:
+            row["path_patterns"] = "\n".join([*patterns, path])
+    return form
+
+
 def _without_row(form: dict, table: str, index: int) -> dict:
     rows = [row for i, row in enumerate(form.get(table, [])) if i != index]
     return {**form, table: rows}
@@ -254,7 +336,9 @@ def run_action(
             return _save(settings, tab, form, note, base_version, active)
     base = get_version(settings.db_path, base_version or active.version_number) or active
     notice = None
-    if kind == "adm-add" and action["table"] == RULES_TABLE:
+    if kind == "adm-add" and action["table"] == MODULE_TABLE:
+        form = with_added_module(form)
+    elif kind == "adm-add" and action["table"] == RULES_TABLE:
         form, notice = _with_new_rule(settings, tab, form)
     elif kind == "adm-add":
         form = _with_new_row(form, action["table"])
@@ -271,20 +355,55 @@ def _content(settings: Settings, tab: str, version, **kwargs):
     cited = cited_counts(settings.db_path) if tab == TAB_CODING else None
     queue = queue_data(settings) if tab == TAB_CAPABILITY else None
     server = server_settings_view(settings) if tab == TAB_REPO else None
-    return tab_content(tab, version, cited=cited, queue=queue, server=server, **kwargs)
+    fires = fires_in(settings.db_path) if tab == TAB_CODING else None
+    return tab_content(tab, version, cited=cited, queue=queue, server=server, fires=fires, **kwargs)
 
 
 # --- Unassigned queue ---
 
 
-def queue_data(settings: Settings, show_resolved: bool = False, dialog=None, notice=None) -> dict:
+def queue_data(
+    settings: Settings, show_resolved: bool = False, dialog=None, notice=None, ai_confirm=False
+) -> dict:
     """What the layout needs to draw the queue block."""
     return {
         "rows": queue_rows(settings),
         "resolved": resolved_rows(settings) if show_resolved else None,
         "dialog": dialog,
         "notice": notice or [],
+        "ai_cards": ai_cards(),
+        "ai_confirm": {"counts": high_confidence_counts()} if ai_confirm else None,
     }
+
+
+def _ai_action(
+    settings: Settings, name: str, path: str, picks: dict, base_version: int | None, cap: str
+):
+    """Approve, Assign to, Reject and Approve all on the AI scan cards."""
+    if name == Q_AI_ALL:
+        return _queue_tab(settings, ai_confirm=True)
+    if name == Q_AI_REJECT:
+        reject_card(path)
+        return _queue_tab(settings, notice=[message_notice("Rejected.", color="green")])
+    if name == Q_AI_ALL_DO:
+        result = approve_all_high(settings, settings.developer_id, base_version)
+    else:
+        target = cap if name == Q_AI_APPROVE else (picks.get(path) or "")
+        if not target:
+            return _queue_tab(settings, notice=[message_notice("Choose a capability first.")])
+        result = approve_card(settings, path, target, settings.developer_id, base_version)
+    if result.kind == "resolved":
+        text = "Card closed."
+        if result.new_version:
+            text = f"Approved. The catalog is now v{result.new_version}."
+        if result.message:  # some paths were already matched: say by which capability
+            text += f" {result.message}"
+        return _queue_tab(settings, notice=[message_notice(text, color="green")])
+    if result.stale:
+        newest = get_active_version(settings.db_path).version_number
+        notice = message_notice(result.message, reload_tab=TAB_CAPABILITY, newest=newest)
+        return _queue_tab(settings, notice=[notice])
+    return _queue_tab(settings, notice=[problem_notice(result.problems or [result.message])])
 
 
 def _queue_tab(settings: Settings, **kwargs):
@@ -304,13 +423,50 @@ def run_queue_action(
     `picks` is {unassigned_id: chosen capability}, `notes` {unassigned_id: change note}. Writes only
     on Resolve (and, with the pattern, one new catalog version)."""
     name, uid = action["action"], action["uid"]
+    if name in (Q_AI_APPROVE, Q_AI_ASSIGN, Q_AI_REJECT, Q_AI_ALL, Q_AI_ALL_DO):
+        return _ai_action(settings, name, uid, picks, base_version, action["cap"])
     if name == Q_SHOW_RESOLVED:
         return _queue_tab(settings, show_resolved=True)
+    if name == Q_APPROVE:  # take the suggestion: same as Move to <suggested>
+        return _start_resolve(settings, Q_MOVE, uid, {uid: action["cap"]})
+    if name == Q_REJECT:
+        return _reject(settings, uid)
+    if name == Q_NEW:
+        return _new_capability(settings, uid)
     if name in (Q_CONFIRM, Q_MOVE):
         return _start_resolve(settings, name, uid, picks)
     if name in (Q_APPLY, Q_APPLY_PATTERN):
         return _apply_resolve(settings, action, notes.get(uid, ""), base_version)
     return _queue_tab(settings)  # Cancel, Hide resolved
+
+
+def _reject(settings: Settings, uid: int):
+    """Reject: the file belongs in no capability. Closes the row; a later change reopens it."""
+    result = resolve_row(settings, uid, "rejected", "", settings.developer_id)
+    if result.kind == "resolved":
+        return _queue_tab(settings, notice=[message_notice("Rejected.", color="green")])
+    return _queue_tab(settings, notice=[problem_notice(result.problems or [result.message])])
+
+
+def _new_capability(settings: Settings, uid: int):
+    """New capability: the catalog in edit mode with one extra row whose pattern is the file's
+    folder. The name stays empty (the suggestion is an existing capability); Save is the normal
+    Save with a note, and the queue row stays open until Admin resolves it."""
+    row = next((r for r in queue_rows(settings) if r.unassigned_id == uid), None)
+    if row is None:
+        notice = [message_notice("That Unassigned row is not open any more.")]
+        return _queue_tab(settings, notice=notice)
+    active = get_active_version(settings.db_path)
+    folder, _, _ = row.path.replace("\\", "/").rpartition("/")
+    new = {
+        "name": "",
+        "description": "",
+        "named_senior": "",
+        "backup_senior": "",
+        "path_patterns": f"{folder}/*" if folder else row.path,
+    }
+    rows = [*capability_rows(active.rulebook.policy), new]
+    return _content(settings, TAB_CAPABILITY, active, editable=True, draft={CATALOG_TABLE: rows})
 
 
 def _start_resolve(settings: Settings, name: str, uid: int, picks: dict):
@@ -354,9 +510,7 @@ def _apply_resolve(settings: Settings, action: dict, note: str, base_version: in
     if result.stale:
         # The catalog moved on since this screen was drawn: nothing was closed.
         newest = get_active_version(settings.db_path).version_number
-        notice = message_notice(
-            result.message, reload_tab=TAB_CAPABILITY, newest=newest
-        )
+        notice = message_notice(result.message, reload_tab=TAB_CAPABILITY, newest=newest)
         return _queue_tab(settings, notice=[notice])
     lines = result.problems or [result.message]
     return _queue_tab(settings, notice=[problem_notice(lines)])
@@ -373,13 +527,73 @@ def _with_new_rule(settings: Settings, tab: str, form: dict):
     return {**form, RULES_TABLE: [*rows, new]}, None
 
 
+def _index_source_changed(before, after) -> bool:
+    """Only a new folder scope or new exclusions make the old index out of date."""
+    old, new = before.rulebook.policy, after.rulebook.policy
+    return (old.index_folder_scope, old.index_exclusions) != (
+        new.index_folder_scope,
+        new.index_exclusions,
+    )
+
+
+def rebuild_action(settings: Settings, button: str | None):
+    """Rebuild index clicks. Returns (modal opened, status line). Only Rebuild starts a job."""
+    if not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    if button == REBUILD_CONFIRM:
+        policy = get_active_version(settings.db_path).rulebook.policy
+        started, message = start_rebuild(
+            policy, settings.developer_id, provider=settings.llm_provider
+        )
+        if not started:
+            return False, message
+    return False, current_rebuild_status()
+
+
+def current_rebuild_status() -> str:
+    return rebuild_status(running_since(), recent_runs())
+
+
+def _register_rebuild(app) -> None:
+    @app.callback(
+        Output(REBUILD_MODAL, "opened"),
+        Input(REBUILD_BTN, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def open_confirm(clicks):
+        return bool(clicks)
+
+    @app.callback(
+        Output(REBUILD_MODAL, "opened", allow_duplicate=True),
+        Output(REBUILD_STATUS, "children", allow_duplicate=True),
+        Output(REBUILD_BTN, "disabled", allow_duplicate=True),
+        Input(REBUILD_CONFIRM, "n_clicks"),
+        Input(REBUILD_LATER, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def answer_confirm(_confirm, _later):
+        if not ctx.triggered[0]["value"]:
+            raise PreventUpdate
+        opened, status = rebuild_action(get_admin_settings(), ctx.triggered_id)
+        return opened, status, running_since() is not None
+
+    @app.callback(
+        Output(REBUILD_STATUS, "children"),
+        Output(REBUILD_BTN, "disabled"),
+        Input(REBUILD_POLL, "n_intervals"),
+    )
+    def poll(_ticks):
+        return current_rebuild_status(), running_since() is not None
+
+
 def _save(settings, tab, form, note, base_version, active):
     base_number = base_version or active.version_number
     result = save_from_form(settings.db_path, tab, form, base_number, settings.developer_id, note)
     if result.kind == RESULT_SAVED:
         saved = get_active_version(settings.db_path)
         notice = saved_notice(saved.version_number, result.warnings)
-        return _content(settings, tab, saved, notice=[notice]), False
+        ask = tab == TAB_REPO and _index_source_changed(active, saved)
+        return _content(settings, tab, saved, notice=[notice], ask_rebuild=ask), False
     base = get_version(settings.db_path, base_number) or active
     if result.kind == RESULT_PROBLEMS:
         notice = problem_notice(result.problems)
@@ -397,31 +611,36 @@ def _save(settings, tab, form, note, base_version, active):
 # --- Version history ---
 
 
-def history_content(settings: Settings, diff=None, restore_target=None, notice=None):
-    return history_view(build_timeline(settings.db_path), diff, restore_target, notice)
+def history_content(settings: Settings, restore_target=None, notice=None, selected=None):
+    rows = build_timeline(settings.db_path)
+    if selected is None and rows:
+        # Default: the newest older version (the one an Admin most likely wants to look at).
+        selected = rows[1].version_number if len(rows) > 1 else rows[0].version_number
+    changes = _selected_changes(settings, rows, selected)
+    return history_view(rows, restore_target, notice, selected, changes)
 
 
-def run_history_action(
-    settings: Settings, action: dict, from_number, to_number, note: str | None
-):
+def _selected_changes(settings: Settings, rows, selected):
+    """Plain-word lines for what version `selected` changed against the version before it."""
+    numbers = [row.version_number for row in rows]
+    if selected not in numbers or numbers.index(selected) + 1 >= len(numbers):
+        return []  # nothing before the first version
+    new = get_version(settings.db_path, selected)
+    old = get_version(settings.db_path, numbers[numbers.index(selected) + 1])
+    return plain_diff_lines(diff_rulebooks(old.rulebook, new.rulebook))
+
+
+def run_history_action(settings: Settings, action: dict, note: str | None):
     """One click on the Version history tab. Writes only on a confirmed Restore."""
     name = action["action"]
     number = action.get("version") or 0
+    if name == HIST_VIEW:
+        return history_content(settings, selected=number)
     if name == HIST_RESTORE:
-        return history_content(settings, restore_target=number)
-    if name == HIST_COMPARE:
-        return history_content(settings, diff=_compare(settings, from_number, to_number))
+        return history_content(settings, restore_target=number, selected=number)
     if name == HIST_CONFIRM:
         return _restore(settings, number, note)
     return history_content(settings)  # Cancel, or anything else: back to the plain timeline
-
-
-def _compare(settings: Settings, from_number, to_number):
-    old = get_version(settings.db_path, int(from_number)) if from_number else None
-    new = get_version(settings.db_path, int(to_number)) if to_number else None
-    if old is None or new is None:
-        return None
-    return old.version_number, new.version_number, diff_rulebooks(old.rulebook, new.rulebook)
 
 
 def _restore(settings: Settings, number: int, note: str | None):
@@ -457,6 +676,32 @@ def register_da_admin_page_callbacks(app) -> None:
     _register_history(app)
     _register_queue(app)
     _register_overview(app)
+    _register_catalog_filter(app)
+    _register_rule_pick(app)
+    _register_golden(app)
+    _register_rebuild(app)
+    register_scan(app, lambda: get_admin_settings())  # looked up late so tests can replace it
+
+    @app.callback(
+        Output(SONAR_STATUS, "children"),
+        Output(SONAR_PILL, "children"),
+        Output(SONAR_SAMPLE_ID, "children"),
+        Input(SONAR_REFRESH_BTN, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def refresh_sonar(clicks):
+        settings = get_admin_settings()
+        message = sonar_refresh_action(settings, clicks)
+        chosen = get_active_version(settings.db_path).rulebook.policy.sonar_severity_map
+        # pill, banner and table all show the new list at once
+        return message, source_pill(load_snapshot()), sonar_sample_view(chosen)
+
+
+def sonar_refresh_action(settings: Settings, clicks):
+    """Admin only. The message says saved, or why not; the old list stays on any error."""
+    if not clicks or not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    return refresh_snapshot(settings)
 
 
 def refresh_overview(settings: Settings, tab: str | None):
@@ -507,6 +752,154 @@ def _register_overview(app) -> None:
         return triggered["tab"]
 
 
+def filtered_catalog(settings: Settings, search: str | None, missing_backup: bool | None):
+    """The read-only catalog list for the search box and the Missing backup chip."""
+    if not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    policy = get_active_version(settings.db_path).rulebook.policy
+    paths = module_paths(policy.index_folder_scope)
+    return catalog_list(policy.capabilities, paths, search or "", bool(missing_backup))
+
+
+def catalog_search(settings: Settings, search: str | None, missing_backup: bool | None, mode: str):
+    """(table, results). "Names and people" is the old filter; "What the code does" keeps the whole
+    table and lists the programs the search finds (fix 11-2, AG-1 to AG-3)."""
+    if mode != MODE_MEANING:
+        return filtered_catalog(settings, search, missing_backup), None
+    table = filtered_catalog(settings, "", missing_backup)
+    policy = get_active_version(settings.db_path).rulebook.policy
+    hits, message = meaning_search(search or "", settings, policy.capabilities, read_tags())
+    if search and search.strip() and not hits and not message:
+        return table, no_hits_line()
+    return table, meaning_results(hits, message)
+
+
+def catalog_for_module(settings: Settings, path: str):
+    """A clicked result: the table shows only the capability that holds this module."""
+    if not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    policy = get_active_version(settings.db_path).rulebook.policy
+    paths = module_paths(policy.index_folder_scope)
+    return catalog_list(policy.capabilities, paths, PurePosixPath(path).name, False)
+
+
+def pick_rule(settings: Settings, rule_id: str):
+    """The Coding standards rule list and card with `rule_id` selected (L3, read view only)."""
+    if not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    rules = get_active_version(settings.db_path).rulebook.rules
+    cited = cited_counts(settings.db_path)
+    mine = [
+        {**r.model_dump(), "cited": cited.get(r.rule_id, 0)}
+        for r in rules
+        if r.kind == RULE_KIND_OF_TAB[TAB_CODING]
+    ]
+    return rule_panel(mine, fires_in(settings.db_path), rule_id)
+
+
+def open_coding_edit(settings: Settings):
+    """The golden card's Change button: the same as Edit on the Coding standards tab."""
+    if not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    action = {"type": "adm-act", "action": ACTION_EDIT}
+    content, _editing = run_action(settings, TAB_CODING, action, {}, "", None)
+    return content
+
+
+def codes_for_modules(settings: Settings, modules: list, codes: list) -> list:
+    """The code box of each golden row after a module pick: a blank box gets the module's first
+    lines; a box with code in it is left alone (also when the form is just drawn)."""
+    if not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    scope = get_active_version(settings.db_path).rulebook.policy.index_folder_scope
+    return [
+        module_start(module, scope) if module and not (code or "").strip() else no_update
+        for module, code in zip(modules, codes, strict=True)
+    ]
+
+
+def _register_golden(app) -> None:
+    cell = {"type": "adm-cell", "tab": TAB_CODING, "table": "golden_examples", "row": ALL}
+
+    @app.callback(
+        Output(body_id(TAB_CODING), "children", allow_duplicate=True),
+        *[Output(tab_button_id(n), "disabled", allow_duplicate=True) for n, _, _ in ADMIN_TABS],
+        Input({"type": GOLDEN_CHANGE_TYPE, "n": ALL}, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def on_golden_change(_clicks):
+        if not ctx.triggered or not ctx.triggered[0]["value"]:
+            raise PreventUpdate
+        return (open_coding_edit(get_admin_settings()), *tabs_disabled(TAB_CODING))
+
+    @app.callback(
+        Output({**cell, "col": "code"}, "value"),
+        Input({**cell, "col": "module_path"}, "value"),
+        State({**cell, "col": "code"}, "value"),
+        prevent_initial_call=True,
+    )
+    def on_golden_module(modules, codes):
+        return codes_for_modules(get_admin_settings(), modules, codes)
+
+
+def _register_rule_pick(app) -> None:
+    @app.callback(
+        Output(RULE_PANEL_ID, "children"),
+        Input({"type": RULE_PICK_TYPE, "rule": ALL}, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def on_rule_pick(_clicks):
+        triggered = ctx.triggered_id
+        if not isinstance(triggered, dict) or not ctx.triggered[0]["value"]:
+            raise PreventUpdate
+        return pick_rule(get_admin_settings(), triggered["rule"])
+
+
+def _register_catalog_filter(app) -> None:
+    @app.callback(
+        Output(CAP_LIST_ID, "children"),
+        Output(CAP_MEANING_ID, "children"),
+        Input(CAP_SEARCH_ID, "value"),
+        Input(CAP_MISSING_ID, "checked"),
+        Input(CAP_MODE_ID, "value"),
+        prevent_initial_call=True,
+    )
+    def on_catalog_filter(search, missing_backup, mode):
+        return catalog_search(get_admin_settings(), search, missing_backup, mode)
+
+    @app.callback(
+        Output(CAP_SEARCH_ID, "placeholder"),
+        Input(CAP_MODE_ID, "value"),
+    )
+    def on_mode_placeholder(mode):
+        return MEANING_PLACEHOLDER if mode == MODE_MEANING else NAMES_PLACEHOLDER
+
+    @app.callback(
+        Output(CAP_LIST_ID, "children", allow_duplicate=True),
+        Input({"type": HIT_TYPE, "path": ALL}, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def on_meaning_hit(_clicks):
+        triggered = ctx.triggered_id
+        if not isinstance(triggered, dict) or not ctx.triggered[0]["value"]:
+            raise PreventUpdate
+        return catalog_for_module(get_admin_settings(), triggered["path"])
+
+    @app.callback(
+        Output(CAP_MISSING_ID, "checked"),
+        Input({"type": GOTO_TYPE, "tab": ALL, "n": ALL}, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def tick_missing_backup(_clicks):
+        # The Overview's Assign button carries the filter name in its "n" (see _attention_list).
+        triggered = ctx.triggered_id
+        if not isinstance(triggered, dict) or not ctx.triggered[0]["value"]:
+            raise PreventUpdate
+        if MISSING_BACKUP_FILTER not in str(triggered["n"]):
+            raise PreventUpdate
+        return True
+
+
 def _register_history(app) -> None:
     history_body = body_id(TAB_HISTORY)
 
@@ -536,9 +929,7 @@ def _register_history(app) -> None:
         if not is_admin(settings, settings.developer_id):
             raise PreventUpdate
         picks = {item["id"]["name"]: item.get("value") for item in ctx.states_list[0]}
-        return run_history_action(
-            settings, triggered, picks.get("from"), picks.get("to"), picks.get("note")
-        )
+        return run_history_action(settings, triggered, picks.get("note"))
 
 
 def queue_inputs_from_states(states_list: list) -> tuple[dict, dict]:
@@ -555,6 +946,10 @@ def _register_queue(app) -> None:
 
     @app.callback(
         Output(body_id(TAB_CAPABILITY), "children", allow_duplicate=True),
+        *[
+            Output(tab_button_id(name), "disabled", allow_duplicate=True)
+            for name, _, _ in ADMIN_TABS
+        ],
         Input(button, "n_clicks"),
         State({"type": QUEUE_PICK_TYPE, "uid": ALL}, "value"),
         State({"type": QUEUE_NOTE_TYPE, "uid": ALL}, "value"),
@@ -569,7 +964,10 @@ def _register_queue(app) -> None:
         if not is_admin(settings, settings.developer_id):
             raise PreventUpdate
         picks, notes = queue_inputs_from_states(ctx.states_list)
-        return run_queue_action(settings, triggered, picks, notes, base_version)
+        content = run_queue_action(settings, triggered, picks, notes, base_version)
+        if triggered["action"] == Q_NEW:  # now editing: lock the other tabs (11-4)
+            return (content, *tabs_disabled(TAB_CAPABILITY))
+        return (content, *[no_update] * len(ADMIN_TABS))
 
 
 def _register_tab(app, tab: str) -> None:

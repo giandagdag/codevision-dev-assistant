@@ -70,3 +70,17 @@ def test_start_up_pauses_a_build_that_was_running_when_the_server_stopped(
     state = build_flow.get_state(settings, request_id)
     assert (state.step, state.message) == ("b_interrupted", build_flow.SERVER_RESTART_MESSAGE)
     assert request_id in capsys.readouterr().out
+
+
+def test_the_side_menu_lights_the_page_you_are_on():
+    # Fix 11-1, AF-1: (Developer Assistant, Admin, Inbox)
+    assert server.active_entries("/") == (True, False, False)
+    assert server.active_entries(None) == (True, False, False)
+    assert server.active_entries(server.ADMIN_PATH) == (False, True, False)
+    assert server.active_entries(server.INBOX_PATH) == (False, False, True)
+
+
+def test_the_menu_entries_have_ids_for_the_highlight_callback():
+    ids = {getattr(item, "id", None) for item in server._menu()}
+
+    assert {server.DEV_MENU_ID, server.ADMIN_MENU_ID, server.MENU_LINK_ID} <= ids

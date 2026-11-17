@@ -110,6 +110,35 @@ def test_build_view_shows_limits_with_bounds_and_advanced_collapsed(published_ru
     assert len(switches) == 6  # five triggers plus Phase 10's "lock the developer's chat"
 
 
+def test_build_view_has_decision_limit_tests_and_severity_table(published_rulebook):
+    text = all_text(build_view(published_rulebook))
+
+    assert "Decision limit: 8   (allowed: 1 to 15)" in text
+    assert "Max fix rounds: 3   (allowed: 1 to 5)" in text
+    assert "✅ A test with no result counts as Not proven and blocks the pass" in text
+    assert "Should fix" in text and "Yes, listed in the PR summary" in text
+
+
+def test_protected_files_are_chips_to_read_and_a_table_to_edit(published_rulebook):
+    files = published_rulebook.rulebook.policy.protected_files
+
+    read = [c for c in walk(build_view(published_rulebook)) if type(c).__name__ == "Badge"]
+    edit = build_view(published_rulebook, editable=True)
+
+    assert [b.children for b in read if b.children in files] == files
+    assert not [c for c in walk(edit) if type(c).__name__ == "Badge" and c.children in files]
+    assert any(type(c).__name__ == "Table" for c in walk(edit))
+
+
+def test_build_edit_view_uses_steppers(published_rulebook):
+    view = build_view(published_rulebook, editable=True)
+
+    boxes = [c for c in walk(view) if type(c).__name__ == "NumberInput"]
+    names = {b.id["name"]: b.value for b in boxes}
+    assert names["build_max_rounds"] == 3
+    assert names["max_material_decisions"] == 8
+
+
 def test_no_screen_shows_a_retired_field(published_rulebook):
     for view in (
         admin_page(published_rulebook),
@@ -154,7 +183,11 @@ def _admin_files():
 
 def test_the_console_makes_no_ai_call():
     banned = ("get_llm_client", "get_build_client", "get_tester_client", ".complete(")
+    # fix 11-2: only the AI scan (tagger and its job) may call the AI; it proposes, never decides
+    scan_files = ("da_admin_tagger.py", "da_admin_tagger_job.py")
     for file in _admin_files():
+        if file.name in scan_files:
+            continue
         text = file.read_text(encoding="utf-8")
         for word in banned:
             assert word not in text, (file, word)

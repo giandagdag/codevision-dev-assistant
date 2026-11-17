@@ -85,3 +85,13 @@ def test_nothing_new_in_the_allow_list_writes_deletes_or_merges():
     for entry in NEW_ALLOWED:
         for word in ("push", "merge", "rm", "delete", "clean", "commit"):
             assert word not in entry.split("(", 1)[1].split()
+
+
+def test_so1_the_builder_can_catch_up_with_its_own_branch():
+    """16 Nov (#79): SO-1 says the builder merges, but merge and pull were not allowed."""
+    assert allowed("git merge --ff-only origin/phase-11-fix-1")
+    assert allowed("git merge origin/auto/phases-7-10")
+    assert allowed("git pull --ff-only origin phase-11-fix-1")
+    # A plain pull (it could make a merge commit by surprise) and every force push stay out.
+    assert not allowed("git pull origin phase-11-fix-1")
+    assert not allowed("git push --force origin phase-11-fix-1")

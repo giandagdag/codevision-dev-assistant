@@ -21,6 +21,7 @@ from agents.da_admin_diff import (
     build_timeline,
 )
 from agents.da_admin_forms import capabilities_without_backup
+from agents.da_admin_tag_cards import ai_cards
 from db_table_functions.da_db import open_db
 from db_table_functions.db_tbl_da_build import ensure_build_tables
 from db_table_functions.db_tbl_da_escalation import list_escalations
@@ -44,6 +45,7 @@ STATUS_AMBER = "amber"
 STATUS_RED = "red"
 NOTHING_TO_DO = "Nothing needs attention."
 NEVER_CHANGED = "not changed since v1"
+MISSING_BACKUP_FILTER = "missing_backup"
 
 
 @dataclass(frozen=True)
@@ -51,6 +53,8 @@ class AttentionItem:
     area: str
     level: str  # LEVEL_INFO or LEVEL_RED
     text: str
+    # Names a catalog filter the jump button should open (step 8 reads it); "" for none.
+    filter: str = ""
 
 
 @dataclass(frozen=True)
@@ -76,7 +80,8 @@ def build_overview(settings, now: datetime | None = None) -> Overview | None:
         return None
     waiting = [row.waiting_since for row in queue_rows(settings)]
     return overview_from(
-        active, waiting, build_timeline(settings.db_path), now, open_escalations(settings)
+        active, waiting, build_timeline(settings.db_path), now, open_escalations(settings),
+        len(ai_cards()),
     )
 
 
@@ -93,10 +98,15 @@ def overview_from(
     timeline: list[TimelineRow],
     now: datetime | None = None,
     escalations: list[EscalationRow] | None = None,
+    ai_proposals: int = 0,
 ) -> Overview:
     """The pure part: given the version, the open queue's ages and the timeline, no database."""
     rulebook = version.rulebook
     items = attention_items(rulebook, waiting_since, now)
+    if ai_proposals:  # fix 11-2: the AI scan's open cards
+        noun = "proposal" if ai_proposals == 1 else "proposals"
+        text = f"{ai_proposals} AI {noun} to review (Capability catalog tab)."
+        items.append(AttentionItem(AREA_CATALOG, LEVEL_INFO, text))
     items += escalation_items(escalations or [], rulebook.policy.admin_unassigned_stale_days, now)
     summaries = area_summaries(rulebook, len(waiting_since))
     changed = last_changed(timeline)
@@ -117,7 +127,12 @@ def attention_items(
     items += _rule_count_items(rulebook)
     items += _queue_items(waiting_since, policy.admin_unassigned_stale_days, now)
     items += [
-        AttentionItem(AREA_CATALOG, LEVEL_INFO, f"Capability '{name}' has no backup senior.")
+        AttentionItem(
+            AREA_CATALOG,
+            LEVEL_INFO,
+            f"Capability '{name}' has no backup senior.",
+            MISSING_BACKUP_FILTER,
+        )
         for name in capabilities_without_backup(policy)
     ]
     items += [
@@ -130,6 +145,7 @@ def attention_items(
     for label, value in (
         ("Generator model", policy.generator_model),
         ("Tester model", policy.tester_model),
+        ("Program tagger model", policy.tagger_model),
     ):
         if not value.strip():
             text = f"{label}: uses the server default."
@@ -263,6 +279,12 @@ def server_settings_view(settings) -> list[tuple[str, str]]:
         ("DA_DISCOVERY_MAX_ROUNDS", str(settings.discovery_max_rounds)),
         ("DA_MAIN_SOURCE", str(settings.main_source)),
         ("DA_SANDBOX_SOURCE_DIR", "set" if settings.sandbox_source_dir else "not set"),
+        ("DA_TAGGER_MAX_MODULES", str(settings.tagger_max_modules)),
+        # URL and token are only "set" / "not set": never the value
+        ("DA_SONAR_URL", "set" if settings.sonar_url else "not set"),
+        ("DA_SONAR_TOKEN", "set" if settings.sonar_token else "not set"),
+        ("DA_SONAR_PROFILE", settings.sonar_profile or "default profile"),
+        ("DA_SONAR_LANGUAGE", settings.sonar_language),
     ]
 
 

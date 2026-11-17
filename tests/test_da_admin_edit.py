@@ -118,11 +118,11 @@ def test_a_stale_save_offers_reload_with_the_newer_version(make_settings, publis
     assert editing is True
     assert "Reload v2" in text
     # The form still shows v1, which is no longer the active version.
-    assert "Showing v1 (the version you started from)" in text
+    assert "Started from v1" in text
 
     reloaded, editing = run_action(settings, "build", act("reload"), {}, "", 1)
     assert editing is False
-    assert "Showing v2" in all_text(reloaded)
+    assert "Active rulebook v2" in all_text(reloaded)
 
 
 def test_add_row_and_remove_keep_the_typed_form(make_settings, published_rulebook):
@@ -139,7 +139,8 @@ def test_add_row_and_remove_keep_the_typed_form(make_settings, published_ruleboo
     removed_cells = [c for c in walk(removed) if type(c).__name__ == "Textarea"]
     assert [c.value for c in cells][-3:] == ["a/*", "b/*", ""]
     assert [c.value for c in removed_cells][-1:] == ["b/*"]
-    assert any(c.value == "4" for c in walk(added) if type(c).__name__ == "TextInput")
+    # Step 13: number fields are steppers (NumberInput) holding the number.
+    assert any(c.value == 4 for c in walk(added) if type(c).__name__ == "NumberInput")
 
 
 def test_form_is_read_back_with_empty_tables_and_switches():

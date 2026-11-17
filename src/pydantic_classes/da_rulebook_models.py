@@ -15,6 +15,7 @@ from pydantic import (
     Field,
     field_validator,
     model_serializer,
+    model_validator,
 )
 
 RuleKind = Literal["judgement", "ui_convention"]
@@ -117,14 +118,46 @@ class Capability(_RulebookPart):
     path_patterns: list[str] = Field(min_length=1)
 
 
+PROGRAM_TYPES = ("Screen", "Batch or ingestion", "Utility")
+
+
 class GoldenExample(_RulebookPart):
-    """A model piece of code Admin keeps as a good example. Stored only in Phase 11: it is not
-    sent to any AI call yet (decision D-H)."""
+    """A model piece of code Admin keeps as a good example. Since fix 11-1 the Generator's code
+    prompt gets the example of the file's program type (never the Tester or Understand)."""
 
     title: str = Field(min_length=1)
     tags: list[str] = Field(default_factory=list)
     code: str = Field(min_length=1)
     why: str = ""
+    # Fix 11-1: Screen, Batch or ingestion, or Utility. A version saved before has none: the first
+    # tag, else Utility (see _default_program_type).
+    program_type: str = ""
+    # The module this example was taken from (picked from the index in the Admin console).
+    module_path: str = ""
+
+    @model_validator(mode="after")
+    def _default_program_type(self):
+        # Only the three real types count; a first tag like "screen" maps to "Screen", anything
+        # else to Utility, so an example is never silently left out of the Generator prompt.
+        wanted = (self.program_type.strip() or (self.tags[0] if self.tags else "")).lower()
+        self.program_type = next((t for t in PROGRAM_TYPES if t.lower() == wanted), "Utility")
+        return self
+
+
+class IndexExclusion(_RulebookPart):
+    """A path pattern the CodeVision index build skips, on top of the built-in skips (fix 11-1)."""
+
+    pattern: str = Field(min_length=1)
+    reason: str = ""
+    kind: Literal["Config", "Build", "Scratch"] = "Config"
+
+
+class BrandConstant(_RulebookPart):
+    """One row of the UI standards table: a colour, font or spacing value (fix 11-1)."""
+
+    name: str = Field(min_length=1)
+    value: str = Field(min_length=1)  # "Pending brand guide" is a legal value
+    source: str = "Core team"
 
 
 # Starter values for the Phase 4 policy fields (made up; the real values are set at work). A
@@ -251,6 +284,7 @@ class Policy(_RulebookPart):
     # Phase 11 (Admin console). Empty model name = use the .env model for that role (D-G).
     generator_model: str = ""
     tester_model: str = ""
+    tagger_model: str = ""  # fix 11-2: the AI that proposes a capability per program
     # Days an Unassigned file may wait before the Overview turns red (used by Phase 11c).
     admin_unassigned_stale_days: int = Field(default=14, ge=1, le=365)
     # Phase 10 (spec section 12). Defaults keep older rulebook versions loadable.
@@ -269,7 +303,7 @@ class Policy(_RulebookPart):
     max_design_choices: int = Field(default=DEFAULT_MAX_DESIGN_CHOICES, ge=1)
     # Phase 6 fixes (U6): moved here from a constant in Understand. 1 to 10, so a typo cannot
     # switch the questions off or make them endless.
-    max_material_decisions: int = Field(default=DEFAULT_MAX_MATERIAL_DECISIONS, ge=1, le=10)
+    max_material_decisions: int = Field(default=DEFAULT_MAX_MATERIAL_DECISIONS, ge=1, le=15)
     flag_review_zones: list[FlagReviewZone] = Field(default_factory=_default_zones)
     # Phase 5 (Workspace), spec section 8. Same defaults idea: older versions still load.
     workspace_markers: list[str] = Field(default_factory=lambda: list(DEFAULT_WORKSPACE_MARKERS))
@@ -318,6 +352,13 @@ class Policy(_RulebookPart):
     sonar_severity_map: dict[str, Severity] = Field(
         default_factory=lambda: dict(DEFAULT_SONAR_SEVERITY_MAP)
     )
+    # Fix 11-1, Repository and index. index_repo is shown only (the server reads a folder).
+    # Empty index_folder_scope = B1's DA_CODE_INDEX_SOURCE or its default.
+    index_repo: str = ""
+    index_branch: Literal["main"] = "main"
+    index_folder_scope: str = ""
+    index_refresh_mode: Literal["merge", "nightly", "manual"] = "manual"
+    index_exclusions: list[IndexExclusion] = Field(default_factory=list)
 
     @field_validator("escalation_triggers")
     @classmethod
@@ -360,6 +401,8 @@ class Rulebook(_RulebookPart):
     policy: Policy
     # Phase 11b (D-H): stored only, not sent to any AI call. Empty for older versions.
     golden_examples: list[GoldenExample] = Field(default_factory=list)
+    # Fix 11-1: the UI standards brand table. Empty for older versions.
+    brand_constants: list[BrandConstant] = Field(default_factory=list)
 
 
 class RulebookVersion(BaseModel):

@@ -3,8 +3,9 @@
 Which capability a path belongs to is decided here with the same function the developer flow uses
 (lookup_capability: first match wins), so Admin sees exactly what a request would get. No AI.
 
-A resolved row is closed as `confirmed` (the developer's pick stands) or `changed` (Admin moved the
-file). The request's own record is never touched (spec 11-31): only da_unassigned_files changes.
+A resolved row is closed as `confirmed` (the developer's pick stands), `changed` (Admin moved the
+file) or `rejected` (the file belongs in no capability; a later change reopens it).
+The request's own record is never touched (spec 11-31): only da_unassigned_files changes.
 """
 
 from dataclasses import dataclass, field
@@ -16,6 +17,7 @@ from agents.da_admin_forms import (
     capability_rows,
     save_from_form,
 )
+from agents.da_admin_suggest import suggest_capability
 from agents.da_enhance_checks import lookup_capability
 from db_table_functions.da_db import open_db
 from db_table_functions.db_tbl_da_build import ensure_build_tables
@@ -42,6 +44,8 @@ class QueueRow:
     request_id: str
     waiting_since: datetime | None
     would_match: str  # capability a request would get today, or "" for none
+    suggested: str = ""  # capability it imports from most (AF-12), or "" for none
+    reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -68,17 +72,23 @@ def queue_rows(settings) -> list[QueueRow]:
     with open_db(settings.db_path) as conn:
         ensure_build_tables(conn)
         rows = list_unassigned(conn)
-    return [
-        QueueRow(
-            unassigned_id=row.unassigned_id,
-            path=row.path,
-            picked_capability=row.picked_capability,
-            request_id=row.request_id,
-            waiting_since=row.created_at,
-            would_match=would_match(row.path, catalog),
+    scope = active.rulebook.policy.index_folder_scope if active else ""
+    result = []
+    for row in rows:
+        suggested, reason = suggest_capability(row.path, catalog, scope)
+        result.append(
+            QueueRow(
+                unassigned_id=row.unassigned_id,
+                path=row.path,
+                picked_capability=row.picked_capability,
+                request_id=row.request_id,
+                waiting_since=row.created_at,
+                would_match=would_match(row.path, catalog),
+                suggested=suggested,
+                reason=reason,
+            )
         )
-        for row in rows
-    ]
+    return result
 
 
 def resolved_rows(settings, limit: int = RESOLVED_SHOWN) -> list[UnassignedFile]:
@@ -124,6 +134,8 @@ def resolve_row(
         return ResolveResult("refused", problems=["That Unassigned row is not open any more."])
     active = get_active_version(settings.db_path)
     catalog = active.rulebook.policy.capabilities
+    if state == "rejected":
+        add_pattern = False  # a rejected file joins no capability
     if state == "changed" and capability.lower() not in {c.name.lower() for c in catalog}:
         problem = f"Capability '{capability}' is not in the catalog."
         return ResolveResult("refused", problems=[problem])
@@ -132,7 +144,7 @@ def resolve_row(
     if add_pattern and not pattern_offer(row.path, catalog, capability):
         version = base_version or active.version_number
         saved = _add_pattern(
-            settings, active.rulebook.policy, row.path, capability, version, admin_id, note
+            settings, active.rulebook.policy, [(row.path, capability)], version, admin_id, note
         )
         if saved.kind != RESULT_SAVED:
             return ResolveResult(
@@ -164,11 +176,13 @@ def _open_row_by_id(settings, unassigned_id: int) -> UnassignedFile | None:
         return next((r for r in list_unassigned(conn) if r.unassigned_id == unassigned_id), None)
 
 
-def _add_pattern(settings, policy, path, capability, base_version, admin_id, note):
+def _add_pattern(settings, policy, pairs, base_version, admin_id, note):
+    """Add each (path, capability) pair as an exact-path pattern and save ONE new version."""
     rows = capability_rows(policy)
-    for row in rows:
-        if row["name"].lower() == capability.lower():
-            row["path_patterns"] = row["path_patterns"] + "\n" + path
+    for path, capability in pairs:
+        for row in rows:
+            if row["name"].lower() == capability.lower():
+                row["path_patterns"] = row["path_patterns"] + "\n" + path
     return save_from_form(
         settings.db_path, TAB_CAPABILITY, {"capabilities": rows}, base_version, admin_id, note
     )

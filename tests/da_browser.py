@@ -65,9 +65,14 @@ def _chromium():
     except ImportError:
         pytest.skip(SKIP_TEXT)
     playwright = sync_playwright().start()
-    try:
-        browser = playwright.chromium.launch()
-    except Exception:  # the browser itself is missing or cannot start
+    browser = None
+    for channel in (None, "msedge"):  # Chromium first, then the Edge Windows already has
+        try:
+            browser = playwright.chromium.launch(channel=channel)
+            break
+        except Exception:  # this browser is missing or cannot start
+            continue
+    if browser is None:
         playwright.stop()
         pytest.skip(SKIP_TEXT)
     yield browser

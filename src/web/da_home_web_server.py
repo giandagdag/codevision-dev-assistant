@@ -15,7 +15,7 @@ from urllib.parse import parse_qs
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import dash_mantine_components as dmc  # noqa: E402
-from dash import Dash, dcc, html  # noqa: E402
+from dash import Dash, Input, Output, dcc, html  # noqa: E402
 from dash_iconify import DashIconify  # noqa: E402
 
 from agents.da_build_runner import recover_interrupted_builds  # noqa: E402
@@ -61,6 +61,17 @@ ADMIN_MENU_ICON = "tabler:settings"
 INBOX_MENU_NAME = "Inbox"
 INBOX_MENU_ICON = "tabler:inbox"
 DEMO_PAGE_BANNER_ID = "da-demo-page-banner"
+DEV_MENU_ID = "da-dev-menu"
+ADMIN_MENU_ID = "da-admin-menu"
+
+
+def active_entries(pathname: str | None) -> tuple[bool, bool, bool]:
+    """Which side-menu entry is lit: (Developer Assistant, Admin, Inbox), by the URL."""
+    return (
+        pathname not in (ADMIN_PATH, INBOX_PATH),
+        pathname == ADMIN_PATH,
+        pathname == INBOX_PATH,
+    )
 
 
 def create_app() -> Dash:
@@ -101,6 +112,16 @@ def create_app() -> Dash:
     # `?as=<id>` (pretend to be another senior) lives in this home shell only: the inbox code
     # that goes to work never reads it (spec D-G).
     register_da_inbox_page_callbacks(app, identify=as_user, keep_query=keep_as)
+
+    @app.callback(
+        Output(DEV_MENU_ID, "active"),
+        Output(ADMIN_MENU_ID, "active"),
+        Output(MENU_LINK_ID, "active"),
+        Input(LOCATION_ID, "pathname"),
+    )
+    def light_the_current_menu_entry(pathname):
+        return active_entries(pathname)
+
     return app
 
 
@@ -145,12 +166,14 @@ def _header() -> dmc.Group:
 def _menu() -> list:
     return [
         dmc.NavLink(
+            id=DEV_MENU_ID,
             label=MENU_NAME,
             leftSection=DashIconify(icon=MENU_ICON, width=20),
-            active=True,
+            active=True,  # a callback moves this to the page you are on (fix 11-1, AF-1)
             href="/",
         ),
         dmc.NavLink(
+            id=ADMIN_MENU_ID,
             label=ADMIN_MENU_NAME,
             leftSection=DashIconify(icon=ADMIN_MENU_ICON, width=20),
             href=ADMIN_PATH,

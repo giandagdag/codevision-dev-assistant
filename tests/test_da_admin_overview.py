@@ -57,6 +57,7 @@ def calm(seed: Rulebook) -> Rulebook:
             ],
             "generator_model": "made-up-generator",
             "tester_model": "made-up-tester",
+            "tagger_model": "made-up-tagger",  # fix 11-2: a third model row
         }
     )
     return seed.model_copy(update={"policy": policy})

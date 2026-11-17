@@ -195,6 +195,8 @@ class _Inputs:
     reviews: list[ReviewRecord]
     # Phase 8: the newest frozen test set version (the bug lane appends to it); "" when none.
     test_set_text: str = ""
+    # Fix 11-1: the rulebook's golden examples (Generator prompt only).
+    golden: list = field(default_factory=list)
     # Phase 9: the accepted safety net and the callers found by impact (enhance and fix only).
     net: SafetyNetRow | None = None
     impact_rows: list[ImpactRow] = field(default_factory=list)
@@ -412,6 +414,7 @@ class _Run:
                 state=state,
                 charter=rulebook.charter,
                 policy=rulebook.policy,
+                golden=list(rulebook.golden_examples),
                 record=record,
                 approach=approach,
                 cases=plans[approach_state.accepted_plan_version].cases,
@@ -431,6 +434,7 @@ class _Run:
             approach=self.inp.approach,
             cases=self.inp.cases,
             policy=self.inp.policy,
+            golden_examples=tuple(self.inp.golden),
         )
 
     def _check_environment(self) -> None:

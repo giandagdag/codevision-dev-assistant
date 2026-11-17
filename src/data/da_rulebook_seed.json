@@ -125,7 +125,7 @@
     "approved_libraries": ["pydantic", "dash", "dash_mantine_components", "dash_iconify", "flask", "plotly", "pandas", "openpyxl"],
     "max_files": 5,
     "max_design_choices": 3,
-    "max_material_decisions": 5,
+    "max_material_decisions": 8,
     "workspace_markers": ["src/web", "src/callbacks"],
     "workspace_max_file_kb": 512,
     "build_max_rounds": 3,
@@ -154,6 +154,15 @@
       {"name": "Reports", "description": "Printed and on-screen management reports.", "named_senior": "Reports capability lead", "backup_senior": "Reports deputy", "path_patterns": ["*report*"]},
       {"name": "Uploads", "description": "File upload and import screens.", "named_senior": "Uploads capability lead", "backup_senior": "Uploads deputy", "path_patterns": ["*upload*"]}
     ],
+    "index_repo": "codevision-core (made-up)",
+    "index_branch": "main",
+    "index_folder_scope": "src/data/da_fake_codevision",
+    "index_refresh_mode": "manual",
+    "index_exclusions": [
+      {"pattern": "*.json", "reason": "Settings files, not code", "kind": "Config"},
+      {"pattern": "*/build/*", "reason": "Generated build output", "kind": "Build"},
+      {"pattern": "*/scratch/*", "reason": "Developers' try-outs", "kind": "Scratch"}
+    ],
     "sonar_severity_map": {"BLOCKER": "must_fix", "CRITICAL": "must_fix", "MAJOR": "should_fix", "MINOR": "fyi", "INFO": "fyi"},
     "flag_review_zones": [
       {"name": "Security", "description": "Encryption, key handling, and permission checks.", "examples": ["Encrypting a customer field", "Checking a user's role"], "path_patterns": ["*security*", "*crypto*", "*permission*"]},
@@ -164,8 +173,35 @@
     {
       "title": "Read one loan through a db_table_functions helper",
       "tags": ["data"],
+      "program_type": "Utility",
+      "module_path": "",
       "code": "def get_loan(db_path, loan_id):\n    with open_db(db_path) as conn:\n        row = conn.execute(\"SELECT * FROM loans WHERE loan_id = ?\", (loan_id,)).fetchone()\n    return Loan(**row) if row else None",
       "why": "The query lives in one helper, uses a parameter, and returns a typed shape."
+    },
+    {
+      "title": "A screen that shows one report line",
+      "tags": ["screen"],
+      "program_type": "Screen",
+      "module_path": "src/layouts/limits_screen.py",
+      "code": "from agents.limits_expiry_report import format_expiry\n\n\ndef show_expiry():\n    \"\"\"The text the limits screen shows for the expiry date.\"\"\"\n    return format_expiry(1, 2, 2027)",
+      "why": "The screen only draws; the date rules live in one agents helper."
+    },
+    {
+      "title": "A batch job that builds one line per customer",
+      "tags": ["batch"],
+      "program_type": "Batch or ingestion",
+      "module_path": "src/agents/limits_batch.py",
+      "code": "from agents import limits_expiry_report as report\n\n\ndef run_batch(customers):\n    \"\"\"One expiry line per customer, plus the days left for a sample limit.\"\"\"\n    builder = report.ExpiryReport()\n    return [builder.build_line(name, 20) for name in customers] + [report.days_left(5, 1)]",
+      "why": "Short, one job, clear names, and it reuses the report helper instead of copying it."
     }
+  ],
+  "brand_constants": [
+    {"name": "BLUE", "value": "#1F6FE0", "source": "Core team"},
+    {"name": "NAVY", "value": "#1E2B45", "source": "Core team"},
+    {"name": "BRAND_RED", "value": "Pending brand guide", "source": "Bank brand guide"},
+    {"name": "FONT_FAMILY", "value": "Segoe UI", "source": "Bank brand guide"},
+    {"name": "FONT_BOLD", "value": "600", "source": "Bank brand guide"},
+    {"name": "SPACING", "value": "4, 8, 16, 24", "source": "Core team"},
+    {"name": "TABLE_PAGE_SIZE", "value": "20", "source": "Core team"}
   ]
 }

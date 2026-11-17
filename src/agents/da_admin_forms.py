@@ -48,7 +48,12 @@ RESULT_UNCHANGED = "unchanged"
 RESULT_REFUSED_NOTE = "refused_note"
 
 # Shown on the Build and test tab as plain fields, in this order.
-CORE_BUILD_FIELDS: tuple[str, ...] = ("build_max_rounds", "build_test_timeout_seconds", "max_files")
+CORE_BUILD_FIELDS: tuple[str, ...] = (
+    "build_max_rounds",
+    "build_test_timeout_seconds",
+    "max_files",
+    "max_material_decisions",
+)
 # Collapsed under "Advanced limits": every other number on the policy (spec section 8).
 ADVANCED_LIMIT_FIELDS: tuple[str, ...] = (
     "build_max_prompt_chars",
@@ -69,14 +74,13 @@ ADVANCED_LIMIT_FIELDS: tuple[str, ...] = (
     "safety_net_max_corrections",
     "impact_max_callers",
     "max_design_choices",
-    "max_material_decisions",
     "admin_unassigned_stale_days",
     "handoff_summary_max_chars",  # Phase 10
 )
 # Phase 10: the sixth switch sits with the five triggers on the screen, but it is a plain Policy
 # yes/no field, not a trigger (it is taken out of the trigger rows when the form is saved).
 LOCK_CHAT_SWITCH = "escalation_lock_chat"
-_MODEL_FIELDS = ("generator_model", "tester_model")
+_MODEL_FIELDS = ("generator_model", "tester_model", "tagger_model")
 # Repository and index (Phase 11c): the four editable Policy fields (spec 11).
 REPO_LIST_FIELDS = ("allowed_folders", "workspace_markers")
 REPO_NUMBER_FIELD = "workspace_max_file_kb"
@@ -227,6 +231,17 @@ def _policy_from_repo_form(current: Policy, form: dict) -> Policy:
         data[REPO_PATTERN_FIELD] = str(form[REPO_PATTERN_FIELD] or "").strip()
     if REPO_NUMBER_FIELD in form:
         data[REPO_NUMBER_FIELD] = _number(form[REPO_NUMBER_FIELD])
+    if "index_folder_scope" in form:
+        data["index_folder_scope"] = str(form["index_folder_scope"] or "").strip()
+    if "index_refresh_mode" in form:
+        data["index_refresh_mode"] = form["index_refresh_mode"]
+    if "index_exclusions" in form:
+        rows = [
+            {k: str(row.get(k, "")).strip() for k in ("pattern", "reason", "kind")}
+            for row in form["index_exclusions"]
+        ]
+        # An untouched new row (nothing typed) is dropped, as for the glossary.
+        data["index_exclusions"] = [r for r in rows if r["pattern"] or r["reason"]]
     return Policy.model_validate(data)
 
 
@@ -352,22 +367,36 @@ def _coding_from_form(base: Rulebook, form: dict) -> Rulebook:
     }
     if "golden_examples" in form:
         update["golden_examples"] = [
-            GoldenExample.model_validate(row) for row in _golden_rows(form["golden_examples"])
+            GoldenExample.model_validate(row)
+            for row in _golden_rows(form["golden_examples"], base.golden_examples)
         ]
     return base.model_copy(update=update)
 
 
-def _golden_rows(rows: list[dict]) -> list[dict]:
+def _golden_rows(rows: list[dict], before: list[GoldenExample] | None = None) -> list[dict]:
+    # The drawn table has only four columns, so a row without program_type or module_path takes
+    # them from the saved example with the same title (the key the diff uses too).
+    saved = {g.title.strip().lower(): g for g in before or []}
+    rows = [_with_saved_fields(row, saved) for row in rows]
     cleaned = [
         {
             "title": str(row.get("title", "")).strip(),
             "tags": _clean_list(row.get("tags", [])),
             "code": str(row.get("code", "")).strip(),
             "why": str(row.get("why", "")).strip(),
+            # Fix 11-1: keep the new fields a row carries, so a save does not wipe them.
+            **{k: str(row[k]).strip() for k in ("program_type", "module_path") if k in row},
         }
         for row in rows
     ]
     return [row for row in cleaned if row["title"] or row["code"] or row["tags"] or row["why"]]
+
+
+def _with_saved_fields(row: dict, saved: dict[str, GoldenExample]) -> dict:
+    old = saved.get(str(row.get("title", "")).strip().lower())
+    if old is None:
+        return row
+    return {"program_type": old.program_type, "module_path": old.module_path, **row}
 
 
 def library_overlap_problems(policy: Policy) -> list[str]:

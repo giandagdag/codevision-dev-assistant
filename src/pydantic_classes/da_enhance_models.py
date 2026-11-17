@@ -196,7 +196,7 @@ class FreshnessCheckRow(_Shape):
     created_at: AwareDatetime | None = None
 
 
-UnassignedState = Literal["open", "confirmed", "changed"]
+UnassignedState = Literal["open", "confirmed", "changed", "rejected"]
 
 
 class UnassignedFile(_Shape):

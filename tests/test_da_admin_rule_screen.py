@@ -71,7 +71,7 @@ def rule_ids(rows):
 def test_both_tabs_build_from_the_seed_and_show_the_header_line(published_rulebook):
     for tab in (TAB_UI, TAB_CODING):
         text = all_text(tab_content(tab, published_rulebook))
-        assert "Showing v1 (active)" in text  # 11-3
+        assert "Active rulebook v1" in text  # 11-3
         assert "Edit" in text
         assert "Nothing here yet" not in text.split("Approved libraries")[0]
 
@@ -131,7 +131,7 @@ def test_changing_the_map_changes_the_sample_list_to_fyi(make_settings, publishe
     result = save_from_form(settings.db_path, TAB_CODING, full, 1, ADMIN, "MAJOR is for info")
     assert result.kind == RESULT_SAVED
     saved_view = tab_content(TAB_CODING, get_active_version(settings.db_path))
-    assert "MAJOR: fyi" in all_text(saved_view)
+    assert "MAJOR: FYI" in all_text(saved_view)  # plain words, not the stored value (AF-2)
     # 11-15: the sample rows of the MAJOR checks now show fyi (the draft view shows it too).
     for view in (saved_view, draft_view):
         major_rows = [
@@ -139,7 +139,7 @@ def test_changing_the_map_changes_the_sample_list_to_fyi(make_settings, publishe
             for cells in sample_rows(view)
             if cells[2] == "MAJOR"
         ]
-        assert major_rows and all(cells[3] == "fyi" for cells in major_rows)
+        assert major_rows and all(cells[3] == "FYI" for cells in major_rows)
 
 
 def test_edit_greys_the_other_tabs_for_both_new_tabs(make_settings, published_rulebook):
