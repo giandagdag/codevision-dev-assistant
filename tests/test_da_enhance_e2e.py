@@ -16,6 +16,7 @@ import pytest
 from werkzeug.serving import make_server
 
 from agents import da_approach_flow as approach_flow
+from agents import da_understand_flow as understand
 from callbacks.screen_callbacks import da_developer_assistant_page_callbacks as cb
 from tests.da_browser import READ_JS, SEED_JS
 from tests.test_da_enhance_approach import accepted_net_request, at_tests_step
@@ -43,7 +44,14 @@ def target_text(settings):
 
 
 @pytest.fixture
-def live_url(settings, tmp_path):
+def live_url(settings, tmp_path, monkeypatch):
+    # The shared setup puts format_expiry in scope; the scripted edit changes the method (#56).
+    real = understand.set_functions_in_scope
+    monkeypatch.setattr(
+        understand, "set_functions_in_scope",
+        lambda s, request_id, names, revision: real(
+            s, request_id, [f"{IN_SCOPE_CLASS}.build_line"], revision),
+    )
     request_id = accepted_net_request(settings, tmp_path)
     view = at_tests_step(settings, request_id)
     approach_flow.accept_test_plan(settings, request_id, view.revision)
@@ -78,7 +86,6 @@ def function_texts(source: str) -> dict[str, str]:
     return found
 
 
-@pytest.mark.skip(reason="PARKED (SO-2): fails here, baseline unknown, issue 80")
 def test_9_50_only_the_function_in_scope_changes_in_a_real_browser(
     make_live_page, live_url, target_text
 ):
