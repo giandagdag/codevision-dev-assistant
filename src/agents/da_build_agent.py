@@ -66,6 +66,8 @@ MAX_ATTEMPTS = 2
 #   bad_edit     an edit block matches nothing
 #   bad_tests    the test file misses its last case
 #   slow_test    the first test sleeps past the time limit
+#   code_test_bug    a code test fails and the Tester calls it a code bug (Fix D1)
+#   code_test_wrong  a code test fails and the Tester calls it a wrong test (Fix D1)
 #   no_answer    the AI does not answer
 #   too_big      the AI says the prompt is too big
 FAKE_SWITCHES: frozenset[str] = frozenset()
@@ -161,6 +163,11 @@ def scripted_build_reply(prompt: str, switches: frozenset[str] | None = None) ->
 
     if is_enhance_prompt(prompt):
         return scripted_enhance_reply(prompt, switches)
+    # Fix D1: the code tests written after the requirement tests passed.
+    from agents.da_code_tests import is_code_tests_prompt, scripted_code_tests_reply
+
+    if is_code_tests_prompt(prompt):
+        return scripted_code_tests_reply(prompt, switches)
     raise LLMClientError("The scripted build client was given a prompt it does not know.")
 
 

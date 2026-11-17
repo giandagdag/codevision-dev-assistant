@@ -280,7 +280,9 @@ def _evidence_problems(tree: ast.AST) -> list[str]:
     for name, method in find_test_methods(tree).items():
         if not _calls_evidence(method):
             ids = case_ids_from_method(name)
-            problems.append(f"Test {ids[0] if ids else name} records no evidence")
+            code = re.match(r"test_c(\d+)_", name)  # a code test (Fix D1): C-3
+            label = ids[0] if ids else (f"C-{int(code.group(1))}" if code else name)
+            problems.append(f"Test {label} records no evidence")
     return problems
 
 
