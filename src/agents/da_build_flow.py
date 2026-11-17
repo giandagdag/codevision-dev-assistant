@@ -31,6 +31,7 @@ from agents.da_check_words import (
 from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import get_help
+from agents.da_test_report import case_id_of, newest_tested_round, report_summary_line
 from agents.da_workspace_checks import (
     FactsProblem,
     build_write_job,
@@ -76,6 +77,7 @@ from db_table_functions.db_tbl_da_requests import (
     update_request,
 )
 from db_table_functions.db_tbl_da_rulebook import ensure_rulebook_tables
+from db_table_functions.db_tbl_da_test_report import read_test_reports
 from db_table_functions.db_tbl_da_understand import (
     STALE_MESSAGE,
     StaleRevisionError,
@@ -675,6 +677,7 @@ def get_build_view(settings, request_id: str) -> BuildView:
             code=code,
             known=known,
             stopped_path=stopped[-1] if stopped else "",
+            has_report=bool(read_test_reports(conn, request_id, number)),
         )
 
 
@@ -695,11 +698,12 @@ def _view(
     code=None,
     known=None,
     stopped_path="",
+    has_report=False,
 ) -> BuildView:
     frozen = frozen or {}
     test_code = frozen["test"].text if "test" in frozen else ""
     results = _latest_results(rounds)
-    tests = _test_rows(cases, test_code, results)
+    tests = _test_rows(cases, test_code, results, _latest_evidence(rounds))
     rows = _build_rows(approach, code or {}, known or {}, state)
     capped = bool(approach_state and approach_state.change_count >= MAX_CHANGES)
     server, browser = _build_buttons(state, capped, is_check_run(run))
@@ -723,6 +727,7 @@ def _view(
         max_rounds=policy.build_max_rounds,
         time_limit=policy.build_test_timeout_seconds,
         tests=tests,
+        code_tests=_code_test_rows(rounds),  # kept apart: Refine reads `tests` as the frozen set
         # Layer A stopped every round, so no frozen test has a result (Phase 6 fixes, F9b).
         tests_not_run=bool(rounds)
         and not any(record.layer_b is not None for record in rounds)
@@ -738,6 +743,8 @@ def _view(
         mode=workspace.mode if workspace else "picker",
         seconds_taken=taken,
         tests_passing=passing,
+        report_summary=report_summary_line(rounds) if has_report else "",
+        has_report=has_report,
     )
 
 
@@ -754,7 +761,38 @@ def _latest_results(rounds) -> dict[str, str]:
     return {}
 
 
-def _test_rows(cases, test_code: str, results: dict[str, str]) -> list[TestRow]:
+def _latest_evidence(rounds) -> dict[str, list]:
+    """test id -> the evidence lines it recorded in the newest round that ran the tests."""
+    last = newest_tested_round(rounds)
+    found: dict[str, list] = {}
+    for item in last.layer_b.tests if last else []:
+        ids = case_ids_from_method(item.name)
+        if ids:
+            found[ids[0]] = item.evidence
+    return found
+
+
+def _code_test_rows(rounds) -> list[TestRow]:
+    """The C-n tests of the newest tested round (Fix D1): written again for each build."""
+    last = newest_tested_round(rounds)
+    if last is None or last.code_tests is None:
+        return []
+    return [
+        TestRow(
+            test_id=case_id_of(item.name) or item.name,
+            criterion_id="",
+            description=item.message if item.result != "pass" else "Checks the written code",
+            result=item.result,
+            evidence=item.evidence,
+        )
+        for item in last.code_tests.tests
+    ]
+
+
+def _test_rows(
+    cases, test_code: str, results: dict[str, str], evidence: dict[str, list] | None = None
+) -> list[TestRow]:
+    evidence = evidence or {}
     docs = {}
     if test_code:
         try:
@@ -771,6 +809,7 @@ def _test_rows(cases, test_code: str, results: dict[str, str]) -> list[TestRow]:
             yours=case.source == "developer",
             description=docs.get(case.test_id) or case.expect,
             result=results.get(case.test_id, ""),
+            evidence=evidence.get(case.test_id, []),
         )
         for case in cases
     ]

@@ -5,9 +5,10 @@ decided (BuildView) into components. Nothing here judges code, runs a test or wr
 """
 
 import dash_mantine_components as dmc
-from dash import dcc
+from dash import dcc, html
 
 from agents.da_check_words import CHECK_BOX_TITLE, CHECK_KIND
+from layouts.da_test_report_page import NO_REPORT_TEXT, report_link
 from layouts.da_tester_panel import layer_c_state, tester_lines, tester_report
 from pydantic_classes.da_build_models import (
     BuildView,
@@ -33,6 +34,9 @@ SUMMARY_ID = "da-build-summary"
 TESTS_LIST_ID = "da-tests-list"
 TESTS_CODE_ID = "da-tests-code"
 TESTS_VERSION_ID = "da-tests-version"
+REPORT_LINE_ID = "da-tests-report-line"
+REPORT_LINK_ID = "da-tests-report-link"
+NO_REPORT_LINE = NO_REPORT_TEXT
 ADD_CASE_ID = "da-add-case"
 ADD_CASE_TYPE = "da-add-case-go"  # the button
 ADD_CASE_FIELD_TYPE = "da-add-case-field"  # the criterion picker and the text box
@@ -129,7 +133,9 @@ def tests_tab(view: BuildView | None) -> list:
     # Fix it and Add a test case work on the code in his folder: only at b_written (Phase 8).
     at_written = view.state.step == "b_written" and view.request_status in ACT_STATUSES
     report = tester_report(view.tester, can_act, can_act and at_written)
-    rows = [_test_row(item) for item in view.tests]
+    rows = [_group_row("Requirement tests"), *[_test_row(item) for item in view.tests]]
+    if view.code_tests:
+        rows += [_group_row("Code tests"), *[_test_row(item) for item in view.code_tests]]
     not_run = (
         dmc.Text(TESTS_NOT_RUN, size="sm", c="orange", id="da-tests-not-run")
         if view.tests_not_run
@@ -139,7 +145,10 @@ def tests_tab(view: BuildView | None) -> list:
         [
             dmc.TableThead(
                 dmc.TableTr(
-                    [dmc.TableTh(t) for t in ("Test", "Criterion", "What is expected", "Result")]
+                    [
+                        dmc.TableTh(t)
+                        for t in ("Test", "Criterion", "What is expected", "Result", "Evidence")
+                    ]
                 )
             ),
             dmc.TableTbody(rows),
@@ -163,6 +172,7 @@ def tests_tab(view: BuildView | None) -> list:
         dmc.Stack(
             [
                 *report,
+                _report_block(view),
                 dmc.Text(f"{len(view.tests)} frozen tests", fw=600, size="sm"),
                 dmc.Text(view.tests_note, size="xs", c=da_styles.MUTED, id=TESTS_VERSION_ID)
                 if view.tests_note
@@ -386,6 +396,36 @@ def _this_build(view: BuildView) -> dmc.Paper:
     )
 
 
+def _report_block(view: BuildView):
+    """The summary line and the Open report link, or the sentence for a build with no report."""
+    if not view.has_report:
+        if not any(item.layer_b is not None for item in view.rounds):
+            return None  # the tests have not run yet: nothing to report
+        return dmc.Text(NO_REPORT_LINE, size="sm", c=da_styles.MUTED, id=REPORT_LINE_ID)
+    link = dcc.Link(
+        "Open report", href=report_link(view.state.request_id, view.state.build_number),
+        target="_blank", id=REPORT_LINK_ID,
+    )  # fmt: skip
+    return dmc.Group([dmc.Text(view.report_summary, size="sm", id=REPORT_LINE_ID), link], gap="sm")
+
+
+def _group_row(title: str) -> dmc.TableTr:
+    cells = [dmc.TableTd(dmc.Text(title, size="xs", fw=700))]
+    return dmc.TableTr(cells + [dmc.TableTd("") for _ in range(4)])
+
+
+def _evidence_cell(item: TestRow):
+    """'3 checks', click to open the lines. Nothing recorded: say so (an old test)."""
+    if not item.evidence:
+        return dmc.Text("Evidence not recorded", size="xs", c=da_styles.MUTED)
+    lines = [
+        html.Div(f"{e.label}: input {e.given}, expected {e.expected}, actual {e.actual}"
+                 f" ({'match' if e.match else 'NO match'})", style={"fontSize": "11px"})
+        for e in item.evidence
+    ]  # fmt: skip
+    return html.Details([html.Summary(f"{len(item.evidence)} checks"), *lines])
+
+
 def _test_row(item: TestRow) -> dmc.TableTr:
     tag = item.tag or ("Yours" if item.yours else "")
     name = f"{item.test_id} ({tag})" if tag else item.test_id
@@ -395,6 +435,7 @@ def _test_row(item: TestRow) -> dmc.TableTr:
             dmc.TableTd(dmc.Text(item.criterion_id, size="xs")),
             dmc.TableTd(dmc.Text(item.description, size="xs")),
             dmc.TableTd(_result_cell(item)),
+            dmc.TableTd(_evidence_cell(item)),
         ]
     )
 

@@ -314,6 +314,8 @@ class TestRow(BaseModel):
     result: str = ""
     # Phase 8 fix 1 (F1): a new case waiting for his choice; shown in orange, not a result.
     pending: str = ""
+    # Fix D1: what the test recorded (empty for an old test).
+    evidence: list[EvidenceLine] = Field(default_factory=list)
 
 
 class BuildFileRow(BaseModel):
@@ -339,6 +341,8 @@ class BuildView(BaseModel):
     max_rounds: int = 3
     time_limit: int = 60
     tests: list[TestRow] = Field(default_factory=list)
+    # Fix D1: the C-n code tests of the newest tested round (not frozen; written per build).
+    code_tests: list[TestRow] = Field(default_factory=list)
     # Phase 8: "Test set version 3, approach version 2" (empty before any Refine added a test).
     tests_note: str = ""
     # True when a round ran but the tests never did, because the code checks (Layer A) failed.
@@ -357,5 +361,8 @@ class BuildView(BaseModel):
     mode: str = "picker"
     seconds_taken: int = 0
     tests_passing: str = ""
+    # Fix D1: the summary line of the newest round and whether a saved report exists.
+    report_summary: str = ""
+    has_report: bool = False
     # Phase 7: the Tester's report, added by da_tester_flow.get_build_view (not by the build flow).
     tester: TesterView | None = None

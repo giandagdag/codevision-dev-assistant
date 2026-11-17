@@ -35,6 +35,27 @@ def count_results(tests: list[TestOutcome]) -> dict[str, int]:
     return {"passed": passed, "failed": failed, "other": len(tests) - passed - failed}
 
 
+def newest_tested_round(rounds):
+    """The newest saved round that reached Layer B (it has a report), or None."""
+    return next((r for r in reversed(list(rounds)) if r.layer_b is not None), None)
+
+
+def report_summary_line(rounds) -> str:
+    """'Against the requirement: 8 of 8 passed. Against the code: 11 of 12 passed, 1 dropped.'
+    for the Tests tab and the handoff text. Empty when no round reached Layer B."""
+    last = newest_tested_round(rounds)
+    if last is None:
+        return ""
+    tests = [t for t in last.layer_b.tests if case_id_of(t.name).startswith("T")]
+    line = f"Against the requirement: {count_results(tests)['passed']} of {len(tests)} passed."
+    if last.code_tests is not None:
+        done = count_results(last.code_tests.tests)["passed"]
+        dropped = len(last.dropped_code_tests)
+        line += f" Against the code: {done} of {len(last.code_tests.tests)} passed"
+        line += f", {dropped} dropped." if dropped else "."
+    return line
+
+
 def evidence_note(outcome: TestOutcome, test_text: str) -> str:
     """What the Evidence column says when a test recorded nothing. A test frozen before D1 never
     had the call at all, so it gets the longer, kinder wording; its pass still counts."""
