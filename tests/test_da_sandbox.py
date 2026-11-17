@@ -447,3 +447,20 @@ def test_a_frozen_test_with_no_result_is_not_proven(monkeypatch):
 def test_all_frozen_tests_passing_is_ok():
     """B1-4."""
     assert run().ok
+
+
+def test_the_job_helper_is_not_used_off_windows_and_linux_still_ends_the_group(monkeypatch):
+    killed = []
+    monkeypatch.setattr(da_sandbox.os, "name", "posix")
+    monkeypatch.setattr(da_sandbox.signal, "SIGKILL", 9, raising=False)  # missing on Windows
+    monkeypatch.setattr(da_sandbox.os, "killpg", lambda pid, sig: killed.append(pid), raising=False)
+
+    class FakeProcess:
+        pid = 4242
+
+        def wait(self):
+            return 0
+
+    assert da_sandbox._start_job(FakeProcess()) is None
+    da_sandbox._end_process_tree(FakeProcess(), None)
+    assert killed == [4242]
