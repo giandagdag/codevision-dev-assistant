@@ -32,12 +32,13 @@ def test_build_edit_view_has_no_grid(published_rulebook):
     assert not [n for n in walk(shown) if type(n).__name__ == "SimpleGrid"]
 
 
-def test_coding_read_view_has_automatic_checks_beside_the_severity_map(published_rulebook):
+def test_coding_read_view_has_automatic_checks_and_the_severity_map(published_rulebook):
     shown = rules_view(TAB_CODING, published_rulebook)
 
     text = all_text(shown)
-    # rule list + card, golden examples + libraries, automatic checks + severity map
-    assert len(grids(shown)) == 3
+    # 17 Nov (Gian): rule list + card, golden examples + (libraries, severity map) on the same
+    # 2/3 and 1/3 split; the wide SonarQube table is a full-width row underneath.
+    assert len(grids(shown)) == 2
     assert "Automatic checks (SonarQube)" in text and "Governed in SonarQube" in text
     assert "SonarQube severity map" in text
 

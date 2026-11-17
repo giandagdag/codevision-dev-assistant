@@ -92,7 +92,9 @@ from layouts.da_admin_common import (  # noqa: F401 (some are re-exported for th
     _table_row,
     _text_rows,
     act_id,
+    aligned_row,
     body_id,
+    full_row,
     list_table,
     two_columns,
     version_pill,
@@ -532,8 +534,8 @@ def rules_view(
         # Read view: brand constants left 2/3, UI conventions right 1/3. Edit keeps them stacked.
         parts.insert(1, brand if editable else two_columns(brand, convention_rows(rows)))
     if tab == TAB_CODING:
-        if not editable:  # read view: the rules get their own window, like every other area
-            parts = [parts[0], _window(f"⚖️ {parts[1].children}", html.Div(parts[2:]), mt="xs")]
+        if not editable:  # read view: the rule panel is its own row of windows (title inside)
+            parts = [parts[0], *parts[2:]]
         parts += _coding_extras(version, editable, draft, modules)
     return html.Div(parts)
 
@@ -626,11 +628,10 @@ def _coding_extras(
             gap=4,
         ),
     )
-    gap = {"marginTop": "16px"}
-    return [
-        html.Div(two_columns(golden_window, library_window, 1.5), style=gap),
-        html.Div(two_columns(checks, severity, 1.5), style=gap),
-    ]
+    # The same 2/3 and 1/3 split as the rules row above, so every window edge lines up.
+    # Libraries and the severity map are short, so they share the right column next to the tall
+    # golden examples; the SonarQube table is wide, so it gets the full width underneath.
+    return [aligned_row(golden_window, [library_window, severity]), full_row(checks)]
 
 
 def _sonar_map(policy: Policy, editable: bool, draft: dict | None):

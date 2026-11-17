@@ -65,8 +65,29 @@ def window(title: str, body, **paper):
         withBorder=True,
         p="md",
         radius="md",
-        **paper,
+        **{"style": {"flex": 1}, **paper},  # fills its aligned_row cell
     )
+
+
+def aligned_row(left, right):
+    """One row of a read view: two windows, left 2/3 and right 1/3, the same height. Every row of a
+    tab uses the same split, so the window edges line up from top to bottom (Gian, 17 Nov)."""
+    cell = {"minWidth": 0, "display": "flex", "flexDirection": "column", "gap": "16px"}
+    return html.Div(
+        [html.Div(left, style=cell), html.Div(right, style=cell)],  # right may be a list: stacked
+        style={
+            "display": "grid",
+            "gridTemplateColumns": "minmax(0, 2fr) minmax(0, 1fr)",
+            "gap": "16px",
+            "alignItems": "stretch",
+            "marginTop": "16px",
+        },
+    )
+
+
+def full_row(content):
+    """A full-width row under aligned rows: the same outer edges, for wide tables."""
+    return html.Div(content, style={"marginTop": "16px"})
 
 
 def chips(summary: str):

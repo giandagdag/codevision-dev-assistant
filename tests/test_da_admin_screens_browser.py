@@ -87,6 +87,10 @@ def test_af20_sixteen_screenshots_are_saved(make_live_page, live):
         page.wait_for_timeout(500)
         stem = f"{number:02d}-{tab}"
         page.screenshot(path=str(OUT / f"{stem}-read.png"))
+        # The whole read page too, in its own folder (17 Nov: Gian reviews on his phone, and the
+        # 768-high picture hid the lower windows). The sixteen above stay sixteen.
+        (OUT / "full").mkdir(exist_ok=True)
+        page.screenshot(path=str(OUT / "full" / f"{stem}.png"), full_page=True)
         if tab in EDITABLE_TABS:
             body.get_by_role("button", name="Edit", exact=True).click()
             bar = page.get_by_text("Nothing changes for developers until you save.")

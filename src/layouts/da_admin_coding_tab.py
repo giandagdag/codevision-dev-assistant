@@ -5,8 +5,9 @@ import dash_mantine_components as dmc
 from dash import html
 
 from agents.da_admin_cited import FIRES_AMBER_ABOVE
+from agents.da_admin_forms import rule_counter_text
 from agents.da_admin_modules import scope_folder
-from layouts.da_admin_common import two_columns, word_chips
+from layouts.da_admin_common import aligned_row, window, word_chips
 from layouts.da_admin_ui_standards import fires_text, severity_pill
 from styles import da_admin_styles as pal
 from styles import da_styles
@@ -33,7 +34,7 @@ def _fact_row(label: str, value: str):
 def rule_card(rule: dict | None, fires: dict[str, int]):
     """The card for one judgement rule (AF-14): why, tags, checker, source, fires, examples."""
     if rule is None:
-        return dmc.Paper(dmc.Text("No rule selected.", size="sm"), withBorder=True, p="md")
+        return window("📄 Rule card", dmc.Text("No rule selected.", size="sm"))
     rid = rule["rule_id"]
     facts = [
         ("Why", rule["why"]),
@@ -53,12 +54,15 @@ def rule_card(rule: dict | None, fires: dict[str, int]):
         ],
         gap="xs",
     )
-    return dmc.Paper(
-        dmc.Stack([head, *[_fact_row(k, v) for k, v in facts]], gap="xs"),
-        withBorder=True,
-        p="md",
-        radius="md",
+    # The short facts sit two per line so the card is not much taller than the rule list.
+    short = [_fact_row(k, v) for k, v in facts if k not in ("Why", "Good", "Bad")]
+    long = {k: _fact_row(k, v) for k, v in facts if k in ("Why", "Good", "Bad")}
+    body = dmc.Stack(
+        [head, long["Why"], dmc.SimpleGrid(short, cols=2, spacing="xs", verticalSpacing="xs"),
+         long["Good"], long["Bad"]],
+        gap="xs",
     )
+    return window("📄 Rule card", body)
 
 
 def rule_list(rules: list[dict], fires: dict[str, int], selected: str):
@@ -99,8 +103,11 @@ def rule_list(rules: list[dict], fires: dict[str, int], selected: str):
 def rule_panel(rules: list[dict], fires: dict[str, int], selected: str | None = None):
     """The two columns. `selected` defaults to the first rule; a click redraws them both."""
     chosen = next((r for r in rules if r["rule_id"] == selected), rules[0] if rules else None)
-    left = rule_list(rules, fires, chosen["rule_id"] if chosen else "")
-    return two_columns(left, rule_card(chosen, fires))
+    left = window(
+        f"⚖️ Judgement rules: {rule_counter_text('judgement', len(rules))}",
+        rule_list(rules, fires, chosen["rule_id"] if chosen else ""),
+    )
+    return aligned_row(left, rule_card(chosen, fires))
 
 
 def library_chips(words: list[str], blocked: bool = False):

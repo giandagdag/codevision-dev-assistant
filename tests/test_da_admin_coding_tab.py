@@ -143,5 +143,14 @@ def test_read_view_puts_each_area_in_its_own_window(published_rulebook):
     for wanted in ("Judgement rules", "Golden examples", "Libraries", "Automatic checks",
                    "SonarQube severity map"):
         assert any(wanted in t for t in titles), wanted
-    rules_window = next(w for w in windows if "Judgement rules" in all_text(w.children[0]))
-    assert any(getattr(c, "id", None) == "adm-rule-panel" for c in walk(rules_window))
+    # Every row uses the same 2/3 and 1/3 split, so the window edges line up (17 Nov).
+    rows = [
+        c for c in walk(view)
+        if isinstance(getattr(c, "style", None), dict) and c.style.get("display") == "grid"
+    ]
+    assert len(rows) == 2  # rules row, golden row; the SonarQube table is full width below
+    assert {r.style["gridTemplateColumns"] for r in rows} == {"minmax(0, 2fr) minmax(0, 1fr)"}
+    right_of_golden = all_text(rows[1].children[1])
+    assert "Libraries" in right_of_golden and "SonarQube severity map" in right_of_golden
+    assert "Judgement rules" in all_text(rows[0].children[0])
+    assert "Rule card" in all_text(rows[0].children[1])
