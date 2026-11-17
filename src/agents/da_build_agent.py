@@ -168,6 +168,10 @@ def scripted_build_reply(prompt: str, switches: frozenset[str] | None = None) ->
 
     if is_code_tests_prompt(prompt):
         return scripted_code_tests_reply(prompt, switches)
+    from agents.da_code_judge import is_judge_prompt, scripted_judge_reply
+
+    if is_judge_prompt(prompt):
+        return scripted_judge_reply(prompt)
     raise LLMClientError("The scripted build client was given a prompt it does not know.")
 
 

@@ -156,6 +156,21 @@ def check_tests_pass(record: RequestRecord, layer_b: LayerBResult) -> list[Findi
     return found
 
 
+def check_code_tests(code_tests: LayerBResult | None, dropped: list[str]) -> list[Finding]:
+    """Fix D1 (E5): a failing code test the Tester did not call a wrong test is a code bug: a
+    Must fix on check 2. It names no file, so every planned file goes back to the Generator."""
+    from agents.da_code_tests import code_test_id
+
+    wrong = {line.split(":", 1)[0] for line in dropped}
+    found = []
+    for outcome in code_tests.tests if code_tests else []:
+        cid = code_test_id(outcome.name)
+        if cid and cid not in wrong and outcome.result != "pass":
+            message = f"Code test {cid} fails: {outcome.message or outcome.result}"[:MESSAGE_LIMIT]
+            found.append(_plain(len(found) + 1, 2, "must_fix", "", 1, cid, message))
+    return found
+
+
 def check_files_match_plan(
     planned: list[tuple[str, str]], code: dict[str, str], start_texts: dict[str, str]
 ) -> list[Finding]:

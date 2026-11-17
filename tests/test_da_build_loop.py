@@ -6,6 +6,8 @@ from agents import da_build_agent as agent
 from agents import da_build_flow as flow
 from agents import da_build_loop as loop
 from agents.da_check_words import NOT_PROVEN_TEXT, SYSTEM_HELP_LINE
+from db_table_functions.da_db import open_db
+from db_table_functions.db_tbl_da_tester import read_reviews
 from pydantic_classes.da_build_models import (
     LABEL_NOT_PASSING,
     LABEL_WITH_WARNINGS,
@@ -530,6 +532,42 @@ def test_d1_4_code_tests_run_only_in_rounds_whose_requirement_tests_passed(setti
         names = [item.name for item in later.code_tests.tests]
         assert names and all("test_c" in name for name in names)
         assert later.code_tests.ok and later.dropped_code_tests == []
+
+
+def reviews_of(settings, request_id):
+    with open_db(settings.db_path) as conn:
+        conn.execute("BEGIN")
+        return read_reviews(conn, request_id, 1)
+
+
+def test_d1_6_a_failing_code_test_that_is_a_code_bug_is_a_must_fix(
+    settings, request_id, monkeypatch
+):
+    switches(monkeypatch, "code_test_bug")
+    build(settings, request_id, RecordingFactory())
+
+    ran = [item for item in rounds_of(settings, request_id) if item.code_tests is not None]
+    review = reviews_of(settings, request_id)[0]
+
+    assert ran and not ran[0].code_tests.ok
+    assert ran[0].dropped_code_tests == []  # the code is at fault: the test is not dropped
+    cites = [f.cites for f in review.findings if f.severity == "must_fix" and f.cites[:2] == "C-"]
+    assert cites == [f"C-{len(ran[0].code_tests.tests)}"]
+
+
+def test_d1_7_a_wrong_code_test_is_dropped_and_the_label_has_warnings(
+    settings, request_id, monkeypatch
+):
+    switches(monkeypatch, "code_test_wrong")
+    build(settings, request_id, RecordingFactory())
+
+    last = [item for item in rounds_of(settings, request_id) if item.code_tests][-1]
+    review = reviews_of(settings, request_id)[-1]
+
+    assert len(last.dropped_code_tests) == 1 and "not meant to do" in last.dropped_code_tests[0]
+    assert not [f for f in review.findings if f.cites[:2] == "C-"]
+    assert any("wrong test" in line for line in review.zone_warnings)
+    assert review.label == LABEL_WITH_WARNINGS
 
 
 def test_d1_4_a_saved_round_without_code_tests_still_loads(settings, request_id):
