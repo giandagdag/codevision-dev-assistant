@@ -10,6 +10,7 @@ from pydantic_classes.da_build_models import (
     Contract,
     ContractFile,
     ContractItem,
+    EvidenceLine,
     FileEdit,
     LayerAProblem,
     LayerAResult,
@@ -123,15 +124,18 @@ GOOD_TESTS = '''
 import unittest
 from unittest import mock
 from agents.upload_validator import validate
+from da_evidence import evidence
 
 
 class Checks(unittest.TestCase):
     def test_t1_ac1_accepts_a_file(self):
         """A good file is accepted."""
+        evidence(self, "accepts", "a.xlsx", True, True)
         self.assertTrue(validate("a.xlsx"))
 
     def test_t2_ac2_rejects_empty(self):
         """An empty file is rejected."""
+        evidence(self, "rejects", "b.xlsx", True, True)
         with mock.patch("os.path.exists", return_value=False):
             self.assertTrue(validate("b.xlsx"))
 '''
@@ -159,6 +163,34 @@ def test_every_case_needs_exactly_one_method(policy):
     assert "Case T-2 (AC-2) needs exactly one test method named test_t2_ac2_" in gone
     assert "test_t3_ac2_rejects_empty does not belong to any accepted case" in gone
     assert "Case T-1 (AC-1) needs exactly one" in double and "found 2" in double
+
+
+def test_d1_2_a_test_that_records_no_evidence_gets_the_retry_note(policy):
+    text = GOOD_TESTS.replace('        evidence(self, "rejects", "b.xlsx", True, True)\n', "")
+
+    problems = checks.find_test_file_problems(text, CASES, make_contract(), policy)
+
+    assert problems == ["Test T-2 records no evidence"]
+
+
+def test_the_evidence_helper_import_is_allowed_but_only_its_evidence_name(policy):
+    bad = GOOD_TESTS.replace("import evidence", "import evidence, lines")
+
+    problems = " ".join(checks.find_test_file_problems(bad, CASES, make_contract(), policy))
+
+    assert "da_evidence" in problems
+
+
+def test_d1_13_evidence_note_tells_old_tests_from_new_ones_that_recorded_nothing():
+    bare = TestOutcome(name="test_t1_ac1_x", result="pass")
+    line = EvidenceLine(label="a", given="1", expected="1", actual="1", match=True)
+    with_line = bare.model_copy(update={"evidence": [line]})
+
+    assert checks.evidence_note(bare, "self.assertTrue(1)") == (
+        "Evidence not recorded (test written before 17 Nov)"
+    )
+    assert checks.evidence_note(bare, GOOD_TESTS) == "Evidence not recorded"
+    assert checks.evidence_note(with_line, GOOD_TESTS) == ""
 
 
 def test_a_test_without_a_docstring_is_refused(policy):

@@ -164,16 +164,22 @@ def scripted_build_reply(prompt: str, switches: frozenset[str] | None = None) ->
     raise LLMClientError("The scripted build client was given a prompt it does not know.")
 
 
+# Each check records evidence first (Fix D1), the way a real requirement test must.
 _VALIDATE_CHECK = (
-    'self.assertTrue(validate("book.xlsx"))\n        self.assertFalse(validate("run.exe"))'
+    'evidence(self, "accepts xlsx", "book.xlsx", True, validate("book.xlsx"))\n'
+    '        evidence(self, "refuses exe", "run.exe", False, validate("run.exe"))\n'
+    '        self.assertTrue(validate("book.xlsx"))\n        self.assertFalse(validate("run.exe"))'
 )
 _HIDDEN_CHECK = (
     'book = {"A": {"hidden": False, "rows": [1, 2]}, "B": {"hidden": True, "rows": [3]}}\n'
+    '        evidence(self, "visible sheets", book, ["A"], list(read_sheets(book)))\n'
     '        self.assertEqual(list(read_sheets(book)), ["A"])'
 )
 _EMPTY_CHECK = (
-    "with self.assertRaises(ValueError):\n"
-    '            read_sheets({"A": {"hidden": False, "rows": []}})'
+    'book = {"A": {"hidden": False, "rows": []}}\n'
+    "        with self.assertRaises(ValueError) as caught:\n"
+    "            read_sheets(book)\n"
+    '        evidence(self, "empty sheet", book, "ValueError", type(caught.exception).__name__)'
 )
 _CHECKS = (_VALIDATE_CHECK, _HIDDEN_CHECK, _EMPTY_CHECK)
 
@@ -196,6 +202,7 @@ def _scripted_tests(prompt: str, switches: frozenset[str], enhance: dict | None 
         "import unittest",
         "",
         *imports,
+        "from da_evidence import evidence",
         "",
         "",
         "class ScriptedChecks(unittest.TestCase):",
