@@ -177,6 +177,7 @@ def _run(root: Path, test_id: str, timeout_seconds: int, expected: list[str]) ->
     except OSError as error:
         raise SandboxStartError(f"Python could not be started ({error})") from error
     capture = _Capture(process.stdout)
+    job = _start_job(process)
     timed_out = False
     try:
         process.wait(timeout=timeout_seconds)
@@ -185,17 +186,29 @@ def _run(root: Path, test_id: str, timeout_seconds: int, expected: list[str]) ->
     finally:
         # Always end the whole group, not only on a timeout: a test that exits normally but
         # leaves a background child must not leave it running on the shared server.
-        _end_process_tree(process)
+        _end_process_tree(process, job)
     output = capture.finish()
     return _read_results(
         root, output, capture.cut, timed_out, timeout_seconds, process.returncode, expected
     )
 
 
-def _end_process_tree(process: subprocess.Popen) -> None:
-    """End the runner and everything it started. Linux: the whole process group. Windows:
-    taskkill with /T (the tree)."""
-    if os.name == "nt":
+def _start_job(process: subprocess.Popen):
+    """Windows: put the runner in a kill-on-close Job Object. None elsewhere, or if refused."""
+    if os.name != "nt":
+        return None
+    from agents.da_sandbox_job import KillOnCloseJob
+
+    return KillOnCloseJob.start(process.pid)
+
+
+def _end_process_tree(process: subprocess.Popen, job=None) -> None:
+    """End the runner and everything it started. Linux: the whole process group. Windows: closing
+    the job ends every process in it, even an orphan (taskkill /T cannot find one); taskkill with
+    /T stays as the fallback when no job could be made."""
+    if job is not None:
+        job.close()
+    elif os.name == "nt":
         subprocess.run(
             ["taskkill", "/F", "/T", "/PID", str(process.pid)], capture_output=True, check=False
         )
