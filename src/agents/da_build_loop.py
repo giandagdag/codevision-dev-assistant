@@ -103,6 +103,7 @@ from db_table_functions.db_tbl_da_refine import (
     set_last_tested,
 )
 from db_table_functions.db_tbl_da_requests import get_rulebook_for_request
+from db_table_functions.db_tbl_da_test_report import insert_test_report
 from db_table_functions.db_tbl_da_tester import (
     insert_review,
     next_review_number,
@@ -932,6 +933,14 @@ class _Run:
             )
             self._note(tx, "Layer A: syntax, imports, rules", "done" if layer_a.ok else "failed")
             if layer_b is not None:
+                body = record.model_dump(
+                    mode="json",
+                    include={"layer_a", "layer_b", "code_tests", "dropped_code_tests"},
+                )
+                insert_test_report(
+                    tx.conn, self.request_id, record.build_number, number, body, tx.now
+                )
+                tx.audit("system", "test_report_saved", {"round": number})
                 tx.audit(
                     "system",
                     "layer_b_result",

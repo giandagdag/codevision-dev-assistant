@@ -1,5 +1,7 @@
 """The build loop end to end with the fake provider, the real sandbox and a real database."""
 
+import sqlite3
+
 import pytest
 
 from agents import da_build_agent as agent
@@ -7,6 +9,7 @@ from agents import da_build_flow as flow
 from agents import da_build_loop as loop
 from agents.da_check_words import NOT_PROVEN_TEXT, SYSTEM_HELP_LINE
 from db_table_functions.da_db import open_db
+from db_table_functions.db_tbl_da_test_report import read_test_reports
 from db_table_functions.db_tbl_da_tester import read_reviews
 from pydantic_classes.da_build_models import (
     LABEL_NOT_PASSING,
@@ -577,3 +580,30 @@ def test_d1_4_a_saved_round_without_code_tests_still_loads(settings, request_id)
     )
 
     assert RoundRecord.model_validate(old).code_tests is None
+
+
+# --- Fix D1 step 4: a saved test report for every round that reached Layer B ---
+
+
+def test_d1_8_each_round_that_reached_layer_b_saves_one_report_and_one_audit_event(
+    settings, request_id
+):
+    build(settings, request_id, RecordingFactory())
+
+    with open_db(settings.db_path) as conn:
+        saved = read_test_reports(conn, request_id, 1)
+    rounds = rounds_of(settings, request_id)
+    reached_b = [item.round for item in rounds if item.layer_b is not None]
+
+    assert [item["round"] for item in saved] == reached_b
+    assert event_types(settings, request_id).count("test_report_saved") == len(reached_b)
+    assert saved[-1]["body"]["layer_b"]["tests"]  # the results the report page will show
+
+
+def test_d1_8_a_saved_report_cannot_be_edited_or_deleted(settings, request_id):
+    build(settings, request_id, RecordingFactory())
+
+    with open_db(settings.db_path) as conn:
+        for sql in ("UPDATE da_test_reports SET body = 'x'", "DELETE FROM da_test_reports"):
+            with pytest.raises(sqlite3.DatabaseError, match="append-only"):
+                conn.execute(sql)

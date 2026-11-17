@@ -24,6 +24,7 @@ from db_table_functions.db_tbl_da_enhance import ensure_enhance_tables
 from db_table_functions.db_tbl_da_escalation import ensure_escalation_tables
 from db_table_functions.db_tbl_da_handoff import ensure_handoff_tables
 from db_table_functions.db_tbl_da_refine import ensure_refine_tables
+from db_table_functions.db_tbl_da_test_report import ensure_test_report_table
 from db_table_functions.db_tbl_da_tester import ensure_tester_tables
 from db_table_functions.db_tbl_da_understand import (
     STALE_MESSAGE,
@@ -162,6 +163,7 @@ def ensure_build_tables(conn: sqlite3.Connection) -> None:
     ensure_approach_tables(conn)
     conn.executescript(_CREATE_TABLES_SQL)
     ensure_tester_tables(conn)  # Phase 7: the Tester's three tables ride along
+    ensure_test_report_table(conn)  # Fix D1: saved test reports
     ensure_refine_tables(conn)  # Phase 8: Refine's tables ride along
     ensure_enhance_tables(conn)  # Phase 9: Enhance's tables ride along
     ensure_handoff_tables(conn)  # Phase 10: Handoff's two tables ride along
