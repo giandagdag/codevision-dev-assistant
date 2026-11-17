@@ -1,7 +1,7 @@
 # Phase 11 fix 3: Admin console polish, one index job, real work embedder
 
-Version 1.0 APPROVED, 17 Nov 2026 (18:52 SGT). Gian: "Go". Every D-x below is option 1 (the
-recommended one).
+Version 1.1 APPROVED, 17 Nov 2026 (19:35 SGT). Gian: "Go" (18:52). Every D-x below is option 1 (the
+recommended one). v1.1: D-A changed after Gian's work photo of `a_vector.py` (19:25), see section 1 G2.
 
 Branch `phase-11-fix-3`, cut from the newest `auto/phases-7-10` (fixes 1 and 2 are merged there).
 PR into `auto/phases-7-10`. Build it the normal way: plan, plan review, small steps with tests, code
@@ -25,10 +25,18 @@ review (max 3 rounds), pytest, ruff, smoke check, screenshots.
 
 ## 1. Root causes (the builder confirms each one before changing code)
 
-- **G2.** `WorkEmbedder` imports CodeVision's `agents.a_vector` by name. The Developer Assistant runs
-  from its own folder (`...\Desktop\CodeVision\devassist_p7-10_v4`), so Python cannot find
-  CodeVision's `agents` package, and the real import error is hidden behind one generic sentence.
-  **Bitbucket has nothing to do with it**: the index reads a folder on disk.
+- **G2 (confirmed from the code and a work photo, 17 Nov 19:25).** Two clashes, not one:
+  1. `WorkEmbedder` (`agents/da_code_index.py`) runs `from agents.a_vector import create_embeddings`.
+     The DA has **its own** `agents` package (`src/agents/__init__.py`), so Python looks inside the
+     DA's `agents`, finds no `a_vector`, and the ImportError is hidden behind one generic sentence.
+  2. CodeVision's `a_vector.py` itself starts with `from tools import payload_generation, spirare,
+     dataframe_functions` and `from configs import llm_config, app_config`, plus `numpy` and `faiss`.
+     The DA also has its own `configs` package, so even with CodeVision's folder on the path,
+     `configs` would resolve to the DA's. `tools` may also pull in libraries the DA's `.venv` lacks.
+  So adding a folder to the search path **cannot** work inside the DA's own Python process.
+  CodeVision's code is in `...\Desktop\CodeVision\CodeVision 61\imagebuild\src` (the folder that
+  holds `agents`, `tools`, `configs`). **Bitbucket has nothing to do with it**: the index reads a
+  folder on disk.
 - **G7.** With no built index, the module list falls back to the folder scope. The seed sets the
   scope to the made-up folder `src/data/da_fake_codevision`, which travels in the ZIP. So at work the
   tagger read the 6 made-up programs, with the real Qwen model. The 2 proposals should show as
@@ -43,7 +51,7 @@ review (max 3 rounds), pytest, ruff, smoke check, screenshots.
 
 | # | Question | Decision |
 |---|---|---|
-| D-A | How does the DA find CodeVision's embedder at work? | **1: a new setting `DA_CODEVISION_SRC`** (the folder that holds CodeVision's `agents` folder). `WorkEmbedder` adds it to Python's search path before the import. The error names the real cause (for example "Python could not import agents.a_vector from <folder>: No module named 'x'"), never a key. 2: copy the DA into CodeVision's own folder |
+| D-A | How does the DA reach CodeVision's embedder at work? | **1: a separate helper process.** New settings `DA_CODEVISION_SRC` (CodeVision's `src` folder, the one holding `agents`, `tools`, `configs`) and `DA_CODEVISION_PYTHON` (the Python that runs CodeVision on that laptop or server; empty = the DA's own `.venv` Python). `WorkEmbedder` starts one helper, `src/da_embed_worker.py`, with that Python, **working folder = `DA_CODEVISION_SRC`** and only that folder on its search path (so `agents`, `tools`, `configs` are CodeVision's, never the DA's). The DA sends texts and gets vectors back as JSON lines over stdin and stdout; one helper serves the whole build (started once, closed at the end, restarted once if it dies). The helper never prints or logs the text. Errors name the real cause in plain words (for example "CodeVision's embedder could not start: No module named 'pandas'. Set the Python that runs CodeVision"), never a key, a header or text. AS400 comparison: like SBMJOB into CodeVision's own library list instead of adding its library to ours, where our same-named objects would win. 2: copy the DA into CodeVision's folder (rejected: the same-name clash) |
 | D-B | Delta rebuild | **1: yes.** Store each piece's file hash. Delta re-embeds only pieces from new or changed files, reuses the saved vectors for the rest (`index.reconstruct_n`, flat index), drops deleted files, then writes the whole index file again (cheap). Full re-embeds everything. Full is forced when the vector size or the embedder changed |
 | D-C | Tagging | **1: part of the index job.** Step 1 builds the index; step 2 tags programs: Full re-tags every module, Delta tags only new or changed ones. The index is saved before tagging starts, so a tagging failure never loses the index. Remove "Scan all programs" and "Tag new or changed programs" from the catalog |
 | D-D | Refresh modes | **1: Manual and Nightly work; On every merge stays disabled** with the reason "Needs Bitbucket to tell the server about merges (WF-12)". Nightly runs a Delta job at an Admin-set time (default 02:00 Singapore time), only while the DA server is running, with the same lock file |
@@ -120,8 +128,9 @@ to run at work before a rebuild.
 |---|---|
 | AH-1 | Given any of the 8 tabs, when drawn, then a page title with the tab name and a one-line purpose shows |
 | AH-2 | Given any tab, when drawn, then every section sits inside the shared card component; a test fails if a tab's top-level children are not cards (page title excepted) |
-| AH-3 | Given `DA_CODEVISION_SRC` points at a made-up folder holding `agents/a_vector.py` (a fake), when the work embedder is called, then it imports from there and returns a vector |
-| AH-4 | Given `DA_CODEVISION_SRC` empty or wrong, when a rebuild starts, then the error names the setting and the real import error, and no key or header is shown |
+| AH-3 | Given `DA_CODEVISION_SRC` points at a made-up folder with its own `agents/a_vector.py`, `configs/llm_config.py` and `tools/` (fakes with the same names as the DA's packages), when the work embedder is called, then the helper process imports CodeVision's fakes (not the DA's `agents` or `configs`) and returns a vector; one helper serves many texts |
+| AH-4 | Given `DA_CODEVISION_SRC` empty or wrong, or the fake `tools` importing a missing library, when a rebuild or the check command runs, then the error names the setting or the missing module in plain words, and no key, header or text is shown |
+| AH-4b | Given the helper dies mid-build, then it is restarted once; a second death stops the build with "Not saved" and the old index stays |
 | AH-5 | Given an index built from 3 files, when 1 file changes and Delta runs, then only that file's pieces are embedded (fake embedder counts calls), vector N still matches piece N, and the saved index searches the same as a Full rebuild |
 | AH-6 | Given a deleted file, when Delta runs, then its pieces are gone from both files |
 | AH-7 | Given a running job, when the page is opened, then step, count, percentage and (after 20 items) time left show; when Stop is clicked, the old index and tags stay |
@@ -148,8 +157,7 @@ to run at work before a rebuild.
 
 ## 9. Work facts (do not stop the build)
 
-- WF-11: the folder that holds CodeVision's `agents\a_vector.py` on Gian's work laptop, and whether
-  `a_vector` needs CodeVision's own settings files or extra libraries to import.
+- WF-11 (part answered 17 Nov 19:25): CodeVision's `src` is `...\Desktop\CodeVision\CodeVision 61\imagebuild\src`; `a_vector` imports `tools` (`payload_generation`, `spirare`, `dataframe_functions`), `configs` (`llm_config`, `app_config`), `os`, `numpy`, `faiss`. Still open: which Python runs CodeVision on the laptop (its own `.venv`?), and whether `tools` or `configs` need libraries or settings files the DA's `.venv` lacks. `da_check_embedder.py` answers this at work.
 - WF-12: can Bitbucket tell the server about merges (a webhook to the OCP server)? Decides "On every
   merge".
 - WF-9 (still open): how many programs and how long one embed and one tagger call take on Qwen.
