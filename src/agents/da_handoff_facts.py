@@ -8,6 +8,7 @@ import sqlite3
 
 from agents.da_build_checks import case_ids_from_method
 from agents.da_test_report import report_file_name, report_summary_line
+from agents.da_tester_review import DROPPED_TEST_PREFIX
 from db_table_functions.db_tbl_da_approach import (
     read_approach_state,
     read_approach_versions,
@@ -144,7 +145,10 @@ def _with_tester(conn, facts: SummaryFacts, request_id: str, build: int) -> Summ
             "accepted": len(accepted),
             "fyi": sum(1 for f in kept if f.severity == "fyi"),
             "accepted_risks": risks,
-            "zones": list(review.zone_warnings),
+            # A dropped wrong test also sits in zone_warnings but is not a flag-for-review zone.
+            "zones": [
+                w for w in review.zone_warnings if not w.startswith(DROPPED_TEST_PREFIX)
+            ],
         }
     )
 

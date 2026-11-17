@@ -99,6 +99,45 @@ def _method_problems(tree: ast.AST, contract_paths: set[str]) -> list[str]:
     return problems
 
 
+def targets_of(source: str) -> dict[str, str]:
+    """{C-n: 'path:name words'} read from the Targets line of each test in a saved test file."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return {}
+    found = {}
+    for name, method in find_test_methods(tree).items():
+        target = re.search(r"^Targets: (\S.*)$", ast.get_docstring(method) or "", re.MULTILINE)
+        if code_test_id(name) and target:
+            found[code_test_id(name)] = target.group(1)
+    return found
+
+
+def keep_code_tests(new_text: str, old_source: str, keep_ids: set[str]) -> str:
+    """Fix D1 (D1-6): a code test judged a code bug is kept. Its method is copied from last
+    round's file into this round's file, numbered after the new ones, so the same check runs
+    again on the fixed code. Anything unreadable is skipped (the new set still stands)."""
+    try:
+        old_tree, new_tree = ast.parse(old_source), ast.parse(new_text)
+    except SyntaxError:
+        return new_text
+    old_methods = find_test_methods(old_tree)
+    kept = [(n, m) for n, m in old_methods.items() if code_test_id(n) in keep_ids]
+    if not kept:
+        return new_text
+    number = len(find_test_methods(new_tree))
+    imports = [ast.get_source_segment(old_source, n) for n in old_tree.body
+               if isinstance(n, ast.Import | ast.ImportFrom)]  # fmt: skip
+    lines = ["\n\nclass KeptCodeChecks(unittest.TestCase):"]
+    for _name, method in kept:
+        number += 1
+        body = ast.get_source_segment(old_source, method, padded=True) or ""
+        lines.append(re.sub(r"def test_c\d+_", f"def test_c{number}_", body, count=1))
+    # imports go first: a kept method may call a name the new file does not import
+    head = "\n".join(i for i in imports if i) + "\nimport unittest\n"
+    return head + new_text + "\n".join(lines) + "\n"
+
+
 def write_code_tests(
     client: LLMClient, context: BuildContext, contract: Contract, code_files: dict[str, str]
 ) -> AIResult:

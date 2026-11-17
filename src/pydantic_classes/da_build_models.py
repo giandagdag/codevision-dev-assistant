@@ -160,6 +160,8 @@ class LayerBResult(_Shape):
     # B1 P26: True for runs made since F1/F2 (a skip blocks a pass). A record saved earlier lacks
     # the field, so it reads False and keeps the old rule: a skip did not block a pass.
     strict: bool = False
+    # Fix D1: the test file of a code-test run (kept bugs carry over; Targets are read from it).
+    source: str = ""
 
     @property
     def passed(self) -> int:

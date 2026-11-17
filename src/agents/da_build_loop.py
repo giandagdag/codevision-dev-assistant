@@ -42,7 +42,7 @@ from agents.da_build_flow import (
 )
 from agents.da_check_words import NOT_PROVEN_TEXT, testing_files_line
 from agents.da_code_judge import WRONG_TEST, failing_code_tests, judge_code_tests
-from agents.da_code_tests import write_code_tests
+from agents.da_code_tests import keep_code_tests, write_code_tests
 from agents.da_enhance_build_checks import (
     STILL_OLD,
     ExpectedOutcome,
@@ -641,6 +641,16 @@ class _Run:
             if verdict == WRONG_TEST
         ]
 
+    def _kept_bugs(self) -> tuple[str, set[str]]:
+        """Last round's code file and the C-ids in it that failed and were judged a code bug
+        (not dropped as a wrong test). Those tests run again in this round (D1-6)."""
+        last = next((r for r in reversed(self.inp.rounds) if r.code_tests), None)
+        if last is None or not last.code_tests.source:
+            return "", set()
+        wrong = {line.split(":")[0] for line in last.dropped_code_tests}
+        failing = {cid for cid, _ in failing_code_tests(last.code_tests.tests)}
+        return last.code_tests.source, failing - wrong
+
     def _code_tests(self, contract: Contract) -> tuple[LayerBResult | None, list[str]]:
         """The Tester reads the passing code and writes C-n tests; one more sandbox run, with its
         own time limit. A reply that cannot be used means no code tests this round (the build
@@ -655,17 +665,19 @@ class _Run:
         dropped: list[str] = []
         if result.ok:
             policy = self.inp.policy
+            text = keep_code_tests(result.value, *self._kept_bugs())
             ran = run_tests(
                 self.reference,
                 code,
                 f"{self.test_id}_code",
-                result.value,
+                text,
                 exclude=policy.build_sandbox_exclude,
                 timeout_seconds=policy.build_test_timeout_seconds,
             )
             if not ran.ran:
                 raise _Paused("interrupted", ran.error)
-            dropped = self._judge(code, result.value, ran)
+            ran = ran.model_copy(update={"source": text})
+            dropped = self._judge(code, text, ran)
         with self._turn() as tx:
             if ran is None:
                 text, state = "Code tests could not be written this round", "failed"
@@ -1366,7 +1378,7 @@ class _Run:
         # A dropped wrong test keeps the label at Ready with warnings; the warning line is saved
         # with the review, so every later label recompute sees it.
         wrong_tests = [
-            f"Code test dropped as a wrong test, {line}" for line in last.dropped_code_tests
+            f"{tester.DROPPED_TEST_PREFIX}, {line}" for line in last.dropped_code_tests
         ]
         label = tester.compute_label(
             findings, zones + wrong_tests, "unable" if unable else "done", 1, []

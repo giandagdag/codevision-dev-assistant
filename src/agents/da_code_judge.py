@@ -20,7 +20,6 @@ JUDGE_MARKER = "Task: judge the failing code tests"
 CODE_BUG = "code_bug"
 WRONG_TEST = "wrong_test"
 REASON_LIMIT = 200
-UNJUDGED = "The Tester could not judge this test, so it counts as a code problem."
 _FAILURE_LINE = re.compile(r"^- (C-\d+) \((\w+)\): ", re.MULTILINE)
 
 

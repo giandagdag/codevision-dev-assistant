@@ -28,6 +28,7 @@ from agents.da_check_words import (
     SYSTEM_FAILURE_MESSAGES,
     SYSTEM_HELP_LINE,
 )
+from agents.da_code_tests import targets_of
 from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import get_help
@@ -777,11 +778,14 @@ def _code_test_rows(rounds) -> list[TestRow]:
     last = newest_tested_round(rounds)
     if last is None or last.code_tests is None:
         return []
+    targets = targets_of(last.code_tests.source)
     return [
         TestRow(
             test_id=case_id_of(item.name) or item.name,
             criterion_id="",
-            description=item.message if item.result != "pass" else "Checks the written code",
+            description=item.message
+            if item.result != "pass"
+            else targets.get(case_id_of(item.name), "Checks the written code"),
             result=item.result,
             evidence=item.evidence,
         )

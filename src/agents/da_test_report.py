@@ -8,6 +8,7 @@ them out. Nothing here runs a test again, so every number in the report is a sav
 import re
 from typing import Any
 
+from agents.da_evidence_helper import _SECRETS, HIDDEN
 from pydantic_classes.da_build_models import TestOutcome
 
 NO_EVIDENCE = "Evidence not recorded"
@@ -71,6 +72,11 @@ def evidence_note(outcome: TestOutcome, test_text: str) -> str:
     return NO_EVIDENCE
 
 
+def _hide_secret(text: str) -> str:
+    """A failed assert repeats its values in the message: same secret rule as the evidence."""
+    return HIDDEN if any(p.search(text) for p in _SECRETS) else text
+
+
 def _row(outcome: TestOutcome, case: dict[str, Any] | None, test_text: str) -> dict[str, Any]:
     case = case or {}
     return {
@@ -81,7 +87,7 @@ def _row(outcome: TestOutcome, case: dict[str, Any] | None, test_text: str) -> d
         "expect": case.get("expect", ""),
         "negative": bool(case.get("negative")),
         "result": outcome.result,
-        "message": "" if outcome.result == "pass" else outcome.message,
+        "message": "" if outcome.result == "pass" else _hide_secret(outcome.message),
         "evidence": [line.model_dump() for line in outcome.evidence],
         "evidence_note": evidence_note(outcome, test_text),
     }
@@ -97,6 +103,7 @@ def build_report(
     is_enhance: bool,
     checks: list[dict[str, Any]],
     findings: list[dict[str, Any]],
+    targets: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """The report as plain data. `layer_b` holds the T-n and (Enhance) S-n outcomes, `cases` maps
     'T-1' to its criterion_id, given, expect and negative flag. `header` passes through."""
@@ -110,6 +117,9 @@ def build_report(
         if key == "safety" and not is_enhance:
             continue
         rows = [_row(t, cases.get(case_id_of(t.name)), test_text) for t in groups[key]]
+        if key == "code":  # a code test has no criterion: its Targets line says what it checks
+            for row in rows:
+                row["criterion"] = (targets or {}).get(row["id"], "")
         sections.append({"key": key, "title": title, "rows": rows})
     summary = {key: count_results(items) for key, items in groups.items()}
     summary["code"]["dropped"] = len(dropped_code_tests)

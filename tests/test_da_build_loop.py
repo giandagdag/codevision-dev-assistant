@@ -558,6 +558,19 @@ def test_d1_6_a_failing_code_test_that_is_a_code_bug_is_a_must_fix(
     assert cites == [f"C-{len(ran[0].code_tests.tests)}"]
 
 
+def test_d1_6_a_code_bug_test_is_kept_and_runs_again_in_the_next_round(
+    settings, request_id, monkeypatch
+):
+    switches(monkeypatch, "code_test_bug")
+    build(settings, request_id, RecordingFactory())
+
+    ran = [item for item in rounds_of(settings, request_id) if item.code_tests is not None]
+
+    assert len(ran) >= 2
+    assert len(ran[1].code_tests.tests) == len(ran[0].code_tests.tests) + 1
+    assert "KeptCodeChecks" in ran[1].code_tests.source
+
+
 def test_d1_7_a_wrong_code_test_is_dropped_and_the_label_has_warnings(
     settings, request_id, monkeypatch
 ):

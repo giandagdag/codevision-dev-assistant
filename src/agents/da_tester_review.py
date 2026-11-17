@@ -192,6 +192,10 @@ def check_files_match_plan(
     return found
 
 
+# A dropped wrong code test is saved as a warning line (it caps the label) but is not a zone.
+DROPPED_TEST_PREFIX = "Code test dropped as a wrong test"
+
+
 def zone_warnings(zones: list[str]) -> list[str]:
     """Check 7: one line per flag-for-review zone touched. A warning, never a finding."""
     return [

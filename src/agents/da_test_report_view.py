@@ -7,6 +7,7 @@ them out. Nothing runs again and no server path is read or returned.
 
 import sys
 
+from agents.da_code_tests import targets_of
 from agents.da_test_report import build_report, case_id_of
 from db_table_functions.da_db import open_db
 from db_table_functions.db_tbl_da_approach import (
@@ -89,4 +90,5 @@ def get_report(settings, request_id: str, build_number: int) -> dict | None:
         frozen["test"].text if "test" in frozen else "",
         is_enhance=any(case_id_of(o.name).startswith("S") for o in outcomes),  # S-n = Enhance
         checks=checks, findings=findings,
+        targets=targets_of(code_tests.source) if code_tests else {},
     )  # fmt: skip
