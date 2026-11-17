@@ -1,6 +1,6 @@
 # Phase 11 fix 3: Admin console polish, one index job, real work embedder
 
-Version 1.1 APPROVED, 17 Nov 2026 (19:35 SGT). Gian: "Go" (18:52). Every D-x below is option 1 (the
+Version 1.2 APPROVED, 17 Nov 2026 (19:35 SGT, WF-11 answered 19:29). Gian: "Go" (18:52). Every D-x below is option 1 (the
 recommended one). v1.1: D-A changed after Gian's work photo of `a_vector.py` (19:25), see section 1 G2.
 
 Branch `phase-11-fix-3`, cut from the newest `auto/phases-7-10` (fixes 1 and 2 are merged there).
@@ -157,7 +157,7 @@ to run at work before a rebuild.
 
 ## 9. Work facts (do not stop the build)
 
-- WF-11 (part answered 17 Nov 19:25): CodeVision's `src` is `...\Desktop\CodeVision\CodeVision 61\imagebuild\src`; `a_vector` imports `tools` (`payload_generation`, `spirare`, `dataframe_functions`), `configs` (`llm_config`, `app_config`), `os`, `numpy`, `faiss`. Still open: which Python runs CodeVision on the laptop (its own `.venv`?), and whether `tools` or `configs` need libraries or settings files the DA's `.venv` lacks. `da_check_embedder.py` answers this at work.
+- WF-11 (ANSWERED 17 Nov 19:25 and 19:29): CodeVision's `src` is `...\Desktop\CodeVision\CodeVision 61\imagebuild\src`; `a_vector` imports `tools` (`payload_generation`, `spirare`, `dataframe_functions`), `configs` (`llm_config`, `app_config`), `os`, `numpy`, `faiss`. CodeVision has its **own** `.venv` at `...\Desktop\CodeVision\CodeVision 61\.venv`. So at work: `DA_CODEVISION_SRC=...\CodeVision 61\imagebuild\src` and `DA_CODEVISION_PYTHON=...\CodeVision 61\.venv\Scripts\python.exe`. Rule that follows: `src/da_embed_worker.py` runs under **CodeVision's** Python, so it uses only the standard library plus what `a_vector` itself imports; it never imports anything from the DA. The DA's `.env.example` shows both settings with made-up paths. A path with spaces must work (`CodeVision 61`): start the helper with an argument list, never a joined command string.
 - WF-12: can Bitbucket tell the server about merges (a webhook to the OCP server)? Decides "On every
   merge".
 - WF-9 (still open): how many programs and how long one embed and one tagger call take on Qwen.
