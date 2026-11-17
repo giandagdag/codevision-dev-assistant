@@ -27,10 +27,6 @@ from pydantic_classes.da_build_models import LayerBResult, TestOutcome
 from web.da_web_components import format_singapore_time
 
 
-def report_file_name(request_id: str, build_number: int) -> str:
-    return f"CVDA-{request_id}-build-{build_number}-test-report.html"
-
-
 def get_report(settings, request_id: str, build_number: int) -> dict | None:
     """The report body of one build, or None when no report was saved (an old build)."""
     with open_db(settings.db_path) as conn:

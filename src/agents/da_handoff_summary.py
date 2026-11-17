@@ -30,6 +30,8 @@ def _join(facts: SummaryFacts, per_criterion: bool) -> str:
     if facts.follows_request_id:
         lines.append(f"Follows: {facts.follows_request_id}")
     lines += _criteria(facts, per_criterion)
+    if facts.report_file:  # the proof lives in the report: say where (the file name, no path)
+        lines += [facts.report_summary, f"Test report: {facts.report_file}"]
     lines.append(_tester(facts))
     lines += _files(facts)
     lines += _list("Reuses", facts.reuses)

@@ -4,7 +4,8 @@ import pytest
 
 from agents import da_build_flow as flow
 from agents import da_build_loop as loop
-from agents.da_test_report_view import get_report, report_file_name
+from agents.da_test_report import report_file_name
+from agents.da_test_report_view import get_report
 from callbacks.screen_callbacks.da_admin_page_callbacks import developer_page_style
 from callbacks.screen_callbacks.da_test_report_page_callbacks import report_text
 from layouts.da_test_report_page import (
@@ -52,7 +53,7 @@ def test_d1_10_download_is_one_offline_file_with_the_same_content(built):
 
     assert report_html(report) in document
     assert "<script" not in document and "http" not in document
-    assert report_file_name(request_id, 1) == f"CVDA-{request_id}-build-1-test-report.html"
+    assert report_file_name("CVDA-2026-0001", 1) == "CVDA-2026-0001-build-1-test-report.html"
 
 
 def test_d1_11_print_styles_hide_the_app_chrome():

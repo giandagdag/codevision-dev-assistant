@@ -6,7 +6,8 @@ shows a plain sentence, never a Dash error page.
 
 from dash import Input, Output, State, dcc
 
-from agents.da_test_report_view import get_report, report_file_name
+from agents.da_test_report import report_file_name
+from agents.da_test_report_view import get_report
 from callbacks.screen_callbacks.da_developer_assistant_page_callbacks import get_settings
 from db_table_functions.da_db import DatabaseBusyError
 from layouts.da_test_report_page import (

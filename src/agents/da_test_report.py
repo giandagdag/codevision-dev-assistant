@@ -22,6 +22,11 @@ _SECTIONS = (
 _ID_IN_NAME = re.compile(r"test_([tcs])(\d+)")
 
 
+def report_file_name(request_id: str, build_number: int) -> str:
+    # The request ID already starts with CVDA-, so this is CVDA-<id>-build-<n>-test-report.html.
+    return f"{request_id}-build-{build_number}-test-report.html"
+
+
 def case_id_of(name: str) -> str:
     """'ExcelTests.test_t2_ac1_empty' gives 'T-2'; '' when the name carries no id."""
     found = _ID_IN_NAME.search(name)

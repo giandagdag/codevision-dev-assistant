@@ -7,6 +7,7 @@ is plain code so the definition of "hand-edited" (spec Words table) is tested wi
 import sqlite3
 
 from agents.da_build_checks import case_ids_from_method
+from agents.da_test_report import report_file_name, report_summary_line
 from db_table_functions.db_tbl_da_approach import (
     read_approach_state,
     read_approach_versions,
@@ -18,6 +19,7 @@ from db_table_functions.db_tbl_da_enhance import read_latest_safety_net
 from db_table_functions.db_tbl_da_handoff import get_last_tested_fingerprints
 from db_table_functions.db_tbl_da_refine import read_tested
 from db_table_functions.db_tbl_da_requests import read_request
+from db_table_functions.db_tbl_da_test_report import read_test_reports
 from db_table_functions.db_tbl_da_tester import read_actions, read_reviews
 from db_table_functions.db_tbl_da_understand import read_confirmed_record
 from db_table_functions.db_tbl_da_workspace import read_file_versions
@@ -64,7 +66,18 @@ def gather_summary_facts(conn: sqlite3.Connection, request_id: str) -> SummaryFa
     facts = _with_tester(conn, facts, request_id, build)
     facts = _with_files(conn, facts, request_id, approach, tested, kind)
     facts = _with_decisions(facts, approach)
+    facts = _with_report(conn, facts, request_id, build)
     return _with_enhance(conn, facts, request_id, record)
+
+
+def _with_report(conn, facts: SummaryFacts, request_id: str, build: int) -> SummaryFacts:
+    """The test report line and file name, only when a report was saved for the tested build."""
+    if not build or not read_test_reports(conn, request_id, build):
+        return facts
+    line = report_summary_line(read_rounds(conn, request_id, build))
+    return facts.model_copy(
+        update={"report_summary": line, "report_file": report_file_name(request_id, build)}
+    )
 
 
 def _top_record_version(conn: sqlite3.Connection, request_id: str) -> int:
