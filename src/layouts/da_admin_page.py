@@ -99,6 +99,7 @@ from layouts.da_admin_common import (  # noqa: F401 (some are re-exported for th
     word_chips,
 )
 from layouts.da_admin_common import section as _section
+from layouts.da_admin_common import window as _window
 from layouts.da_admin_history_tab import (  # noqa: F401 (callbacks import these)
     HIST_CANCEL,
     HIST_CONFIRM,
@@ -531,6 +532,8 @@ def rules_view(
         # Read view: brand constants left 2/3, UI conventions right 1/3. Edit keeps them stacked.
         parts.insert(1, brand if editable else two_columns(brand, convention_rows(rows)))
     if tab == TAB_CODING:
+        if not editable:  # read view: the rules get their own window, like every other area
+            parts = [parts[0], _window(f"⚖️ {parts[1].children}", html.Div(parts[2:]), mt="xs")]
         parts += _coding_extras(version, editable, draft, modules)
     return html.Div(parts)
 
@@ -574,10 +577,10 @@ def _coding_extras(
     if editable:  # the edit form stays one column of tables
         sonar = _section("SonarQube severity map", _sonar_map(policy, True, draft))
         return [libraries, imports, sonar, examples]
-    # Read view, as in the demo: two rows of two side-by-side panels (equal halves).
+    # Read view, as in the demo: two rows of two side-by-side panels, each in its own window.
     chosen = policy.sonar_severity_map
-    checks = _section(
-        "Automatic checks (SonarQube)",
+    checks = _window(
+        "🔍 Automatic checks (SonarQube)",
         html.Div(
             [
                 dmc.Group(
@@ -606,10 +609,27 @@ def _coding_extras(
             ]
         ),
     )
-    severity = _section("SonarQube severity map", _sonar_lines(chosen, False))
+    severity = _window("🎚️ SonarQube severity map", _sonar_lines(chosen, False))
+    golden_window = _window(
+        "⭐ Golden examples (the Generator follows the one that matches the program type)",
+        golden_cards(golden),
+    )
+    library_window = _window(
+        "📦 Libraries",
+        dmc.Stack(
+            [
+                dmc.Text("Approved libraries", fw=600, size="sm"),
+                library_chips(approved),
+                dmc.Text("Blocked imports", fw=600, size="sm", mt="xs"),
+                library_chips(blocked, blocked=True),
+            ],
+            gap=4,
+        ),
+    )
+    gap = {"marginTop": "16px"}
     return [
-        two_columns(examples, html.Div([libraries, imports]), 1.5),
-        two_columns(checks, severity, 1.5),
+        html.Div(two_columns(golden_window, library_window, 1.5), style=gap),
+        html.Div(two_columns(checks, severity, 1.5), style=gap),
     ]
 
 

@@ -129,3 +129,19 @@ def test_picking_a_module_fills_only_a_blank_code_box(
     assert out[0].splitlines() == [f"line {i}" for i in range(12)]
     assert out[1] is no_update and out[2] is no_update
     assert out[3] == ""  # unreadable module: blank, not an error
+
+
+def test_read_view_puts_each_area_in_its_own_window(published_rulebook):
+    """Gian, 17 Nov: "a window for each section" instead of one dump on the white canvas."""
+    view = tab_content(TAB_CODING, published_rulebook)
+
+    windows = [
+        c for c in walk(view)
+        if type(c).__name__ == "Paper" and c.withBorder and isinstance(c.children, list)
+    ]
+    titles = [all_text(w.children[0]) for w in windows]
+    for wanted in ("Judgement rules", "Golden examples", "Libraries", "Automatic checks",
+                   "SonarQube severity map"):
+        assert any(wanted in t for t in titles), wanted
+    rules_window = next(w for w in windows if "Judgement rules" in all_text(w.children[0]))
+    assert any(getattr(c, "id", None) == "adm-rule-panel" for c in walk(rules_window))

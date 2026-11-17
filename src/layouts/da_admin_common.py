@@ -57,6 +57,18 @@ def section(title: str, body):
     )
 
 
+def window(title: str, body, **paper):
+    """A bordered card with a bold title: one per area of a read view (Gian, 17 Nov: "a window for
+    each section" instead of everything on the white canvas)."""
+    return dmc.Paper(
+        [dmc.Text(title, fw=700, c=da_styles.NAVY, mb="xs"), body],
+        withBorder=True,
+        p="md",
+        radius="md",
+        **paper,
+    )
+
+
 def chips(summary: str):
     """A summary line such as "3 capabilities, 2 Unassigned" as small chips."""
     parts = [p.strip() for p in summary.replace(";", ",").split(",") if p.strip()]

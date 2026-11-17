@@ -95,3 +95,18 @@ def test_section_15_health_numbers_are_a_full_width_row_under_the_two_columns(
     grid = next(c for c in walk(top[-1]) if type(c).__name__ == "SimpleGrid")
     assert grid.cols["lg"] == 5
     assert "Needs attention" in all_text(top[-2])
+
+
+def test_needs_attention_scrolls_inside_the_rulebook_height(make_settings, published_rulebook):
+    """Gian, 17 Nov: Needs attention ran far below the Rulebook; it now scrolls in its column."""
+    from layouts.da_admin_overview_tab import ATTENTION_SCROLL_ID
+
+    _, view = _view(make_settings, published_rulebook, _report(make_settings))
+
+    grid = view.children[-2]
+    right_cell = grid.children[1]
+    assert right_cell.style["position"] == "relative"
+    assert right_cell.children.style["position"] == "absolute"  # the left alone sets the height
+    scroll = next(c for c in walk(right_cell) if getattr(c, "id", None) == ATTENTION_SCROLL_ID)
+    assert scroll.style["overflowY"] == "auto"
+    assert "Needs attention" in all_text(right_cell)
