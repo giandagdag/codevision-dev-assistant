@@ -32,6 +32,7 @@ from agents.da_code_tests import targets_of
 from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import get_help
+from agents.da_evidence_helper import hide_secret
 from agents.da_test_report import case_id_of, newest_tested_round, report_summary_line
 from agents.da_workspace_checks import (
     FactsProblem,
@@ -783,7 +784,7 @@ def _code_test_rows(rounds) -> list[TestRow]:
         TestRow(
             test_id=case_id_of(item.name) or item.name,
             criterion_id="",
-            description=item.message
+            description=hide_secret(item.message)
             if item.result != "pass"
             else targets.get(case_id_of(item.name), "Checks the written code"),
             result=item.result,

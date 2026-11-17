@@ -19,6 +19,12 @@ SECRET_PATTERNS = (
 )
 _SECRETS = [re.compile(pattern, re.IGNORECASE) for pattern in SECRET_PATTERNS]
 
+
+def hide_secret(text: str) -> str:
+    """The whole text becomes [hidden] when it looks like it holds a secret."""
+    return HIDDEN if any(pattern.search(text) for pattern in _SECRETS) else text
+
+
 # The runner reads and clears this list after each test.
 lines: list[dict] = []
 

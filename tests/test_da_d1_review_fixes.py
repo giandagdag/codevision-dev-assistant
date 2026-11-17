@@ -54,3 +54,21 @@ def test_nothing_kept_leaves_the_new_file_alone():
 def test_a_secret_in_a_failure_message_is_hidden_in_the_report_row():
     outcome = TestOutcome(name="test_c1_x", result="fail", message="'token=abc123' != 'x'")
     assert _row(outcome, None, "")["message"] == "[hidden]"
+
+
+def test_a_code_row_shows_its_targets_line_as_the_criterion():
+    from agents.da_test_report import build_report
+
+    outcome = TestOutcome(name="test_c2_x", result="pass")
+    targets = {"C-2": "src/a.py:f"}
+    report = build_report({}, [], [outcome], [], {}, "", False, [], [], targets=targets)
+    code = next(s for s in report["sections"] if s["key"] == "code")
+    assert code["rows"][0]["criterion"] == "src/a.py:f"
+
+
+def test_a_dropped_test_line_is_not_a_handoff_zone():
+    from agents.da_tester_review import DROPPED_TEST_PREFIX
+
+    warnings = [DROPPED_TEST_PREFIX + ", C-1: x", "Touches the money zone: ..."]
+    kept = [w for w in warnings if not w.startswith(DROPPED_TEST_PREFIX)]
+    assert kept == [warnings[1]]

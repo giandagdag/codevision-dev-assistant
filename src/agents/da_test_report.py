@@ -8,7 +8,7 @@ them out. Nothing here runs a test again, so every number in the report is a sav
 import re
 from typing import Any
 
-from agents.da_evidence_helper import _SECRETS, HIDDEN
+from agents.da_evidence_helper import hide_secret
 from pydantic_classes.da_build_models import TestOutcome
 
 NO_EVIDENCE = "Evidence not recorded"
@@ -72,11 +72,6 @@ def evidence_note(outcome: TestOutcome, test_text: str) -> str:
     return NO_EVIDENCE
 
 
-def _hide_secret(text: str) -> str:
-    """A failed assert repeats its values in the message: same secret rule as the evidence."""
-    return HIDDEN if any(p.search(text) for p in _SECRETS) else text
-
-
 def _row(outcome: TestOutcome, case: dict[str, Any] | None, test_text: str) -> dict[str, Any]:
     case = case or {}
     return {
@@ -87,7 +82,7 @@ def _row(outcome: TestOutcome, case: dict[str, Any] | None, test_text: str) -> d
         "expect": case.get("expect", ""),
         "negative": bool(case.get("negative")),
         "result": outcome.result,
-        "message": "" if outcome.result == "pass" else _hide_secret(outcome.message),
+        "message": "" if outcome.result == "pass" else hide_secret(outcome.message),
         "evidence": [line.model_dump() for line in outcome.evidence],
         "evidence_note": evidence_note(outcome, test_text),
     }
