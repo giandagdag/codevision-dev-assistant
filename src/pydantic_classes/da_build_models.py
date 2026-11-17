@@ -277,6 +277,10 @@ class RoundRecord(_Shape):
     # The planned files the next round will send to the Generator again (decision D-J). Saved so
     # a build that pauses between rounds can pick up exactly where it stopped.
     files_to_fix: list[str] = Field(default_factory=list)
+    # Fix D1: the code tests (C-n) run after the requirement tests passed. None = not run.
+    code_tests: LayerBResult | None = None
+    # Fix D1: code tests dropped as a wrong test, each "C-3: reason". Filled in step 3c.
+    dropped_code_tests: list[str] = Field(default_factory=list)
     created_at: AwareDatetime | None = None
 
 

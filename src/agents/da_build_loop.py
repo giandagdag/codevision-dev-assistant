@@ -41,6 +41,7 @@ from agents.da_build_flow import (
     _write,
 )
 from agents.da_check_words import NOT_PROVEN_TEXT, testing_files_line
+from agents.da_code_tests import write_code_tests
 from agents.da_enhance_build_checks import (
     STILL_OLD,
     ExpectedOutcome,
@@ -617,7 +618,42 @@ class _Run:
         if not layer_a.ok:
             return self._record_round(number, layer_a, None, contract, tests)
         layer_b = self._layer_b(tests)
-        return self._record_round(number, layer_a, layer_b, contract, tests)
+        # Fix D1 (D1-4): code tests only once the requirement tests pass.
+        code_tests = self._code_tests(contract) if layer_b.ok else None
+        return self._record_round(number, layer_a, layer_b, contract, tests, code_tests)
+
+    def _code_tests(self, contract: Contract) -> LayerBResult | None:
+        """The Tester reads the passing code and writes C-n tests; one more sandbox run, with its
+        own time limit. A reply that cannot be used means no code tests this round (the build
+        still stands on the requirement tests); an unreachable AI pauses like any other call."""
+        self._alive()
+        line = self._line("Tester writes code tests from the finished code", "running")
+        code = {path: item.text for path, item in self.inp.code.items()}
+        result = write_code_tests(self.client("tester"), self.context, contract, code)
+        if result.kind in ("unreachable", "too_big"):
+            raise _Paused("interrupted", result.message)
+        ran: LayerBResult | None = None
+        if result.ok:
+            policy = self.inp.policy
+            ran = run_tests(
+                self.reference,
+                code,
+                f"{self.test_id}_code",
+                result.value,
+                exclude=policy.build_sandbox_exclude,
+                timeout_seconds=policy.build_test_timeout_seconds,
+            )
+            if not ran.ran:
+                raise _Paused("interrupted", ran.error)
+        with self._turn() as tx:
+            if ran is None:
+                text, state = "Code tests could not be written this round", "failed"
+            else:
+                text = f"Code tests: {ran.passed} of {len(ran.tests)} passed"
+                state = "done"
+            tx.audit("system", "code_tests_run", {"tests": len(ran.tests) if ran else 0})
+            self._note(tx, text, state, line)
+        return ran
 
     def _trace_bug(self, contract: Contract, tests: str) -> tuple[list[str], str]:
         """Round 1 of a bug fix (spec section 7): run the new test set on his files as they are,
@@ -840,6 +876,7 @@ class _Run:
         layer_b: LayerBResult | None,
         contract: Contract,
         tests: str,
+        code_tests: LayerBResult | None = None,
     ) -> bool:
         passed = layer_a.ok and layer_b is not None and layer_b.ok
         # F3: tests that never reported are the Developer Assistant's problem. Show the rows,
@@ -860,6 +897,7 @@ class _Run:
             failure_report=report,
             timed_out=bool(layer_b and layer_b.timed_out),
             files_to_fix=fix,
+            code_tests=code_tests,
         )
         limit = self.inp.policy.build_max_rounds
         with self._turn() as tx:

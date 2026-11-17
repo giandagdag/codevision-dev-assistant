@@ -6,7 +6,12 @@ from agents import da_build_agent as agent
 from agents import da_build_flow as flow
 from agents import da_build_loop as loop
 from agents.da_check_words import NOT_PROVEN_TEXT, SYSTEM_HELP_LINE
-from pydantic_classes.da_build_models import LABEL_NOT_PASSING, LABEL_WITH_WARNINGS, BuildState
+from pydantic_classes.da_build_models import (
+    LABEL_NOT_PASSING,
+    LABEL_WITH_WARNINGS,
+    BuildState,
+    RoundRecord,
+)
 from tests.da_approach_play import events_of
 from tests.da_build_play import (
     CREATE,
@@ -125,7 +130,7 @@ def test_6_8_one_ai_call_per_file_and_one_each_for_the_contract_and_the_tests(se
     build(settings, request_id, factory)
 
     roles = [role for role, _ in factory.calls]
-    # contract, tests, round 1 (2 files), round 2 (1 file) + review, round 3 (1 file) + review
+    # contract, tests, round 1 (2 files), then rounds 2 and 3 (1 file, code tests, review each)
     assert roles == [
         "generator",
         "tester",
@@ -133,7 +138,9 @@ def test_6_8_one_ai_call_per_file_and_one_each_for_the_contract_and_the_tests(se
         "generator",
         "generator",
         "tester",
+        "tester",
         "generator",
+        "tester",
         "tester",
     ]
     contract_call, tests_call = factory.prompts()[0], factory.prompts()[1]
@@ -507,3 +514,28 @@ def test_a_thread_for_an_older_build_does_not_run_the_newer_build(settings, requ
     assert factory.calls == []  # nothing was asked of the AI
     assert flow.get_state(settings, request_id).step == "b_running"  # and nothing was changed
     assert loop.run_build(settings, request_id, build_number=1) == "done"
+
+
+# --- Fix D1 step 3b: code tests run only after the requirement tests pass ---
+
+
+def test_d1_4_code_tests_run_only_in_rounds_whose_requirement_tests_passed(settings, request_id):
+    build(settings, request_id, RecordingFactory())
+
+    first, second, third = rounds_of(settings, request_id)
+
+    assert not first.layer_b.ok and first.code_tests is None  # requirement tests failed: no call
+    for later in (second, third):
+        assert later.layer_b.ok and later.code_tests is not None
+        names = [item.name for item in later.code_tests.tests]
+        assert names and all("test_c" in name for name in names)
+        assert later.code_tests.ok and later.dropped_code_tests == []
+
+
+def test_d1_4_a_saved_round_without_code_tests_still_loads(settings, request_id):
+    build(settings, request_id, RecordingFactory())
+    old = rounds_of(settings, request_id)[0].model_dump(
+        exclude={"code_tests", "dropped_code_tests"}
+    )
+
+    assert RoundRecord.model_validate(old).code_tests is None
