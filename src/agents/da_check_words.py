@@ -8,6 +8,8 @@ lines, and Phase 9 can reuse them. Plain text only: nothing here decides anythin
 CHECK_KIND = "check"
 CHECK_PILL = "TESTING"
 CHECK_CHAT_LINE = "Testing your edits. This takes a few minutes. You can leave this page."
+# Fix B2 (S6): the automatic check after "Add this test" says so before it runs.
+NEW_TEST_CHECK_LINE = "Checking your new test against the current code..."
 CHECK_BANNER = "One test pass on your files (the AI changes nothing)."
 CHECK_CANCEL_LABEL = "Cancel test"
 CHECK_BOX_TITLE = "This test run"

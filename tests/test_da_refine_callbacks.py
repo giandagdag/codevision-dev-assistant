@@ -77,7 +77,9 @@ def test_send_at_b_written_goes_to_the_lane_choice_and_the_buttons_are_the_lanes
     assert result == (1, no_update, "")
     assert lanes.get_refine_state(settings, request_id).step == "lane_choice"
     tree = draw(request_id)
-    assert refine_keys(tree) == ["lane_bug", "lane_requirement", "lane_approach", "cancel"]
+    assert refine_keys(tree) == [
+        "lane_bug", "lane_requirement", "lane_approach", "explain_simple", "decide_help", "cancel"
+    ]
     assert state_of(tree)["refine_revision"] == 1
 
 
@@ -90,7 +92,7 @@ def test_a_lane_button_runs_the_lane_and_the_next_screen_has_the_next_buttons(se
     assert result == (1, "")
     assert request_status(settings, request_id) == "REVISION_IN_PROGRESS"
     tree = draw(request_id)
-    assert refine_keys(tree) == ["repro_yes", "repro_no", "cancel", "help"]
+    assert refine_keys(tree) == ["repro_yes", "repro_no", "help", "cancel"]  # B2: Cancel last
     assert by_id(tree, cb.TEXT_ID).disabled  # no typing at the repro confirmation
 
 
@@ -148,7 +150,7 @@ def test_the_requirement_lane_shows_refine_buttons_on_the_discover_screen(settin
     cb.perform_action(settings, cb.SEND_ID, "Reject files over 5 MB", state_of(draw(request_id)), 0)
     click(settings, draw(request_id), "lane_requirement")  # the revision call runs by itself
     tree = draw(request_id)
-    assert refine_keys(tree) == ["confirm_v2", "cancel", "help"]
+    assert refine_keys(tree) == ["confirm_v2", "help", "cancel"]
     assert not by_id(tree, cb.TEXT_ID).disabled  # a correction may be typed
     send = [b for b in components(tree, "Button") if getattr(b, "id", None) == cb.SEND_ID]
     assert send and send[0].children == "Correct something"

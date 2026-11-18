@@ -500,15 +500,15 @@ def test_seed_has_the_ai_question_limit(seed_rulebook):
     assert seed_rulebook.policy.max_material_decisions == 8  # fix 11-1: new seed default
 
 
-def test_a_rulebook_saved_before_the_limit_existed_loads_with_5(seed_rulebook):
+def test_a_rulebook_saved_before_the_limit_existed_loads_with_8(seed_rulebook):
     old = seed_rulebook.model_dump(mode="json")
     del old["policy"]["max_material_decisions"]
 
     loaded = Rulebook.model_validate(old)
 
-    # Old versions keep 5 (D-F: an existing database is not changed); only the seed says 8.
-    assert loaded.policy.max_material_decisions == 5
-    assert loaded.policy == seed_rulebook.policy.model_copy(update={"max_material_decisions": 5})
+    # B2-8: the model default is now 8, so a work database whose rulebook has no key runs with 8.
+    assert loaded.policy.max_material_decisions == 8
+    assert loaded.policy == seed_rulebook.policy
 
 
 @pytest.mark.parametrize("value", [1, 15])

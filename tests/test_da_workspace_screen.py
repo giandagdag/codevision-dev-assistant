@@ -406,7 +406,8 @@ def test_register_attaches_the_workspace_hops():
     # then the scope tick list (step 18c) and the multi-pick confirm (step 18d)
     # then the Handoff buttons and the Copy summary script (Phase 10 step 5)
     # then one more (B1 step 6: the two buttons of a test that disagrees with a criterion)
-    assert len(hops) == 8 + 3 + 1 + 1 + 1 + 1 + 2 + 1
+    # then one more (B2 step 10: Let the AI describe it)
+    assert len(hops) == 8 + 3 + 1 + 1 + 1 + 1 + 2 + 1 + 1
     click_hop = hops[0]
     assert click_hop["prevent_initial_call"] is True
     assert click_hop["clientside_function"]["function_name"]

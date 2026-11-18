@@ -46,6 +46,20 @@ def test_home_has_two_cards_and_the_second_is_disabled():
     assert "No requests yet" in text
 
 
+def test_b2_15_full_width_page_equal_cards_and_readable_chat_lines():
+    from styles import da_styles
+
+    assert "maxWidth" not in da_styles.PAGE and da_styles.PAGE["width"] == "100%"
+    columns = da_styles.WORKSPACE_GRID["gridTemplateColumns"]
+    assert columns.endswith("1.5fr)")  # the right panel gets the extra width
+    assert "80ch" in da_styles.BUBBLE_BASE["maxWidth"]
+    home = page.render_home([])
+    assert by_id(home, "da-start-card").style["height"] == "100%"
+    assert by_id(home, "da-enhance-card").style["height"] == "100%"
+    cards = [c for c in components(home, "Paper") if getattr(c, "h", None) == "100%"]
+    assert len(cards) == 3  # all three cards fill their grid cell, so they match in height
+
+
 def test_home_rows_link_to_the_request_and_show_the_pill(settings):
     done = da_play.to_confirmed(settings)
     da_play.start(settings)

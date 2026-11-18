@@ -89,7 +89,8 @@ def test_8_42_his_edit_survives_a_bug_lane_rebuild_in_a_real_browser(make_live_p
     # 3. A bug: type it, pick the bug lane, confirm the repro test. The fix build starts by itself.
     page.get_by_placeholder(REFINE_PLACEHOLDER).fill("The upload is wrong")
     button(page, "Send").click()
-    button(page, "Bug").click()
+    # The suggested lane carries a " (Suggested)" tag, so match the name as a prefix here.
+    page.get_by_role("button", name="It's not working as agreed").first.click()
     button(page, "Yes, this is the bug").click(timeout=BUILD_WAIT_MS)
     wait_for_text(page, "Running on the server", BUILD_WAIT_MS)
     # His note sits next to the line the fix changes, so the app stops and asks (edit protection).

@@ -28,7 +28,7 @@ from agents.da_build_flow import (
     get_state,
     planned_paths_of,
 )
-from agents.da_check_words import CHECK_CHAT_LINE
+from agents.da_check_words import CHECK_CHAT_LINE, NEW_TEST_CHECK_LINE
 from agents.da_refine_merge import build_restore_set, side_by_side
 from agents.da_workspace_checks import (
     FactsProblem,
@@ -238,7 +238,8 @@ def start_check(
         tx.audit("developer", "check_run_started", {"build": number})
         came_from = request.status
         tx.move_to(STATUS_BUILDING)
-        tx.say("assistant", CHECK_CHAT_LINE)  # F6: reads as testing, not building
+        # F6: reads as testing, not building. B2 S6: his new test says what it is checking.
+        tx.say("assistant", NEW_TEST_CHECK_LINE if after_new_test else CHECK_CHAT_LINE)
         tx.set(
             build_number=number,
             step="b_running",

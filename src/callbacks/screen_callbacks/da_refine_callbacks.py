@@ -12,23 +12,27 @@ from dash import ALL, Input, Output, State, ctx, no_update
 from dash.exceptions import PreventUpdate
 
 from agents import da_build_runner as build_runner
+from agents.da_ai_lock import ai_turn
 from agents.da_refine_actions import (
     SHOWN_CHAIN_ERRORS,
     Outcome,
     perform_pick,
     perform_refine,
 )
+from agents.da_refine_describe import describe_for_box
 from layouts.da_build_panel import ADD_CASE_FIELD_TYPE, ADD_CASE_TYPE
 from layouts.da_developer_assistant_page import (
     BUSY_ID,
+    DESCRIBE_TYPE,
     MESSAGE_ID,
     REFINE_TYPE,
     REFRESH_ID,
     STATE_ID,
+    TEXT_ID,
 )
 from layouts.da_refine_panels import CONFLICT_PICK_TYPE
 
-SHOWN_ERRORS = SHOWN_CHAIN_ERRORS
+SHOWN_ERRORS = SHOWN_CHAIN_ERRORS  # AiBusyError is an UnderstandError, so it is shown too
 BUSY = [(Output(BUSY_ID, "style"), {"display": "block"}, {"display": "none"})]
 
 
@@ -54,7 +58,8 @@ def handle_refine_button(settings, trigger, clicks_value, state, refresh):
     if not isinstance(trigger, dict) or not clicks_value or not state.get("refine"):
         raise PreventUpdate
     try:
-        message = run_refine(settings, trigger["index"], state)
+        with ai_turn(state.get("request_id")):
+            message = run_refine(settings, trigger["index"], state)
     except SHOWN_ERRORS as error:
         return no_update, str(error)
     return (refresh or 0) + 1, message
@@ -88,14 +93,45 @@ def handle_add_case(settings, fields: dict, state, refresh):
         raise PreventUpdate
     text, criterion = fields.get("text") or "", fields.get("criterion") or ""
     try:
-        message = run_refine(settings, "add_case", state, text=text, arg=criterion)
+        with ai_turn(state.get("request_id")):
+            message = run_refine(settings, "add_case", state, text=text, arg=criterion)
     except SHOWN_ERRORS as error:
         return no_update, str(error)
     return (refresh or 0) + 1, message
 
 
+def handle_describe(settings, clicks_value, state):
+    """Let the AI describe it: returns (text box value, message). The draft is never sent; a failed
+    call leaves the box as it was."""
+    state = state or {}
+    if not clicks_value or not state.get("refine"):
+        raise PreventUpdate
+    try:
+        with ai_turn(state.get("request_id")):
+            draft = describe_for_box(
+                settings, state.get("request_id"), state.get("refine_revision", 0)
+            )
+    except SHOWN_ERRORS as error:
+        return no_update, str(error)
+    return draft, ""
+
+
 def register_da_refine_callbacks(app, current_settings) -> None:
     """Attach the Refine clicks. `current_settings` is called at click time (tests replace it)."""
+
+    def on_describe(clicks, state):
+        if not ctx.triggered or not ctx.triggered[0]["value"]:
+            raise PreventUpdate
+        return handle_describe(current_settings(), True, state)
+
+    app.callback(
+        Output(TEXT_ID, "value", allow_duplicate=True),
+        Output(MESSAGE_ID, "children", allow_duplicate=True),
+        Input({"type": DESCRIBE_TYPE, "index": ALL}, "n_clicks"),
+        State(STATE_ID, "data"),
+        running=BUSY,
+        prevent_initial_call=True,
+    )(on_describe)
 
     def on_refine_button(clicks, state, refresh):
         trigger = ctx.triggered_id

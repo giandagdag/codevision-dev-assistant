@@ -111,7 +111,12 @@ def test_choosing_a_lane_moves_the_status_and_saves_a_refine_row(settings, writt
     assert (row.refine_number, row.suggested_lane, row.chosen_lane) == (1, "requirement", "bug")
     assert row.from_status == STATUS_READY_FOR_REVIEW and row.feedback == "Reject big files"
     details = events_of(settings, request_id, "refine_started")[0].details
-    assert details == {"refine": 1, "suggested": "requirement", "chosen": "bug"}
+    assert details == {
+        "refine": 1,
+        "suggested": "requirement",
+        "chosen": "bug",
+        "chosen_words": lanes.LANE_LABELS["bug"],
+    }
 
 
 def test_a_lane_needs_a_suggestion_step_first(settings, written):

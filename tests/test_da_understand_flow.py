@@ -10,6 +10,7 @@ from agents.da_understand_flow import (
     CUSTOM_TOO_LONG,
     DECISION_NOT_APPLIED,
     HELP_OPTION,
+    NO_NEGATIVE_OPTION,
     PROCEED_OPTION,
     SENIOR_MESSAGE,
     choose_option,
@@ -17,6 +18,7 @@ from agents.da_understand_flow import (
     create_understand_request,
     get_understand_view,
     list_my_requests,
+    set_no_negative_reason,
     skip_optional,
     submit_answer,
 )
@@ -687,6 +689,27 @@ def test_gate_failure_lists_every_missing_item(settings):
     assert message.startswith("Before you can confirm, these items need attention:")
     for missing in ("Title is empty.", "Outputs is empty.", "At least 1 negative scenario"):
         assert missing in message
+
+
+def test_no_negative_scenario_option_saves_the_reason_and_audits_it(settings):
+    view = start(settings, client=StubClient(stub_reply()))
+    for _ in range(4):
+        view = answer(settings, view, client=StubClient(stub_reply()))
+    view = skip_optional(settings, rid(view), view.revision)
+    assert view.choices == [NO_NEGATIVE_OPTION]
+    assert "This change has no inputs" in last_message(view)
+
+    with pytest.raises(UnderstandError, match="one-line reason"):
+        set_no_negative_reason(settings, rid(view), "  ", view.revision)
+    with pytest.raises(UnderstandError, match="one-line reason"):
+        set_no_negative_reason(settings, rid(view), "x" * 201, view.revision)
+
+    view = set_no_negative_reason(settings, rid(view), "It only reads a list", view.revision)
+
+    assert view.record.no_negative_reason == "It only reads a list"
+    assert "At least 1 negative scenario" not in last_message(view)
+    assert view.choices == []
+    assert "no_negative_reason_set" in event_types(settings, view)
 
 
 def test_scope_conflict_becomes_an_open_item(settings):

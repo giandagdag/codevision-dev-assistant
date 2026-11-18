@@ -31,9 +31,11 @@ from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import get_help, out_of_scope_understand
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_understand_agent import InterpretResult, get_understand_client, interpret
+from agents.da_understand_assume import ASSUME_BASIS, AssumeError, ask_assumptions, criteria_for
 from agents.da_understand_checks import (
     confirmation_gate_problems,
     developer_message_problem,
+    is_never_assumed,
     refresh_scope_conflicts,
 )
 from configs.da_config import ConfigError, Settings
@@ -78,6 +80,8 @@ from pydantic_classes.da_models import (
 from pydantic_classes.da_request_record_models import (
     QUESTION_COUNT,
     TEXT_LIMIT,
+    AssumedCase,
+    Assumption,
     Decision,
     InputMode,
     MustNotChange,
@@ -92,6 +96,7 @@ from pydantic_classes.da_rulebook_models import DEFAULT_MAX_MATERIAL_DECISIONS
 logger = get_logger(__name__)
 
 NEW_REQUEST_TITLE = "New change request"
+DECISION_BATCH_SIZE = 3  # B2 S7: open decisions are listed up to 3 per message
 
 # The fixed question wording is app text; the interpreter only adds a hint (spec 3.2).
 QUESTIONS: dict[int, str] = {
@@ -152,6 +157,28 @@ SENIOR_PREFIX = "Needs a senior decision: "
 CHECKPOINT_HELP_ITEM = HELP_PREFIX + "confirmation"
 
 SENIOR_MESSAGE = "This change has many open decisions. Please get help from a senior."
+# B2 S7c: the two buttons at the decision limit. (The checkpoint has its own "Proceed".)
+NO_NEGATIVE_OPTION = "No negative scenario applies"  # B2 S8
+EDIT_ASSUMPTION_PREFIX = "Edit assumption "  # B2 P34, then the number
+EDIT_ASSUMPTION_NEEDS_TEXT = (
+    "Type the new sentence in the box (one line, up to 300 characters), "
+    "then press the Edit assumption button."
+)
+NO_NEGATIVE_LIMIT = 200
+NO_NEGATIVE_NEEDS_REASON = (
+    f"Type a one-line reason in the box (up to {NO_NEGATIVE_LIMIT} characters), "
+    f"then press {NO_NEGATIVE_OPTION}."
+)
+NO_NEGATIVE_SUGGEST = (
+    f"This change has no inputs, so a failure case may not apply. You can type why and press "
+    f"{NO_NEGATIVE_OPTION}."
+)
+ASSUME_OPTION = "Proceed with these assumptions"
+SEND_SENIOR_OPTION = "Send to my senior"
+SENIOR_ONLY_MESSAGE = (
+    "Some open decisions touch security, money or customer data. These are never assumed: "
+    f"please choose {SEND_SENIOR_OPTION}."
+)
 OPTIONAL_MESSAGE = (
     f"{OPTIONAL_QUESTION}\nIf there is an existing feature to use as a reference, or something "
     "that must not change, tell me. Not sure? Press Skip."
@@ -506,9 +533,13 @@ def choose_option(
     session = _load_session(settings.db_path, request_id, base_revision)
     if session.step == "decision":
         return _decide(settings, request_id, option, False, base_revision, now, client)
+    if session.step == "senior" and option == ASSUME_OPTION:
+        return _assume(settings, session, base_revision, now, client)
     with _turn(settings.db_path, request_id, base_revision, now) as turn:
         if turn.session.step == "checkpoint":
             _choose_checkpoint(turn, option)
+        elif turn.session.step == "senior":
+            _choose_at_limit(turn, option)
         else:
             raise UnderstandError(_wrong_step_message(turn.session))
     return get_understand_view(settings, request_id)
@@ -672,7 +703,7 @@ def _queue_material_decisions(
     session: UnderstandSession, record: RequestRecord, result: InterpretResult, limit: int
 ) -> RequestRecord:
     """Queue material ambiguities to ask one at a time (rule R3). After `limit` on one request
-    (the rulebook policy, default 5), the rest become open items and a senior is needed (3.5)."""
+    (the rulebook policy, default 8), the rest become open items and a senior is needed (3.5)."""
     already = {decision.question for decision in record.decisions}
     already |= {pending.question for pending in session.pending_decisions}
     open_items = list(record.open_items)
@@ -687,6 +718,9 @@ def _queue_material_decisions(
             session.material_decisions_asked += 1
         else:
             open_items.append(SENIOR_PREFIX + ambiguity.text)
+            session.aside_decisions.append(
+                PendingDecision(question=ambiguity.text, options=ambiguity.options)
+            )
             session.needs_senior = True
     return record.model_copy(update={"open_items": open_items})
 
@@ -742,11 +776,22 @@ def _ask_decision(turn: _Turn) -> None:
     pending = session.pending_decisions[0]
     session.step = "decision"
     turn.move_to(STATUS_DECISION_REQUIRED)
-    turn.audit("system", "decision_asked", {"question": pending.question})
+    if session.decisions_announced > 0:
+        # B2 S7: the batch was already listed; only name the one he answers now.
+        turn.say("assistant", f"Next decision: {pending.question}")
+        return
+    batch = session.pending_decisions[:DECISION_BATCH_SIZE]
+    session.decisions_announced = len(batch)
+    for item in batch:
+        turn.audit("system", "decision_asked", {"question": item.question})
+    if len(batch) == 1:
+        text = f"One decision needed: {pending.question}\n"
+    else:
+        listed = "\n".join(f"{number}. {item.question}" for number, item in enumerate(batch, 1))
+        text = f"{len(batch)} decisions needed. I will ask them one at a time:\n{listed}\n"
     turn.say(
         "assistant",
-        f"One decision needed: {pending.question}\n"
-        "This changes what gets built, so I won't assume it. Please choose below.",
+        text + "This changes what gets built, so I won't assume it. Please choose below.",
     )
 
 
@@ -763,9 +808,10 @@ def _run_gate(turn: _Turn, announce: bool = True) -> bool:
         session.step = "correction"
         turn.move_to(STATUS_CLARIFICATION)
         listed = "\n".join(f"- {problem}" for problem in problems)
+        suggest = f"\n{NO_NEGATIVE_SUGGEST}" if _no_negative_offered(session.record, True) else ""
         turn.say(
             "assistant",
-            f"Before you can confirm, these items need attention:\n{listed}\n"
+            f"Before you can confirm, these items need attention:\n{listed}{suggest}\n"
             f"{CORRECTION_QUESTION}",
         )
         return False
@@ -882,6 +928,7 @@ def _record_decision(turn: _Turn, choice: str, custom: bool) -> bool:
         old.model_dump() | {"decisions": [*old.decisions, decision], "open_items": open_items}
     )
     session.pending_decisions.pop(0)
+    session.decisions_announced = max(0, session.decisions_announced - 1)
     session.last_changed_fields = _changed_fields(old, session.record)
     turn.audit(
         "developer",
@@ -935,6 +982,80 @@ def _choose_checkpoint(turn: _Turn, option: str) -> None:
         _confirm(turn)
 
 
+def _senior_items(session: UnderstandSession) -> list[str]:
+    return [i for i in session.record.open_items if i.startswith(SENIOR_PREFIX)]
+
+
+def _assumable(items: list[str]) -> list[str]:
+    """The open decisions the app may assume: none that touch the never-assume list (B2 S7e)."""
+    return [i for i in items if not is_never_assumed(i)]
+
+
+def _choose_at_limit(turn: _Turn, option: str) -> None:
+    """At the decision limit: assume the safe open decisions, or send the request to a senior."""
+    session = turn.session
+    if option not in _limit_choices(session):
+        raise UnderstandError(_not_a_choice_message(option, _limit_choices(session)))
+    turn.say("developer", option)
+    _help_to_senior(turn, "senior")
+
+
+def _assume(
+    settings: Settings,
+    session: UnderstandSession,
+    base_revision: int,
+    now: datetime,
+    client: LLMClient | None,
+) -> UnderstandView:
+    """Proceed with these assumptions: one AI call (no lock held) writes an assumption for each
+    open decision that may be assumed. A failed call changes nothing."""
+    if ASSUME_OPTION not in _limit_choices(session):
+        raise UnderstandError(_not_a_choice_message(ASSUME_OPTION, _limit_choices(session)))
+    items = _assumable(_senior_items(session))
+    questions = [item.removeprefix(SENIOR_PREFIX) for item in items]
+    try:
+        client = client or get_understand_client(settings, "assumptions")
+        cases = ask_assumptions(client, questions, session.record)
+    except (ConfigError, AssumeError) as error:
+        raise UnderstandError(str(error)) from error
+    request_id = session.request_id
+    with _turn(settings.db_path, request_id, base_revision, now) as turn:
+        turn.say("developer", ASSUME_OPTION)
+        _apply_assumptions(turn, items, cases)
+    return get_understand_view(settings, request_id)
+
+
+def _apply_assumptions(turn: _Turn, items: list[str], cases: list[AssumedCase]) -> None:
+    session = turn.session
+    record = session.record
+    added = [Assumption(text=case.text, basis=ASSUME_BASIS) for case in cases]
+    session.record = record.model_copy(
+        update={
+            "assumptions": [*record.assumptions, *added],
+            "open_items": [i for i in record.open_items if i not in items],
+        }
+    )
+    session.assumed_cases = [*session.assumed_cases, *cases]
+    session.aside_decisions = [
+        d for d in session.aside_decisions if SENIOR_PREFIX + d.question not in items
+    ]
+    session.last_changed_fields = ["assumptions", "open_items"]
+    for assumption in added:
+        turn.audit("system", "assumption_added", assumption.model_dump())
+    turn.audit("developer", "assumptions_proceeded", {"decisions": len(items)})
+    if _senior_items(session):  # a never-assume decision is left: the gate keeps blocking
+        turn.say("assistant", SENIOR_ONLY_MESSAGE)
+        return
+    session.needs_senior = False
+    _advance(turn)
+
+
+def _limit_choices(session: UnderstandSession) -> list[str]:
+    if _assumable(_senior_items(session)):
+        return [ASSUME_OPTION, SEND_SENIOR_OPTION]
+    return [SEND_SENIOR_OPTION]
+
+
 def _help_to_senior(turn: _Turn, step: str) -> None:
     """Escalation trigger 5 at the Understand Help choices (spec section 7). With the switch on,
     a row opens and the request moves to ESCALATION_REQUIRED, open item `Escalated in Understand:
@@ -981,6 +1102,13 @@ def _start_correction(turn: _Turn) -> None:
 def _confirm(turn: _Turn) -> None:
     """Save record v1 and move to CONFIRMED_FOR_DISCOVERY, in the action's one transaction."""
     session = turn.session
+    # B2 S7d: the Proceed assumptions that are still on the record become success criteria now.
+    extra = criteria_for(session.record, session.assumed_cases)
+    if extra:
+        criteria = [*session.record.acceptance_criteria, *extra]
+        session.record = session.record.model_copy(update={"acceptance_criteria": criteria})
+        turn.audit("system", "assumption_criteria_added", {"ids": [c.id for c in extra]})
+    session.assumed_cases = []
     record = session.record
     insert_confirmed_record(turn.conn, record, turn.request.developer_id, turn.now)
     turn.move_to(STATUS_CONFIRMED)
@@ -1061,7 +1189,7 @@ def _turn(db_path: Path, request_id: str, base_revision: int, now: datetime) -> 
             session=session,
             now=now,
             visible_before=visible_fields(session),
-            max_decisions=max_decisions,
+            max_decisions=max_decisions + session.extra_decision_rounds,
         )
         yield turn
         _highlight_revealed(turn)
@@ -1069,7 +1197,7 @@ def _turn(db_path: Path, request_id: str, base_revision: int, now: datetime) -> 
 
 
 def _decision_limit(db_path: Path, request_id: str) -> int:
-    """How many AI clarifying questions the request's pinned rulebook allows (default 5)."""
+    """How many AI clarifying questions the request's pinned rulebook allows (default 8)."""
     try:
         policy = get_rulebook_for_request(db_path, request_id).rulebook.policy
     except RulebookError:
@@ -1169,11 +1297,103 @@ def _prompt_for(session: UnderstandSession) -> str:
     return ""
 
 
+def _no_negative_offered(record: RequestRecord, only_no_inputs: bool = False) -> bool:
+    """True while the gate misses a negative scenario and no reason was given (B2 S8)."""
+    if record.no_negative_reason.strip():
+        return False
+    if any(c.kind == "failure" for c in record.acceptance_criteria):
+        return False
+    return not (only_no_inputs and record.inputs.strip())
+
+
+def set_no_negative_reason(
+    settings: Settings,
+    request_id: str,
+    reason: str,
+    base_revision: int,
+    now: datetime | None = None,
+) -> UnderstandView:
+    """The developer says why no negative scenario applies; the gate runs again."""
+    now = now or datetime.now(UTC)
+    with _turn(settings.db_path, request_id, base_revision, now) as turn:
+        session = turn.session
+        if session.step != "correction" or not _no_negative_offered(session.record):
+            raise UnderstandError(_wrong_step_message(session))
+        text = (reason or "").strip()
+        if not text:
+            raise UnderstandError(NO_NEGATIVE_NEEDS_REASON)
+        text = _accept_developer_text(text)
+        if len(text) > NO_NEGATIVE_LIMIT:
+            raise UnderstandError(NO_NEGATIVE_NEEDS_REASON)
+        turn.say("developer", f"{NO_NEGATIVE_OPTION}: {text}")
+        session.record = session.record.model_copy(update={"no_negative_reason": text})
+        session.last_changed_fields = ["no_negative_reason"]
+        turn.audit("developer", "no_negative_reason_set", {"reason": text})
+        _run_gate(turn)
+    return get_understand_view(settings, request_id)
+
+
+def _proceed_assumption_slots(session: UnderstandSession) -> list[int]:
+    """Positions in `record.assumptions` of the Proceed assumptions. They sit in the same order as
+    `assumed_cases`, so slot n of one is slot n of the other (P34)."""
+    marked = [i for i, a in enumerate(session.record.assumptions) if a.basis == ASSUME_BASIS]
+    return marked if len(marked) == len(session.assumed_cases) else []
+
+
+def edit_assumption(
+    settings: Settings,
+    request_id: str,
+    option: str,
+    text: str,
+    base_revision: int,
+    now: datetime | None = None,
+) -> UnderstandView:
+    """B2 P34: at the checkpoint the developer rewrites one Proceed assumption (the box holds the
+    new sentence). The matching test case follows: its "then" becomes the new sentence."""
+    now = now or datetime.now(UTC)
+    with _turn(settings.db_path, request_id, base_revision, now) as turn:
+        session = turn.session
+        slots = _proceed_assumption_slots(session)
+        if session.step != "checkpoint" or not option.startswith(EDIT_ASSUMPTION_PREFIX):
+            raise UnderstandError(_wrong_step_message(session))
+        number = option.removeprefix(EDIT_ASSUMPTION_PREFIX)
+        if not number.isdigit() or not 1 <= int(number) <= len(slots):
+            raise UnderstandError(_not_a_choice_message(option, _choices_for(session)))
+        if not (text or "").strip():
+            raise UnderstandError(EDIT_ASSUMPTION_NEEDS_TEXT)
+        new_text = _accept_developer_text(text)
+        n = int(number) - 1
+        try:
+            case = session.assumed_cases[n].model_copy(update={"text": new_text, "then": new_text})
+            assumption = session.record.assumptions[slots[n]].model_copy(update={"text": new_text})
+            AssumedCase.model_validate(case.model_dump())
+            Assumption.model_validate(assumption.model_dump())
+        except ValidationError as error:
+            raise UnderstandError(EDIT_ASSUMPTION_NEEDS_TEXT) from error
+        old = session.record.assumptions[slots[n]].text
+        assumptions = list(session.record.assumptions)
+        assumptions[slots[n]] = assumption
+        session.record = session.record.model_copy(update={"assumptions": assumptions})
+        session.assumed_cases = [*session.assumed_cases[:n], case, *session.assumed_cases[n + 1 :]]
+        session.last_changed_fields = ["assumptions"]
+        turn.say("developer", f"{option}: {new_text}")
+        turn.audit("developer", "assumption_edited", {"from": old, "to": new_text})
+    return get_understand_view(settings, request_id)
+
+
 def _choices_for(session: UnderstandSession) -> list[str]:
+    if session.step == "correction" and _no_negative_offered(session.record):
+        return [NO_NEGATIVE_OPTION]
     if session.step == "decision":
         return _decision_choices(session.pending_decisions[0])
     if session.step == "checkpoint":
-        return list(CHECKPOINT_OPTIONS)
+        edits = [
+            f"{EDIT_ASSUMPTION_PREFIX}{n}"
+            for n in range(1, len(_proceed_assumption_slots(session)) + 1)
+        ]
+        return [*CHECKPOINT_OPTIONS, *edits]
+    if session.step == "senior":
+        return _limit_choices(session)
     return []
 
 

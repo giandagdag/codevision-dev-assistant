@@ -30,6 +30,7 @@ from agents.da_inbox import (
 from agents.da_refine_actions import get_refine_bar
 from agents.da_refine_screen import get_history, get_refine_build_panel, get_tagged_build
 from agents.da_senior_access import NOT_SENIOR_MESSAGE, is_senior
+from agents.da_senior_reopen import reopen_decisions
 from agents.da_understand_flow import get_understand_view
 from configs.da_config import Settings, load_settings
 from db_table_functions.da_db import DatabaseBusyError
@@ -58,6 +59,7 @@ from layouts.da_inbox_page import (
     INBOX_OUTCOME_ID,
     INBOX_PATH,
     INBOX_REFRESH_ID,
+    INBOX_ROUNDS_ID,
     INBOX_SHELL_ID,
     INBOX_SUBMIT_ID,
     INBOX_TARGET_ID,
@@ -69,6 +71,7 @@ from layouts.da_inbox_page import (
     MODE_TAKE_OVER,
     MODE_TITLES,
     OUTCOME_ABANDON,
+    OUTCOME_MORE,
     READ_ONLY_LINE,
     action_bar,
     inbox_list,
@@ -210,7 +213,7 @@ def _draw(settings: Settings, request_id: str) -> list:
 
 def run_senior_action(
     settings: Settings, mode: str, target: dict | None, user: str, text: str | None = None,
-    finding: str | None = None, outcome: str | None = None,
+    finding: str | None = None, outcome: str | None = None, rounds: str | int | None = None,
 ) -> str:  # fmt: skip
     """Do one action and return the green line. Raises SeniorActionError (or the stale error)
     with words the senior can read."""
@@ -233,6 +236,9 @@ def run_senior_action(
         return f"You have taken over {request_id}"
     if mode == MODE_CLOSE:
         chosen = outcome or "returned"
+        if chosen == OUTCOME_MORE:
+            reopen_decisions(settings, escalation_id, revision, user, int(rounds or 0), text or "")
+            return f"Returned to the developer with {rounds} more decision rounds: {request_id}"
         senior.close_escalation(settings, escalation_id, revision, user, chosen, text or "")
         done = "Closed" if chosen == OUTCOME_ABANDON else "Returned to the developer:"
         return f"{done} {request_id}"
@@ -313,6 +319,7 @@ def _register_actions(app, who) -> None:
         Output(INBOX_NOTICE_ID, "children", allow_duplicate=True),
         Output(INBOX_NOTICE_ID, "c", allow_duplicate=True),
         Output(INBOX_REFRESH_ID, "data", allow_duplicate=True),
+        Output(INBOX_ROUNDS_ID, "style"),
         Input({"type": INBOX_ACT_TYPE, "action": ALL}, "n_clicks"),
         State(INBOX_TARGET_ID, "data"),
         State(INBOX_REFRESH_ID, "data"),
@@ -329,14 +336,15 @@ def _register_actions(app, who) -> None:
                 line = run_senior_action(get_inbox_settings(), mode, target, who(search))
             except SHOWN_ERRORS as error:
                 return (no_update, no_update, no_update, no_update, no_update, no_update,
-                        no_update, str(error), "red", (refresh or 0) + 1)  # fmt: skip
+                        no_update, str(error), "red", (refresh or 0) + 1, no_update)  # fmt: skip
             return (no_update, no_update, no_update, no_update, no_update, no_update,
-                    no_update, line, "green", (refresh or 0) + 1)  # fmt: skip
+                    no_update, line, "green", (refresh or 0) + 1, no_update)  # fmt: skip
         return (
             True, MODE_TITLES[mode], mode,
             {} if mode == MODE_OVERRULE else HIDDEN,
             {} if mode == MODE_CLOSE else HIDDEN,
             "", "", no_update, no_update, no_update,
+            {} if mode == MODE_CLOSE else HIDDEN,
         )  # fmt: skip
 
     @app.callback(
@@ -351,19 +359,20 @@ def _register_actions(app, who) -> None:
         State(INBOX_TEXT_ID, "value"),
         State(INBOX_FINDING_ID, "value"),
         State(INBOX_OUTCOME_ID, "value"),
+        State(INBOX_ROUNDS_ID, "value"),
         State(INBOX_TARGET_ID, "data"),
         State(INBOX_REFRESH_ID, "data"),
         State(LOCATION_ID, "search"),
         prevent_initial_call=True,
     )
-    def on_submit(submit, cancel, mode, text, finding, outcome, target, refresh, search):
+    def on_submit(submit, cancel, mode, text, finding, outcome, rounds, target, refresh, search):
         if ctx.triggered_id == INBOX_CANCEL_ID:
             return False, "", no_update, no_update, no_update
         if not submit:
             raise PreventUpdate
         try:
             line = run_senior_action(
-                get_inbox_settings(), mode, target, who(search), text, finding, outcome
+                get_inbox_settings(), mode, target, who(search), text, finding, outcome, rounds
             )
         except SHOWN_ERRORS as error:
             return no_update, str(error), no_update, no_update, no_update  # dialog stays open

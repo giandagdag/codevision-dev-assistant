@@ -18,7 +18,8 @@ CARD = {"border": f"1px solid {LINE}", "background": "white"}
 # The whole workspace: chat on the left, panel on the right.
 WORKSPACE_GRID = {
     "display": "grid",
-    "gridTemplateColumns": "1fr 1fr",
+    # B2 S9: on a wide screen the extra width goes to the right panel; the chat stays readable.
+    "gridTemplateColumns": "minmax(380px, 1fr) minmax(0, 1.5fr)",
     "gap": "16px",
     "height": "calc(100vh - 230px)",
     "minHeight": "460px",
@@ -35,7 +36,7 @@ CHAT_SCROLL = {
 }
 CHAT_MESSAGES = {"display": "flex", "flexDirection": "column", "gap": "12px", "padding": "16px"}
 
-BUBBLE_BASE = {"maxWidth": "88%", "whiteSpace": "pre-wrap", "wordBreak": "break-word"}
+BUBBLE_BASE = {"maxWidth": "min(88%, 80ch)", "whiteSpace": "pre-wrap", "wordBreak": "break-word"}
 BUBBLE = {
     "developer": {**BUBBLE_BASE, "alignSelf": "flex-end", "background": BLUE, "color": "white"},
     "assistant": {**BUBBLE_BASE, "alignSelf": "flex-start", "background": CANVAS, "color": INK},
@@ -75,4 +76,5 @@ STEP_CURRENT = {"background": BLUE_LIGHT, "color": BLUE, "fontWeight": 600}
 STEP_OTHER = {"color": MUTED}
 STEP_PILL = {"display": "flex", "gap": "8px", "alignItems": "center", "borderRadius": "999px"}
 
-PAGE = {"maxWidth": "1400px", "margin": "0 auto", "padding": "20px 28px"}
+# B2 S9: no fixed cap, the page uses the whole window width.
+PAGE = {"width": "100%", "padding": "20px 28px"}

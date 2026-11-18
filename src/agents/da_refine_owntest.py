@@ -167,7 +167,7 @@ def confirm_own_test(
             "own_test_added",
             {"case": state.repro.case_id, "tag": "yours", "test_set": version},
         )
-        tx.say("assistant", f"The test is saved as test set version {version}. I will run it now.")
+        tx.say("assistant", f"The test is saved as test set version {version}.")
         tx.set(step=STEP_START, repro=None)
         return _save(tx, base_revision)
 
