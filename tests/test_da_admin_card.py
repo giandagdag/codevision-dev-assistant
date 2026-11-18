@@ -8,7 +8,7 @@ from layouts.da_admin_page import _tab_body
 from styles import da_admin_styles as s
 
 # Tabs not moved onto cards yet; steps 7 and 8 empty this set, then the xfail goes.
-PENDING = {"capability", "ui", "coding"}  # step 8b moves these
+PENDING: set[str] = set()  # every tab is on cards now (steps 7, 8a, 8b)
 
 
 def _text(node) -> str:
@@ -58,7 +58,19 @@ def test_every_top_level_section_is_a_card(published_rulebook, tab, label, _):
     kids = inner.children if isinstance(inner.children, list) else [inner.children]
     # the Edit button holder (a right float) and the version Store are not sections
     kids = [k for k in kids if type(k).__name__ != "Store" and not _is_edit_holder(k)]
-    assert all(is_card(k) or is_card_row(k) for k in kids)
+    assert all(_is_section(k) for k in kids)
+
+
+def _is_section(node) -> bool:
+    """A card, a card grid, or a card stack / the rule-panel wrapper holding only those."""
+    if is_card(node) or is_card_row(node):
+        return True
+    style = getattr(node, "style", None)
+    wrapper = getattr(node, "id", None) == "adm-rule-panel"
+    if style == s.CARD_STACK or wrapper:
+        kids = node.children if isinstance(node.children, list) else [node.children]
+        return all(_is_section(k) for k in kids)
+    return False
 
 
 def _is_edit_holder(node) -> bool:
