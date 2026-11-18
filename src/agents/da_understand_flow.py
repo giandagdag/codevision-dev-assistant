@@ -158,6 +158,16 @@ CHECKPOINT_HELP_ITEM = HELP_PREFIX + "confirmation"
 
 SENIOR_MESSAGE = "This change has many open decisions. Please get help from a senior."
 # B2 S7c: the two buttons at the decision limit. (The checkpoint has its own "Proceed".)
+NO_NEGATIVE_OPTION = "No negative scenario applies"  # B2 S8
+NO_NEGATIVE_LIMIT = 200
+NO_NEGATIVE_NEEDS_REASON = (
+    f"Type a one-line reason in the box (up to {NO_NEGATIVE_LIMIT} characters), "
+    f"then press {NO_NEGATIVE_OPTION}."
+)
+NO_NEGATIVE_SUGGEST = (
+    f"This change has no inputs, so a failure case may not apply. You can type why and press "
+    f"{NO_NEGATIVE_OPTION}."
+)
 ASSUME_OPTION = "Proceed with these assumptions"
 SEND_SENIOR_OPTION = "Send to my senior"
 SENIOR_ONLY_MESSAGE = (
@@ -793,9 +803,10 @@ def _run_gate(turn: _Turn, announce: bool = True) -> bool:
         session.step = "correction"
         turn.move_to(STATUS_CLARIFICATION)
         listed = "\n".join(f"- {problem}" for problem in problems)
+        suggest = f"\n{NO_NEGATIVE_SUGGEST}" if _no_negative_offered(session.record, True) else ""
         turn.say(
             "assistant",
-            f"Before you can confirm, these items need attention:\n{listed}\n"
+            f"Before you can confirm, these items need attention:\n{listed}{suggest}\n"
             f"{CORRECTION_QUESTION}",
         )
         return False
@@ -1281,7 +1292,45 @@ def _prompt_for(session: UnderstandSession) -> str:
     return ""
 
 
+def _no_negative_offered(record: RequestRecord, only_no_inputs: bool = False) -> bool:
+    """True while the gate misses a negative scenario and no reason was given (B2 S8)."""
+    if record.no_negative_reason.strip():
+        return False
+    if any(c.kind == "failure" for c in record.acceptance_criteria):
+        return False
+    return not (only_no_inputs and record.inputs.strip())
+
+
+def set_no_negative_reason(
+    settings: Settings,
+    request_id: str,
+    reason: str,
+    base_revision: int,
+    now: datetime | None = None,
+) -> UnderstandView:
+    """The developer says why no negative scenario applies; the gate runs again."""
+    now = now or datetime.now(UTC)
+    with _turn(settings.db_path, request_id, base_revision, now) as turn:
+        session = turn.session
+        if session.step != "correction" or not _no_negative_offered(session.record):
+            raise UnderstandError(_wrong_step_message(session))
+        text = (reason or "").strip()
+        if not text:
+            raise UnderstandError(NO_NEGATIVE_NEEDS_REASON)
+        text = _accept_developer_text(text)
+        if len(text) > NO_NEGATIVE_LIMIT:
+            raise UnderstandError(NO_NEGATIVE_NEEDS_REASON)
+        turn.say("developer", f"{NO_NEGATIVE_OPTION}: {text}")
+        session.record = session.record.model_copy(update={"no_negative_reason": text})
+        session.last_changed_fields = ["no_negative_reason"]
+        turn.audit("developer", "no_negative_reason_set", {"reason": text})
+        _run_gate(turn)
+    return get_understand_view(settings, request_id)
+
+
 def _choices_for(session: UnderstandSession) -> list[str]:
+    if session.step == "correction" and _no_negative_offered(session.record):
+        return [NO_NEGATIVE_OPTION]
     if session.step == "decision":
         return _decision_choices(session.pending_decisions[0])
     if session.step == "checkpoint":

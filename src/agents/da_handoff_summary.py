@@ -30,6 +30,8 @@ def _join(facts: SummaryFacts, per_criterion: bool) -> str:
     if facts.follows_request_id:
         lines.append(f"Follows: {facts.follows_request_id}")
     lines += _criteria(facts, per_criterion)
+    if facts.no_negative_reason:
+        lines.append(f"No negative scenario: {facts.no_negative_reason}")
     lines.append(_tester(facts))
     lines += _files(facts)
     lines += _list("Reuses", facts.reuses)

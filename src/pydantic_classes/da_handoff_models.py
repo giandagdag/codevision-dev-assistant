@@ -87,6 +87,7 @@ class SummaryFacts(_Shape):
     reuses: list[str] = Field(default_factory=list)
     decisions: list[str] = Field(default_factory=list)
     accepted_risks: list[str] = Field(default_factory=list)
+    no_negative_reason: str = ""  # B2 S8: shown in the summary only when set
     zones: list[str] = Field(default_factory=list)
     gaps: list[str] = Field(default_factory=list)
     impact_unchecked: bool = False

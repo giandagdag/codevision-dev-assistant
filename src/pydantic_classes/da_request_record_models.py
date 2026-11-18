@@ -153,6 +153,8 @@ class RequestRecord(_Shape):
     assumptions: Annotated[list[Assumption], Field(max_length=LIST_LENGTH_LIMIT)] = Field(
         default_factory=list
     )
+    # B2 S8: why no negative scenario applies (only the developer sets it, never the interpreter).
+    no_negative_reason: str = Field(default="", max_length=200)
     # Filled by the app only, so no length limits that could block the app's own work.
     open_items: list[str] = Field(default_factory=list)
     answered_questions: list[Annotated[int, Field(ge=1, le=QUESTION_COUNT)]] = Field(

@@ -196,7 +196,7 @@ def confirmation_gate_problems(record: RequestRecord, waiting_decisions: int) ->
     kinds = {criterion.kind for criterion in record.acceptance_criteria}
     if "success" not in kinds:
         problems.append("At least 1 success criterion is needed.")
-    if "failure" not in kinds:
+    if "failure" not in kinds and not record.no_negative_reason.strip():
         problems.append("At least 1 negative scenario is needed.")
     problems += [f"Open item: {item}" for item in record.open_items]
     if waiting_decisions:
