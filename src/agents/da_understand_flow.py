@@ -161,7 +161,8 @@ SENIOR_MESSAGE = "This change has many open decisions. Please get help from a se
 NO_NEGATIVE_OPTION = "No negative scenario applies"  # B2 S8
 EDIT_ASSUMPTION_PREFIX = "Edit assumption "  # B2 P34, then the number
 EDIT_ASSUMPTION_NEEDS_TEXT = (
-    "Type the new sentence in the box (one short line), then press the Edit assumption button."
+    "Type the new sentence in the box (one line, up to 300 characters), "
+    "then press the Edit assumption button."
 )
 NO_NEGATIVE_LIMIT = 200
 NO_NEGATIVE_NEEDS_REASON = (

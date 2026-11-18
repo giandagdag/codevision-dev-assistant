@@ -23,6 +23,7 @@ from agents.da_refine_describe import DESCRIBE_KEY, DESCRIBE_LABEL
 from agents.da_refine_hooks import STEP_REQ_APPROACH, STEP_REQ_FINDINGS
 from agents.da_refine_lanes import STEP_APPROACH, STEP_BUG, STEP_REQ_CHECKPOINT
 from agents.da_refine_screen import RefineBox, RefineBuildPanel, VersionHistory
+from agents.da_understand_assume import ASSUME_BASIS
 from agents.da_understand_checks import MAX_MESSAGE_LENGTH
 from agents.da_understand_flow import (
     ALWAYS_VISIBLE,
@@ -1377,6 +1378,18 @@ def _choices_bar(choices: list[str]) -> dmc.Box:
 # --- The Summary tab ---
 
 
+def _assumption_lines(record) -> list[str]:
+    """Proceed assumptions carry the number of their "Edit assumption N" button (P34)."""
+    lines, number = [], 0
+    for a in record.assumptions:
+        if a.basis == ASSUME_BASIS:
+            number += 1
+            lines.append(f"Assumption {number}: {a.text} (basis: {a.basis})")
+        else:
+            lines.append(f"{a.text} (basis: {a.basis})")
+    return lines
+
+
 def _summary_panel(view: UnderstandView | None) -> list:
     """The live summary. Fields changed by the last answer are highlighted. A field the screen
     does not show yet says "Waiting for your answer" (W5); the record already holds its value."""
@@ -1396,11 +1409,7 @@ def _summary_panel(view: UnderstandView | None) -> list:
     def empty(name: str, text: str) -> str:
         return text if name in shown else EMPTY_TEXT
 
-    assumptions = (
-        [f"{a.text} (basis: {a.basis})" for a in record.assumptions]
-        if record and "assumptions" in shown
-        else []
-    )
+    assumptions = _assumption_lines(record) if record and "assumptions" in shown else []
     criteria = list(record.acceptance_criteria) if record and "acceptance_criteria" in shown else []
     follows = view.request.follows_request_id if view else None
     return [

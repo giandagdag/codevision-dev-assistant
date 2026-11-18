@@ -6,8 +6,11 @@ import pytest
 
 from agents.da_understand_assume import ASSUME_BASIS
 from agents.da_understand_flow import (
+    ASSUME_OPTION,
     EDIT_ASSUMPTION_PREFIX,
     PROCEED_OPTION,
+    _proceed_assumption_slots,
+    choose_option,
     edit_assumption,
     get_understand_view,
 )
@@ -19,10 +22,14 @@ from db_table_functions.db_tbl_da_understand import (
     get_session,
     save_session,
 )
-from pydantic_classes.da_request_record_models import AssumedCase, Assumption
-from tests.test_da_understand_flow import choose, to_checkpoint
+from layouts.da_developer_assistant_page import _assumption_lines
+from pydantic_classes.da_request_record_models import AssumedCase, Assumption, RequestRecord
+from tests.da_stub_client import StubClient
+from tests.test_da_understand_flow import choose, limit_five, to_checkpoint
+from tests.test_da_understand_limit_buttons import CASE, at_limit
 
 pytestmark = pytest.mark.usefixtures("published_rulebook")
+limit_five = limit_five  # noqa: PLW0127  (fixture reused from the Understand flow tests)
 
 NEW = "Hidden sheets are read, hidden columns are not"
 
@@ -90,6 +97,37 @@ def test_an_empty_or_too_long_sentence_is_refused(settings):
             edit_assumption(settings, view.request.request_id, option, text, view.revision)
 
     assert get_understand_view(settings, view.request.request_id).revision == view.revision
+
+
+def test_real_proceed_keeps_assumptions_and_cases_in_step(settings, limit_five):
+    """The real Proceed (not a hand-built state) leaves one case per marked assumption, in order."""
+    view = at_limit(settings, "Should hidden sheets be read?")
+    reply = {"assumptions": [{**CASE, "text": "Hidden sheets are skipped"}]}
+
+    view = choose_option(
+        settings, view.request.request_id, ASSUME_OPTION, view.revision, client=StubClient(reply)
+    )
+
+    session = get_session(settings.db_path, view.request.request_id)
+    slots = _proceed_assumption_slots(session)
+    assert [session.record.assumptions[i].text for i in slots] == [
+        c.text for c in session.assumed_cases
+    ]
+    assert len(slots) == 1
+
+
+def test_panel_numbers_match_the_edit_buttons():
+    record = RequestRecord(
+        request_id="CVDA-2026-0001",
+        rulebook_version=1,
+        assumptions=[
+            Assumption(text="By the AI", basis="Rulebook glossary"),
+            Assumption(text="At Proceed", basis=ASSUME_BASIS),
+        ],
+    )
+
+    assert _assumption_lines(record)[1].startswith("Assumption 1: At Proceed")
+    assert not _assumption_lines(record)[0].startswith("Assumption")
 
 
 def test_no_edit_buttons_without_proceed_assumptions(settings):

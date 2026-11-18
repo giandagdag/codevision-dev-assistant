@@ -21,7 +21,7 @@ from pydantic_classes.da_rulebook_models import DEFAULT_MAX_MATERIAL_DECISIONS
 
 MIN_ROUNDS, MAX_ROUNDS = 1, 5
 NOT_AT_LIMIT_MESSAGE = "This request is not waiting at the decision limit."
-ROUNDS_MESSAGE =f"Choose {MIN_ROUNDS} to {MAX_ROUNDS} more decision rounds."
+ROUNDS_MESSAGE = f"Choose {MIN_ROUNDS} to {MAX_ROUNDS} more decision rounds."
 
 
 def reopen_decisions(
