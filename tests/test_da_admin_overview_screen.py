@@ -77,10 +77,10 @@ def test_refresh_only_when_the_overview_tab_opens(make_settings, published_ruleb
     assert "Rulebook" in all_text(html.Div(children))
 
 
-def test_overview_is_a_two_column_grid_rulebook_left_attention_right_health_below(
+def test_overview_is_a_card_grid_rulebook_and_health_left_attention_right(
     make_settings, published_rulebook
 ):
-    """Section 15 (16 Nov): Health numbers moved out of the right column to a full-width row."""
+    """Fix 3 step 8a: Rulebook, then Health numbers in the main column; Needs attention beside."""
     content = admin_content(admin_settings(make_settings), ADMIN_PATH)
 
     grid = next(
@@ -92,17 +92,15 @@ def test_overview_is_a_two_column_grid_rulebook_left_attention_right_health_belo
         and "Needs attention" in all_text(c)
     )
     left, right = grid.children
-    assert "📚 Rulebook" in all_text(left) and "Needs attention" not in all_text(left)
+    assert "Rulebook" in all_text(left) and "Needs attention" not in all_text(left)
     assert "Needs attention" in all_text(right)
-    assert "Health numbers" not in all_text(left) and "Health numbers" not in all_text(right)
-    text = all_text(content)
-    assert text.index("Needs attention") < text.index("Health numbers")
+    assert "Health numbers" in all_text(left) and "Health numbers" not in all_text(right)
 
 
 def test_overview_no_longer_says_comes_in(make_settings, published_rulebook):
     text = all_text(admin_content(admin_settings(make_settings), ADMIN_PATH))
 
-    assert "📚 Rulebook" in text
+    assert "Needs attention" in text and "Comes in 11c" not in text
     assert [name for name, _, _ in ADMIN_TABS][0] == TAB_OVERVIEW
 
 

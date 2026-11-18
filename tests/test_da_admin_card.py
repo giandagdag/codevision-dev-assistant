@@ -8,7 +8,7 @@ from layouts.da_admin_page import _tab_body
 from styles import da_admin_styles as s
 
 # Tabs not moved onto cards yet; steps 7 and 8 empty this set, then the xfail goes.
-PENDING = {t for t, _, _ in ADMIN_TABS} - {"repo"}
+PENDING = {"capability", "ui", "coding"}  # step 8b moves these
 
 
 def _text(node) -> str:
@@ -48,8 +48,13 @@ def test_every_tab_starts_with_its_title(published_rulebook, tab, label, _):
 @pytest.mark.parametrize("tab,label,_", ADMIN_TABS)
 def test_every_top_level_section_is_a_card(published_rulebook, tab, label, _):
     if tab in PENDING:
-        pytest.xfail("moved onto cards in steps 7 and 8")
+        pytest.xfail("moved onto cards in step 8b")
+    if tab == "overview":  # without data the tab only says "comes later"; the card walk is in
+        return  # test_da_admin_overview_rows
     inner = _tab_body(tab, published_rulebook).children[1].children  # body div -> tab content
+    if is_card_row(inner):  # a tab that is the grid itself (history): both columns hold cards
+        assert all(is_card(c) for col in inner.children for c in col.children)
+        return
     kids = inner.children if isinstance(inner.children, list) else [inner.children]
     # the Edit button holder (a right float) and the version Store are not sections
     kids = [k for k in kids if type(k).__name__ != "Store" and not _is_edit_holder(k)]

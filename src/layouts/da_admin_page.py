@@ -35,7 +35,7 @@ from layouts.da_admin_build_tab import (  # noqa: F401 (callbacks and tests impo
     _triggers,
     build_view,
 )
-from layouts.da_admin_card import TAB_PURPOSE, page_title
+from layouts.da_admin_card import TAB_PURPOSE, admin_card, card_grid, page_title
 from layouts.da_admin_catalog_tab import (  # noqa: F401 (callbacks and tests import these)
     CAP_LIST_ID,
     CAP_MISSING_ID,
@@ -395,32 +395,27 @@ def charter_view(
 ):
     charter = version.rulebook.charter
     purpose = _draft(draft, "purpose", charter.purpose)
-    return html.Div(
-        [
-            version_line(version, active),
-            _charter_size(charter),
-            _section("Purpose", _purpose(purpose, editable)),
-            # Scope, then principles and constraints: two boxes side by side each.
-            *[
-                dmc.SimpleGrid(
-                    [_charter_box(charter, draft, editable, *entry) for entry in pair],
-                    cols=2,
-                    mb="sm",
-                )
-                for pair in (CHARTER_LISTS[:2], CHARTER_LISTS[2:])
-            ],
-            _section(
-                "Glossary",
-                list_table(
-                    TAB_CHARTER,
-                    "glossary",
-                    GLOSSARY_COLUMNS,
-                    _draft(draft, "glossary", [entry.model_dump() for entry in charter.glossary]),
-                    editable,
-                ),
+    main = [
+        admin_card(
+            "Purpose",
+            html.Div([_charter_size(charter), _purpose(purpose, editable)]),
+            "📜",
+            actions=version_line(version, active),
+        ),
+        admin_card(
+            "Glossary",
+            list_table(
+                TAB_CHARTER,
+                "glossary",
+                GLOSSARY_COLUMNS,
+                _draft(draft, "glossary", [entry.model_dump() for entry in charter.glossary]),
+                editable,
             ),
-        ]
-    )
+            "📖",
+        ),
+    ]
+    side = [_charter_box(charter, draft, editable, *entry) for entry in CHARTER_LISTS]
+    return card_grid(main, side)
 
 
 def _purpose(purpose: str, editable: bool):
@@ -440,7 +435,7 @@ CHARTER_BOX_ICONS = {"in_scope": "✅ ", "out_of_scope": "🔴 "}
 def _charter_box(charter: Charter, draft: dict | None, editable: bool, name: str, label: str):
     rows = _text_rows(_draft(draft, name, getattr(charter, name)))
     table = list_table(TAB_CHARTER, name, (TEXT_COLUMN,), rows, editable)
-    return _section(CHARTER_BOX_ICONS.get(name, "") + label, table)
+    return admin_card(CHARTER_BOX_ICONS.get(name, "") + label, table)
 
 
 def _charter_size(charter: Charter):
