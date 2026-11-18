@@ -108,17 +108,15 @@ def test_second_click_refused_while_running(tmp_path):
     assert not (out / RUNS_NAME).exists()
 
 
-def test_old_or_pre_start_lock_is_cleared(tmp_path):
+def test_lock_without_any_sign_of_life_is_cleared(tmp_path):
+    # Fix 3 changed this test: the lock goes stale by missing heartbeat (30 min), not by a fixed
+    # 2 h age or by being older than this server (a live job of another process must stay locked).
     out = tmp_path / "idx"
     out.mkdir()
     old = datetime.now() - timedelta(hours=3)
     (out / rebuild.LOCK_NAME).write_text(json.dumps({"started": old.isoformat()}))
     assert rebuild.running_since(directory=out) is None
     assert not (out / rebuild.LOCK_NAME).exists()
-    # A lock written before this server started is also cleared.
-    early = rebuild.SERVER_STARTED - timedelta(minutes=1)
-    (out / rebuild.LOCK_NAME).write_text(json.dumps({"started": early.isoformat()}))
-    assert rebuild.running_since(early + timedelta(minutes=2), out) is None
 
 
 def test_failed_job_frees_the_lock_and_logs(tmp_path):

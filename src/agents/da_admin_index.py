@@ -80,8 +80,10 @@ def record_run(
     skipped: list[str],
     message: str,
     directory: Path | None = None,
+    extra: dict | None = None,
 ) -> None:
-    """Add one run to the store and keep the last 10."""
+    """Add one run to the store and keep the last 10. `extra` holds fix 3's columns (mode, trigger,
+    pieces re-read, seconds, programs tagged)."""
     path = (directory or index_dir()) / RUNS_NAME
     runs = recent_runs(directory)
     runs.insert(
@@ -93,6 +95,7 @@ def record_run(
             "count": count,
             "skipped": list(skipped),
             "message": message,
+            **(extra or {}),
         },
     )
     path.parent.mkdir(parents=True, exist_ok=True)
