@@ -98,6 +98,7 @@ class IndexPiece(BaseModel):
     deprecated: bool = False
     restricted: bool = False
     tags: list[str] = Field(default_factory=list)
+    file_hash: str = ""  # fix 11-3: lets a Delta rebuild see which files changed; search ignores it
     # Same limit as SearchHit.snippet: a longer one is refused when the file is loaded, never cut.
     snippet: str = Field(default="", max_length=SNIPPET_LIMIT)
 

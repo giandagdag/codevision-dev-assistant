@@ -63,9 +63,9 @@ def convention_rows(rules: list[dict]):
         )
         for r in rules
     ]
-    return html.Div(
-        [dmc.Text("UI conventions", fw=600, c=pal.NAVY, size="sm", mt="sm"), *rows]
-    )
+    if not rows:
+        return dmc.Text("No UI conventions yet.", size="sm", c=pal.NAVY)
+    return html.Div([html.Div(row, style=pal.ROW) for row in rows])  # V5: a divider per row
 
 
 def fires_text(rule_id: str, fires: dict[str, int]) -> str:
@@ -93,4 +93,4 @@ def brand_panel(constants):
     body = [dmc.Table([dmc.TableThead(header), dmc.TableTbody(rows)], withTableBorder=True)]
     if not constants:
         body = [dmc.Text("No brand constants in this version.", size="sm", c=pal.NAVY)]
-    return html.Div([dmc.Text("Brand constants", fw=600, c=pal.NAVY, size="sm"), *body])
+    return html.Div(body)

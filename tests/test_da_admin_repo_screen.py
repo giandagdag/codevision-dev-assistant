@@ -49,7 +49,7 @@ def test_read_view_shows_server_settings_and_the_four_fields(make_settings, publ
         "Largest file the scan reads (KB)",
     ):
         assert word in text
-    assert "Active rulebook v1" in text  # 11-3
+    assert "Active rulebook" not in text  # 18 Nov: header only
 
 
 def run_action_view(make_settings):

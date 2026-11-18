@@ -135,10 +135,7 @@ def test_read_view_puts_each_area_in_its_own_window(published_rulebook):
     """Gian, 17 Nov: "a window for each section" instead of one dump on the white canvas."""
     view = tab_content(TAB_CODING, published_rulebook)
 
-    windows = [
-        c for c in walk(view)
-        if type(c).__name__ == "Paper" and c.withBorder and isinstance(c.children, list)
-    ]
+    windows = [c for c in walk(view) if getattr(c, "className", None) == "da-admin-card"]
     titles = [all_text(w.children[0]) for w in windows]
     for wanted in ("Judgement rules", "Golden examples", "Libraries", "Automatic checks",
                    "SonarQube severity map"):

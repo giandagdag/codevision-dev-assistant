@@ -6,7 +6,8 @@ Presentation only. Imports the shared helpers from da_admin_common, never from d
 import dash_mantine_components as dmc
 from dash import html
 
-from layouts.da_admin_common import two_columns, version_pill
+from layouts.da_admin_card import admin_card, card_grid
+from layouts.da_admin_common import version_pill
 from styles import da_admin_styles as admin_styles
 from styles import da_styles
 
@@ -48,16 +49,26 @@ def history_view(
     chosen = next((row for row in rows if row.version_number == selected), None)
     active_row = next((row for row in rows if row.is_active), None)
     active = active_row.version_number if active_row else 0
-    return html.Div(
+    timeline = html.Div(
         [
-            *([version_pill(active_row)] if active_row else []),
             *(notice or []),
             *([_restore_dialog(restore_target, active)] if restore_target else []),
-            two_columns(
-                dmc.Stack([_timeline_row(row, row is chosen) for row in rows], gap=0),
-                _side_panel(chosen, selected_changes),
-            ),
+            dmc.Stack([_timeline_row(row, row is chosen) for row in rows], gap=0)
+            if rows
+            else dmc.Text("No versions yet.", style=da_styles.EMPTY_TEXT),
         ]
+    )
+    return card_grid(
+        [
+            admin_card(
+                "Versions",
+                timeline,
+                "🕘",
+                count=len(rows),
+                actions=version_pill(active_row) if active_row else None,
+            )
+        ],
+        [admin_card("Version details", _side_panel(chosen, selected_changes), "🔍")],
     )
 
 
@@ -75,7 +86,7 @@ def _side_panel(row, changes):
         parts.append(
             dmc.Button(f"Restore v{number}", id=hist_id(HIST_RESTORE, number), size="xs", mt="sm")
         )
-    return html.Div(parts, style=da_styles.PANEL_SECTION)
+    return html.Div(parts)
 
 
 def _plain_diff(changes):

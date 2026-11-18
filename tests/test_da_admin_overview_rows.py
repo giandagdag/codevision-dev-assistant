@@ -80,33 +80,28 @@ def test_health_numbers_are_tiles_and_keep_handoffs_and_escalations(
     assert [d["label"] for d in window.data] == ["Last 30 days", "All time"]
 
 
-def test_section_15_health_numbers_are_a_full_width_row_under_the_two_columns(
+def test_overview_is_cards_health_numbers_under_the_rulebook_attention_on_the_right(
     make_settings, published_rulebook
 ):
-    """Gian, 16 Nov: no empty space at the lower left; the tiles run across the page."""
+    """Fix 3 step 8a: Rulebook and Health numbers (5 tiles per row) left, Needs attention right."""
+    from layouts.da_admin_card import is_card
     from layouts.da_admin_overview_tab import HEALTH_ID, HEALTH_ROW_ID
 
     _, view = _view(make_settings, published_rulebook, _report(make_settings))
 
-    top = view.children
-    assert getattr(top[-1], "id", None) == HEALTH_ROW_ID  # last, under the two columns
-    row_ids = [getattr(c, "id", None) for c in walk(top[-2])]
-    assert HEALTH_ID not in row_ids  # not inside the right column any more
-    grid = next(c for c in walk(top[-1]) if type(c).__name__ == "SimpleGrid")
+    main, side = view.children
+    assert all(is_card(c) for c in main.children + side.children)
+    assert getattr(main.children[-1], "id", None) == HEALTH_ROW_ID
+    assert HEALTH_ID not in [getattr(c, "id", None) for c in walk(side)]
+    grid = next(c for c in walk(main.children[-1]) if type(c).__name__ == "SimpleGrid")
     assert grid.cols["lg"] == 5
-    assert "Needs attention" in all_text(top[-2])
+    assert "Needs attention" in all_text(side)
 
 
-def test_needs_attention_scrolls_inside_the_rulebook_height(make_settings, published_rulebook):
-    """Gian, 17 Nov: Needs attention ran far below the Rulebook; it now scrolls in its column."""
+def test_needs_attention_scrolls_inside_its_card(make_settings, published_rulebook):
     from layouts.da_admin_overview_tab import ATTENTION_SCROLL_ID
 
     _, view = _view(make_settings, published_rulebook, _report(make_settings))
 
-    grid = view.children[-2]
-    right_cell = grid.children[1]
-    assert right_cell.style["position"] == "relative"
-    assert right_cell.children.style["position"] == "absolute"  # the left alone sets the height
-    scroll = next(c for c in walk(right_cell) if getattr(c, "id", None) == ATTENTION_SCROLL_ID)
+    scroll = next(c for c in walk(view) if getattr(c, "id", None) == ATTENTION_SCROLL_ID)
     assert scroll.style["overflowY"] == "auto"
-    assert "Needs attention" in all_text(right_cell)

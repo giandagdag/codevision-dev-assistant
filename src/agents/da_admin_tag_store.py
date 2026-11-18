@@ -38,6 +38,13 @@ def save_store(store: dict, directory: Path | None = None) -> None:
     temp.replace(path)
 
 
+def last_tagged(directory: Path | None = None) -> str:
+    """When the newest saved tagging run started ("" before the first one)."""
+    runs = read_store(directory)["runs"]
+    started = runs[0].get("started_at", "") if runs and isinstance(runs[0], dict) else ""
+    return str(started).replace("T", " ")
+
+
 def read_tags(directory: Path | None = None) -> dict[str, dict]:
     """Module path to its entry (summary, proposed capability, state ...)."""
     return {p: e for p, e in read_store(directory)["modules"].items() if isinstance(e, dict)}

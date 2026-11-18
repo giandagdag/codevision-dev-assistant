@@ -115,7 +115,7 @@ def test_fix2_new_parts_show_no_raw_names():
     """AG-15: the AI scan cards, the confirm box and the meaning results use plain words."""
     from agents.da_admin_meaning import FROM_CODE, ModuleHit
     from agents.da_admin_tag_cards import AiCard
-    from layouts.da_admin_catalog_meaning import meaning_results, mode_switch, no_hits_line
+    from layouts.da_admin_catalog_meaning import meaning_results, no_hits_line
     from layouts.da_admin_catalog_tab import queue_block
 
     cards = [
@@ -130,7 +130,7 @@ def test_fix2_new_parts_show_no_raw_names():
     hit = ModuleHit(path, ("convert",), "Documents", "Writes", FROM_CODE, 1.0)
     parts = [
         queue_block(queue, ["Documents"]), meaning_results([hit]), meaning_results([], "x"),
-        mode_switch(), no_hits_line(),
+        no_hits_line(),
     ]
     text = "\n".join(shown_text(p) for p in parts)
     # A module path on a result button is the program itself, like a code chip: skip exact paths.

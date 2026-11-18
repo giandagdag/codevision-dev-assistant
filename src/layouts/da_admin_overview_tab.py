@@ -6,6 +6,7 @@ import dash_mantine_components as dmc
 from dash import html
 
 from agents.da_admin_metrics import WINDOW_ALL, WINDOW_LABELS
+from layouts.da_admin_card import admin_card, card_grid
 from layouts.da_admin_common import ADMIN_TABS, chips, goto_id, version_pill
 from styles import da_admin_styles as admin_styles
 from styles import da_styles
@@ -13,8 +14,7 @@ from styles import da_styles
 HEALTH_ID = "adm-health"
 HEALTH_ROW_ID = "adm-health-row"
 ATTENTION_SCROLL_ID = "adm-attention-scroll"
-ATTENTION_MIN_HEIGHT = "240px"  # a short Rulebook still leaves room for 2 to 3 rows
-ATTENTION_SCROLL = {"flex": 1, "minHeight": 0, "overflowY": "auto", "paddingRight": "4px"}
+ATTENTION_SCROLL = {"maxHeight": "480px", "overflowY": "auto", "paddingRight": "4px"}
 # Section 15: the tiles run across the page, 5 per row on a 1366 wide screen.
 HEALTH_COLS = {"base": 2, "md": 3, "lg": 5}
 WINDOW_ID = "adm-window"
@@ -36,63 +36,20 @@ def _tab_of_area(area: str) -> str:
     return next(tab for tab, label, _ in ADMIN_TABS if label == area)
 
 
-def _card(title: str, body):
-    return dmc.Paper(
-        [dmc.Text(title, fw=700, c=da_styles.NAVY, mb="xs"), body],
-        withBorder=True,
-        p="md",
-        radius="md",
-    )
-
-
-def _attention_card(attention):
-    """Needs attention fills the right column and scrolls inside it (Gian, 17 Nov: it ran far below
-    the Rulebook and pushed Health numbers down)."""
-    return dmc.Paper(
-        [
-            dmc.Text("⚠️ Needs attention", fw=700, c=da_styles.NAVY, mb="xs"),
-            html.Div(_attention_list(attention), id=ATTENTION_SCROLL_ID, style=ATTENTION_SCROLL),
-        ],
-        withBorder=True,
-        p="md",
-        radius="md",
-        style={"height": "100%", "display": "flex", "flexDirection": "column"},
-    )
-
-
-def _rulebook_and_attention(left, right):
-    """Left 2/3 and right 1/3, the same grid as two_columns, but the right column takes the
-    Rulebook's height: it is placed absolutely inside its cell, so only the left sets the row."""
-    return html.Div(
-        [
-            html.Div(left, style={"minWidth": 0}),
-            html.Div(
-                html.Div(right, style={"position": "absolute", "inset": 0}),
-                style={"position": "relative", "minWidth": 0, "minHeight": ATTENTION_MIN_HEIGHT},
-            ),
-        ],
-        style={
-            "display": "grid",
-            "gridTemplateColumns": "minmax(0, 2fr) minmax(0, 1fr)",
-            "gap": "16px",
-            "alignItems": "stretch",
-        },
-    )
-
-
 def overview_view(version, overview, report, active: bool = True):
-    """The Overview tab. `overview` is an Overview (da_admin_overview), `report` a HealthReport."""
-    return html.Div(
-        [
-            version_pill(version, active),
-            _rulebook_and_attention(
-                _card("📚 Rulebook", _areas_table(overview.areas)),
-                _attention_card(overview.attention),
-            ),
-            html.Div(_card("📈 Health numbers", health_block(report)), id=HEALTH_ROW_ID,
-                     style={"marginTop": "16px"}),
-        ]
+    """The Overview tab. `overview` is an Overview (da_admin_overview), `report` a HealthReport.
+    Rulebook and Health numbers on the left, Needs attention (it scrolls) on the right."""
+    attention = html.Div(
+        _attention_list(overview.attention), id=ATTENTION_SCROLL_ID, style=ATTENTION_SCROLL
     )
+    main = [
+        admin_card(
+            "Rulebook", _areas_table(overview.areas), "📚", actions=version_pill(version, active)
+        ),
+        admin_card("Health numbers", health_block(report), "📈", id=HEALTH_ROW_ID),
+    ]
+    side = [admin_card("Needs attention", attention, "⚠️", count=len(overview.attention))]
+    return card_grid(main, side)
 
 
 def _areas_table(areas):

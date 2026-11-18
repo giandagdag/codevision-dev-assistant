@@ -32,6 +32,7 @@ class IndexHealth:
     modules: int = 0
     pieces: int = 0
     source: str = ""
+    build_id: str = ""
 
     def is_fresh(self, now: datetime) -> bool:
         return self.built and self.built_at is not None and now - self.built_at <= FRESH_FOR
@@ -67,6 +68,7 @@ def read_health(directory: Path | None = None) -> IndexHealth:
             len({piece["path"] for piece in pieces}),
             len(pieces),
             str(raw.get("source", "")),
+            str(raw.get("build_id", "")),
         )
     except OSError, ValueError, KeyError, TypeError:
         return IndexHealth(False)
@@ -80,8 +82,10 @@ def record_run(
     skipped: list[str],
     message: str,
     directory: Path | None = None,
+    extra: dict | None = None,
 ) -> None:
-    """Add one run to the store and keep the last 10."""
+    """Add one run to the store and keep the last 10. `extra` holds fix 3's columns (mode, trigger,
+    pieces re-read, seconds, programs tagged)."""
     path = (directory or index_dir()) / RUNS_NAME
     runs = recent_runs(directory)
     runs.insert(
@@ -93,6 +97,7 @@ def record_run(
             "count": count,
             "skipped": list(skipped),
             "message": message,
+            **(extra or {}),
         },
     )
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -112,6 +117,8 @@ def run_line(run: dict) -> str:
     """One run in plain words: done with the count, skipped pieces, or not saved."""
     when = str(run.get("started_at", ""))[:16].replace("T", " ")
     who = run.get("started_by", "")
+    if run.get("trigger") == "Nightly":  # AH-10: the row says who started it
+        who = f"{who} (Nightly)"
     if not run.get("saved"):
         return f"{when} {who}: ❌ Not saved: {run.get('message', '')}"
     skipped = run.get("skipped") or []

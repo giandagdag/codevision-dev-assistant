@@ -4,6 +4,7 @@ import dash_mantine_components as dmc
 from dash import html
 
 from agents.da_admin_forms import capability_rows
+from agents.da_admin_index import read_health
 from agents.da_admin_modules import (
     SHOWN_MODULES,
     matches_search,
@@ -11,17 +12,17 @@ from agents.da_admin_modules import (
     modules_by_capability,
     share_counts,
 )
-from agents.da_admin_tag_store import read_tags
-from agents.da_admin_tagger_job import scan_running, status_line, tags_out_of_date
-from layouts.da_admin_catalog_meaning import CAP_MEANING_ID, NAMES_PLACEHOLDER, mode_switch
+from agents.da_admin_tag_store import last_tagged, read_tags
+from layouts.da_admin_card import admin_card, card_grid
+from layouts.da_admin_catalog_meaning import CAP_MEANING_ID, SEARCH_PLACEHOLDER
 from layouts.da_admin_common import (
     TAB_CAPABILITY,
+    TAB_REPO,
     _draft,
+    goto_id,
     list_table,
-    two_columns,
     version_pill,
 )
-from layouts.da_admin_scan_controls import scan_controls
 from pydantic_classes.da_rulebook_models import RulebookVersion
 from styles import da_admin_styles as admin_styles
 from styles import da_styles
@@ -83,17 +84,15 @@ def catalog_view(
     else:
         table = html.Div(
             [
-                scan_controls(
-                    scan_running() is not None, status_line(), tags_out_of_date(), len(paths)
-                ),
+                tagged_header(),
                 dmc.Group(
                     [
-                        mode_switch(),
                         dmc.TextInput(
                             id=CAP_SEARCH_ID,
-                            placeholder=NAMES_PLACEHOLDER,
-                            debounce=400,  # a meaning search calls the embedder: wait for typing
+                            placeholder=SEARCH_PLACEHOLDER,
+                            debounce=True,  # Enter, not per key: meaning search calls the embedder
                             size="xs",
+                            w=380,
                         ),
                         dmc.Chip("Missing backup", id=CAP_MISSING_ID, checked=missing_backup),
                     ],
@@ -105,15 +104,37 @@ def catalog_view(
                 ),
             ]
         )
-    return html.Div(
+    catalog = admin_card(
+        "Capabilities",
+        html.Div([dmc.Text(CATALOG_HINT, size="xs", c=da_styles.MUTED, mb="xs"), table]),
+        "🧩",
+        count=len(rows),
+        actions=version_pill(version, active),
+    )
+    names = [c.name for c in policy.capabilities]
+    return card_grid([catalog], [queue_block(queue, names, disabled=editable)])
+
+
+def tagged_header():
+    """"Programs last tagged ..., with index build ..." and a link to Repository and index (D-C)."""
+    when, build = last_tagged(), read_health().build_id
+    text = (
+        f"Programs last tagged {when}, with index build {build or 'unknown'}."
+        if when
+        else "Programs have not been tagged yet. Tagging runs as step 2 of the index job."
+    )
+    return dmc.Group(
         [
-            version_pill(version, active),
-            dmc.Text(CATALOG_HINT, size="xs", c=da_styles.MUTED),
-            two_columns(
-                table,
-                queue_block(queue, [c.name for c in policy.capabilities], disabled=editable),
+            dmc.Text(text, size="xs", c=da_styles.MUTED),
+            dmc.Button(
+                "Repository and index",
+                id=goto_id(TAB_REPO, "catalog-index"),
+                variant="subtle",
+                size="compact-xs",
             ),
-        ]
+        ],
+        gap="xs",
+        mb="xs",
     )
 
 
@@ -241,10 +262,7 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
     a time)."""
     queue = queue or {"rows": [], "resolved": None, "dialog": None, "notice": []}
     rows = queue["rows"]
-    parts: list = [
-        dmc.Text("Unassigned queue", fw=600, c=da_styles.NAVY, size="sm"),
-        *queue.get("notice", []),
-    ]
+    parts: list = [*queue.get("notice", [])]
     if queue.get("dialog"):
         parts.append(_pattern_dialog(queue["dialog"]))
     ai_cards = queue.get("ai_cards", [])
@@ -277,7 +295,8 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
                 disabled=disabled,
             )
         )
-    return html.Div(parts, id=QUEUE_BLOCK_ID, style=da_styles.PANEL_SECTION)
+    waiting = len(rows) + len(ai_cards)
+    return admin_card("Unassigned queue", html.Div(parts), "📥", count=waiting, id=QUEUE_BLOCK_ID)
 
 
 def _queue_card(row, capability_names: list[str], disabled: bool):

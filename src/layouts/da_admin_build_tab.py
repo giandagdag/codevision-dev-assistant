@@ -1,7 +1,6 @@
 """Build and test tab: limits, model per role, triggers, zones, protected files."""
 
 import dash_mantine_components as dmc
-from dash import html
 
 from agents.da_admin_forms import (
     ADVANCED_LIMIT_FIELDS,
@@ -10,6 +9,7 @@ from agents.da_admin_forms import (
     field_bounds,
 )
 from agents.da_admin_labels import label as field_label
+from layouts.da_admin_card import admin_card, card_grid
 from layouts.da_admin_common import (
     TAB_BUILD,
     TEXT_COLUMN,
@@ -19,7 +19,6 @@ from layouts.da_admin_common import (
     version_pill,
     word_chips,
 )
-from layouts.da_admin_common import section as _section
 from pydantic_classes.da_rulebook_models import Policy, RulebookVersion
 from styles import da_styles
 
@@ -65,52 +64,53 @@ def build_view(
         ],
         gap="xs",
     )
-    cards = [
-        _section("Limits", limits),
-        *[
-            _section(
-                "Model per role",
-                dmc.Stack(
-                    [
-                        _model_field(policy, "generator_model", "Generator model", editable, draft),
-                        _model_field(policy, "tester_model", "Tester model", editable, draft),
-                        _model_field(policy, "tagger_model", "Program tagger", editable, draft),
-                    ],
-                    gap=2,
-                ),
+    main = [
+        admin_card("Limits", limits, "🔢", actions=version_pill(version, active)),
+        admin_card(
+            "Model per role",
+            dmc.Stack(
+                [
+                    _model_field(policy, "generator_model", "Generator model", editable, draft),
+                    _model_field(policy, "tester_model", "Tester model", editable, draft),
+                    _model_field(policy, "tagger_model", "Program tagger", editable, draft),
+                ],
+                gap=2,
             ),
-            _section("Escalation triggers", _triggers(policy, editable, draft)),
-            _section(
-                "Flag-for-review zones",
-                list_table(
-                    TAB_BUILD,
-                    "zones",
-                    ZONE_COLUMNS,
-                    _draft(draft, "zones", [z.model_dump() for z in policy.flag_review_zones]),
-                    True,
-                )
-                if editable
-                else _zone_cards(policy.flag_review_zones),
-            ),
-            _section(
-                "Protected files",
-                list_table(  # edit keeps the table; the read view is chips, as in the demo
-                    TAB_BUILD,
-                    "protected_files",
-                    (TEXT_COLUMN,),
-                    _text_rows(_draft(draft, "protected_files", policy.protected_files)),
-                    True,
-                )
-                if editable
-                else word_chips(policy.protected_files, variant="outline"),
-            ),
-            _section("Tests", _tests_card()),
-            _section("Can a request be handed off?", _severity_table()),
-        ],
+            "🤖",
+        ),
+        admin_card("Escalation triggers", _triggers(policy, editable, draft), "🚨"),
+        admin_card(
+            "Flag-for-review zones",
+            list_table(
+                TAB_BUILD,
+                "zones",
+                ZONE_COLUMNS,
+                _draft(draft, "zones", [z.model_dump() for z in policy.flag_review_zones]),
+                True,
+            )
+            if editable
+            else _zone_cards(policy.flag_review_zones),
+            "🚩",
+        ),
+        admin_card(
+            "Protected files",
+            list_table(  # edit keeps the table; the read view is chips, as in the demo
+                TAB_BUILD,
+                "protected_files",
+                (TEXT_COLUMN,),
+                _text_rows(_draft(draft, "protected_files", policy.protected_files)),
+                True,
+            )
+            if editable
+            else word_chips(policy.protected_files, variant="outline"),
+            "🔒",
+        ),
     ]
-    # Read view: cards in two equal columns, as in the demo. Edit keeps one column of forms.
-    body = html.Div(cards) if editable else dmc.SimpleGrid(cards, cols=2, spacing="md")
-    return html.Div([version_pill(version, active), body])
+    side = [
+        admin_card("Tests", _tests_card(), "✅"),
+        admin_card("Can a request be handed off?", _severity_table(), "📤"),
+    ]
+    return card_grid(main, side)
 
 
 def _zone_cards(zones):

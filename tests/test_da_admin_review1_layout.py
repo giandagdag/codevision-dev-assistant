@@ -20,16 +20,18 @@ def grids(content):
 
 
 def test_build_read_view_is_a_two_column_grid_of_cards(published_rulebook):
-    simple = [n for n in walk(build_view(published_rulebook)) if type(n).__name__ == "SimpleGrid"]
+    from layouts.da_admin_card import is_card
 
-    assert len(simple) == 1 and simple[0].cols == 2
-    assert len(simple[0].children) == 7  # Limits, Model, Triggers, Zones, Protected, Tests, Handoff
+    main, side = build_view(published_rulebook).children
+
+    cards = main.children + side.children
+    assert len(cards) == 7 and all(is_card(c) for c in cards)  # Limits ... Tests, Handoff
 
 
-def test_build_edit_view_has_no_grid(published_rulebook):
+def test_build_edit_view_is_the_same_card_grid(published_rulebook):
     shown = build_view(published_rulebook, editable=True)
 
-    assert not [n for n in walk(shown) if type(n).__name__ == "SimpleGrid"]
+    assert len(grids(shown)) == 1
 
 
 def test_coding_read_view_has_automatic_checks_and_the_severity_map(published_rulebook):
@@ -56,7 +58,7 @@ def test_edit_button_comes_before_the_tab_body_in_the_read_view(published_rulebo
         shown = tab_content(tab, published_rulebook, modules=[])
 
         first = shown.children[0]
-        assert first.style["float"] == "right"
+        assert first.style["justifyContent"] == "flex-end"  # its own row: the grid keeps its width
         assert first.children.id == act_id(tab, ACTION_EDIT)
 
 

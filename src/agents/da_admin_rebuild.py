@@ -7,11 +7,13 @@ it runs in the background and writes one line to the job log (da_code_index_runs
 import json
 import os
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
+from agents import da_admin_job as job
 from agents.da_admin_index import index_dir, record_run
 from agents.da_code_index import Embedder, FakeEmbedder, WorkEmbedder
+from configs.da_config import Settings, load_settings
 from da_build_code_index import build_index
 from da_logging import get_logger
 from pydantic_classes.da_rulebook_models import Policy
@@ -19,30 +21,45 @@ from pydantic_classes.da_rulebook_models import Policy
 logger = get_logger(__name__)
 
 LOCK_NAME = "da_code_index.lock"
-TAGGER_LOCK_NAME = "da_tagger.lock"
-LOCK_MAX_AGE = timedelta(hours=2)
-TAGGER_LOCK_MAX_AGE = timedelta(hours=12)  # 500 modules on a slow model take hours
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_FOLDER = Path(__file__).resolve().parents[1]  # B1's default source when nothing is set
-SERVER_STARTED = datetime.now()  # a lock from before this moment belongs to a dead server
+SERVER_STARTED = datetime.now()  # when this server process started (tests age locks from it)
 ALREADY_RUNNING = "A rebuild is already running. Wait for it to finish."
 ONE_JOB_AT_A_TIME = "One job at a time: wait for the other one to finish."
+MADE_UP_SCOPE_REFUSED = (
+    "The made-up practice folder cannot be used at work. "
+    "Clear Folder scope on Repository and index to use DA_CODEVISION_SRC."
+)
 
 
-def source_folder(policy: Policy) -> Path:
-    """Folder scope first, then B1's DA_CODE_INDEX_SOURCE, then B1's default."""
+def source_folder(policy: Policy, provider: str = "", settings: Settings | None = None) -> Path:
+    """Folder scope first, then (at work) DA_CODEVISION_SRC, then B1's DA_CODE_INDEX_SOURCE and
+    B1's default. The passed settings win over a fresh read of .env."""
     scope = policy.index_folder_scope.strip()
     if scope:
         return Path(scope) if Path(scope).is_absolute() else PROJECT_ROOT / scope
+    if provider == "onprem" and (work_src := (settings or load_settings()).codevision_src):
+        return Path(work_src)
     return Path(os.environ.get("DA_CODE_INDEX_SOURCE") or SRC_FOLDER)
 
 
-def pick_embedder(provider: str) -> Embedder:
+def scope_refusal(policy: Policy, provider: str) -> str:
+    """At work the made-up practice folder must never be indexed (G7); "" means fine."""
+    if provider == "onprem" and "da_fake_codevision" in Path(policy.index_folder_scope).parts:
+        return MADE_UP_SCOPE_REFUSED
+    return ""
+
+
+def pick_embedder(provider: str, settings: Settings | None = None) -> Embedder:
     """Work gets the real embedder, anything else the made-up one (never a fake index at work).
 
     The provider comes from the settings (they read .env), not from os.environ: .env values never
     reach os.environ, so reading it here would pick the made-up embedder at work."""
-    return WorkEmbedder() if provider == "onprem" else FakeEmbedder()
+    if provider != "onprem":
+        return FakeEmbedder()
+    if settings is None:
+        return WorkEmbedder()
+    return WorkEmbedder(settings.codevision_src, settings.codevision_python)
 
 
 def _lock_path(directory: Path | None, name: str = LOCK_NAME) -> Path:
@@ -61,8 +78,10 @@ def running_since(
     except ValueError, KeyError, TypeError:
         path.unlink(missing_ok=True)
         return None
-    max_age = TAGGER_LOCK_MAX_AGE if name == TAGGER_LOCK_NAME else LOCK_MAX_AGE
-    if started < SERVER_STARTED or (now or datetime.now()) - started > max_age:
+    current = now or datetime.now()
+    # The job (index and tagging) writes a heartbeat; no sign of life for 30 min means it is dead.
+    # A long job (hours) and a job started by another server process both stay locked while alive.
+    if current - job.last_heartbeat(directory, started) > job.STALE_AFTER:
         path.unlink(missing_ok=True)
         return None
     return started
@@ -86,25 +105,70 @@ def _run(
     embedder: Embedder | None,
     directory: Path | None,
     provider: str,
+    mode: str = "full",
+    trigger: str = "Manual",
+    settings: Settings | None = None,
+    tag_client=None,
 ) -> None:
     out = directory or index_dir()
+    embedder = embedder or pick_embedder(provider, settings)
+    job.begin(out, started, started_by, mode, trigger)
+    extra = {"mode": mode, "trigger": trigger}
     try:
         summary = build_index(
-            source_folder(policy),
+            source_folder(policy, provider, settings),
             out,
-            embedder or pick_embedder(provider),
+            embedder,
             say=lambda _text: None,
             extra_exclusions=[e.pattern for e in policy.index_exclusions],
+            mode=mode,
+            progress=lambda done, total: job.progress(out, done, total),
+            stop=lambda: job.stop_requested(out),
         )
+        extra.update(mode=summary.mode, reread=summary.reread)
+        message = summary.message
+        if summary.saved and (settings is not None or tag_client is not None):
+            message += _tag_step(
+                policy, settings, started_by, summary, out, tag_client, extra, provider
+            )
         record_run(
             started_by, started, summary.saved, summary.count, summary.skipped,
-            summary.message, out,
+            message, out, _with_seconds(extra, started),
         )
+        if not summary.saved and not summary.message.startswith("Stopped."):
+            job.fail(out, summary.message)  # a Stop the user asked for is not a failure
     except Exception as error:  # a failed job must still free the lock and leave a log line
         logger.warning("Index rebuild failed: %s", type(error).__name__)
-        record_run(started_by, started, False, 0, [], f"Rebuild failed: {error}", out)
+        message = f"Rebuild failed: {error}"
+        record_run(started_by, started, False, 0, [], message, out, _with_seconds(extra, started))
+        job.fail(out, message)
     finally:
+        if isinstance(embedder, WorkEmbedder):
+            embedder.close()  # ends the helper process
+        job.clear_stop(out)
         _lock_path(out).unlink(missing_ok=True)
+
+
+def _tag_step(policy, settings, started_by, summary, out, tag_client, extra, provider) -> str:
+    """Step 2: tag the programs. Never undoes the saved index; returns words for the run row."""
+    from agents.da_admin_tagger_job import TAGS_NOT_SAVED, tag_programs  # AI use stays in that file
+
+    try:
+        result = tag_programs(
+            policy, settings, started_by, summary.mode,
+            source_folder(policy, provider, settings), out, tag_client,
+        )
+    except Exception as error:  # a tagging crash must not hide the saved index
+        logger.warning("Tagging failed: %s", type(error).__name__)
+        return f" {TAGS_NOT_SAVED}"
+    extra["tagged"] = result.scanned if result.saved else 0
+    if result.saved:
+        return f" Tagged {result.scanned} programs."
+    return f" {result.message}" if result.message.startswith("Stopped") else f" {TAGS_NOT_SAVED}"
+
+
+def _with_seconds(extra: dict, started: datetime) -> dict:
+    return {**extra, "seconds": int((datetime.now() - started).total_seconds())}
 
 
 def start_rebuild(
@@ -115,19 +179,26 @@ def start_rebuild(
     directory: Path | None = None,
     wait: bool = False,
     provider: str = "",
+    mode: str = "full",
+    trigger: str = "Manual",
+    settings: Settings | None = None,
+    tag_client=None,
 ) -> tuple[bool, str]:
     """Start one background build. Returns (started, message). `wait` is for tests only.
 
-    `provider` is the settings' llm_provider; empty (the default) means the made-up embedder."""
+    `provider` is the settings' llm_provider; empty (the default) means the made-up embedder.
+    `mode` is "full" or "delta" (Delta runs full when the saved index cannot be trusted)."""
     started = now or datetime.now()
-    if running_since(started, directory, TAGGER_LOCK_NAME) is not None:
-        return False, ONE_JOB_AT_A_TIME
+    if refusal := scope_refusal(policy, provider):
+        return False, refusal
     if running_since(started, directory) is not None or not _take_lock(started, directory):
         return False, ALREADY_RUNNING
-    job = threading.Thread(
-        target=_run, args=(policy, started_by, started, embedder, directory, provider), daemon=True
+    args = (
+        policy, started_by, started, embedder, directory, provider, mode, trigger, settings,
+        tag_client,
     )
-    job.start()
+    thread = threading.Thread(target=_run, args=args, daemon=True)
+    thread.start()
     if wait:
-        job.join()
+        thread.join()
     return True, f"Rebuilding… started {started:%H:%M}"

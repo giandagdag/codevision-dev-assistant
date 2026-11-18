@@ -132,7 +132,8 @@ def rulebook_from_form(base: Rulebook, tab: str, form: dict) -> Rulebook:
         return base.model_copy(update={"policy": _policy_from_build_form(base.policy, form)})
     if tab == TAB_UI:
         rules = _rules_from_form(base.rules, "ui_convention", form)
-        return base.model_copy(update={"rules": rules})
+        brand = _brand_from_form(base.brand_constants, form)
+        return base.model_copy(update={"rules": rules, "brand_constants": brand})
     if tab == TAB_CODING:
         return _coding_from_form(base, form)
     if tab == TAB_CAPABILITY:
@@ -235,6 +236,8 @@ def _policy_from_repo_form(current: Policy, form: dict) -> Policy:
         data["index_folder_scope"] = str(form["index_folder_scope"] or "").strip()
     if "index_refresh_mode" in form:
         data["index_refresh_mode"] = form["index_refresh_mode"]
+    if "index_nightly_time" in form:
+        data["index_nightly_time"] = str(form["index_nightly_time"] or "").strip()
     if "index_exclusions" in form:
         rows = [
             {k: str(row.get(k, "")).strip() for k in ("pattern", "reason", "kind")}
@@ -306,6 +309,27 @@ def rule_counter_text(kind: str, count: int) -> str:
     if kind == "judgement":
         return f"{count} of {MAX_JUDGEMENT_RULES}"
     return str(count)
+
+
+def _brand_from_form(current: list, form: dict) -> list:
+    """Brand constants keep their names (fix 3, D-F): only value and source come from the form.
+    A removed or extra row changes nothing; a blank value is a problem."""
+    rows = {str(r.get("name", "")).strip(): r for r in form.get("brand_constants", [])}
+    result, problems = [], []
+    for constant in current:
+        row = rows.get(constant.name)
+        if row is None:
+            result.append(constant)
+            continue
+        value = str(row.get("value", "")).strip()
+        if not value:
+            problems.append(f"Brand constant {constant.name} needs a value.")
+            continue
+        source = str(row.get("source", "")).strip() or constant.source
+        result.append(constant.model_copy(update={"value": value, "source": source}))
+    if problems:
+        raise FormError(problems)
+    return result
 
 
 def _rules_from_form(current: list[Rule], kind: str, form: dict) -> list[Rule]:

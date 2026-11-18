@@ -42,7 +42,7 @@ def test_timeline_is_newest_first_with_pins_and_the_active_mark(
     text = all_text(run_history_action(settings, click("cancel"), None))
 
     assert text.index("v3 ") < text.index("v2 ") < text.index("v1 ")
-    assert text.count("Active") == 2  # the header pill plus one tag on the timeline
+    assert text.count("Active") == 1  # one tag on the timeline (the version is in the header)
     assert "2 requests pinned" in text
     assert first.request_id in text and second.request_id in text
     assert "Restore v2" in text  # one Restore, in the side panel of the selected version
@@ -100,7 +100,7 @@ def test_timeline_dots_and_tags(make_settings, seed_rulebook, published_rulebook
 
     assert text.index(f"v{restored.version_number} ") < text.index("v3 ")
     assert text.count("Restored from v1") == 2  # the change note and the tag
-    assert text.count("Active") == 2
+    assert text.count("Active") == 1
 
 
 def test_restore_asks_first_with_the_note_filled_in_and_writes_nothing(

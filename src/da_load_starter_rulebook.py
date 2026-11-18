@@ -35,7 +35,9 @@ def _work_purpose() -> dict:
 
 def _with_work_purpose(rulebook: Rulebook) -> Rulebook:
     charter = rulebook.charter.model_copy(update=_work_purpose())
-    return rulebook.model_copy(update={"charter": charter})
+    # Fix 3, G7: the made-up folder must never be the work scope (empty = DA_CODEVISION_SRC)
+    policy = rulebook.policy.model_copy(update={"index_folder_scope": ""})
+    return rulebook.model_copy(update={"charter": charter, "policy": policy})
 
 
 def load_starter_rulebook(db_path: Path, at_work: bool = False) -> str:

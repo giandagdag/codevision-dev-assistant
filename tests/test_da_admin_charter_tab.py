@@ -26,12 +26,14 @@ def test_size_meter_colour_at_the_boundaries(characters, colour):
     assert badge.style["color"] == colour
 
 
-def test_scope_and_principles_sit_in_two_boxes_side_by_side(published_rulebook):
+def test_charter_is_cards_purpose_and_glossary_left_the_four_lists_right(published_rulebook):
+    from layouts.da_admin_card import is_card
+
     view = charter_view(published_rulebook)
 
-    grids = [c for c in walk(view) if type(c).__name__ == "SimpleGrid"]
-    assert len(grids) == 2
-    assert all(len(g.children) == 2 and g.cols == 2 for g in grids)
+    main, side = view.children
+    assert len(main.children) == 2 and len(side.children) == 4
+    assert all(is_card(c) for c in main.children + side.children)
     text = all_text(view)
     assert "✅ In scope" in text
     assert "🔴 Out of scope" in text

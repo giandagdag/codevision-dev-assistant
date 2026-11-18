@@ -200,6 +200,7 @@ class _Inputs:
     test_set_text: str = ""
     # Fix 11-1: the rulebook's golden examples (Generator prompt only).
     golden: list = field(default_factory=list)
+    brand: list = field(default_factory=list)
     # Phase 9: the accepted safety net and the callers found by impact (enhance and fix only).
     net: SafetyNetRow | None = None
     impact_rows: list[ImpactRow] = field(default_factory=list)
@@ -418,6 +419,7 @@ class _Run:
                 charter=rulebook.charter,
                 policy=rulebook.policy,
                 golden=list(rulebook.golden_examples),
+                brand=list(rulebook.brand_constants),
                 record=record,
                 approach=approach,
                 cases=plans[approach_state.accepted_plan_version].cases,
@@ -438,6 +440,8 @@ class _Run:
             cases=self.inp.cases,
             policy=self.inp.policy,
             golden_examples=tuple(self.inp.golden),
+            brand_constants=tuple(self.inp.brand),
+            ui_rules=tuple(self.inp.rules),
         )
 
     def _check_environment(self) -> None:

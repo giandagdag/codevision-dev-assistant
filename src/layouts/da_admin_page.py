@@ -14,6 +14,7 @@ Ids the callbacks read back (all dictionaries, CodeVision's habit for repeated c
 
 import dash_mantine_components as dmc
 from dash import dcc, html
+from dash_iconify import DashIconify
 
 from agents.da_admin_access import NOT_ADMIN_MESSAGE
 from agents.da_admin_forms import rule_counter_text
@@ -35,6 +36,7 @@ from layouts.da_admin_build_tab import (  # noqa: F401 (callbacks and tests impo
     _triggers,
     build_view,
 )
+from layouts.da_admin_card import TAB_PURPOSE, admin_card, card_grid, page_title
 from layouts.da_admin_catalog_tab import (  # noqa: F401 (callbacks and tests import these)
     CAP_LIST_ID,
     CAP_MISSING_ID,
@@ -74,6 +76,7 @@ from layouts.da_admin_common import (  # noqa: F401 (some are re-exported for th
     ADMIN_TABS,
     CODE_COLUMNS,
     GOTO_TYPE,
+    HEADER_VERSION_ID,
     MOVE_TYPE,
     READONLY,
     SEVERITY_WORDS,
@@ -95,13 +98,12 @@ from layouts.da_admin_common import (  # noqa: F401 (some are re-exported for th
     aligned_row,
     body_id,
     full_row,
+    header_version,
     list_table,
     two_columns,
     version_pill,
     word_chips,
 )
-from layouts.da_admin_common import section as _section
-from layouts.da_admin_common import window as _window
 from layouts.da_admin_history_tab import (  # noqa: F401 (callbacks import these)
     HIST_CANCEL,
     HIST_CONFIRM,
@@ -183,7 +185,14 @@ def admin_page(
     `overview` and `report` (Phase 11c) fill the Overview tab; without them it says so."""
     return html.Div(
         [
-            dmc.Title("Admin console", order=3, c=da_styles.NAVY),
+            dmc.Group(
+                [
+                    dmc.Title("Admin console", order=3, c=da_styles.NAVY),
+                    header_version(version),
+                ],
+                justify="space-between",
+                align="center",
+            ),
             dmc.Tabs(
                 [
                     dmc.TabsList(
@@ -238,6 +247,24 @@ def _tab_body(
     server=None,
     fires=None,
 ):
+    """The page title (V1) over the tab body; the title stays outside the body div, so the
+    callbacks that redraw the body never touch it."""
+    name = next(label for tab_id, label, _ in ADMIN_TABS if tab_id == tab)
+    body = _tab_content_body(tab, version, rows, cited, queue, overview, report, server, fires)
+    return html.Div([page_title(name, TAB_PURPOSE[tab]), body])
+
+
+def _tab_content_body(
+    tab: str,
+    version: RulebookVersion,
+    rows=(),
+    cited=None,
+    queue=None,
+    overview=None,
+    report=None,
+    server=None,
+    fires=None,
+):
     if tab == TAB_OVERVIEW and overview is not None and report is not None:
         return html.Div(overview_view(version, overview, report), id=body_id(TAB_OVERVIEW))
     if tab in EDITABLE_TABS:
@@ -282,8 +309,11 @@ def tab_content(
         view = charter_view if tab == TAB_CHARTER else build_view
         body = view(version, editable, draft, active)
     buttons = _buttons(tab, version, editable)
-    if not editable:  # Edit sits top right, beside the version pill (a float, so the pill shrinks)
-        buttons = html.Div(buttons, style={"float": "right", "marginLeft": "8px"})
+    if not editable:  # Edit sits top right on its own row: the card grid keeps its width (V4)
+        buttons = html.Div(
+            buttons,
+            style={"display": "flex", "justifyContent": "flex-end", "marginBottom": "8px"},
+        )
     return html.Div(
         [
             *(notice or []),
@@ -297,7 +327,14 @@ def tab_content(
 
 def _buttons(tab: str, version: RulebookVersion, editable: bool):
     if not editable:
-        return dmc.Button("Edit", id=act_id(tab, ACTION_EDIT))
+        # Quiet text link with a pen (Gian, 18 Nov): no filled box competing with the content.
+        return dmc.Button(
+            "Edit",
+            id=act_id(tab, ACTION_EDIT),
+            variant="subtle",
+            size="compact-sm",
+            leftSection=DashIconify(icon="tabler:pencil", width=14),
+        )
     label = next(name for tab_id, name, _ in ADMIN_TABS if tab_id == tab)
     # The shared edit bar (AF-3): stays at the bottom of the window while the Admin scrolls.
     return dmc.Paper(
@@ -376,32 +413,27 @@ def charter_view(
 ):
     charter = version.rulebook.charter
     purpose = _draft(draft, "purpose", charter.purpose)
-    return html.Div(
-        [
-            version_line(version, active),
-            _charter_size(charter),
-            _section("Purpose", _purpose(purpose, editable)),
-            # Scope, then principles and constraints: two boxes side by side each.
-            *[
-                dmc.SimpleGrid(
-                    [_charter_box(charter, draft, editable, *entry) for entry in pair],
-                    cols=2,
-                    mb="sm",
-                )
-                for pair in (CHARTER_LISTS[:2], CHARTER_LISTS[2:])
-            ],
-            _section(
-                "Glossary",
-                list_table(
-                    TAB_CHARTER,
-                    "glossary",
-                    GLOSSARY_COLUMNS,
-                    _draft(draft, "glossary", [entry.model_dump() for entry in charter.glossary]),
-                    editable,
-                ),
+    main = [
+        admin_card(
+            "Purpose",
+            html.Div([_charter_size(charter), _purpose(purpose, editable)]),
+            "📜",
+            actions=version_line(version, active),
+        ),
+        admin_card(
+            "Glossary",
+            list_table(
+                TAB_CHARTER,
+                "glossary",
+                GLOSSARY_COLUMNS,
+                _draft(draft, "glossary", [entry.model_dump() for entry in charter.glossary]),
+                editable,
             ),
-        ]
-    )
+            "📖",
+        ),
+    ]
+    side = [_charter_box(charter, draft, editable, *entry) for entry in CHARTER_LISTS]
+    return card_grid(main, side)
 
 
 def _purpose(purpose: str, editable: bool):
@@ -421,7 +453,7 @@ CHARTER_BOX_ICONS = {"in_scope": "✅ ", "out_of_scope": "🔴 "}
 def _charter_box(charter: Charter, draft: dict | None, editable: bool, name: str, label: str):
     rows = _text_rows(_draft(draft, name, getattr(charter, name)))
     table = list_table(TAB_CHARTER, name, (TEXT_COLUMN,), rows, editable)
-    return _section(CHARTER_BOX_ICONS.get(name, "") + label, table)
+    return admin_card(CHARTER_BOX_ICONS.get(name, "") + label, table)
 
 
 def _charter_size(charter: Charter):
@@ -473,6 +505,9 @@ RULE_ID_HINT = (
     "Add row hands out the next rule ID at once. The number stays used up even if you Cancel."
 )
 CITED_COLUMN = "cited"
+BRAND_TABLE = "brand_constants"
+BRAND_COLUMNS = ("name", "value", "source")
+BRAND_NOTE = "These guide the AI's new screen code. They do not recolour the running app."
 
 
 def _rule_rows(version: RulebookVersion, kind: str, draft: dict | None) -> list[dict]:
@@ -504,44 +539,65 @@ def rules_view(
         # Cited is read only and not part of the form: the Tester's kept findings are counted.
         columns = (*RULE_COLUMNS, CITED_COLUMN)
         rows = [{**row, CITED_COLUMN: cited.get(str(row.get("rule_id", "")), 0)} for row in rows]
-    parts: list = [
-        version_line(version, active),
-        dmc.Text(
-            f"{RULE_TITLE_OF_TAB[tab]}: {rule_counter_text(kind, len(rows))}",
-            size="sm",
-            fw=600,
-            mt="xs",
-        ),
-        rule_panel_div(rows, fires or {})  # read view of Coding standards: list left, card right
-        if tab == TAB_CODING and not editable
-        else html.Div()  # UI read view: the conventions are in the right column, not twice
-        if tab == TAB_UI and not editable
-        else list_table(
-            tab,
-            RULES_TABLE,
-            columns,
-            rows,
-            editable,
-            kinds={"rule_id": READONLY, "severity": SEVERITY_CHOICES},
-            static=(CITED_COLUMN,) if tab == TAB_CODING else (),
-        ),
-        dmc.Text(_tags_hint(version, kind), size="xs", c=da_styles.MUTED),
-    ]
-    if editable:
-        parts.append(dmc.Text(RULE_ID_HINT, size="xs", c=da_styles.MUTED))
+    pill = version_line(version, active)
+    counter = dmc.Text(
+        f"{RULE_TITLE_OF_TAB[tab]}: {rule_counter_text(kind, len(rows))}", size="sm", fw=600
+    )
+    tags = dmc.Text(_tags_hint(version, kind), size="xs", c=da_styles.MUTED)
+    hint = [dmc.Text(RULE_ID_HINT, size="xs", c=da_styles.MUTED)] if editable else []
+    table = list_table(
+        tab,
+        RULES_TABLE,
+        columns,
+        rows,
+        editable,
+        kinds={"rule_id": READONLY, "severity": SEVERITY_CHOICES},
+        static=(CITED_COLUMN,) if tab == TAB_CODING else (),
+    )
     if tab == TAB_UI:
-        brand = brand_panel(version.rulebook.brand_constants)
-        # Read view: brand constants left 2/3, UI conventions right 1/3. Edit keeps them stacked.
-        parts.insert(1, brand if editable else two_columns(brand, convention_rows(rows)))
-    if tab == TAB_CODING:
-        if not editable:  # read view: the rule panel is its own row of windows (title inside)
-            parts = [parts[0], *parts[2:]]
-        parts += _coding_extras(version, editable, draft, modules)
-    return html.Div(parts)
+        brand_rows = _draft(
+            draft, BRAND_TABLE, [c.model_dump() for c in version.rulebook.brand_constants]
+        )
+        shown_brand = (
+            list_table(
+                TAB_UI,
+                BRAND_TABLE,
+                BRAND_COLUMNS,
+                brand_rows,
+                True,
+                kinds={"name": READONLY},
+            )
+            if editable
+            else brand_panel(version.rulebook.brand_constants)
+        )
+        brand = admin_card(
+            "Brand constants",
+            html.Div([dmc.Text(BRAND_NOTE, size="xs", c=da_styles.MUTED, mb="xs"), shown_brand]),
+            "🎨",
+            actions=pill,
+        )
+        # Read view: the conventions are drawn as rows (not twice as a table).
+        shown = table if editable else convention_rows(rows)
+        conventions = admin_card("UI conventions", html.Div([counter, shown, tags, *hint]), "📏")
+        if not editable:
+            return card_grid([brand], [conventions])
+        return html.Div([brand, conventions], style=admin_styles.CARD_STACK)
+    if editable:  # the edit form is one column of cards
+        judgement = admin_card(
+            "Judgement rules", html.Div([counter, table, tags, *hint]), "⚖️", actions=pill
+        )
+        extras = _coding_extras(version, True, draft, modules, pill)
+        return html.Div([judgement, *extras], style=admin_styles.CARD_STACK)
+    extras = _coding_extras(version, False, draft, modules, pill)
+    return html.Div([rule_panel_div(rows, fires or {}), *extras], style=admin_styles.CARD_STACK)
 
 
 def _coding_extras(
-    version: RulebookVersion, editable: bool, draft: dict | None, modules: list[str] | None
+    version: RulebookVersion,
+    editable: bool,
+    draft: dict | None,
+    modules: list[str] | None,
+    pill=None,
 ):
     policy = version.rulebook.policy
     golden = _draft(
@@ -551,19 +607,19 @@ def _coding_extras(
     blocked = _draft(draft, "blocked_imports", policy.build_blocked_imports)
     # The picker lists the index plus each example's own path (it may have left the index).
     picks = sorted({*(modules or []), *(g.get("module_path", "") for g in golden)} - {""})
-    libraries = _section(
+    libraries = admin_card(
         "Approved libraries",
         list_table(TAB_CODING, "approved_libraries", (TEXT_COLUMN,), _text_rows(approved), True)
         if editable
         else library_chips(approved),
     )
-    imports = _section(
+    imports = admin_card(
         "Blocked imports",
         list_table(TAB_CODING, "blocked_imports", (TEXT_COLUMN,), _text_rows(blocked), True)
         if editable
         else library_chips(blocked, blocked=True),
     )
-    examples = _section(
+    examples = admin_card(
         "Golden examples (the Generator follows the one that matches the program type)",
         list_table(
             TAB_CODING,
@@ -577,12 +633,12 @@ def _coding_extras(
         else golden_cards(golden),
     )
     if editable:  # the edit form stays one column of tables
-        sonar = _section("SonarQube severity map", _sonar_map(policy, True, draft))
+        sonar = admin_card("SonarQube severity map", _sonar_map(policy, True, draft))
         return [libraries, imports, sonar, examples]
     # Read view, as in the demo: two rows of two side-by-side panels, each in its own window.
     chosen = policy.sonar_severity_map
-    checks = _window(
-        "🔍 Automatic checks (SonarQube)",
+    checks = admin_card(
+        "Automatic checks (SonarQube)",
         html.Div(
             [
                 dmc.Group(
@@ -610,14 +666,17 @@ def _coding_extras(
                 html.Div(sonar_sample_view(chosen), id=SONAR_SAMPLE_ID),
             ]
         ),
+        "🔍",
     )
-    severity = _window("🎚️ SonarQube severity map", _sonar_lines(chosen, False))
-    golden_window = _window(
-        "⭐ Golden examples (the Generator follows the one that matches the program type)",
+    severity = admin_card("SonarQube severity map", _sonar_lines(chosen, False), "🎚️")
+    golden_window = admin_card(
+        "Golden examples (the Generator follows the one that matches the program type)",
         golden_cards(golden),
+        "⭐",
+        actions=pill,
     )
-    library_window = _window(
-        "📦 Libraries",
+    library_window = admin_card(
+        "Libraries",
         dmc.Stack(
             [
                 dmc.Text("Approved libraries", fw=600, size="sm"),
@@ -627,11 +686,11 @@ def _coding_extras(
             ],
             gap=4,
         ),
+        "📦",
     )
-    # The same 2/3 and 1/3 split as the rules row above, so every window edge lines up.
     # Libraries and the severity map are short, so they share the right column next to the tall
     # golden examples; the SonarQube table is wide, so it gets the full width underneath.
-    return [aligned_row(golden_window, [library_window, severity]), full_row(checks)]
+    return [card_grid([golden_window], [library_window, severity]), checks]
 
 
 def _sonar_map(policy: Policy, editable: bool, draft: dict | None):

@@ -3,23 +3,22 @@
 from datetime import datetime
 
 import dash_mantine_components as dmc
-from dash import html
 
+from agents import da_admin_job as job
 from agents.da_admin_index import read_health, recent_runs
 from agents.da_admin_labels import label as field_label
 from agents.da_admin_rebuild import running_since
 from layouts.da_admin_build_tab import _number_field
+from layouts.da_admin_card import admin_card, card_grid
 from layouts.da_admin_common import (
     TAB_REPO,
     TEXT_COLUMN,
     _draft,
     _text_rows,
     list_table,
-    two_columns,
     version_pill,
     word_chips,
 )
-from layouts.da_admin_common import section as _section
 from layouts.da_admin_index_panels import (
     REFRESH_MODES,
     fixed_skip_rows,
@@ -65,13 +64,24 @@ def repo_view(
     else:
         pattern_widget = dmc.Text(f"New file name pattern: {pattern}", size="sm")
     health = read_health()
-    left = [
-        _section("Connection", _connection(policy, editable, draft)),
-        _section(
-            "Refresh",
-            refresh_tiles(_draft(draft, "index_refresh_mode", policy.index_refresh_mode)),
+    runs = recent_runs()
+    started = running_since()
+    main = [
+        admin_card(
+            "Connection",
+            _connection(policy, editable, draft),
+            "🔗",
+            actions=version_pill(version, active),
         ),
-        _section(
+        admin_card(
+            "Refresh",
+            refresh_tiles(
+                _draft(draft, "index_refresh_mode", policy.index_refresh_mode),
+                _draft(draft, "index_nightly_time", policy.index_nightly_time),
+            ),
+            "⟳",
+        ),
+        admin_card(
             "Exclusions",
             dmc.Stack(
                 [
@@ -86,41 +96,69 @@ def repo_view(
                     ),
                 ]
             ),
+            "⊘",
         ),
-        *[
-            _section(title, _repo_list(table, policy, editable, draft))
-            for table, title in REPO_LIST_TABLES
-        ],
-        _section("New file name pattern", pattern_widget),
-        _section(
-            "Largest file the laptop scan reads",
-            _number_field(policy, REPO_SIZE, editable, draft, TAB_REPO),
+        admin_card(
+            "Allowed folders and markers",
+            dmc.Stack(
+                [
+                    dmc.Stack(
+                        [
+                            dmc.Text(title, size="xs", c="dimmed"),
+                            _repo_list(t, policy, editable, draft),
+                        ],
+                        gap=2,
+                    )
+                    for t, title in REPO_LIST_TABLES
+                ]
+            ),
+            "📁",
         ),
-        dmc.Accordion(
-            [
-                dmc.AccordionItem(
-                    [
-                        dmc.AccordionControl("Server settings (read only, set in .env)"),
-                        dmc.AccordionPanel(dmc.Stack(settings_lines, gap=2)),
-                    ],
-                    value="server",
-                )
-            ],
-            value=None,
+        admin_card(
+            "New files",
+            dmc.Stack(
+                [
+                    pattern_widget,
+                    dmc.Text("Largest file the laptop scan reads", size="xs", c="dimmed"),
+                    _number_field(policy, REPO_SIZE, editable, draft, TAB_REPO),
+                ]
+            ),
+            "＋",
+        ),
+        admin_card(
+            "Server settings",
+            dmc.Accordion(
+                [
+                    dmc.AccordionItem(
+                        [
+                            dmc.AccordionControl("Read only, set in .env"),
+                            dmc.AccordionPanel(dmc.Stack(settings_lines, gap=2)),
+                        ],
+                        value="server",
+                    )
+                ],
+                value=None,  # collapsed
+            ),
+            "⚙",
         ),
     ]
-    right = [
-        _section("Index health", health_tiles(health)),
-        _section("Recent refreshes", recent_refreshes(recent_runs())),
+    side = [
+        admin_card(
+            "Index job",
+            dmc.Stack(
+                [
+                    index_pill(health, datetime.now()),
+                    rebuild_controls(started, runs, ask_rebuild, job.read_status()),
+                    dmc.Text("Index health", fw=600, size="sm"),
+                    health_tiles(health),
+                    dmc.Text("Recent refreshes", fw=600, size="sm"),
+                    recent_refreshes(runs),
+                ]
+            ),
+            "▶",
+        )
     ]
-    return html.Div(
-        [
-            version_pill(version, active),
-            index_pill(health, datetime.now()),
-            rebuild_controls(running_since(), recent_runs(), ask_rebuild),
-            two_columns(html.Div(left), html.Div(right)),  # spec 7: connection left, health right
-        ]
-    )
+    return card_grid(main, side)  # spec 4: cards on the left, the index job on the right
 
 
 def _repo_list(table: str, policy: Policy, editable: bool, draft: dict | None):
@@ -157,9 +195,19 @@ def _connection(policy: Policy, editable: bool, draft: dict | None):
         lines.append(
             dmc.Select(
                 label="Refresh",
-                data=[{"value": k, "label": t} for k, t, _ in REFRESH_MODES],
+                data=[
+                    {"value": k, "label": t, "disabled": k == "merge"} for k, t, _ in REFRESH_MODES
+                ],
                 value=_draft(draft, "index_refresh_mode", policy.index_refresh_mode),
                 id={"type": "adm-field", "tab": TAB_REPO, "name": "index_refresh_mode"},
+                size="xs",
+            )
+        )
+        lines.append(
+            dmc.TextInput(
+                label="Nightly time (Singapore time, 24-hour HH:MM)",
+                value=_draft(draft, "index_nightly_time", policy.index_nightly_time),
+                id={"type": "adm-field", "tab": TAB_REPO, "name": "index_nightly_time"},
                 size="xs",
             )
         )

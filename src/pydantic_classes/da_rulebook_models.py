@@ -359,6 +359,8 @@ class Policy(_RulebookPart):
     index_folder_scope: str = ""
     index_refresh_mode: Literal["merge", "nightly", "manual"] = "manual"
     index_exclusions: list[IndexExclusion] = Field(default_factory=list)
+    # Fix 11-3 (D-D): Singapore time of the Nightly Delta job, 24-hour HH:MM.
+    index_nightly_time: str = Field(default="02:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
 
     @field_validator("escalation_triggers")
     @classmethod

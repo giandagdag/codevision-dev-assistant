@@ -12,6 +12,7 @@ import dash_mantine_components as dmc
 from dash import ALL, Input, Output, State, ctx, html, no_update
 from dash.exceptions import PreventUpdate
 
+from agents import da_admin_job as job
 from agents.da_admin_access import is_admin
 from agents.da_admin_catalog import (
     pattern_offer,
@@ -49,7 +50,6 @@ from agents.da_admin_tag_cards import (
     reject_card,
 )
 from agents.da_admin_tag_store import read_tags
-from callbacks.screen_callbacks.da_admin_scan_callbacks import register_scan
 from configs.da_config import Settings, load_settings
 from db_table_functions.db_tbl_da_rulebook import (
     RulebookError,
@@ -59,11 +59,7 @@ from db_table_functions.db_tbl_da_rulebook import (
 )
 from layouts.da_admin_catalog_meaning import (
     CAP_MEANING_ID,
-    CAP_MODE_ID,
     HIT_TYPE,
-    MEANING_PLACEHOLDER,
-    MODE_MEANING,
-    NAMES_PLACEHOLDER,
     meaning_results,
     no_hits_line,
 )
@@ -84,10 +80,17 @@ from layouts.da_admin_coding_tab import (
 from layouts.da_admin_index_panels import (
     REBUILD_BTN,
     REBUILD_CONFIRM,
+    REBUILD_FULL_BTN,
+    REBUILD_FULL_CONFIRM,
+    REBUILD_FULL_LATER,
+    REBUILD_FULL_MODAL,
     REBUILD_LATER,
     REBUILD_MODAL,
     REBUILD_POLL,
+    REBUILD_PROGRESS,
     REBUILD_STATUS,
+    REBUILD_STOP,
+    job_panel,
     rebuild_status,
 )
 from layouts.da_admin_page import (
@@ -110,6 +113,7 @@ from layouts.da_admin_page import (
     GLOSSARY_COLUMNS,
     GOLDEN_COLUMNS,
     GOTO_TYPE,
+    HEADER_VERSION_ID,
     HEALTH_ID,
     HIST_CONFIRM,
     HIST_PICK_TYPE,
@@ -153,6 +157,7 @@ from layouts.da_admin_page import (
     admin_page,
     body_id,
     catalog_list,
+    header_version,
     health_numbers,
     history_view,
     message_notice,
@@ -542,10 +547,16 @@ def rebuild_action(settings: Settings, button: str | None):
     """Rebuild index clicks. Returns (modal opened, status line). Only Rebuild starts a job."""
     if not is_admin(settings, settings.developer_id):
         raise PreventUpdate
-    if button == REBUILD_CONFIRM:
+    if button == REBUILD_STOP:
+        job.request_stop()  # checked between pieces; the old index and tags stay
+    elif button in (REBUILD_CONFIRM, REBUILD_FULL_CONFIRM):
         policy = get_active_version(settings.db_path).rulebook.policy
         started, message = start_rebuild(
-            policy, settings.developer_id, provider=settings.llm_provider
+            policy,
+            settings.developer_id,
+            provider=settings.llm_provider,
+            settings=settings,
+            mode="full" if button == REBUILD_FULL_CONFIRM else "delta",
         )
         if not started:
             return False, message
@@ -566,26 +577,47 @@ def _register_rebuild(app) -> None:
         return bool(clicks)
 
     @app.callback(
-        Output(REBUILD_MODAL, "opened", allow_duplicate=True),
-        Output(REBUILD_STATUS, "children", allow_duplicate=True),
-        Output(REBUILD_BTN, "disabled", allow_duplicate=True),
-        Input(REBUILD_CONFIRM, "n_clicks"),
-        Input(REBUILD_LATER, "n_clicks"),
+        Output(REBUILD_FULL_MODAL, "opened"),
+        Input(REBUILD_FULL_BTN, "n_clicks"),
         prevent_initial_call=True,
     )
-    def answer_confirm(_confirm, _later):
+    def open_full_confirm(clicks):
+        return bool(clicks)
+
+    @app.callback(
+        Output(REBUILD_MODAL, "opened", allow_duplicate=True),
+        Output(REBUILD_FULL_MODAL, "opened", allow_duplicate=True),
+        Output(REBUILD_STATUS, "children", allow_duplicate=True),
+        Output(REBUILD_BTN, "disabled", allow_duplicate=True),
+        Output(REBUILD_FULL_BTN, "disabled", allow_duplicate=True),
+        Output(REBUILD_STOP, "disabled", allow_duplicate=True),
+        Input(REBUILD_CONFIRM, "n_clicks"),
+        Input(REBUILD_LATER, "n_clicks"),
+        Input(REBUILD_FULL_CONFIRM, "n_clicks"),
+        Input(REBUILD_FULL_LATER, "n_clicks"),
+        Input(REBUILD_STOP, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def answer_confirm(*_clicks):
         if not ctx.triggered[0]["value"]:
             raise PreventUpdate
         opened, status = rebuild_action(get_admin_settings(), ctx.triggered_id)
-        return opened, status, running_since() is not None
+        running = running_since() is not None
+        return opened, opened, status, running, running, not running
 
     @app.callback(
         Output(REBUILD_STATUS, "children"),
         Output(REBUILD_BTN, "disabled"),
+        Output(REBUILD_FULL_BTN, "disabled"),
+        Output(REBUILD_STOP, "disabled"),
+        Output(REBUILD_PROGRESS, "children"),
         Input(REBUILD_POLL, "n_intervals"),
     )
     def poll(_ticks):
-        return current_rebuild_status(), running_since() is not None
+        started = running_since()
+        running = started is not None
+        panel = job_panel(job.read_status(), started)
+        return current_rebuild_status(), running, running, not running, panel
 
 
 def _save(settings, tab, form, note, base_version, active):
@@ -682,7 +714,6 @@ def register_da_admin_page_callbacks(app) -> None:
     _register_rule_pick(app)
     _register_golden(app)
     _register_rebuild(app)
-    register_scan(app, lambda: get_admin_settings())  # looked up late so tests can replace it
 
     @app.callback(
         Output(SONAR_STATUS, "children"),
@@ -763,15 +794,15 @@ def filtered_catalog(settings: Settings, search: str | None, missing_backup: boo
     return catalog_list(policy.capabilities, paths, search or "", bool(missing_backup))
 
 
-def catalog_search(settings: Settings, search: str | None, missing_backup: bool | None, mode: str):
-    """(table, results). "Names and people" is the old filter; "What the code does" keeps the whole
-    table and lists the programs the search finds (fix 11-2, AG-1 to AG-3)."""
-    if mode != MODE_MEANING:
-        return filtered_catalog(settings, search, missing_backup), None
-    table = filtered_catalog(settings, "", missing_backup)
+def catalog_search(settings: Settings, search: str | None, missing_backup: bool | None):
+    """(table, results) for the one search box (fix 11-3, D-E). The table is the name search
+    (capability, senior, module); the meaning matches come under it, labelled."""
+    table = filtered_catalog(settings, search, missing_backup)
+    if not (search and search.strip()):
+        return table, None
     policy = get_active_version(settings.db_path).rulebook.policy
-    hits, message = meaning_search(search or "", settings, policy.capabilities, read_tags())
-    if search and search.strip() and not hits and not message:
+    hits, message = meaning_search(search, settings, policy.capabilities, read_tags())
+    if not hits and not message:
         return table, no_hits_line()
     return table, meaning_results(hits, message)
 
@@ -863,18 +894,10 @@ def _register_catalog_filter(app) -> None:
         Output(CAP_MEANING_ID, "children"),
         Input(CAP_SEARCH_ID, "value"),
         Input(CAP_MISSING_ID, "checked"),
-        Input(CAP_MODE_ID, "value"),
         prevent_initial_call=True,
     )
-    def on_catalog_filter(search, missing_backup, mode):
-        return catalog_search(get_admin_settings(), search, missing_backup, mode)
-
-    @app.callback(
-        Output(CAP_SEARCH_ID, "placeholder"),
-        Input(CAP_MODE_ID, "value"),
-    )
-    def on_mode_placeholder(mode):
-        return MEANING_PLACEHOLDER if mode == MODE_MEANING else NAMES_PLACEHOLDER
+    def on_catalog_filter(search, missing_backup):
+        return catalog_search(get_admin_settings(), search, missing_backup)
 
     @app.callback(
         Output(CAP_LIST_ID, "children", allow_duplicate=True),
@@ -903,6 +926,19 @@ def _register_catalog_filter(app) -> None:
 
 
 def _register_history(app) -> None:
+    @app.callback(
+        Output(HEADER_VERSION_ID, "children"),
+        *[Input(body_id(name), "children") for name, _, _ in ADMIN_TABS],
+        prevent_initial_call=True,
+    )
+    def refresh_header_version(*_bodies):
+        # Any tab redraw may follow a save, a restore or an approval: show the active version.
+        settings = get_admin_settings()
+        active = get_active_version(settings.db_path)
+        if active is None:
+            raise PreventUpdate
+        return header_version(active).children
+
     history_body = body_id(TAB_HISTORY)
 
     @app.callback(

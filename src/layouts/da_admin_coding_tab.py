@@ -7,7 +7,8 @@ from dash import html
 from agents.da_admin_cited import FIRES_AMBER_ABOVE
 from agents.da_admin_forms import rule_counter_text
 from agents.da_admin_modules import scope_folder
-from layouts.da_admin_common import aligned_row, window, word_chips
+from layouts.da_admin_card import admin_card, card_grid
+from layouts.da_admin_common import word_chips
 from layouts.da_admin_ui_standards import fires_text, severity_pill
 from styles import da_admin_styles as pal
 from styles import da_styles
@@ -34,7 +35,7 @@ def _fact_row(label: str, value: str):
 def rule_card(rule: dict | None, fires: dict[str, int]):
     """The card for one judgement rule (AF-14): why, tags, checker, source, fires, examples."""
     if rule is None:
-        return window("📄 Rule card", dmc.Text("No rule selected.", size="sm"))
+        return admin_card("Rule card", dmc.Text("No rule selected.", size="sm"), "📄")
     rid = rule["rule_id"]
     facts = [
         ("Why", rule["why"]),
@@ -62,7 +63,7 @@ def rule_card(rule: dict | None, fires: dict[str, int]):
          long["Good"], long["Bad"]],
         gap="xs",
     )
-    return window("📄 Rule card", body)
+    return admin_card("Rule card", body, "📄")
 
 
 def rule_list(rules: list[dict], fires: dict[str, int], selected: str):
@@ -103,11 +104,12 @@ def rule_list(rules: list[dict], fires: dict[str, int], selected: str):
 def rule_panel(rules: list[dict], fires: dict[str, int], selected: str | None = None):
     """The two columns. `selected` defaults to the first rule; a click redraws them both."""
     chosen = next((r for r in rules if r["rule_id"] == selected), rules[0] if rules else None)
-    left = window(
-        f"⚖️ Judgement rules: {rule_counter_text('judgement', len(rules))}",
+    left = admin_card(
+        f"Judgement rules: {rule_counter_text('judgement', len(rules))}",
         rule_list(rules, fires, chosen["rule_id"] if chosen else ""),
+        "⚖️",
     )
-    return aligned_row(left, rule_card(chosen, fires))
+    return card_grid([left], [rule_card(chosen, fires)])
 
 
 def library_chips(words: list[str], blocked: bool = False):
