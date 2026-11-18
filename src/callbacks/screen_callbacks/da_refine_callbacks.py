@@ -19,13 +19,16 @@ from agents.da_refine_actions import (
     perform_pick,
     perform_refine,
 )
+from agents.da_refine_describe import describe_for_box
 from layouts.da_build_panel import ADD_CASE_FIELD_TYPE, ADD_CASE_TYPE
 from layouts.da_developer_assistant_page import (
     BUSY_ID,
+    DESCRIBE_TYPE,
     MESSAGE_ID,
     REFINE_TYPE,
     REFRESH_ID,
     STATE_ID,
+    TEXT_ID,
 )
 from layouts.da_refine_panels import CONFLICT_PICK_TYPE
 
@@ -97,8 +100,38 @@ def handle_add_case(settings, fields: dict, state, refresh):
     return (refresh or 0) + 1, message
 
 
+def handle_describe(settings, clicks_value, state):
+    """Let the AI describe it: returns (text box value, message). The draft is never sent; a failed
+    call leaves the box as it was."""
+    state = state or {}
+    if not clicks_value or not state.get("refine"):
+        raise PreventUpdate
+    try:
+        with ai_turn(state.get("request_id")):
+            draft = describe_for_box(
+                settings, state.get("request_id"), state.get("refine_revision", 0)
+            )
+    except SHOWN_ERRORS as error:
+        return no_update, str(error)
+    return draft, ""
+
+
 def register_da_refine_callbacks(app, current_settings) -> None:
     """Attach the Refine clicks. `current_settings` is called at click time (tests replace it)."""
+
+    def on_describe(clicks, state):
+        if not ctx.triggered or not ctx.triggered[0]["value"]:
+            raise PreventUpdate
+        return handle_describe(current_settings(), True, state)
+
+    app.callback(
+        Output(TEXT_ID, "value", allow_duplicate=True),
+        Output(MESSAGE_ID, "children", allow_duplicate=True),
+        Input({"type": DESCRIBE_TYPE, "index": ALL}, "n_clicks"),
+        State(STATE_ID, "data"),
+        running=BUSY,
+        prevent_initial_call=True,
+    )(on_describe)
 
     def on_refine_button(clicks, state, refresh):
         trigger = ctx.triggered_id

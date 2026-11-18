@@ -19,8 +19,9 @@ from agents.da_discover_flow import (
     outcome_status,
 )
 from agents.da_handoff_screen import FOLLOW_UP_KEY, READY_KEY, HandoffBox
+from agents.da_refine_describe import DESCRIBE_KEY, DESCRIBE_LABEL
 from agents.da_refine_hooks import STEP_REQ_APPROACH, STEP_REQ_FINDINGS
-from agents.da_refine_lanes import STEP_APPROACH, STEP_REQ_CHECKPOINT
+from agents.da_refine_lanes import STEP_APPROACH, STEP_BUG, STEP_REQ_CHECKPOINT
 from agents.da_refine_screen import RefineBox, RefineBuildPanel, VersionHistory
 from agents.da_understand_checks import MAX_MESSAGE_LENGTH
 from agents.da_understand_flow import (
@@ -79,6 +80,7 @@ SKIP_ID = "da-skip"
 MESSAGE_ID = "da-message"
 CHOICE_TYPE = "da-choice"
 REFINE_TYPE = "da-refine"  # Phase 8 step 16: the Refine buttons, the id index is the action key
+DESCRIBE_TYPE = "da-describe-bug"  # B2 S4: fills the text box with a draft, never sends it
 REFINE_MAIN_KEYS = (
     "confirm_v2", "findings_ok", "repro_yes", "own_add", "bug_fix", "apply", "check_edits",
 )
@@ -779,8 +781,18 @@ def _approach_composer(
     if refine is not None and refine.offered:
         prompt, text_open = refine.placeholder, refine.text_open
         send_label = refine.send_label
+    describe = (
+        [
+            parts.choice_button(
+                DESCRIBE_LABEL, {"type": DESCRIBE_TYPE, "index": DESCRIBE_KEY}, parts.SECONDARY
+            )
+        ]
+        if refine is not None and refine.offered and refine.step == STEP_BUG
+        else []
+    )
     controls = dmc.Box(
         [
+            *describe,
             dmc.Textarea(
                 id=TEXT_ID,
                 # A box that is closed because a limit was reached says so (the cap message).
