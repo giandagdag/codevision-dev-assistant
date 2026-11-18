@@ -90,7 +90,7 @@ def test_a_lane_button_runs_the_lane_and_the_next_screen_has_the_next_buttons(se
     assert result == (1, "")
     assert request_status(settings, request_id) == "REVISION_IN_PROGRESS"
     tree = draw(request_id)
-    assert refine_keys(tree) == ["repro_yes", "repro_no", "help", "cancel"]  # B2 S2: Cancel is drawn last
+    assert refine_keys(tree) == ["repro_yes", "repro_no", "help", "cancel"]  # B2: Cancel last
     assert by_id(tree, cb.TEXT_ID).disabled  # no typing at the repro confirmation
 
 

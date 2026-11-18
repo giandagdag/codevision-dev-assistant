@@ -60,6 +60,36 @@ def test_b2_2_cancel_is_a_grey_outline_button_after_a_divider():
     assert len(lane_buttons) == 3
 
 
+def test_b2_7_the_check_after_add_this_test_is_announced_before_and_reported_after(
+    settings, monkeypatch
+):
+    from agents import da_build_agent as build_agent
+    from agents import da_build_loop as loop
+    from agents import da_refine_owntest as own
+    from agents.da_check_words import NEW_TEST_CHECK_LINE
+    from tests.da_build_play import RecordingFactory, chat
+    from tests.test_da_refine_bug import Reproducer
+    from tests.test_da_refine_owntest import build_rev
+
+    request_id, _ = written_request(settings)
+    monkeypatch.setattr(build_agent, "FAKE_SWITCHES", frozenset({"repro_passes_today"}))
+    own.add_test_case(
+        settings, request_id, rev(settings, request_id), "AC-1", "Check the book file",
+        client=Reproducer(),
+    )
+    own.confirm_own_test(settings, request_id, rev(settings, request_id))
+    before = len(chat(settings, request_id, "assistant"))
+
+    from agents.da_refine_flow import start_check
+
+    start_check(settings, request_id, build_rev(settings, request_id), after_new_test=True)
+    assert chat(settings, request_id, "assistant")[before] == NEW_TEST_CHECK_LINE
+    assert loop.run_build(settings, request_id, RecordingFactory(), build_number=2) == "done"
+
+    lines = chat(settings, request_id, "assistant")
+    assert len(lines) > before + 1 and "Result:" in lines[-1]  # the result comes after
+
+
 def test_b2_2_restore_cancel_looks_the_same():
     box = RefineBox(offered=True, buttons=[("restore_cancel", lanes.CANCEL_LABEL)])
     (cancel,) = page.refine_buttons(box)  # alone: no divider
