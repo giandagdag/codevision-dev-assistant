@@ -372,7 +372,8 @@ def test_only_questions_still_open_after_the_form_are_asked(settings):
 
     # Nothing is open: no AI question, the gate decides (criteria are missing, so a correction).
     assert view.request.status != "DECISION_REQUIRED"
-    assert view.choices == []
+    # B2 S8: the only button is "No negative scenario applies" (no failure criterion yet).
+    assert view.choices == ["No negative scenario applies"]
 
 
 def test_a_duplicate_ai_question_is_not_asked_twice(settings):

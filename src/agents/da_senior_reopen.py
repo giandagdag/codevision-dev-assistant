@@ -20,7 +20,8 @@ from db_table_functions.db_tbl_da_understand import read_session, save_session
 from pydantic_classes.da_rulebook_models import DEFAULT_MAX_MATERIAL_DECISIONS
 
 MIN_ROUNDS, MAX_ROUNDS = 1, 5
-ROUNDS_MESSAGE = f"Choose {MIN_ROUNDS} to {MAX_ROUNDS} more decision rounds."
+NOT_AT_LIMIT_MESSAGE = "This request is not waiting at the decision limit."
+ROUNDS_MESSAGE =f"Choose {MIN_ROUNDS} to {MAX_ROUNDS} more decision rounds."
 
 
 def reopen_decisions(
@@ -44,6 +45,8 @@ def reopen_decisions(
         session = read_session(conn, row.request_id)
         if session is None:
             raise SeniorActionError("This request has no Understand step to reopen.")
+        if session.step != "senior" or not session.needs_senior:
+            raise SeniorActionError(NOT_AT_LIMIT_MESSAGE)  # only a request waiting at the limit
         session.extra_decision_rounds += rounds
         room = limit + session.extra_decision_rounds - session.material_decisions_asked
         back = session.aside_decisions[: max(room, 0)]

@@ -94,7 +94,8 @@ def test_every_script_step_is_reached_by_its_own_prompt(seed_rulebook, make_sett
         for question, step in SCRIPT_STEPS.items():
             prompt = build_prompt(question, "an answer", record, seed_rulebook.charter, 1)
             assert json.loads(client.complete(prompt).text) == script[step], step
-    assert set(SCRIPT_STEPS.values()) == {k for k in script if k != "_about"}
+    # "assumptions" (B2 S5) is a separate task prompt with no question line, so not in this list.
+    assert set(SCRIPT_STEPS.values()) == {k for k in script if k not in ("_about", "assumptions")}
 
 
 def test_the_retry_marker_matches_the_engines_retry_note():

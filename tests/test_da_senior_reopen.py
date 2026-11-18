@@ -1,5 +1,7 @@
 """B2 step 6 (S7f): a senior returns a request with 1 to 5 more decision rounds."""
 
+from datetime import UTC, datetime
+
 import pytest
 
 from agents.da_senior_actions import SeniorActionError
@@ -8,7 +10,7 @@ from agents.da_understand_flow import SEND_SENIOR_OPTION, choose_option, get_und
 from db_table_functions.da_db import open_db
 from db_table_functions.db_tbl_da_audit import list_audit_events
 from db_table_functions.db_tbl_da_escalation import read_open_escalation
-from db_table_functions.db_tbl_da_understand import get_session
+from db_table_functions.db_tbl_da_understand import get_session, save_session
 from tests.da_stub_client import StubClient, stub_reply
 from tests.test_da_understand_flow import GOOD_Q1, answer, choose, limit_five, start
 from tests.test_da_understand_limit_buttons import ask
@@ -76,6 +78,21 @@ def test_rounds_outside_1_to_5_are_refused(settings, rounds):
         reopen_decisions(settings, row.escalation_id, row.revision, "senior-1", rounds, "No")
 
     assert get_session(settings.db_path, request_id).extra_decision_rounds == 0
+
+
+def test_a_request_not_waiting_at_the_limit_is_refused_and_nothing_is_written(settings):
+    request_id, row = escalated(settings, ["Extra one?"])
+    with open_db(settings.db_path) as conn:
+        session = get_session(settings.db_path, request_id)
+        session.step = "correction"  # for example a request that moved on to Build
+        save_session(conn, session, session.revision, datetime.now(UTC))
+
+    with pytest.raises(SeniorActionError, match="not waiting at the decision limit"):
+        reopen_decisions(settings, row.escalation_id, row.revision, "senior-1", 2, "Go on")
+
+    assert get_session(settings.db_path, request_id).extra_decision_rounds == 0
+    events = [e.event_type for e in list_audit_events(settings.db_path, request_id)]
+    assert "decision_limit_raised" not in events
 
 
 def test_a_missing_note_changes_nothing(settings):
