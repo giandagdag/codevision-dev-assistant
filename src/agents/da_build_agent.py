@@ -66,6 +66,8 @@ MAX_ATTEMPTS = 2
 #   bad_edit     an edit block matches nothing
 #   bad_tests    the test file misses its last case
 #   slow_test    the first test sleeps past the time limit
+#   code_test_bug    a code test fails and the Tester calls it a code bug (Fix D1)
+#   code_test_wrong  a code test fails and the Tester calls it a wrong test (Fix D1)
 #   no_answer    the AI does not answer
 #   too_big      the AI says the prompt is too big
 FAKE_SWITCHES: frozenset[str] = frozenset()
@@ -163,19 +165,34 @@ def scripted_build_reply(prompt: str, switches: frozenset[str] | None = None) ->
 
     if is_enhance_prompt(prompt):
         return scripted_enhance_reply(prompt, switches)
+    # Fix D1: the code tests written after the requirement tests passed.
+    from agents.da_code_tests import is_code_tests_prompt, scripted_code_tests_reply
+
+    if is_code_tests_prompt(prompt):
+        return scripted_code_tests_reply(prompt, switches)
+    from agents.da_code_judge import is_judge_prompt, scripted_judge_reply
+
+    if is_judge_prompt(prompt):
+        return scripted_judge_reply(prompt)
     raise LLMClientError("The scripted build client was given a prompt it does not know.")
 
 
+# Each check records evidence first (Fix D1), the way a real requirement test must.
 _VALIDATE_CHECK = (
-    'self.assertTrue(validate("book.xlsx"))\n        self.assertFalse(validate("run.exe"))'
+    'evidence(self, "accepts xlsx", "book.xlsx", True, validate("book.xlsx"))\n'
+    '        evidence(self, "refuses exe", "run.exe", False, validate("run.exe"))\n'
+    '        self.assertTrue(validate("book.xlsx"))\n        self.assertFalse(validate("run.exe"))'
 )
 _HIDDEN_CHECK = (
     'book = {"A": {"hidden": False, "rows": [1, 2]}, "B": {"hidden": True, "rows": [3]}}\n'
+    '        evidence(self, "visible sheets", book, ["A"], list(read_sheets(book)))\n'
     '        self.assertEqual(list(read_sheets(book)), ["A"])'
 )
 _EMPTY_CHECK = (
-    "with self.assertRaises(ValueError):\n"
-    '            read_sheets({"A": {"hidden": False, "rows": []}})'
+    'book = {"A": {"hidden": False, "rows": []}}\n'
+    "        with self.assertRaises(ValueError) as caught:\n"
+    "            read_sheets(book)\n"
+    '        evidence(self, "empty sheet", book, "ValueError", type(caught.exception).__name__)'
 )
 _CHECKS = (_VALIDATE_CHECK, _HIDDEN_CHECK, _EMPTY_CHECK)
 
@@ -198,6 +215,7 @@ def _scripted_tests(prompt: str, switches: frozenset[str], enhance: dict | None 
         "import unittest",
         "",
         *imports,
+        "from da_evidence import evidence",
         "",
         "",
         "class ScriptedChecks(unittest.TestCase):",

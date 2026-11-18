@@ -75,7 +75,8 @@ class GatedFactory(RecordingFactory):
             def complete(self, prompt, system=None):
                 request_id = _request_id_in(prompt)
                 with outer.lock:
-                    outer.reached.add(request_id)
+                    if request_id:  # the code-tests prompt (Fix D1) names no request
+                        outer.reached.add(request_id)
                 outer.gate.wait(30)
                 return real.complete(prompt, system)
 
@@ -85,7 +86,8 @@ class GatedFactory(RecordingFactory):
 def _request_id_in(prompt: str) -> str:
     import re
 
-    return re.search(r"CVDA-\d{4}-\d{4}", prompt).group(0)
+    found = re.search(r"CVDA-\d{4}-\d{4}", prompt)
+    return found.group(0) if found else ""
 
 
 def test_a_build_runs_to_its_end_on_a_background_thread(settings):

@@ -77,8 +77,8 @@
   },
   "test_imports": ["from agents.limits_expiry_report import ExpiryReport"],
   "test_checks": [
-   "self.assertEqual(ExpiryReport().build_line(\"ACME\", 10), \"ACME: expires today\")",
-   "self.assertEqual(ExpiryReport().build_line(\"ACME\", 15), \"ACME: 5 days left\")"
+   "line = ExpiryReport().build_line(\"ACME\", 10)\n        evidence(self, \"expiry today\", (\"ACME\", 10), \"ACME: expires today\", line)\n        self.assertEqual(line, \"ACME: expires today\")",
+   "line = ExpiryReport().build_line(\"ACME\", 15)\n        evidence(self, \"days left\", (\"ACME\", 15), \"ACME: 5 days left\", line)\n        self.assertEqual(line, \"ACME: 5 days left\")"
   ],
   "edits": {
    "first": {

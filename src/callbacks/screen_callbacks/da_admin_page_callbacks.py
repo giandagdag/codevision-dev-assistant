@@ -170,6 +170,7 @@ from layouts.da_admin_page import (
     tab_content,
 )
 from layouts.da_inbox_page import INBOX_PATH
+from layouts.da_test_report_page import REPORT_PREFIX
 from styles import da_styles
 
 NO_RULEBOOK_MESSAGE = (
@@ -251,7 +252,8 @@ def health_content(settings: Settings, window: str):
 
 def developer_page_style(pathname: str | None) -> dict:
     """The developer page stays built but hidden on /admin and /inbox (layout not touched)."""
-    return {"display": "none"} if pathname in (ADMIN_PATH, INBOX_PATH) else {}
+    hidden = pathname in (ADMIN_PATH, INBOX_PATH) or (pathname or "").startswith(REPORT_PREFIX)
+    return {"display": "none"} if hidden else {}
 
 
 # --- Reading the form back ---

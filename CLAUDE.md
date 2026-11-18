@@ -47,7 +47,7 @@ Stop, push the work so far to the phase branch, and tell Gian what you need when
   you did not see.
 
 ## Current phase
-Phase 11 fix 3 (admin polish, one index job, work embedder): in build: spec `specs/phase-11-fix-3.md`, plan `specs/phase-11-fix-3-plan.md`, branch `phase-11-fix-3`, PR into `auto/phases-7-10`. Fix batch C is merged there. Phase 11 (with fixes 1 and 2) and fix batch B1 are merged. Phase 11 (a to c) is built; "Review my code" (called 10b in the spec) comes later.
+Phase 11 fix 3 (admin polish, one index job, work embedder): built, PR #98 into `auto/phases-7-10`: spec `specs/phase-11-fix-3.md`, plan `specs/phase-11-fix-3-plan.md`, branch `phase-11-fix-3`. Fix batches C and D1 are merged there. Phase 11 (with fixes 1 and 2) and fix batch B1 are merged. Phase 11 (a to c) is built; "Review my code" (called 10b in the spec) comes later.
 (Phases 0 to 6 and Phase A are merged into `main`; Phases 7 to 9 and Phase A fixes 1 to 4 are in `auto/phases-7-10`; their specs stay in `specs/`.)
 
 Phases 4 onwards were redesigned on 31 Oct 2026 (LLM writes 100% of the code, built-in testing,

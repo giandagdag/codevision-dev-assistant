@@ -32,6 +32,9 @@ from callbacks.screen_callbacks.da_developer_assistant_page_callbacks import (  
 from callbacks.screen_callbacks.da_inbox_page_callbacks import (  # noqa: E402
     register_da_inbox_page_callbacks,
 )
+from callbacks.screen_callbacks.da_test_report_page_callbacks import (  # noqa: E402
+    register_da_test_report_page_callbacks,
+)
 from configs.da_config import ConfigError  # noqa: E402
 from db_table_functions.da_db import DatabaseBusyError  # noqa: E402
 from db_table_functions.db_tbl_da_rulebook import RulebookError, get_active_version  # noqa: E402
@@ -47,6 +50,7 @@ from layouts.da_inbox_page import (  # noqa: E402
     MENU_LINK_ID,
     inbox_shell,
 )
+from layouts.da_test_report_page import report_shell  # noqa: E402
 from styles import da_styles  # noqa: E402
 
 # Local only (rule R13): nobody else on the network can reach this server.
@@ -99,6 +103,7 @@ def create_app() -> Dash:
                         html.Div(layout(), id=DEV_WRAP_ID),
                         html.Div(id=ADMIN_CONTENT_ID),
                         inbox_shell(),
+                        report_shell(),
                     ],
                     bg=da_styles.CANVAS,
                 ),
@@ -110,6 +115,7 @@ def create_app() -> Dash:
     )
     register_da_developer_assistant_page_callbacks(app)
     register_da_admin_page_callbacks(app)
+    register_da_test_report_page_callbacks(app)
     # `?as=<id>` (pretend to be another senior) lives in this home shell only: the inbox code
     # that goes to work never reads it (spec D-G).
     register_da_inbox_page_callbacks(app, identify=as_user, keep_query=keep_as)
