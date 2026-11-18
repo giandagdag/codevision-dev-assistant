@@ -59,11 +59,7 @@ from db_table_functions.db_tbl_da_rulebook import (
 )
 from layouts.da_admin_catalog_meaning import (
     CAP_MEANING_ID,
-    CAP_MODE_ID,
     HIT_TYPE,
-    MEANING_PLACEHOLDER,
-    MODE_MEANING,
-    NAMES_PLACEHOLDER,
     meaning_results,
     no_hits_line,
 )
@@ -794,15 +790,15 @@ def filtered_catalog(settings: Settings, search: str | None, missing_backup: boo
     return catalog_list(policy.capabilities, paths, search or "", bool(missing_backup))
 
 
-def catalog_search(settings: Settings, search: str | None, missing_backup: bool | None, mode: str):
-    """(table, results). "Names and people" is the old filter; "What the code does" keeps the whole
-    table and lists the programs the search finds (fix 11-2, AG-1 to AG-3)."""
-    if mode != MODE_MEANING:
-        return filtered_catalog(settings, search, missing_backup), None
-    table = filtered_catalog(settings, "", missing_backup)
+def catalog_search(settings: Settings, search: str | None, missing_backup: bool | None):
+    """(table, results) for the one search box (fix 11-3, D-E). The table is the name search
+    (capability, senior, module); the meaning matches come under it, labelled."""
+    table = filtered_catalog(settings, search, missing_backup)
+    if not (search and search.strip()):
+        return table, None
     policy = get_active_version(settings.db_path).rulebook.policy
-    hits, message = meaning_search(search or "", settings, policy.capabilities, read_tags())
-    if search and search.strip() and not hits and not message:
+    hits, message = meaning_search(search, settings, policy.capabilities, read_tags())
+    if not hits and not message:
         return table, no_hits_line()
     return table, meaning_results(hits, message)
 
@@ -894,18 +890,10 @@ def _register_catalog_filter(app) -> None:
         Output(CAP_MEANING_ID, "children"),
         Input(CAP_SEARCH_ID, "value"),
         Input(CAP_MISSING_ID, "checked"),
-        Input(CAP_MODE_ID, "value"),
         prevent_initial_call=True,
     )
-    def on_catalog_filter(search, missing_backup, mode):
-        return catalog_search(get_admin_settings(), search, missing_backup, mode)
-
-    @app.callback(
-        Output(CAP_SEARCH_ID, "placeholder"),
-        Input(CAP_MODE_ID, "value"),
-    )
-    def on_mode_placeholder(mode):
-        return MEANING_PLACEHOLDER if mode == MODE_MEANING else NAMES_PLACEHOLDER
+    def on_catalog_filter(search, missing_backup):
+        return catalog_search(get_admin_settings(), search, missing_backup)
 
     @app.callback(
         Output(CAP_LIST_ID, "children", allow_duplicate=True),

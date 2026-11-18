@@ -32,6 +32,7 @@ class IndexHealth:
     modules: int = 0
     pieces: int = 0
     source: str = ""
+    build_id: str = ""
 
     def is_fresh(self, now: datetime) -> bool:
         return self.built and self.built_at is not None and now - self.built_at <= FRESH_FOR
@@ -67,6 +68,7 @@ def read_health(directory: Path | None = None) -> IndexHealth:
             len({piece["path"] for piece in pieces}),
             len(pieces),
             str(raw.get("source", "")),
+            str(raw.get("build_id", "")),
         )
     except OSError, ValueError, KeyError, TypeError:
         return IndexHealth(False)
