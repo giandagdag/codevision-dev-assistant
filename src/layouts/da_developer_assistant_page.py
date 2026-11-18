@@ -82,6 +82,7 @@ REFINE_TYPE = "da-refine"  # Phase 8 step 16: the Refine buttons, the id index i
 REFINE_MAIN_KEYS = (
     "confirm_v2", "findings_ok", "repro_yes", "own_add", "bug_fix", "apply", "check_edits",
 )
+REFINE_CANCEL_KEYS = ("cancel", "restore_cancel")  # drawn as plain grey outline, apart (B2 S2)
 KEYS_ID = "da-keys-ready"  # target of the Enter-to-send script; holds nothing
 BUSY_ID = "da-busy"  # the "searching" line, shown only while a Discover action runs
 # The 4-box form (Phase 6 fixes). Pattern ids, so the page can have none of them (all other
@@ -971,19 +972,25 @@ def _build_bar(
 def refine_buttons(refine: RefineBox) -> list:
     """The server-run Refine buttons. The id holds the key (ASCII, never the label), so a click
     names its own action; the engine refuses an unknown key or an old window (step 16)."""
-    return [
-        parts.choice_button(
-            label,
-            {"type": REFINE_TYPE, "index": key},
-            parts.PRIMARY
+    def draw(key: str, label: str):
+        kind = (
+            parts.CANCEL
+            if key in REFINE_CANCEL_KEYS
+            else parts.PRIMARY
             if key in REFINE_MAIN_KEYS
             else parts.SECONDARY
             if key == "help"
-            else parts.NORMAL,
-            disabled=key in refine.disabled_keys,
+            else parts.NORMAL
         )
-        for key, label in refine.buttons
-    ]
+        return parts.choice_button(
+            label, {"type": REFINE_TYPE, "index": key}, kind, disabled=key in refine.disabled_keys
+        )
+
+    main = [draw(key, label) for key, label in refine.buttons if key not in REFINE_CANCEL_KEYS]
+    cancel = [draw(key, label) for key, label in refine.buttons if key in REFINE_CANCEL_KEYS]
+    # B2 S2: Cancel sits after a divider, apart from the lane buttons.
+    divider = [dmc.Divider(orientation="vertical", h=24)] if main and cancel else []
+    return [*main, *divider, *cancel]
 
 
 def _workspace_buttons(workspace: WorkspaceView) -> dmc.Box:
