@@ -130,6 +130,9 @@ def main() -> int:
     except RuntimeError as error:  # e.g. "This only works inside CodeVision at work."
         print(error)
         return 1
+    finally:
+        if isinstance(embedder, WorkEmbedder):
+            embedder.close()
     print(summary.message)
     for name in summary.skipped:
         print(f"  skipped: {name}")

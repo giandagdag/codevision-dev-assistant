@@ -88,11 +88,12 @@ def _run(
     provider: str,
 ) -> None:
     out = directory or index_dir()
+    embedder = embedder or pick_embedder(provider)
     try:
         summary = build_index(
             source_folder(policy),
             out,
-            embedder or pick_embedder(provider),
+            embedder,
             say=lambda _text: None,
             extra_exclusions=[e.pattern for e in policy.index_exclusions],
         )
@@ -104,6 +105,8 @@ def _run(
         logger.warning("Index rebuild failed: %s", type(error).__name__)
         record_run(started_by, started, False, 0, [], f"Rebuild failed: {error}", out)
     finally:
+        if isinstance(embedder, WorkEmbedder):
+            embedder.close()  # ends the helper process
         _lock_path(out).unlink(missing_ok=True)
 
 

@@ -97,6 +97,10 @@ class Settings:
     sonar_token: str = field(default="", repr=False)
     sonar_profile: str = ""
     sonar_language: str = "py"
+    # Phase 11 fix 3: where CodeVision's code lives and the Python that runs it (D-A). The work
+    # embedder starts a helper process with them. Empty python = the DA's own.
+    codevision_src: str = ""
+    codevision_python: str = ""
 
 
 def load_settings(
@@ -166,6 +170,8 @@ def load_settings(
         sonar_token=read("DA_SONAR_TOKEN"),
         sonar_profile=read("DA_SONAR_PROFILE"),
         sonar_language=read("DA_SONAR_LANGUAGE", "py"),
+        codevision_src=read("DA_CODEVISION_SRC"),
+        codevision_python=read("DA_CODEVISION_PYTHON"),
     )
 
 
