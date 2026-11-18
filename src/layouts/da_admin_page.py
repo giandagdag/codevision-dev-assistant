@@ -299,8 +299,11 @@ def tab_content(
         view = charter_view if tab == TAB_CHARTER else build_view
         body = view(version, editable, draft, active)
     buttons = _buttons(tab, version, editable)
-    if not editable:  # Edit sits top right, beside the version pill (a float, so the pill shrinks)
-        buttons = html.Div(buttons, style={"float": "right", "marginLeft": "8px"})
+    if not editable:  # Edit sits top right on its own row: the card grid keeps its width (V4)
+        buttons = html.Div(
+            buttons,
+            style={"display": "flex", "justifyContent": "flex-end", "marginBottom": "8px"},
+        )
     return html.Div(
         [
             *(notice or []),

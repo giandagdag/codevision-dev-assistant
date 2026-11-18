@@ -41,7 +41,10 @@ FULL_EXPLAIN = (
     "Reads every program again and re-tags every program. It takes much longer than Delta. "
     "Discovery keeps using the old index until the new one is saved."
 )
-FIX_HINT = "Set Where CodeVision's code lives in Server settings, then try again."
+FIX_HINT = (
+    "Set DA_CODEVISION_SRC (and DA_CODEVISION_PYTHON if CodeVision uses its own Python) "
+    "in the .env file, restart the server, then try again."
+)
 OTHER_HINT = "Check the server settings, then run the job again."
 
 

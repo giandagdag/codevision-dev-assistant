@@ -58,7 +58,7 @@ def test_edit_button_comes_before_the_tab_body_in_the_read_view(published_rulebo
         shown = tab_content(tab, published_rulebook, modules=[])
 
         first = shown.children[0]
-        assert first.style["float"] == "right"
+        assert first.style["justifyContent"] == "flex-end"  # its own row: the grid keeps its width
         assert first.children.id == act_id(tab, ACTION_EDIT)
 
 

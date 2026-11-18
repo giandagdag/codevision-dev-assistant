@@ -86,6 +86,7 @@ def test_stop_keeps_the_old_index(tmp_path):
     assert not row["saved"] and "Stopped" in row["message"]
     assert (out / PIECES_NAME).read_text(encoding="utf-8") == before
     assert not job.stop_requested(out)  # the request is cleared when the job ends
+    assert not job.read_status(out).get("error")  # a Stop is not a failure (no red box)
 
 
 def test_failed_rebuild_keeps_the_error_for_the_page(tmp_path):

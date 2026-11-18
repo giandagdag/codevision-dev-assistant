@@ -23,19 +23,22 @@ logger = get_logger(__name__)
 LOCK_NAME = "da_code_index.lock"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_FOLDER = Path(__file__).resolve().parents[1]  # B1's default source when nothing is set
-SERVER_STARTED = datetime.now()  # a lock from before this moment belongs to a dead server
+SERVER_STARTED = datetime.now()  # when this server process started (tests age locks from it)
 ALREADY_RUNNING = "A rebuild is already running. Wait for it to finish."
 ONE_JOB_AT_A_TIME = "One job at a time: wait for the other one to finish."
-MADE_UP_SCOPE_REFUSED = "The made-up practice folder cannot be used at work"
+MADE_UP_SCOPE_REFUSED = (
+    "The made-up practice folder cannot be used at work. "
+    "Clear Folder scope on Repository and index to use DA_CODEVISION_SRC."
+)
 
 
-def source_folder(policy: Policy, provider: str = "") -> Path:
+def source_folder(policy: Policy, provider: str = "", settings: Settings | None = None) -> Path:
     """Folder scope first, then (at work) DA_CODEVISION_SRC, then B1's DA_CODE_INDEX_SOURCE and
-    B1's default."""
+    B1's default. The passed settings win over a fresh read of .env."""
     scope = policy.index_folder_scope.strip()
     if scope:
         return Path(scope) if Path(scope).is_absolute() else PROJECT_ROOT / scope
-    if provider == "onprem" and (work_src := load_settings().codevision_src):
+    if provider == "onprem" and (work_src := (settings or load_settings()).codevision_src):
         return Path(work_src)
     return Path(os.environ.get("DA_CODE_INDEX_SOURCE") or SRC_FOLDER)
 
@@ -47,12 +50,16 @@ def scope_refusal(policy: Policy, provider: str) -> str:
     return ""
 
 
-def pick_embedder(provider: str) -> Embedder:
+def pick_embedder(provider: str, settings: Settings | None = None) -> Embedder:
     """Work gets the real embedder, anything else the made-up one (never a fake index at work).
 
     The provider comes from the settings (they read .env), not from os.environ: .env values never
     reach os.environ, so reading it here would pick the made-up embedder at work."""
-    return WorkEmbedder() if provider == "onprem" else FakeEmbedder()
+    if provider != "onprem":
+        return FakeEmbedder()
+    if settings is None:
+        return WorkEmbedder()
+    return WorkEmbedder(settings.codevision_src, settings.codevision_python)
 
 
 def _lock_path(directory: Path | None, name: str = LOCK_NAME) -> Path:
@@ -104,12 +111,12 @@ def _run(
     tag_client=None,
 ) -> None:
     out = directory or index_dir()
-    embedder = embedder or pick_embedder(provider)
+    embedder = embedder or pick_embedder(provider, settings)
     job.begin(out, started, started_by, mode, trigger)
     extra = {"mode": mode, "trigger": trigger}
     try:
         summary = build_index(
-            source_folder(policy, provider),
+            source_folder(policy, provider, settings),
             out,
             embedder,
             say=lambda _text: None,
@@ -128,8 +135,8 @@ def _run(
             started_by, started, summary.saved, summary.count, summary.skipped,
             message, out, _with_seconds(extra, started),
         )
-        if not summary.saved:
-            job.fail(out, summary.message)
+        if not summary.saved and not summary.message.startswith("Stopped."):
+            job.fail(out, summary.message)  # a Stop the user asked for is not a failure
     except Exception as error:  # a failed job must still free the lock and leave a log line
         logger.warning("Index rebuild failed: %s", type(error).__name__)
         message = f"Rebuild failed: {error}"
@@ -148,8 +155,8 @@ def _tag_step(policy, settings, started_by, summary, out, tag_client, extra, pro
 
     try:
         result = tag_programs(
-            policy, settings, started_by, summary.mode, source_folder(policy, provider),
-            out, tag_client,
+            policy, settings, started_by, summary.mode,
+            source_folder(policy, provider, settings), out, tag_client,
         )
     except Exception as error:  # a tagging crash must not hide the saved index
         logger.warning("Tagging failed: %s", type(error).__name__)

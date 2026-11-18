@@ -21,6 +21,10 @@ WORK_ONLY_MESSAGE = "This only works inside CodeVision at work."
 HELPER_DIED_MESSAGE = (
     "CodeVision's embedder stopped twice. Not saved; the old index stays."
 )
+NOT_STARTED_MESSAGE = (
+    "CodeVision's embedder could not start. Check DA_CODEVISION_PYTHON "
+    "(the Python that runs CodeVision)."
+)
 HELPER = Path(__file__).resolve().parents[1] / "da_embed_worker.py"
 # Our own folder: we never read or change CodeVision's vector files.
 DEFAULT_INDEX_DIR = Path(__file__).resolve().parents[1] / "data" / "da_code_index"
@@ -103,19 +107,19 @@ class WorkEmbedder:
             )
         # An argument list (never one joined string) so a path with spaces works. -I keeps our own
         # src folder off the helper's search path.
-        process = subprocess.Popen(
-            [python or sys.executable, "-I", str(HELPER), src],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            text=True, encoding="utf-8", cwd=src,
-        )
+        try:
+            process = subprocess.Popen(
+                [python or sys.executable, "-I", str(HELPER), src],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                text=True, encoding="utf-8", cwd=src,
+            )
+        except OSError:  # a mistyped Python path: say so, do not call it a dead helper
+            raise RuntimeError(NOT_STARTED_MESSAGE) from None
         try:
             first = json.loads(self._read_line(process))
         except (EOFError, ValueError, OSError):
             process.kill()
-            raise RuntimeError(
-                "CodeVision's embedder could not start. Check DA_CODEVISION_PYTHON "
-                "(the Python that runs CodeVision)."
-            ) from None
+            raise RuntimeError(NOT_STARTED_MESSAGE) from None
         if "error" in first:
             process.kill()
             raise RuntimeError(first["error"])

@@ -50,9 +50,19 @@ def tick(settings: Settings, now: datetime | None, last_day: date | None, start=
     return sgt(now).date()
 
 
+def first_day(settings: Settings, now: datetime | None = None) -> date | None:
+    """Today counts as done only when the server starts after the set time (no catch-up then).
+    Started earlier in the day, tonight's run still happens."""
+    version = get_active_version(settings.db_path)
+    local = sgt(now)
+    if version is not None and local.strftime("%H:%M") < version.rulebook.policy.index_nightly_time:
+        return None
+    return local.date()
+
+
 def start_scheduler(settings: Settings) -> threading.Thread:
     """Daemon thread. A server started after the set time waits for tomorrow's."""
-    state = {"day": sgt().date()}
+    state = {"day": first_day(settings)}
 
     def loop() -> None:
         while True:

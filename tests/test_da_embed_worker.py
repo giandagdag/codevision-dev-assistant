@@ -63,6 +63,13 @@ def test_unset_or_wrong_folder_names_the_setting(tmp_path, monkeypatch):
             WorkEmbedder(src).embed("SECRET-TEXT")
 
 
+def test_a_python_path_that_does_not_exist_names_the_setting(tmp_path):
+    src = _codevision(tmp_path)
+    with pytest.raises(RuntimeError, match="DA_CODEVISION_PYTHON") as caught:
+        WorkEmbedder(str(src), str(tmp_path / "no_python.exe")).embed("SECRET-TEXT")
+    assert "stopped twice" not in str(caught.value) and "SECRET-TEXT" not in str(caught.value)
+
+
 def test_missing_library_is_named_without_text(tmp_path):
     src = _codevision(tmp_path, tools_extra="import library_that_is_not_there\n")
     with pytest.raises(RuntimeError) as caught:
