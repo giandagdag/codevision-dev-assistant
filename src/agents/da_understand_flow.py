@@ -31,6 +31,7 @@ from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import get_help, out_of_scope_understand
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_understand_agent import InterpretResult, get_understand_client, interpret
+from agents.da_understand_assume import ASSUME_BASIS, AssumeError, ask_assumptions, criteria_for
 from agents.da_understand_checks import (
     confirmation_gate_problems,
     developer_message_problem,
@@ -79,6 +80,8 @@ from pydantic_classes.da_models import (
 from pydantic_classes.da_request_record_models import (
     QUESTION_COUNT,
     TEXT_LIMIT,
+    AssumedCase,
+    Assumption,
     Decision,
     InputMode,
     MustNotChange,
@@ -515,6 +518,8 @@ def choose_option(
     session = _load_session(settings.db_path, request_id, base_revision)
     if session.step == "decision":
         return _decide(settings, request_id, option, False, base_revision, now, client)
+    if session.step == "senior" and option == ASSUME_OPTION:
+        return _assume(settings, session, base_revision, now, client)
     with _turn(settings.db_path, request_id, base_revision, now) as turn:
         if turn.session.step == "checkpoint":
             _choose_checkpoint(turn, option)
@@ -973,14 +978,49 @@ def _choose_at_limit(turn: _Turn, option: str) -> None:
     if option not in _limit_choices(session):
         raise UnderstandError(_not_a_choice_message(option, _limit_choices(session)))
     turn.say("developer", option)
-    if option == SEND_SENIOR_OPTION:
-        _help_to_senior(turn, "senior")
-        return
-    items = _senior_items(session)
-    turn.audit("developer", "assumptions_proceeded", {"decisions": len(_assumable(items))})
-    kept = [i for i in session.record.open_items if i not in _assumable(items)]
-    _set_open_items(session, kept)
-    session.last_changed_fields = ["open_items"]
+    _help_to_senior(turn, "senior")
+
+
+def _assume(
+    settings: Settings,
+    session: UnderstandSession,
+    base_revision: int,
+    now: datetime,
+    client: LLMClient | None,
+) -> UnderstandView:
+    """Proceed with these assumptions: one AI call (no lock held) writes an assumption for each
+    open decision that may be assumed. A failed call changes nothing."""
+    if ASSUME_OPTION not in _limit_choices(session):
+        raise UnderstandError(_not_a_choice_message(ASSUME_OPTION, _limit_choices(session)))
+    items = _assumable(_senior_items(session))
+    questions = [item.removeprefix(SENIOR_PREFIX) for item in items]
+    try:
+        client = client or get_understand_client(settings, "assumptions")
+        cases = ask_assumptions(client, questions, session.record)
+    except (ConfigError, AssumeError) as error:
+        raise UnderstandError(str(error)) from error
+    request_id = session.request_id
+    with _turn(settings.db_path, request_id, base_revision, now) as turn:
+        turn.say("developer", ASSUME_OPTION)
+        _apply_assumptions(turn, items, cases)
+    return get_understand_view(settings, request_id)
+
+
+def _apply_assumptions(turn: _Turn, items: list[str], cases: list[AssumedCase]) -> None:
+    session = turn.session
+    record = session.record
+    added = [Assumption(text=case.text, basis=ASSUME_BASIS) for case in cases]
+    session.record = record.model_copy(
+        update={
+            "assumptions": [*record.assumptions, *added],
+            "open_items": [i for i in record.open_items if i not in items],
+        }
+    )
+    session.assumed_cases = [*session.assumed_cases, *cases]
+    session.last_changed_fields = ["assumptions", "open_items"]
+    for assumption in added:
+        turn.audit("system", "assumption_added", assumption.model_dump())
+    turn.audit("developer", "assumptions_proceeded", {"decisions": len(items)})
     if _senior_items(session):  # a never-assume decision is left: the gate keeps blocking
         turn.say("assistant", SENIOR_ONLY_MESSAGE)
         return
@@ -1040,6 +1080,13 @@ def _start_correction(turn: _Turn) -> None:
 def _confirm(turn: _Turn) -> None:
     """Save record v1 and move to CONFIRMED_FOR_DISCOVERY, in the action's one transaction."""
     session = turn.session
+    # B2 S7d: the Proceed assumptions that are still on the record become success criteria now.
+    extra = criteria_for(session.record, session.assumed_cases)
+    if extra:
+        criteria = [*session.record.acceptance_criteria, *extra]
+        session.record = session.record.model_copy(update={"acceptance_criteria": criteria})
+        turn.audit("system", "assumption_criteria_added", {"ids": [c.id for c in extra]})
+    session.assumed_cases = []
     record = session.record
     insert_confirmed_record(turn.conn, record, turn.request.developer_id, turn.now)
     turn.move_to(STATUS_CONFIRMED)

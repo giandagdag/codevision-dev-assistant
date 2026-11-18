@@ -252,5 +252,15 @@
     "updates": {},
     "ambiguities": [],
     "hint": ""
+  },
+  "assumptions": {
+    "assumptions": [
+      {
+        "text": "Keep today's behaviour where the request does not say otherwise",
+        "given": "an input the request does not mention",
+        "when": "it is processed",
+        "then": "it is handled the same way as today"
+      }
+    ]
   }
 }

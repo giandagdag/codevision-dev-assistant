@@ -2,14 +2,17 @@
 
 import pytest
 
+from agents.da_understand_assume import ASSUME_BASIS, criteria_for
 from agents.da_understand_checks import is_never_assumed
 from agents.da_understand_flow import (
     ASSUME_OPTION,
     SEND_SENIOR_OPTION,
     choose_option,
+    get_understand_view,
 )
 from db_table_functions.db_tbl_da_understand import UnderstandError
-from tests.da_stub_client import StubClient, stub_reply
+from pydantic_classes.da_request_record_models import AssumedCase, Assumption
+from tests.da_stub_client import FailingClient, StubClient, stub_reply
 from tests.test_da_understand_flow import GOOD_Q1, answer, choose, limit_five, start
 
 pytestmark = pytest.mark.usefixtures("published_rulebook", "limit_five")
@@ -86,3 +89,62 @@ def test_send_to_senior_opens_an_escalation(settings):
     )
 
     assert view.request.status == "ESCALATION_REQUIRED"
+
+
+CASE = {
+    "text": "Hidden sheets are skipped",
+    "given": "a workbook with a hidden sheet",
+    "when": "it is uploaded",
+    "then": "only visible sheets are read",
+}
+
+
+def test_proceed_saves_marked_assumptions(settings):
+    view = at_limit(settings, "Should hidden sheets be read?")
+
+    view = choose_option(
+        settings, view.request.request_id, ASSUME_OPTION, view.revision,
+        client=StubClient({"assumptions": [CASE]}),
+    )  # fmt: skip
+
+    assert [(a.text, a.basis) for a in view.record.assumptions][-1] == (CASE["text"], ASSUME_BASIS)
+    assert view.record.open_items == []
+
+
+def test_failed_assumption_call_changes_nothing(settings):
+    view = at_limit(settings, "Should hidden sheets be read?")
+
+    with pytest.raises(UnderstandError, match="Nothing was changed"):
+        choose_option(
+            settings, view.request.request_id, ASSUME_OPTION, view.revision,
+            client=FailingClient(),
+        )  # fmt: skip
+
+    after = get_understand_view(settings, view.request.request_id)
+    assert after.record == view.record
+    assert after.request.status == view.request.status
+    assert after.revision == view.revision
+
+
+def test_wrong_number_of_assumptions_is_refused(settings):
+    view = at_limit(settings, "Should hidden sheets be read?")
+
+    with pytest.raises(UnderstandError):
+        choose_option(
+            settings, view.request.request_id, ASSUME_OPTION, view.revision,
+            client=StubClient({"assumptions": [CASE, CASE]}),
+        )  # fmt: skip
+
+
+def test_only_marked_assumptions_become_criteria(settings):
+    view = at_limit(settings, "Should hidden sheets be read?")
+    kept = Assumption(text=CASE["text"], basis=ASSUME_BASIS)
+    typed = Assumption(text="Typed by a person", basis="My own note")
+    record = view.record.model_copy(update={"assumptions": [kept, typed]})
+
+    edited = AssumedCase(**{**CASE, "text": "Edited away"})
+    new = criteria_for(record, [AssumedCase(**CASE), edited])
+
+    assert [(c.id, c.kind, c.then) for c in new] == [
+        (f"AC-{len(record.acceptance_criteria) + 1}", "success", CASE["then"])
+    ]
