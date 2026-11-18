@@ -34,6 +34,7 @@ from agents.da_understand_agent import InterpretResult, get_understand_client, i
 from agents.da_understand_checks import (
     confirmation_gate_problems,
     developer_message_problem,
+    is_never_assumed,
     refresh_scope_conflicts,
 )
 from configs.da_config import ConfigError, Settings
@@ -153,6 +154,13 @@ SENIOR_PREFIX = "Needs a senior decision: "
 CHECKPOINT_HELP_ITEM = HELP_PREFIX + "confirmation"
 
 SENIOR_MESSAGE = "This change has many open decisions. Please get help from a senior."
+# B2 S7c: the two buttons at the decision limit. (The checkpoint has its own "Proceed".)
+ASSUME_OPTION = "Proceed with these assumptions"
+SEND_SENIOR_OPTION = "Send to my senior"
+SENIOR_ONLY_MESSAGE = (
+    "Some open decisions touch security, money or customer data. These are never assumed: "
+    f"please choose {SEND_SENIOR_OPTION}."
+)
 OPTIONAL_MESSAGE = (
     f"{OPTIONAL_QUESTION}\nIf there is an existing feature to use as a reference, or something "
     "that must not change, tell me. Not sure? Press Skip."
@@ -510,6 +518,8 @@ def choose_option(
     with _turn(settings.db_path, request_id, base_revision, now) as turn:
         if turn.session.step == "checkpoint":
             _choose_checkpoint(turn, option)
+        elif turn.session.step == "senior":
+            _choose_at_limit(turn, option)
         else:
             raise UnderstandError(_wrong_step_message(turn.session))
     return get_understand_view(settings, request_id)
@@ -948,6 +958,42 @@ def _choose_checkpoint(turn: _Turn, option: str) -> None:
         _confirm(turn)
 
 
+def _senior_items(session: UnderstandSession) -> list[str]:
+    return [i for i in session.record.open_items if i.startswith(SENIOR_PREFIX)]
+
+
+def _assumable(items: list[str]) -> list[str]:
+    """The open decisions the app may assume: none that touch the never-assume list (B2 S7e)."""
+    return [i for i in items if not is_never_assumed(i)]
+
+
+def _choose_at_limit(turn: _Turn, option: str) -> None:
+    """At the decision limit: assume the safe open decisions, or send the request to a senior."""
+    session = turn.session
+    if option not in _limit_choices(session):
+        raise UnderstandError(_not_a_choice_message(option, _limit_choices(session)))
+    turn.say("developer", option)
+    if option == SEND_SENIOR_OPTION:
+        _help_to_senior(turn, "senior")
+        return
+    items = _senior_items(session)
+    turn.audit("developer", "assumptions_proceeded", {"decisions": len(_assumable(items))})
+    kept = [i for i in session.record.open_items if i not in _assumable(items)]
+    _set_open_items(session, kept)
+    session.last_changed_fields = ["open_items"]
+    if _senior_items(session):  # a never-assume decision is left: the gate keeps blocking
+        turn.say("assistant", SENIOR_ONLY_MESSAGE)
+        return
+    session.needs_senior = False
+    _advance(turn)
+
+
+def _limit_choices(session: UnderstandSession) -> list[str]:
+    if _assumable(_senior_items(session)):
+        return [ASSUME_OPTION, SEND_SENIOR_OPTION]
+    return [SEND_SENIOR_OPTION]
+
+
 def _help_to_senior(turn: _Turn, step: str) -> None:
     """Escalation trigger 5 at the Understand Help choices (spec section 7). With the switch on,
     a row opens and the request moves to ESCALATION_REQUIRED, open item `Escalated in Understand:
@@ -1187,6 +1233,8 @@ def _choices_for(session: UnderstandSession) -> list[str]:
         return _decision_choices(session.pending_decisions[0])
     if session.step == "checkpoint":
         return list(CHECKPOINT_OPTIONS)
+    if session.step == "senior":
+        return _limit_choices(session)
     return []
 
 

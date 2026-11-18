@@ -1285,7 +1285,7 @@ def _composer(
         ],
         style=da_styles.COMPOSER,
     )
-    if mode == "choices":
+    if mode == "choices" or choices:  # the decision limit has buttons but a paused text box
         return dmc.Box([_choices_bar(choices), controls])
     return controls
 
