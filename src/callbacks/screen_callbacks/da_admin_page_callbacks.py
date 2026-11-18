@@ -12,6 +12,7 @@ import dash_mantine_components as dmc
 from dash import ALL, Input, Output, State, ctx, html, no_update
 from dash.exceptions import PreventUpdate
 
+from agents import da_admin_job as job
 from agents.da_admin_access import is_admin
 from agents.da_admin_catalog import (
     pattern_offer,
@@ -83,10 +84,17 @@ from layouts.da_admin_coding_tab import (
 from layouts.da_admin_index_panels import (
     REBUILD_BTN,
     REBUILD_CONFIRM,
+    REBUILD_FULL_BTN,
+    REBUILD_FULL_CONFIRM,
+    REBUILD_FULL_LATER,
+    REBUILD_FULL_MODAL,
     REBUILD_LATER,
     REBUILD_MODAL,
     REBUILD_POLL,
+    REBUILD_PROGRESS,
     REBUILD_STATUS,
+    REBUILD_STOP,
+    job_panel,
     rebuild_status,
 )
 from layouts.da_admin_page import (
@@ -539,10 +547,16 @@ def rebuild_action(settings: Settings, button: str | None):
     """Rebuild index clicks. Returns (modal opened, status line). Only Rebuild starts a job."""
     if not is_admin(settings, settings.developer_id):
         raise PreventUpdate
-    if button == REBUILD_CONFIRM:
+    if button == REBUILD_STOP:
+        job.request_stop()  # checked between pieces; the old index and tags stay
+    elif button in (REBUILD_CONFIRM, REBUILD_FULL_CONFIRM):
         policy = get_active_version(settings.db_path).rulebook.policy
         started, message = start_rebuild(
-            policy, settings.developer_id, provider=settings.llm_provider, settings=settings
+            policy,
+            settings.developer_id,
+            provider=settings.llm_provider,
+            settings=settings,
+            mode="full" if button == REBUILD_FULL_CONFIRM else "delta",
         )
         if not started:
             return False, message
@@ -563,26 +577,47 @@ def _register_rebuild(app) -> None:
         return bool(clicks)
 
     @app.callback(
-        Output(REBUILD_MODAL, "opened", allow_duplicate=True),
-        Output(REBUILD_STATUS, "children", allow_duplicate=True),
-        Output(REBUILD_BTN, "disabled", allow_duplicate=True),
-        Input(REBUILD_CONFIRM, "n_clicks"),
-        Input(REBUILD_LATER, "n_clicks"),
+        Output(REBUILD_FULL_MODAL, "opened"),
+        Input(REBUILD_FULL_BTN, "n_clicks"),
         prevent_initial_call=True,
     )
-    def answer_confirm(_confirm, _later):
+    def open_full_confirm(clicks):
+        return bool(clicks)
+
+    @app.callback(
+        Output(REBUILD_MODAL, "opened", allow_duplicate=True),
+        Output(REBUILD_FULL_MODAL, "opened", allow_duplicate=True),
+        Output(REBUILD_STATUS, "children", allow_duplicate=True),
+        Output(REBUILD_BTN, "disabled", allow_duplicate=True),
+        Output(REBUILD_FULL_BTN, "disabled", allow_duplicate=True),
+        Output(REBUILD_STOP, "disabled", allow_duplicate=True),
+        Input(REBUILD_CONFIRM, "n_clicks"),
+        Input(REBUILD_LATER, "n_clicks"),
+        Input(REBUILD_FULL_CONFIRM, "n_clicks"),
+        Input(REBUILD_FULL_LATER, "n_clicks"),
+        Input(REBUILD_STOP, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def answer_confirm(*_clicks):
         if not ctx.triggered[0]["value"]:
             raise PreventUpdate
         opened, status = rebuild_action(get_admin_settings(), ctx.triggered_id)
-        return opened, status, running_since() is not None
+        running = running_since() is not None
+        return opened, opened, status, running, running, not running
 
     @app.callback(
         Output(REBUILD_STATUS, "children"),
         Output(REBUILD_BTN, "disabled"),
+        Output(REBUILD_FULL_BTN, "disabled"),
+        Output(REBUILD_STOP, "disabled"),
+        Output(REBUILD_PROGRESS, "children"),
         Input(REBUILD_POLL, "n_intervals"),
     )
     def poll(_ticks):
-        return current_rebuild_status(), running_since() is not None
+        started = running_since()
+        running = started is not None
+        panel = job_panel(job.read_status(), started)
+        return current_rebuild_status(), running, running, not running, panel
 
 
 def _save(settings, tab, form, note, base_version, active):

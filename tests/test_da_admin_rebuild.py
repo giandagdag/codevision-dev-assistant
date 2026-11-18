@@ -142,7 +142,7 @@ def test_rebuild_click_passes_the_settings_provider_not_the_environment(monkeypa
     monkeypatch.delenv("DA_LLM_PROVIDER", raising=False)
     seen = {}
 
-    def fake_start(policy, who, provider="", settings=None):
+    def fake_start(policy, who, provider="", settings=None, mode=""):
         seen["provider"] = provider
         return True, "ok"
 

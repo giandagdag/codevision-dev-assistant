@@ -83,6 +83,6 @@ def test_nightly_time_must_be_hh_mm_and_the_tiles_show_merge_disabled():
         type(_policy("")).model_validate(bad)
     tiles = refresh_tiles("nightly", "03:30")
     assert len(tiles.children) == 3 and tiles.cols == 3  # equal width
-    assert tiles.children[0].style == {"opacity": 0.5}
+    assert tiles.children[0].style == {"height": "100%", "opacity": 0.5}
     assert MERGE_DISABLED_REASON in str(tiles)
     assert "03:30" in str(tiles)

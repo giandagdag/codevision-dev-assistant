@@ -58,7 +58,9 @@ GRID = {
     "gap": "16px",
     "alignItems": "start",
 }
-CARD_STACK = {"display": "flex", "flexDirection": "column", "gap": "16px", "minWidth": 0}
+# A list row: thin divider underneath (V5).
+ROW = {"padding": "8px 0", "borderBottom": "1px solid #E3E7EE"}
+CARD_STACK ={"display": "flex", "flexDirection": "column", "gap": "16px", "minWidth": 0}
 
 
 def pill_style(name: str) -> dict:
