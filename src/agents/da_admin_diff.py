@@ -43,6 +43,7 @@ _REPOSITORY_FIELDS = (
     "index_branch",
     "index_folder_scope",
     "index_refresh_mode",
+    "index_nightly_time",
     "index_exclusions",
 )
 _CODING_FIELDS = ("approved_libraries", "build_blocked_imports", "sonar_severity_map")

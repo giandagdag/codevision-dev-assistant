@@ -115,6 +115,8 @@ def run_line(run: dict) -> str:
     """One run in plain words: done with the count, skipped pieces, or not saved."""
     when = str(run.get("started_at", ""))[:16].replace("T", " ")
     who = run.get("started_by", "")
+    if run.get("trigger") == "Nightly":  # AH-10: the row says who started it
+        who = f"{who} (Nightly)"
     if not run.get("saved"):
         return f"{when} {who}: ❌ Not saved: {run.get('message', '')}"
     skipped = run.get("skipped") or []

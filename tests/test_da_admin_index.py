@@ -75,7 +75,8 @@ def test_repo_view_shows_connection_refresh_and_fixed_skips(
 
     assert "Branch indexed: main 🔒" in text
     assert "Folder scope:" in text and "src/data/da_fake_codevision" in text  # path in a code chip
-    assert "On every merge to main" in text and "Not connected yet" in text
+    assert "On every merge to main" in text
+    assert "Needs Bitbucket to tell the server about merges (WF-12)" in text
     assert "🔒 da_*" in text and "Always skipped." in text
     assert "Search results per query: 20" in text
 

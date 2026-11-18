@@ -10,9 +10,10 @@ from agents.da_admin_index import FIXED_SKIPS, NEEDS_BUILDING, IndexHealth, run_
 from styles import da_admin_styles as admin_styles
 from styles import da_styles
 
+MERGE_DISABLED_REASON = "Needs Bitbucket to tell the server about merges (WF-12)"
 REFRESH_MODES = (
-    ("merge", "On every merge to main", "Not connected yet"),
-    ("nightly", "Nightly", "Not connected yet"),
+    ("merge", "On every merge to main", MERGE_DISABLED_REASON),
+    ("nightly", "Nightly", "Delta job every night"),
     ("manual", "Manual", "Runs when you press Rebuild index"),
 )
 
@@ -112,20 +113,24 @@ def recent_refreshes(runs: list[dict]):
     return dmc.Stack(lines, gap=2)
 
 
-def refresh_tiles(mode: str):
-    """Three tiles, the chosen one marked. Only Manual runs today (the others are saved only)."""
-    return dmc.Group(
+def refresh_tiles(mode: str, nightly_time: str = "02:00"):
+    """Three equal-width tiles, the chosen one marked. On every merge is disabled (AH-17)."""
+    notes = {"nightly": f"Delta job at {nightly_time} Singapore time, while the server runs"}
+    return dmc.SimpleGrid(
         [
             dmc.Paper(
                 [
                     dmc.Text(("✔ " if key == mode else "") + title, fw=600, size="sm"),
-                    dmc.Text(note, size="xs", c="dimmed"),
+                    dmc.Text(notes.get(key, note), size="xs", c="dimmed"),
                 ],
                 withBorder=True,
                 p="xs",
+                style={"opacity": 0.5} if key == "merge" else None,
             )
             for key, title, note in REFRESH_MODES
-        ]
+        ],
+        cols=3,
+        spacing="xs",
     )
 
 

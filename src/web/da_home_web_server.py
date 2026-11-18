@@ -18,6 +18,7 @@ import dash_mantine_components as dmc  # noqa: E402
 from dash import Dash, Input, Output, dcc, html  # noqa: E402
 from dash_iconify import DashIconify  # noqa: E402
 
+from agents.da_admin_scheduler import start_scheduler  # noqa: E402
 from agents.da_build_runner import recover_interrupted_builds  # noqa: E402
 from agents.da_safety_net_flow import recover_interrupted_safety_nets  # noqa: E402
 from callbacks.screen_callbacks.da_admin_page_callbacks import (  # noqa: E402
@@ -206,6 +207,7 @@ def main() -> int:
     # Same for a safety net that was being written (Phase 9, F3): Try again runs it again.
     for request_id in recover_interrupted_safety_nets(settings):
         print(f"The safety net of {request_id} was cut off by the restart. Press Try again.")
+    start_scheduler(settings)  # Nightly refresh, only while this server runs
     create_app().run(host=HOST, port=PORT, debug=False)
     return 0
 

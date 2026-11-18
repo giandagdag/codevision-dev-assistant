@@ -69,7 +69,10 @@ def repo_view(
         _section("Connection", _connection(policy, editable, draft)),
         _section(
             "Refresh",
-            refresh_tiles(_draft(draft, "index_refresh_mode", policy.index_refresh_mode)),
+            refresh_tiles(
+                _draft(draft, "index_refresh_mode", policy.index_refresh_mode),
+                _draft(draft, "index_nightly_time", policy.index_nightly_time),
+            ),
         ),
         _section(
             "Exclusions",
@@ -157,9 +160,19 @@ def _connection(policy: Policy, editable: bool, draft: dict | None):
         lines.append(
             dmc.Select(
                 label="Refresh",
-                data=[{"value": k, "label": t} for k, t, _ in REFRESH_MODES],
+                data=[
+                    {"value": k, "label": t, "disabled": k == "merge"} for k, t, _ in REFRESH_MODES
+                ],
                 value=_draft(draft, "index_refresh_mode", policy.index_refresh_mode),
                 id={"type": "adm-field", "tab": TAB_REPO, "name": "index_refresh_mode"},
+                size="xs",
+            )
+        )
+        lines.append(
+            dmc.TextInput(
+                label="Nightly time (Singapore time, 24-hour HH:MM)",
+                value=_draft(draft, "index_nightly_time", policy.index_nightly_time),
+                id={"type": "adm-field", "tab": TAB_REPO, "name": "index_nightly_time"},
                 size="xs",
             )
         )

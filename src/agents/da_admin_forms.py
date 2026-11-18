@@ -235,6 +235,8 @@ def _policy_from_repo_form(current: Policy, form: dict) -> Policy:
         data["index_folder_scope"] = str(form["index_folder_scope"] or "").strip()
     if "index_refresh_mode" in form:
         data["index_refresh_mode"] = form["index_refresh_mode"]
+    if "index_nightly_time" in form:
+        data["index_nightly_time"] = str(form["index_nightly_time"] or "").strip()
     if "index_exclusions" in form:
         rows = [
             {k: str(row.get(k, "")).strip() for k in ("pattern", "reason", "kind")}
