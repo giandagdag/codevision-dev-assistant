@@ -159,6 +159,10 @@ CHECKPOINT_HELP_ITEM = HELP_PREFIX + "confirmation"
 SENIOR_MESSAGE = "This change has many open decisions. Please get help from a senior."
 # B2 S7c: the two buttons at the decision limit. (The checkpoint has its own "Proceed".)
 NO_NEGATIVE_OPTION = "No negative scenario applies"  # B2 S8
+EDIT_ASSUMPTION_PREFIX = "Edit assumption "  # B2 P34, then the number
+EDIT_ASSUMPTION_NEEDS_TEXT = (
+    "Type the new sentence in the box (one short line), then press the Edit assumption button."
+)
 NO_NEGATIVE_LIMIT = 200
 NO_NEGATIVE_NEEDS_REASON = (
     f"Type a one-line reason in the box (up to {NO_NEGATIVE_LIMIT} characters), "
@@ -1328,13 +1332,65 @@ def set_no_negative_reason(
     return get_understand_view(settings, request_id)
 
 
+def _proceed_assumption_slots(session: UnderstandSession) -> list[int]:
+    """Positions in `record.assumptions` of the Proceed assumptions. They sit in the same order as
+    `assumed_cases`, so slot n of one is slot n of the other (P34)."""
+    marked = [i for i, a in enumerate(session.record.assumptions) if a.basis == ASSUME_BASIS]
+    return marked if len(marked) == len(session.assumed_cases) else []
+
+
+def edit_assumption(
+    settings: Settings,
+    request_id: str,
+    option: str,
+    text: str,
+    base_revision: int,
+    now: datetime | None = None,
+) -> UnderstandView:
+    """B2 P34: at the checkpoint the developer rewrites one Proceed assumption (the box holds the
+    new sentence). The matching test case follows: its "then" becomes the new sentence."""
+    now = now or datetime.now(UTC)
+    with _turn(settings.db_path, request_id, base_revision, now) as turn:
+        session = turn.session
+        slots = _proceed_assumption_slots(session)
+        if session.step != "checkpoint" or not option.startswith(EDIT_ASSUMPTION_PREFIX):
+            raise UnderstandError(_wrong_step_message(session))
+        number = option.removeprefix(EDIT_ASSUMPTION_PREFIX)
+        if not number.isdigit() or not 1 <= int(number) <= len(slots):
+            raise UnderstandError(_not_a_choice_message(option, _choices_for(session)))
+        if not (text or "").strip():
+            raise UnderstandError(EDIT_ASSUMPTION_NEEDS_TEXT)
+        new_text = _accept_developer_text(text)
+        n = int(number) - 1
+        try:
+            case = session.assumed_cases[n].model_copy(update={"text": new_text, "then": new_text})
+            assumption = session.record.assumptions[slots[n]].model_copy(update={"text": new_text})
+            AssumedCase.model_validate(case.model_dump())
+            Assumption.model_validate(assumption.model_dump())
+        except ValidationError as error:
+            raise UnderstandError(EDIT_ASSUMPTION_NEEDS_TEXT) from error
+        old = session.record.assumptions[slots[n]].text
+        assumptions = list(session.record.assumptions)
+        assumptions[slots[n]] = assumption
+        session.record = session.record.model_copy(update={"assumptions": assumptions})
+        session.assumed_cases = [*session.assumed_cases[:n], case, *session.assumed_cases[n + 1 :]]
+        session.last_changed_fields = ["assumptions"]
+        turn.say("developer", f"{option}: {new_text}")
+        turn.audit("developer", "assumption_edited", {"from": old, "to": new_text})
+    return get_understand_view(settings, request_id)
+
+
 def _choices_for(session: UnderstandSession) -> list[str]:
     if session.step == "correction" and _no_negative_offered(session.record):
         return [NO_NEGATIVE_OPTION]
     if session.step == "decision":
         return _decision_choices(session.pending_decisions[0])
     if session.step == "checkpoint":
-        return list(CHECKPOINT_OPTIONS)
+        edits = [
+            f"{EDIT_ASSUMPTION_PREFIX}{n}"
+            for n in range(1, len(_proceed_assumption_slots(session)) + 1)
+        ]
+        return [*CHECKPOINT_OPTIONS, *edits]
     if session.step == "senior":
         return _limit_choices(session)
     return []

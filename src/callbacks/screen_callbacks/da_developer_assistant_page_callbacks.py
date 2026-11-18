@@ -42,11 +42,13 @@ from agents.da_refine_screen import (
 )
 from agents.da_senior_actions import get_chat_lock
 from agents.da_understand_flow import (
+    EDIT_ASSUMPTION_PREFIX,
     FORM_OPTIONAL_BOX,
     NO_NEGATIVE_OPTION,
     FormError,
     choose_option,
     create_understand_request,
+    edit_assumption,
     get_understand_view,
     list_my_requests,
     set_functions_in_scope,
@@ -563,6 +565,9 @@ def _perform_action(settings: Settings, trigger, text, state, refresh):
             option = _option_at(settings, request_id, revision, trigger["index"])
             if option == NO_NEGATIVE_OPTION:  # B2 S8: the box holds the reason
                 set_no_negative_reason(settings, request_id, text or "", revision)
+                return (refresh or 0) + 1, no_update, ""
+            if option.startswith(EDIT_ASSUMPTION_PREFIX):  # B2 P34: the box holds the new sentence
+                edit_assumption(settings, request_id, option, text or "", revision)
                 return (refresh or 0) + 1, no_update, ""
             view = choose_option(settings, request_id, option, revision)
             if view.request.status == STATUS_CONFIRMED:
