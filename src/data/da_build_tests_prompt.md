@@ -33,3 +33,7 @@ Rules:
 - Each method has a one-sentence docstring saying what is expected. It is shown to the developer.
 - A test that needs a file makes its own temporary folder with `tempfile`. Never touch other files.
 - Call the contract names exactly as agreed. Do not test private functions.
+- Record the proof of every check. Add `from da_evidence import evidence` and, before each
+  assert, call `evidence(self, "<short label>", <input>, <expected value>, <actual value>)`.
+  The actual value is what the code really returned (for an error: the error's class name).
+  Every test method calls `evidence(` at least once. Never put a password or key in a value.

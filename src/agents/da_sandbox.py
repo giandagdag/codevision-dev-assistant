@@ -30,6 +30,8 @@ logger = get_logger(__name__)
 OUTPUT_LIMIT_BYTES = 200 * 1024
 RUNNER_SOURCE = Path(__file__).with_name("da_sandbox_runner.py")
 RUNNER_NAME = "_da_runner.py"
+EVIDENCE_SOURCE = Path(__file__).with_name("da_evidence_helper.py")
+EVIDENCE_NAME = "da_evidence.py"
 # Always skipped when copying, on top of the policy's `build_sandbox_exclude`.
 ALWAYS_SKIPPED = ("__pycache__", "*.pyc")
 NOT_PROVEN_MESSAGE = "Not proven: no result recorded"
@@ -110,6 +112,8 @@ def _build_folder(
     (tests / f"test_{test_id}.py").write_bytes(test_text.encode("utf-8"))
     # 4. our small runner
     shutil.copyfile(RUNNER_SOURCE, root / RUNNER_NAME)
+    # 5. the evidence helper the tests import as `da_evidence` (top folder is on the import path)
+    shutil.copyfile(EVIDENCE_SOURCE, root / EVIDENCE_NAME)
 
 
 def _place(root: Path, path: str, text: str) -> None:

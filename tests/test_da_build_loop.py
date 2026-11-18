@@ -1,12 +1,22 @@
 """The build loop end to end with the fake provider, the real sandbox and a real database."""
 
+import sqlite3
+
 import pytest
 
 from agents import da_build_agent as agent
 from agents import da_build_flow as flow
 from agents import da_build_loop as loop
 from agents.da_check_words import NOT_PROVEN_TEXT, SYSTEM_HELP_LINE
-from pydantic_classes.da_build_models import LABEL_NOT_PASSING, LABEL_WITH_WARNINGS, BuildState
+from db_table_functions.da_db import open_db
+from db_table_functions.db_tbl_da_test_report import read_test_reports
+from db_table_functions.db_tbl_da_tester import read_reviews
+from pydantic_classes.da_build_models import (
+    LABEL_NOT_PASSING,
+    LABEL_WITH_WARNINGS,
+    BuildState,
+    RoundRecord,
+)
 from tests.da_approach_play import events_of
 from tests.da_build_play import (
     CREATE,
@@ -125,7 +135,7 @@ def test_6_8_one_ai_call_per_file_and_one_each_for_the_contract_and_the_tests(se
     build(settings, request_id, factory)
 
     roles = [role for role, _ in factory.calls]
-    # contract, tests, round 1 (2 files), round 2 (1 file) + review, round 3 (1 file) + review
+    # contract, tests, round 1 (2 files), then rounds 2 and 3 (1 file, code tests, review each)
     assert roles == [
         "generator",
         "tester",
@@ -133,7 +143,9 @@ def test_6_8_one_ai_call_per_file_and_one_each_for_the_contract_and_the_tests(se
         "generator",
         "generator",
         "tester",
+        "tester",
         "generator",
+        "tester",
         "tester",
     ]
     contract_call, tests_call = factory.prompts()[0], factory.prompts()[1]
@@ -507,3 +519,104 @@ def test_a_thread_for_an_older_build_does_not_run_the_newer_build(settings, requ
     assert factory.calls == []  # nothing was asked of the AI
     assert flow.get_state(settings, request_id).step == "b_running"  # and nothing was changed
     assert loop.run_build(settings, request_id, build_number=1) == "done"
+
+
+# --- Fix D1 step 3b: code tests run only after the requirement tests pass ---
+
+
+def test_d1_4_code_tests_run_only_in_rounds_whose_requirement_tests_passed(settings, request_id):
+    build(settings, request_id, RecordingFactory())
+
+    first, second, third = rounds_of(settings, request_id)
+
+    assert not first.layer_b.ok and first.code_tests is None  # requirement tests failed: no call
+    for later in (second, third):
+        assert later.layer_b.ok and later.code_tests is not None
+        names = [item.name for item in later.code_tests.tests]
+        assert names and all("test_c" in name for name in names)
+        assert later.code_tests.ok and later.dropped_code_tests == []
+
+
+def reviews_of(settings, request_id):
+    with open_db(settings.db_path) as conn:
+        conn.execute("BEGIN")
+        return read_reviews(conn, request_id, 1)
+
+
+def test_d1_6_a_failing_code_test_that_is_a_code_bug_is_a_must_fix(
+    settings, request_id, monkeypatch
+):
+    switches(monkeypatch, "code_test_bug")
+    build(settings, request_id, RecordingFactory())
+
+    ran = [item for item in rounds_of(settings, request_id) if item.code_tests is not None]
+    review = reviews_of(settings, request_id)[0]
+
+    assert ran and not ran[0].code_tests.ok
+    assert ran[0].dropped_code_tests == []  # the code is at fault: the test is not dropped
+    cites = [f.cites for f in review.findings if f.severity == "must_fix" and f.cites[:2] == "C-"]
+    assert cites == [f"C-{len(ran[0].code_tests.tests)}"]
+
+
+def test_d1_6_a_code_bug_test_is_kept_and_runs_again_in_the_next_round(
+    settings, request_id, monkeypatch
+):
+    switches(monkeypatch, "code_test_bug")
+    build(settings, request_id, RecordingFactory())
+
+    ran = [item for item in rounds_of(settings, request_id) if item.code_tests is not None]
+
+    assert len(ran) >= 2
+    assert len(ran[1].code_tests.tests) == len(ran[0].code_tests.tests) + 1
+    assert "KeptCodeChecks" in ran[1].code_tests.source
+
+
+def test_d1_7_a_wrong_code_test_is_dropped_and_the_label_has_warnings(
+    settings, request_id, monkeypatch
+):
+    switches(monkeypatch, "code_test_wrong")
+    build(settings, request_id, RecordingFactory())
+
+    last = [item for item in rounds_of(settings, request_id) if item.code_tests][-1]
+    review = reviews_of(settings, request_id)[-1]
+
+    assert len(last.dropped_code_tests) == 1 and "not meant to do" in last.dropped_code_tests[0]
+    assert not [f for f in review.findings if f.cites[:2] == "C-"]
+    assert any("wrong test" in line for line in review.zone_warnings)
+    assert review.label == LABEL_WITH_WARNINGS
+
+
+def test_d1_4_a_saved_round_without_code_tests_still_loads(settings, request_id):
+    build(settings, request_id, RecordingFactory())
+    old = rounds_of(settings, request_id)[0].model_dump(
+        exclude={"code_tests", "dropped_code_tests"}
+    )
+
+    assert RoundRecord.model_validate(old).code_tests is None
+
+
+# --- Fix D1 step 4: a saved test report for every round that reached Layer B ---
+
+
+def test_d1_8_each_round_that_reached_layer_b_saves_one_report_and_one_audit_event(
+    settings, request_id
+):
+    build(settings, request_id, RecordingFactory())
+
+    with open_db(settings.db_path) as conn:
+        saved = read_test_reports(conn, request_id, 1)
+    rounds = rounds_of(settings, request_id)
+    reached_b = [item.round for item in rounds if item.layer_b is not None]
+
+    assert [item["round"] for item in saved] == reached_b
+    assert event_types(settings, request_id).count("test_report_saved") == len(reached_b)
+    assert saved[-1]["body"]["layer_b"]["tests"]  # the results the report page will show
+
+
+def test_d1_8_a_saved_report_cannot_be_edited_or_deleted(settings, request_id):
+    build(settings, request_id, RecordingFactory())
+
+    with open_db(settings.db_path) as conn:
+        for sql in ("UPDATE da_test_reports SET body = 'x'", "DELETE FROM da_test_reports"):
+            with pytest.raises(sqlite3.DatabaseError, match="append-only"):
+                conn.execute(sql)
