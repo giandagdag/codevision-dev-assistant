@@ -22,6 +22,27 @@ def program_type_of(path: str, text: str = "") -> str:
     return "Utility"
 
 
+UI_HEADING = "## Screen style: use these brand constants and follow these UI conventions"
+
+
+def ui_block(brand_constants, rules, path: str, text: str = "") -> str:
+    """Screen files only (fix 3, D-F): the brand constants and the UI conventions, each once."""
+    if program_type_of(path, text) != "Screen":
+        return ""
+    brand = [f"- {c.name}: {c.value}" for c in brand_constants]
+    conventions = [
+        f"- {r.rule_id}: {r.title}. {r.why}".strip() for r in rules if r.kind == "ui_convention"
+    ]
+    if not brand and not conventions:
+        return ""
+    parts = [UI_HEADING]
+    if brand:
+        parts += ["Brand constants:", *brand]
+    if conventions:
+        parts += ["UI conventions:", *conventions]
+    return "\n\n" + "\n".join(parts) + "\n"
+
+
 def golden_block(examples, path: str, text: str = "") -> str:
     """The first example of the file's type, first 80 lines. Empty when none matches."""
     kind = program_type_of(path, text)

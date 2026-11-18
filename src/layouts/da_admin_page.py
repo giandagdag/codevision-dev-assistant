@@ -485,6 +485,9 @@ RULE_ID_HINT = (
     "Add row hands out the next rule ID at once. The number stays used up even if you Cancel."
 )
 CITED_COLUMN = "cited"
+BRAND_TABLE = "brand_constants"
+BRAND_COLUMNS = ("name", "value", "source")
+BRAND_NOTE = "These guide the AI's new screen code. They do not recolour the running app."
 
 
 def _rule_rows(version: RulebookVersion, kind: str, draft: dict | None) -> list[dict]:
@@ -532,8 +535,26 @@ def rules_view(
         static=(CITED_COLUMN,) if tab == TAB_CODING else (),
     )
     if tab == TAB_UI:
+        brand_rows = _draft(
+            draft, BRAND_TABLE, [c.model_dump() for c in version.rulebook.brand_constants]
+        )
+        shown_brand = (
+            list_table(
+                TAB_UI,
+                BRAND_TABLE,
+                BRAND_COLUMNS,
+                brand_rows,
+                True,
+                kinds={"name": READONLY},
+            )
+            if editable
+            else brand_panel(version.rulebook.brand_constants)
+        )
         brand = admin_card(
-            "Brand constants", brand_panel(version.rulebook.brand_constants), "🎨", actions=pill
+            "Brand constants",
+            html.Div([dmc.Text(BRAND_NOTE, size="xs", c=da_styles.MUTED, mb="xs"), shown_brand]),
+            "🎨",
+            actions=pill,
         )
         # Read view: the conventions are drawn as rows (not twice as a table).
         shown = table if editable else convention_rows(rows)
