@@ -35,6 +35,7 @@ from layouts.da_admin_build_tab import (  # noqa: F401 (callbacks and tests impo
     _triggers,
     build_view,
 )
+from layouts.da_admin_card import TAB_PURPOSE, page_title
 from layouts.da_admin_catalog_tab import (  # noqa: F401 (callbacks and tests import these)
     CAP_LIST_ID,
     CAP_MISSING_ID,
@@ -228,6 +229,24 @@ version_line = version_pill  # the old name (AF-3) still works
 
 
 def _tab_body(
+    tab: str,
+    version: RulebookVersion,
+    rows=(),
+    cited=None,
+    queue=None,
+    overview=None,
+    report=None,
+    server=None,
+    fires=None,
+):
+    """The page title (V1) over the tab body; the title stays outside the body div, so the
+    callbacks that redraw the body never touch it."""
+    name = next(label for tab_id, label, _ in ADMIN_TABS if tab_id == tab)
+    body = _tab_content_body(tab, version, rows, cited, queue, overview, report, server, fires)
+    return html.Div([page_title(name, TAB_PURPOSE[tab]), body])
+
+
+def _tab_content_body(
     tab: str,
     version: RulebookVersion,
     rows=(),
