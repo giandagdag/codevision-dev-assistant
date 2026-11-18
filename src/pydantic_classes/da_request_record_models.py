@@ -216,6 +216,8 @@ class UnderstandSession(_Shape):
     # Asked one at a time, first in the list first.
     pending_decisions: list[PendingDecision] = Field(default_factory=list)
     material_decisions_asked: int = 0
+    # B2 S7: how many of the first pending decisions the chat already listed (batch of up to 3).
+    decisions_announced: int = 0
     needs_senior: bool = False
     optional_done: bool = False
     checkpoint_help: bool = False

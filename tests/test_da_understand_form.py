@@ -472,3 +472,39 @@ def test_the_limit_of_the_pinned_version_wins_over_a_newer_one(settings, publish
     view = submit(settings, view, client=StubClient(stub_reply(FILLED["updates"], many)))
 
     assert len(get_session(settings.db_path, rid(view)).pending_decisions) == 3
+
+
+# --- Fix batch B2, S7: limit 8 and batches of 3 (B2-8, B2-9) ---
+
+
+def test_b2_8_the_decision_limit_default_and_seed_are_8(seed_rulebook):
+    from pydantic_classes.da_rulebook_models import DEFAULT_MAX_MATERIAL_DECISIONS
+
+    assert DEFAULT_MAX_MATERIAL_DECISIONS == 8
+    assert seed_rulebook.policy.max_material_decisions == 8
+
+
+def test_b2_9_five_open_decisions_come_in_batches_of_3_then_2(settings):
+    many = [ambiguity(f"Question number {n}?", "Yes", "No") for n in range(5)]
+    view = submit(
+        settings, create(settings), client=StubClient(stub_reply(FILLED["updates"], many))
+    )
+    first = view.messages[-1].text
+    assert first.startswith("3 decisions needed")
+    assert "1. Question number 0?" in first and "3. Question number 2?" in first
+    assert "Question number 3?" not in first
+
+    def answer(view):
+        return choose_option(
+            settings, rid(view), "Yes", view.revision, now=T0,
+            client=StubClient(stub_reply({}, [])),
+        )
+
+    for _ in range(2):  # answers inside a batch do not post a new batch
+        view = answer(view)
+        assert "decisions needed" not in view.messages[-1].text
+    assert view.messages[-1].text.startswith("Next decision: Question number 2?")
+
+    second = answer(view).messages[-1].text
+    assert second.startswith("2 decisions needed")
+    assert "1. Question number 3?" in second and "2. Question number 4?" in second

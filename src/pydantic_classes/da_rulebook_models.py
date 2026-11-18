@@ -194,7 +194,7 @@ DEFAULT_APPROVED_LIBRARIES = [
 DEFAULT_MAX_FILES = 5
 DEFAULT_MAX_DESIGN_CHOICES = 3
 # Phase 6 fixes (U6): how many AI clarifying questions one request may ask in Understand.
-DEFAULT_MAX_MATERIAL_DECISIONS = 5
+DEFAULT_MAX_MATERIAL_DECISIONS = 8  # B2 S7: was 5; a rulebook saved without the key now reads 8
 # Phase 5: folders that must exist in a CodeVision clone, and the biggest file the browser reads.
 DEFAULT_WORKSPACE_MARKERS = ["src/web", "src/callbacks"]
 DEFAULT_WORKSPACE_MAX_FILE_KB = 512

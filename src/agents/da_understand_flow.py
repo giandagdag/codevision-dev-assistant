@@ -92,6 +92,7 @@ from pydantic_classes.da_rulebook_models import DEFAULT_MAX_MATERIAL_DECISIONS
 logger = get_logger(__name__)
 
 NEW_REQUEST_TITLE = "New change request"
+DECISION_BATCH_SIZE = 3  # B2 S7: open decisions are listed up to 3 per message
 
 # The fixed question wording is app text; the interpreter only adds a hint (spec 3.2).
 QUESTIONS: dict[int, str] = {
@@ -672,7 +673,7 @@ def _queue_material_decisions(
     session: UnderstandSession, record: RequestRecord, result: InterpretResult, limit: int
 ) -> RequestRecord:
     """Queue material ambiguities to ask one at a time (rule R3). After `limit` on one request
-    (the rulebook policy, default 5), the rest become open items and a senior is needed (3.5)."""
+    (the rulebook policy, default 8), the rest become open items and a senior is needed (3.5)."""
     already = {decision.question for decision in record.decisions}
     already |= {pending.question for pending in session.pending_decisions}
     open_items = list(record.open_items)
@@ -742,11 +743,22 @@ def _ask_decision(turn: _Turn) -> None:
     pending = session.pending_decisions[0]
     session.step = "decision"
     turn.move_to(STATUS_DECISION_REQUIRED)
-    turn.audit("system", "decision_asked", {"question": pending.question})
+    if session.decisions_announced > 0:
+        # B2 S7: the batch was already listed; only name the one he answers now.
+        turn.say("assistant", f"Next decision: {pending.question}")
+        return
+    batch = session.pending_decisions[:DECISION_BATCH_SIZE]
+    session.decisions_announced = len(batch)
+    for item in batch:
+        turn.audit("system", "decision_asked", {"question": item.question})
+    if len(batch) == 1:
+        text = f"One decision needed: {pending.question}\n"
+    else:
+        listed = "\n".join(f"{number}. {item.question}" for number, item in enumerate(batch, 1))
+        text = f"{len(batch)} decisions needed. I will ask them one at a time:\n{listed}\n"
     turn.say(
         "assistant",
-        f"One decision needed: {pending.question}\n"
-        "This changes what gets built, so I won't assume it. Please choose below.",
+        text + "This changes what gets built, so I won't assume it. Please choose below.",
     )
 
 
@@ -882,6 +894,7 @@ def _record_decision(turn: _Turn, choice: str, custom: bool) -> bool:
         old.model_dump() | {"decisions": [*old.decisions, decision], "open_items": open_items}
     )
     session.pending_decisions.pop(0)
+    session.decisions_announced = max(0, session.decisions_announced - 1)
     session.last_changed_fields = _changed_fields(old, session.record)
     turn.audit(
         "developer",
@@ -1069,7 +1082,7 @@ def _turn(db_path: Path, request_id: str, base_revision: int, now: datetime) -> 
 
 
 def _decision_limit(db_path: Path, request_id: str) -> int:
-    """How many AI clarifying questions the request's pinned rulebook allows (default 5)."""
+    """How many AI clarifying questions the request's pinned rulebook allows (default 8)."""
     try:
         policy = get_rulebook_for_request(db_path, request_id).rulebook.policy
     except RulebookError:
