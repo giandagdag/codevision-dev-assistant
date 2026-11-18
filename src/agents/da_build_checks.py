@@ -34,11 +34,13 @@ from pydantic_classes.da_build_models import (
     LayerAProblem,
     LayerAResult,
     LayerBResult,
+    TestOutcome,
 )
 from pydantic_classes.da_models import STATUS_NOT_PASSING, STATUS_READY_FOR_REVIEW
 from pydantic_classes.da_rulebook_models import Policy
 
 TESTS_FOLDER = "tests/"
+EVIDENCE_MODULE = "da_evidence"  # the helper copied into the sandbox (Fix D1)
 TOO_BIG_MESSAGE = "This file is too big to send to the AI in one go."
 RISKY_NAMES = ("eval", "exec", "compile", "__import__")
 RISKY_OS_CALLS = ("system", "popen")
@@ -233,6 +235,7 @@ def find_test_file_problems(
         return [f"The test file has a syntax error on line {error.lineno}: {error.msg}."]
     return (
         _method_problems(tree, cases)
+        + _evidence_problems(tree)
         + _test_import_problems(tree, contract, policy)
         + _risky_call_problems(tree, "the test file")
         + _file_access_problems(tree)
@@ -265,10 +268,39 @@ def _method_problems(tree: ast.AST, cases: list[TestCase]) -> list[str]:
     return problems
 
 
+def _calls_evidence(method: ast.FunctionDef) -> bool:
+    return any(
+        isinstance(node, ast.Call) and _called_name(node) == "evidence" for node in ast.walk(method)
+    )
+
+
+def _evidence_problems(tree: ast.AST) -> list[str]:
+    """Fix D1 (E2): every test method records at least one evidence line."""
+    problems = []
+    for name, method in find_test_methods(tree).items():
+        if not _calls_evidence(method):
+            ids = case_ids_from_method(name)
+            code = re.match(r"test_c(\d+)_", name)  # a code test (Fix D1): C-3
+            label = ids[0] if ids else (f"C-{int(code.group(1))}" if code else name)
+            problems.append(f"Test {label} records no evidence")
+    return problems
+
+
+def evidence_note(outcome: TestOutcome, test_text: str) -> str:
+    """The words for a test row that has evidence lines: none. A frozen test file with no
+    `evidence(` call at all was written before D1 (17 Nov); anything else just did not record."""
+    if outcome.evidence:
+        return ""
+    if "evidence(" not in test_text:
+        return "Evidence not recorded (test written before 17 Nov)"
+    return "Evidence not recorded"
+
+
 def _test_import_problems(tree: ast.AST, contract: Contract, policy: Policy) -> list[str]:
     allowed = {
         module_of_path(entry.path): {i.name for i in entry.items} for entry in contract.files
     }
+    allowed[EVIDENCE_MODULE] = {"evidence"}  # the sandbox's own helper, not a contract name
     blocked = {name.lower() for name in policy.build_blocked_imports}
     problems = []
     for module, names, _line in imported_modules(tree):

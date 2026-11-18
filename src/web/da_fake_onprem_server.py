@@ -34,6 +34,8 @@ from agents.da_build_agent import (  # noqa: E402
     TESTS_MARKER,
     scripted_build_reply,
 )
+from agents.da_code_judge import JUDGE_MARKER  # noqa: E402
+from agents.da_code_tests import CODE_TESTS_MARKER  # noqa: E402
 from agents.da_discover_agent import TASK_MARKER, ScriptedDiscoverClient  # noqa: E402
 from agents.da_enhance_agent import (  # noqa: E402
     CORRECT_MARKER,
@@ -112,6 +114,8 @@ _BUILD_LINES = tuple(
         TESTS_MARKER,
         CODE_MARKER,
         REVIEW_MARKER,
+        CODE_TESTS_MARKER,  # Fix D1: the code tests written after the code passes
+        JUDGE_MARKER,  # Fix D1: the Tester judges the failing code tests
         # Phase 8: the Refine calls are answered by the same scripted code.
         LANE_MARKER,
         REVISION_MARKER,

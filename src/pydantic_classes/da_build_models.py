@@ -116,6 +116,18 @@ class LayerAResult(_Shape):
 # --- Layer B (the sandbox) ---
 
 
+class EvidenceLine(_Shape):
+    """One recorded check inside a test (Fix D1): what went in, what was expected, what came out.
+    Each value is the repr() text, cut at 500 characters (`cut` says so)."""
+
+    label: str
+    given: str
+    expected: str
+    actual: str
+    match: bool
+    cut: bool = False
+
+
 class TestOutcome(_Shape):
     """What one test did. The runner writes these into results.json."""
 
@@ -126,6 +138,8 @@ class TestOutcome(_Shape):
     message: str = ""
     # The last 20 lines of the traceback, cut by the runner.
     traceback_tail: list[str] = Field(default_factory=list, max_length=20)
+    # Fix D1: empty for a row saved before D1 (so it still loads) or a test that recorded none.
+    evidence: list[EvidenceLine] = Field(default_factory=list)
 
 
 # Every result that blocks a pass but was reported (Not proven is the app's problem, not these).
@@ -146,6 +160,8 @@ class LayerBResult(_Shape):
     # B1 P26: True for runs made since F1/F2 (a skip blocks a pass). A record saved earlier lacks
     # the field, so it reads False and keeps the old rule: a skip did not block a pass.
     strict: bool = False
+    # Fix D1: the test file of a code-test run (kept bugs carry over; Targets are read from it).
+    source: str = ""
 
     @property
     def passed(self) -> int:
@@ -263,6 +279,10 @@ class RoundRecord(_Shape):
     # The planned files the next round will send to the Generator again (decision D-J). Saved so
     # a build that pauses between rounds can pick up exactly where it stopped.
     files_to_fix: list[str] = Field(default_factory=list)
+    # Fix D1: the code tests (C-n) run after the requirement tests passed. None = not run.
+    code_tests: LayerBResult | None = None
+    # Fix D1: code tests dropped as a wrong test, each "C-3: reason". Filled in step 3c.
+    dropped_code_tests: list[str] = Field(default_factory=list)
     created_at: AwareDatetime | None = None
 
 
@@ -296,6 +316,8 @@ class TestRow(BaseModel):
     result: str = ""
     # Phase 8 fix 1 (F1): a new case waiting for his choice; shown in orange, not a result.
     pending: str = ""
+    # Fix D1: what the test recorded (empty for an old test).
+    evidence: list[EvidenceLine] = Field(default_factory=list)
 
 
 class BuildFileRow(BaseModel):
@@ -321,6 +343,8 @@ class BuildView(BaseModel):
     max_rounds: int = 3
     time_limit: int = 60
     tests: list[TestRow] = Field(default_factory=list)
+    # Fix D1: the C-n code tests of the newest tested round (not frozen; written per build).
+    code_tests: list[TestRow] = Field(default_factory=list)
     # Phase 8: "Test set version 3, approach version 2" (empty before any Refine added a test).
     tests_note: str = ""
     # True when a round ran but the tests never did, because the code checks (Layer A) failed.
@@ -339,5 +363,8 @@ class BuildView(BaseModel):
     mode: str = "picker"
     seconds_taken: int = 0
     tests_passing: str = ""
+    # Fix D1: the summary line of the newest round and whether a saved report exists.
+    report_summary: str = ""
+    has_report: bool = False
     # Phase 7: the Tester's report, added by da_tester_flow.get_build_view (not by the build flow).
     tester: TesterView | None = None

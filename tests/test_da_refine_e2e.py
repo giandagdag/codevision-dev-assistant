@@ -60,7 +60,6 @@ def wait_for_text(page, text, timeout=WAIT_MS):
     page.get_by_text(text).first.wait_for(timeout=timeout)
 
 
-@pytest.mark.skip(reason="PARKED (SO-2): fails here, baseline unknown, issue 80")
 def test_8_42_his_edit_survives_a_bug_lane_rebuild_in_a_real_browser(make_live_page, live_url):
     page = make_live_page(live_url)
     problems = []
@@ -97,6 +96,7 @@ def test_8_42_his_edit_survives_a_bug_lane_rebuild_in_a_real_browser(make_live_p
     # He picks Keep mine, then Apply my choices; only then is the code written.
     wait_for_text(page, "The rebuild touches 1 place(s) you edited", BUILD_WAIT_MS)
     button(page, "Keep mine").click()
+    wait_for_text(page, "Picked:")  # Apply before the pick is saved would send no choice (#57)
     button(page, "Apply my choices").click()
     button(page, "Re-scan").wait_for(timeout=BUILD_WAIT_MS)  # b_written again: the code is written
 

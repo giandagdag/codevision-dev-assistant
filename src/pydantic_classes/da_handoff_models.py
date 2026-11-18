@@ -94,6 +94,9 @@ class SummaryFacts(_Shape):
     senior_involvement: list[str] = Field(default_factory=list)
     build_number: int = Field(default=0, ge=0)
     checked_on: str = ""
+    # Fix D1: the test report summary and file name; empty for a build with no saved report.
+    report_summary: str = ""
+    report_file: str = ""
 
 
 class HandoffState(_Shape):

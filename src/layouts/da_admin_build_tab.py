@@ -141,6 +141,7 @@ TEST_FACTS = (
     "Code tests after the build, for branches and edge cases",
     "Tests run only in the server sandbox, never in the developer's folder",
     "A test with no result counts as Not proven and blocks the pass",
+    "Every build saves a test report: input, expected, actual, pass or fail",
 )
 SEVERITY_HANDOFF = (
     ("Must fix", "No"),

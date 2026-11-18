@@ -32,6 +32,8 @@ def _join(facts: SummaryFacts, per_criterion: bool) -> str:
     lines += _criteria(facts, per_criterion)
     if facts.no_negative_reason:
         lines.append(f"No negative scenario: {facts.no_negative_reason}")
+    if facts.report_file:  # the proof lives in the report: say where (the file name, no path)
+        lines += [facts.report_summary, f"Test report: {facts.report_file}"]
     lines.append(_tester(facts))
     lines += _files(facts)
     lines += _list("Reuses", facts.reuses)

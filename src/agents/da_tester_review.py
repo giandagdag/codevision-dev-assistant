@@ -156,6 +156,23 @@ def check_tests_pass(record: RequestRecord, layer_b: LayerBResult) -> list[Findi
     return found
 
 
+def check_code_tests(code_tests: LayerBResult | None, dropped: list[str]) -> list[Finding]:
+    """Fix D1 (E5): a failing code test the Tester did not call a wrong test is a code bug: a
+    Must fix on check 2. It names no file, so every planned file goes back to the Generator."""
+    from agents.da_code_tests import code_test_id
+    from agents.da_evidence_helper import hide_secret
+
+    wrong = {line.split(":", 1)[0] for line in dropped}
+    found = []
+    for outcome in code_tests.tests if code_tests else []:
+        cid = code_test_id(outcome.name)
+        if cid and cid not in wrong and outcome.result != "pass":
+            reason = hide_secret(outcome.message) or outcome.result
+            message = f"Code test {cid} fails: {reason}"[:MESSAGE_LIMIT]
+            found.append(_plain(len(found) + 1, 2, "must_fix", "", 1, cid, message))
+    return found
+
+
 def check_files_match_plan(
     planned: list[tuple[str, str]], code: dict[str, str], start_texts: dict[str, str]
 ) -> list[Finding]:
@@ -175,6 +192,10 @@ def check_files_match_plan(
             message = f"The plan said to change {path}, but it was not changed."
             found.append(_plain(len(found) + 1, 3, "should_fix", path, 1, f"PLAN:{path}", message))
     return found
+
+
+# A dropped wrong code test is saved as a warning line (it caps the label) but is not a zone.
+DROPPED_TEST_PREFIX = "Code test dropped as a wrong test"
 
 
 def zone_warnings(zones: list[str]) -> list[str]:

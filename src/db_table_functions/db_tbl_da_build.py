@@ -24,6 +24,7 @@ from db_table_functions.db_tbl_da_enhance import ensure_enhance_tables
 from db_table_functions.db_tbl_da_escalation import ensure_escalation_tables
 from db_table_functions.db_tbl_da_handoff import ensure_handoff_tables
 from db_table_functions.db_tbl_da_refine import ensure_refine_tables
+from db_table_functions.db_tbl_da_test_report import ensure_test_report_table
 from db_table_functions.db_tbl_da_tester import ensure_tester_tables
 from db_table_functions.db_tbl_da_understand import (
     STALE_MESSAGE,
@@ -110,6 +111,8 @@ CREATE TABLE IF NOT EXISTS da_build_rounds (
     failure_report TEXT NOT NULL,
     timed_out      INTEGER NOT NULL,
     files_to_fix   TEXT NOT NULL DEFAULT '[]',
+    code_tests     TEXT,
+    dropped_code_tests TEXT NOT NULL DEFAULT '[]',
     created_at     TEXT NOT NULL,
     PRIMARY KEY (request_id, build_number, round)
 );
@@ -160,11 +163,24 @@ def ensure_build_tables(conn: sqlite3.Connection) -> None:
     ensure_approach_tables(conn)
     conn.executescript(_CREATE_TABLES_SQL)
     ensure_tester_tables(conn)  # Phase 7: the Tester's three tables ride along
+    ensure_test_report_table(conn)  # Fix D1: saved test reports
     ensure_refine_tables(conn)  # Phase 8: Refine's tables ride along
     ensure_enhance_tables(conn)  # Phase 9: Enhance's tables ride along
     ensure_handoff_tables(conn)  # Phase 10: Handoff's two tables ride along
     ensure_escalation_tables(conn)  # Phase 10: the escalations table too
     _add_kind_column(conn)
+    _add_code_test_columns(conn)
+
+
+def _add_code_test_columns(conn: sqlite3.Connection) -> None:
+    """Fix D1: da_build_rounds gets the code test columns. Old rows read as no code tests."""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(da_build_rounds)")}
+    if "code_tests" not in columns:
+        conn.execute("ALTER TABLE da_build_rounds ADD COLUMN code_tests TEXT")
+    if "dropped_code_tests" not in columns:
+        conn.execute(
+            "ALTER TABLE da_build_rounds ADD COLUMN dropped_code_tests TEXT NOT NULL DEFAULT '[]'"
+        )
 
 
 def _add_kind_column(conn: sqlite3.Connection) -> None:
@@ -371,7 +387,8 @@ def read_frozen_files(
 def insert_round(conn: sqlite3.Connection, item: RoundRecord, now: datetime) -> None:
     conn.execute(
         "INSERT INTO da_build_rounds (request_id, build_number, round, layer_a, layer_b,"
-        " failure_report, timed_out, files_to_fix, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " failure_report, timed_out, files_to_fix, code_tests, dropped_code_tests, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             item.request_id,
             item.build_number,
@@ -381,6 +398,8 @@ def insert_round(conn: sqlite3.Connection, item: RoundRecord, now: datetime) -> 
             item.failure_report.model_dump_json() if item.failure_report else "",
             1 if item.timed_out else 0,
             json.dumps(item.files_to_fix),
+            item.code_tests.model_dump_json() if item.code_tests else None,
+            json.dumps(item.dropped_code_tests),
             to_db_time(now),
         ),
     )
@@ -475,6 +494,10 @@ def _to_round(row: sqlite3.Row) -> RoundRecord:
         ),
         timed_out=bool(row["timed_out"]),
         files_to_fix=json.loads(row["files_to_fix"]),
+        code_tests=(
+            LayerBResult.model_validate_json(row["code_tests"]) if row["code_tests"] else None
+        ),
+        dropped_code_tests=json.loads(row["dropped_code_tests"]),
         created_at=datetime.fromisoformat(row["created_at"]),
     )
 

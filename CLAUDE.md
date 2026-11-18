@@ -47,7 +47,7 @@ Stop, push the work so far to the phase branch, and tell Gian what you need when
   you did not see.
 
 ## Current phase
-Fix batch B2 (screens and flow): in build: spec `specs/fix-batch-b2.md`, plan `specs/fix-b2-plan.md`, branch `phase-b2-screens`, PR into `auto/phases-7-10`. Phase 10, Phase 11 fixes 1 and 2 and fix batch B1 are merged. Phase 11 (a to c) is built; "Review my code" (called 10b in the spec) comes later.
+Fix batch B2 (screens and flow): in build: spec `specs/fix-batch-b2.md`, plan `specs/fix-b2-plan.md`, branch `phase-b2-screens`, PR into `auto/phases-7-10`. Fix D1 (test report) and fix batch C are built (PRs open). Phase 11 (with fixes 1 and 2) and fix batch B1 are merged. Phase 11 (a to c) is built; "Review my code" (called 10b in the spec) comes later.
 (Phases 0 to 6 and Phase A are merged into `main`; Phases 7 to 9 and Phase A fixes 1 to 4 are in `auto/phases-7-10`; their specs stay in `specs/`.)
 
 Phases 4 onwards were redesigned on 31 Oct 2026 (LLM writes 100% of the code, built-in testing,

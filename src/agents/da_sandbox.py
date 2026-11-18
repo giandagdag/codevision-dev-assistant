@@ -30,6 +30,8 @@ logger = get_logger(__name__)
 OUTPUT_LIMIT_BYTES = 200 * 1024
 RUNNER_SOURCE = Path(__file__).with_name("da_sandbox_runner.py")
 RUNNER_NAME = "_da_runner.py"
+EVIDENCE_SOURCE = Path(__file__).with_name("da_evidence_helper.py")
+EVIDENCE_NAME = "da_evidence.py"
 # Always skipped when copying, on top of the policy's `build_sandbox_exclude`.
 ALWAYS_SKIPPED = ("__pycache__", "*.pyc")
 NOT_PROVEN_MESSAGE = "Not proven: no result recorded"
@@ -110,6 +112,8 @@ def _build_folder(
     (tests / f"test_{test_id}.py").write_bytes(test_text.encode("utf-8"))
     # 4. our small runner
     shutil.copyfile(RUNNER_SOURCE, root / RUNNER_NAME)
+    # 5. the evidence helper the tests import as `da_evidence` (top folder is on the import path)
+    shutil.copyfile(EVIDENCE_SOURCE, root / EVIDENCE_NAME)
 
 
 def _place(root: Path, path: str, text: str) -> None:
@@ -177,6 +181,7 @@ def _run(root: Path, test_id: str, timeout_seconds: int, expected: list[str]) ->
     except OSError as error:
         raise SandboxStartError(f"Python could not be started ({error})") from error
     capture = _Capture(process.stdout)
+    job = _start_job(process)
     timed_out = False
     try:
         process.wait(timeout=timeout_seconds)
@@ -185,17 +190,29 @@ def _run(root: Path, test_id: str, timeout_seconds: int, expected: list[str]) ->
     finally:
         # Always end the whole group, not only on a timeout: a test that exits normally but
         # leaves a background child must not leave it running on the shared server.
-        _end_process_tree(process)
+        _end_process_tree(process, job)
     output = capture.finish()
     return _read_results(
         root, output, capture.cut, timed_out, timeout_seconds, process.returncode, expected
     )
 
 
-def _end_process_tree(process: subprocess.Popen) -> None:
-    """End the runner and everything it started. Linux: the whole process group. Windows:
-    taskkill with /T (the tree)."""
-    if os.name == "nt":
+def _start_job(process: subprocess.Popen):
+    """Windows: put the runner in a kill-on-close Job Object. None elsewhere, or if refused."""
+    if os.name != "nt":
+        return None
+    from agents.da_sandbox_job import KillOnCloseJob
+
+    return KillOnCloseJob.start(process.pid)
+
+
+def _end_process_tree(process: subprocess.Popen, job=None) -> None:
+    """End the runner and everything it started. Linux: the whole process group. Windows: closing
+    the job ends every process in it, even an orphan (taskkill /T cannot find one); taskkill with
+    /T stays as the fallback when no job could be made."""
+    if job is not None:
+        job.close()
+    elif os.name == "nt":
         subprocess.run(
             ["taskkill", "/F", "/T", "/PID", str(process.pid)], capture_output=True, check=False
         )

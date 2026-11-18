@@ -41,6 +41,8 @@ from agents.da_build_flow import (
     _write,
 )
 from agents.da_check_words import NOT_PROVEN_TEXT, testing_files_line
+from agents.da_code_judge import WRONG_TEST, failing_code_tests, judge_code_tests
+from agents.da_code_tests import keep_code_tests, write_code_tests
 from agents.da_enhance_build_checks import (
     STILL_OLD,
     ExpectedOutcome,
@@ -101,6 +103,7 @@ from db_table_functions.db_tbl_da_refine import (
     set_last_tested,
 )
 from db_table_functions.db_tbl_da_requests import get_rulebook_for_request
+from db_table_functions.db_tbl_da_test_report import insert_test_report
 from db_table_functions.db_tbl_da_tester import (
     insert_review,
     next_review_number,
@@ -617,7 +620,76 @@ class _Run:
         if not layer_a.ok:
             return self._record_round(number, layer_a, None, contract, tests)
         layer_b = self._layer_b(tests)
-        return self._record_round(number, layer_a, layer_b, contract, tests)
+        # Fix D1 (D1-4): code tests only once the requirement tests pass.
+        code_tests, dropped = self._code_tests(contract) if layer_b.ok else (None, [])
+        return self._record_round(number, layer_a, layer_b, contract, tests, code_tests, dropped)
+
+    def _judge(self, code: dict[str, str], text: str, ran: LayerBResult) -> list[str]:
+        """Fix D1 (E5): the Tester says, per failing C-test, code bug or wrong test. Returns the
+        wrong tests as "C-3: reason" (they are dropped). A code bug stays a failure and becomes a
+        Must fix in the review. A reply that cannot be used counts every failure as a code bug."""
+        failing = failing_code_tests(ran.tests)
+        if not failing:
+            return []
+        result = judge_code_tests(self.client("tester"), self.context, code, text, failing)
+        if result.kind in ("unreachable", "too_big"):
+            raise _Paused("interrupted", result.message)
+        verdicts = result.value or {}
+        return [
+            f"{cid}: {reason}"
+            for cid, (verdict, reason) in verdicts.items()
+            if verdict == WRONG_TEST
+        ]
+
+    def _kept_bugs(self) -> tuple[str, set[str]]:
+        """Last round's code file and the C-ids in it that failed and were judged a code bug
+        (not dropped as a wrong test). Those tests run again in this round (D1-6)."""
+        last = next((r for r in reversed(self.inp.rounds) if r.code_tests), None)
+        if last is None or not last.code_tests.source:
+            return "", set()
+        wrong = {line.split(":")[0] for line in last.dropped_code_tests}
+        failing = {cid for cid, _ in failing_code_tests(last.code_tests.tests)}
+        return last.code_tests.source, failing - wrong
+
+    def _code_tests(self, contract: Contract) -> tuple[LayerBResult | None, list[str]]:
+        """The Tester reads the passing code and writes C-n tests; one more sandbox run, with its
+        own time limit. A reply that cannot be used means no code tests this round (the build
+        still stands on the requirement tests); an unreachable AI pauses like any other call."""
+        self._alive()
+        line = self._line("Tester writes code tests from the finished code", "running")
+        code = {path: item.text for path, item in self.inp.code.items()}
+        result = write_code_tests(self.client("tester"), self.context, contract, code)
+        if result.kind in ("unreachable", "too_big"):
+            raise _Paused("interrupted", result.message)
+        ran: LayerBResult | None = None
+        dropped: list[str] = []
+        if result.ok:
+            policy = self.inp.policy
+            text = keep_code_tests(result.value, *self._kept_bugs())
+            ran = run_tests(
+                self.reference,
+                code,
+                f"{self.test_id}_code",
+                text,
+                exclude=policy.build_sandbox_exclude,
+                timeout_seconds=policy.build_test_timeout_seconds,
+            )
+            if not ran.ran:
+                raise _Paused("interrupted", ran.error)
+            ran = ran.model_copy(update={"source": text})
+            dropped = self._judge(code, text, ran)
+        with self._turn() as tx:
+            if ran is None:
+                text, state = "Code tests could not be written this round", "failed"
+            else:
+                text = f"Code tests: {ran.passed} of {len(ran.tests)} passed"
+                state = "done"
+            tx.audit(
+                "system", "code_tests_run",
+                {"tests": len(ran.tests) if ran else 0, "wrong_tests": len(dropped)},
+            )  # fmt: skip
+            self._note(tx, text, state, line)
+        return ran, dropped
 
     def _trace_bug(self, contract: Contract, tests: str) -> tuple[list[str], str]:
         """Round 1 of a bug fix (spec section 7): run the new test set on his files as they are,
@@ -840,6 +912,8 @@ class _Run:
         layer_b: LayerBResult | None,
         contract: Contract,
         tests: str,
+        code_tests: LayerBResult | None = None,
+        dropped_code_tests: list[str] | None = None,
     ) -> bool:
         passed = layer_a.ok and layer_b is not None and layer_b.ok
         # F3: tests that never reported are the Developer Assistant's problem. Show the rows,
@@ -860,6 +934,8 @@ class _Run:
             failure_report=report,
             timed_out=bool(layer_b and layer_b.timed_out),
             files_to_fix=fix,
+            code_tests=code_tests,
+            dropped_code_tests=dropped_code_tests or [],
         )
         limit = self.inp.policy.build_max_rounds
         with self._turn() as tx:
@@ -869,6 +945,14 @@ class _Run:
             )
             self._note(tx, "Layer A: syntax, imports, rules", "done" if layer_a.ok else "failed")
             if layer_b is not None:
+                body = record.model_dump(
+                    mode="json",
+                    include={"layer_a", "layer_b", "code_tests", "dropped_code_tests"},
+                )
+                insert_test_report(
+                    tx.conn, self.request_id, record.build_number, number, body, tx.now
+                )
+                tx.audit("system", "test_report_saved", {"round": number})
                 tx.audit(
                     "system",
                     "layer_b_result",
@@ -1218,6 +1302,7 @@ class _Run:
             tester.check_criteria_have_tests(self.inp.record, test_text)
             + self._enhance_findings()
             + tester.check_tests_pass(self.inp.record, last.layer_b)
+            + tester.check_code_tests(last.code_tests, last.dropped_code_tests)
             + tester.check_files_match_plan(planned, code, self._review_start_texts)
         )
 
@@ -1290,7 +1375,14 @@ class _Run:
         limit = self.inp.policy.build_max_rounds
         used = _rounds_used(self.inp.rounds)
         must =tester.must_fix_items(findings)
-        label = tester.compute_label(findings, zones, "unable" if unable else "done", 1, [])
+        # A dropped wrong test keeps the label at Ready with warnings; the warning line is saved
+        # with the review, so every later label recompute sees it.
+        wrong_tests = [
+            f"{tester.DROPPED_TEST_PREFIX}, {line}" for line in last.dropped_code_tests
+        ]
+        label = tester.compute_label(
+            findings, zones + wrong_tests, "unable" if unable else "done", 1, []
+        )
         with self._turn() as tx:
             record = ReviewRecord(
                 request_id=self.request_id,
@@ -1303,7 +1395,7 @@ class _Run:
                 attempts=outcome.attempts,
                 result="unable" if unable else "done",
                 checks=tester.check_results(findings, zones, ran_ai=not (unable or one_failed)),
-                zone_warnings=tester.zone_warnings(zones),
+                zone_warnings=tester.zone_warnings(zones) + wrong_tests,
                 label=label,
                 findings=findings,
             )
