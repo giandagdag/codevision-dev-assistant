@@ -77,7 +77,9 @@ def test_send_at_b_written_goes_to_the_lane_choice_and_the_buttons_are_the_lanes
     assert result == (1, no_update, "")
     assert lanes.get_refine_state(settings, request_id).step == "lane_choice"
     tree = draw(request_id)
-    assert refine_keys(tree) == ["lane_bug", "lane_requirement", "lane_approach", "cancel"]
+    assert refine_keys(tree) == [
+        "lane_bug", "lane_requirement", "lane_approach", "explain_simple", "decide_help", "cancel"
+    ]
     assert state_of(tree)["refine_revision"] == 1
 
 
