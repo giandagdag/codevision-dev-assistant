@@ -1,12 +1,14 @@
-"""Phase 11 fix 2, step 4: the AI scan job (AG-8). Made-up files, scripted client, no real AI."""
+"""Phase 11 fix 3, step 4: tagging is step 2 of the index job (AH-8, AH-9). Scripted client only."""
 
-from datetime import datetime
+import json
 from pathlib import Path
 
+from agents import da_admin_job as job
 from agents import da_admin_rebuild as rebuild
-from agents import da_admin_tagger_job as job
-from agents.da_admin_tag_store import read_tags
-from agents.da_admin_tagger import ScriptedTaggerClient
+from agents import da_admin_tagger_job as tagjob
+from agents.da_admin_index import recent_runs
+from agents.da_admin_tag_store import read_tags, save_store
+from agents.da_admin_tagger import ScriptedTaggerClient, run_tagging, text_hash
 from agents.da_code_index import FakeEmbedder
 from db_table_functions.db_tbl_da_rulebook import SEED_RULEBOOK_FILE, load_rulebook_file
 
@@ -21,106 +23,111 @@ def _setup(tmp_path: Path, count: int = 3):
     policy = load_rulebook_file(SEED_RULEBOOK_FILE).policy.model_copy(
         update={"index_folder_scope": str(source), "index_exclusions": []}
     )
-    client = ScriptedTaggerClient({f"m{n}.py": GOOD for n in range(count)})
-    return policy, client
+    return policy, ScriptedTaggerClient({f"m{n}.py": GOOD for n in range(count)}), source
 
 
-def test_scan_saves_tags_frees_the_lock_and_counts_progress(tmp_path, make_settings):
-    policy, client = _setup(tmp_path)
+def _job(policy, out, client, settings, mode="full"):
+    return rebuild.start_rebuild(
+        policy, "admin1", embedder=FakeEmbedder(), directory=out, wait=True, mode=mode,
+        settings=settings, tag_client=client,
+    )
+
+
+def test_full_tags_everything_and_the_run_row_says_so(tmp_path, make_settings):
+    policy, client, _ = _setup(tmp_path)
     out = tmp_path / "idx"
 
-    started, _ = job.start_scan(
-        policy, make_settings(), "admin1", directory=out, client=client, wait=True
-    )
+    started, _ = _job(policy, out, client, make_settings())
 
     assert started and set(read_tags(out)) == {"m0.py", "m1.py", "m2.py"}
-    assert job.scan_running(out) is None
-    assert job.progress_text() == "Scanning… 3 of 3"
-    assert job.status_line(out) == "Done: 3 scanned, 3 proposals."
+    row = recent_runs(out)[0]
+    assert row["tagged"] == 3 and "Tagged 3 programs" in row["message"]
+    assert job.read_status(out)["step"] == 2 and not rebuild._lock_path(out).exists()
 
 
-def test_scan_refused_while_a_rebuild_runs_and_the_other_way_round(tmp_path, make_settings):
-    policy, client = _setup(tmp_path)
+def test_delta_tags_only_new_or_changed_programs(tmp_path, make_settings):
+    policy, client, source = _setup(tmp_path)
     out = tmp_path / "idx"
-    now = datetime.now()
+    _job(policy, out, client, make_settings())
+    (source / "m1.py").write_text("x = 99\n", encoding="utf-8")
+    seen = []
 
-    rebuild._take_lock(now, out)  # a rebuild is running
-    started, message = job.start_scan(policy, make_settings(), "a", directory=out, client=client)
-    assert (started, message) == (False, rebuild.ONE_JOB_AT_A_TIME)
-    rebuild._lock_path(out).unlink()
+    class Counting(ScriptedTaggerClient):
+        def complete(self, prompt, system=None):
+            seen.append(prompt)
+            return super().complete(prompt, system)
 
-    rebuild._take_lock(now, out, rebuild.TAGGER_LOCK_NAME)  # a scan is running
-    started, message = rebuild.start_rebuild(
-        policy, "a", embedder=FakeEmbedder(), directory=out, wait=True
-    )
-    assert (started, message) == (False, rebuild.ONE_JOB_AT_A_TIME)
-    assert not rebuild._lock_path(out).exists()
+    _job(policy, out, Counting({"m1.py": GOOD}), make_settings(), mode="delta")
 
-
-def test_a_second_scan_is_refused(tmp_path, make_settings):
-    policy, client = _setup(tmp_path)
-    out = tmp_path / "idx"
-    rebuild._take_lock(datetime.now(), out, rebuild.TAGGER_LOCK_NAME)
-
-    started, message = job.start_scan(policy, make_settings(), "a", directory=out, client=client)
-
-    assert (started, message) == (False, rebuild.ONE_JOB_AT_A_TIME)
+    assert len(seen) == 1 and "m1.py" in seen[0]
+    assert recent_runs(out)[0]["tagged"] == 1
 
 
-def test_cap_leaves_the_rest_for_the_next_scan(tmp_path, make_settings):
-    policy, client = _setup(tmp_path, count=3)
-    out = tmp_path / "idx"
-
-    job.start_scan(
-        policy, make_settings(tagger_max_modules=2), "a", directory=out, client=client, wait=True
-    )
-
-    assert len(read_tags(out)) == 2
-    assert job.status_line(out) == "Done: 2 scanned, 2 proposals. 1 more wait for the next scan."
-
-
-def test_a_failing_job_still_frees_the_lock(tmp_path, make_settings):
-    policy, _ = _setup(tmp_path)
+def test_over_ten_percent_failing_keeps_the_index_and_says_tags_not_saved(tmp_path, make_settings):
+    policy, _, _ = _setup(tmp_path)
     out = tmp_path / "idx"
 
     class Broken:
         def complete(self, prompt, system=None):
             raise RuntimeError("down")
 
-    job.start_scan(policy, make_settings(), "a", directory=out, client=Broken(), wait=True)
+    _job(policy, out, Broken(), make_settings())
 
-    assert job.scan_running(out) is None
-    assert "not saved" in job.status_line(out).lower()  # every module failed: over 10%
-
-
-def test_non_admin_cannot_start_a_scan(make_settings):
-    import pytest
-    from dash.exceptions import PreventUpdate
-
-    from callbacks.screen_callbacks.da_admin_scan_callbacks import scan_action
-    from layouts.da_admin_scan_controls import SCAN_CONFIRM
-
-    with pytest.raises(PreventUpdate):
-        scan_action(make_settings(developer_id="nobody-9"), SCAN_CONFIRM, "all")
+    row = recent_runs(out)[0]
+    assert row["saved"] and tagjob.TAGS_NOT_SAVED in row["message"]  # the index was kept
+    assert (out / "da_code_index.json").exists() and read_tags(out) == {}
 
 
-def test_the_catalog_tab_shows_the_scan_buttons():
-    from layouts.da_admin_scan_controls import scan_controls
+def test_stop_during_tagging_keeps_the_index_and_drops_the_new_tags(tmp_path, make_settings):
+    policy, _, _ = _setup(tmp_path)
+    out = tmp_path / "idx"
 
-    shown = str(scan_controls(False, "", True))
-    assert "Scan all programs" in shown and "Tag new or changed" in shown
+    class StopsAfterFirst(ScriptedTaggerClient):
+        def complete(self, prompt, system=None):
+            job.request_stop(out)
+            return super().complete(prompt, system)
+
+    client = StopsAfterFirst({f"m{n}.py": GOOD for n in range(3)})
+    _job(policy, out, client, make_settings())
+
+    row = recent_runs(out)[0]
+    assert row["saved"] and "Stopped" in row["message"] and read_tags(out) == {}
+
+
+def test_a_changed_file_keeps_the_approved_state_and_capability(tmp_path):
+    src, out = tmp_path / "src", tmp_path / "out"
+    src.mkdir()
+    (src / "m0.py").write_text("x = 2\n")
+    old = {"file_hash": text_hash("x = 1\n"), "summary": "Old.", "proposed_capability": "Reports",
+           "confidence": "high", "reason": "r", "state": "approved"}
+    save_store({"modules": {"m0.py": old}, "runs": []}, out)
+    reply = {**GOOD, "summary": "New words."}
+
+    run_tagging(["m0.py"], src, [], ScriptedTaggerClient({"m0.py": json.dumps(reply)}), "a",
+                directory=out)
+
+    kept = read_tags(out)["m0.py"]
+    assert kept["state"] == "approved" and kept["proposed_capability"] == "Reports"
+    assert kept["summary"] == "New words." and kept["file_hash"] == text_hash("x = 2\n")
 
 
 def test_the_tagger_role_and_its_model_are_used_at_work(monkeypatch, make_settings):
     seen = {}
     monkeypatch.setattr(
-        job, "get_llm_client", lambda role, settings, model: seen.update(role=role, model=model)
+        tagjob, "get_llm_client", lambda role, settings, model: seen.update(role=role, model=model)
     )
     policy = load_rulebook_file(SEED_RULEBOOK_FILE).policy.model_copy(
         update={"tagger_model": "tag-model-x"}
     )
 
-    job.pick_client(make_settings(llm_provider="onprem"), policy)
+    tagjob.pick_client(make_settings(llm_provider="onprem"), policy)
 
     assert seen == {"role": "tagger", "model": "tag-model-x"}
-    assert isinstance(job.pick_client(make_settings(), policy), ScriptedTaggerClient)
+    assert isinstance(tagjob.pick_client(make_settings(), policy), ScriptedTaggerClient)
+
+
+def test_the_scan_buttons_are_gone_from_the_catalog_tab():
+    from pathlib import Path as P
+
+    text = (P(__file__).parents[1] / "src/layouts/da_admin_catalog_tab.py").read_text("utf-8")
+    assert "Scan all programs" not in text and "scan_controls" not in text

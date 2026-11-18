@@ -49,7 +49,6 @@ from agents.da_admin_tag_cards import (
     reject_card,
 )
 from agents.da_admin_tag_store import read_tags
-from callbacks.screen_callbacks.da_admin_scan_callbacks import register_scan
 from configs.da_config import Settings, load_settings
 from db_table_functions.db_tbl_da_rulebook import (
     RulebookError,
@@ -543,7 +542,7 @@ def rebuild_action(settings: Settings, button: str | None):
     if button == REBUILD_CONFIRM:
         policy = get_active_version(settings.db_path).rulebook.policy
         started, message = start_rebuild(
-            policy, settings.developer_id, provider=settings.llm_provider
+            policy, settings.developer_id, provider=settings.llm_provider, settings=settings
         )
         if not started:
             return False, message
@@ -680,7 +679,6 @@ def register_da_admin_page_callbacks(app) -> None:
     _register_rule_pick(app)
     _register_golden(app)
     _register_rebuild(app)
-    register_scan(app, lambda: get_admin_settings())  # looked up late so tests can replace it
 
     @app.callback(
         Output(SONAR_STATUS, "children"),

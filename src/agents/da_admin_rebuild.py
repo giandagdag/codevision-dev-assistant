@@ -7,13 +7,13 @@ it runs in the background and writes one line to the job log (da_code_index_runs
 import json
 import os
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 from agents import da_admin_job as job
 from agents.da_admin_index import index_dir, record_run
 from agents.da_code_index import Embedder, FakeEmbedder, WorkEmbedder
-from configs.da_config import load_settings
+from configs.da_config import Settings, load_settings
 from da_build_code_index import build_index
 from da_logging import get_logger
 from pydantic_classes.da_rulebook_models import Policy
@@ -21,8 +21,6 @@ from pydantic_classes.da_rulebook_models import Policy
 logger = get_logger(__name__)
 
 LOCK_NAME = "da_code_index.lock"
-TAGGER_LOCK_NAME = "da_tagger.lock"
-TAGGER_LOCK_MAX_AGE = timedelta(hours=12)  # 500 modules on a slow model take hours
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_FOLDER = Path(__file__).resolve().parents[1]  # B1's default source when nothing is set
 SERVER_STARTED = datetime.now()  # a lock from before this moment belongs to a dead server
@@ -74,13 +72,9 @@ def running_since(
         path.unlink(missing_ok=True)
         return None
     current = now or datetime.now()
-    if name == LOCK_NAME:
-        # The index job writes a heartbeat; a job with no sign of life for 30 min is dead. A long
-        # job (hours) and a job started by another server process both stay locked while alive.
-        stale = current - job.last_heartbeat(directory, started) > job.STALE_AFTER
-    else:
-        stale = started < SERVER_STARTED or current - started > TAGGER_LOCK_MAX_AGE
-    if stale:
+    # The job (index and tagging) writes a heartbeat; no sign of life for 30 min means it is dead.
+    # A long job (hours) and a job started by another server process both stay locked while alive.
+    if current - job.last_heartbeat(directory, started) > job.STALE_AFTER:
         path.unlink(missing_ok=True)
         return None
     return started
@@ -106,6 +100,8 @@ def _run(
     provider: str,
     mode: str = "full",
     trigger: str = "Manual",
+    settings: Settings | None = None,
+    tag_client=None,
 ) -> None:
     out = directory or index_dir()
     embedder = embedder or pick_embedder(provider)
@@ -123,9 +119,14 @@ def _run(
             stop=lambda: job.stop_requested(out),
         )
         extra.update(mode=summary.mode, reread=summary.reread)
+        message = summary.message
+        if summary.saved and (settings is not None or tag_client is not None):
+            message += _tag_step(
+                policy, settings, started_by, summary, out, tag_client, extra, provider
+            )
         record_run(
             started_by, started, summary.saved, summary.count, summary.skipped,
-            summary.message, out, _with_seconds(extra, started),
+            message, out, _with_seconds(extra, started),
         )
         if not summary.saved:
             job.fail(out, summary.message)
@@ -139,6 +140,24 @@ def _run(
             embedder.close()  # ends the helper process
         job.clear_stop(out)
         _lock_path(out).unlink(missing_ok=True)
+
+
+def _tag_step(policy, settings, started_by, summary, out, tag_client, extra, provider) -> str:
+    """Step 2: tag the programs. Never undoes the saved index; returns words for the run row."""
+    from agents.da_admin_tagger_job import TAGS_NOT_SAVED, tag_programs  # AI use stays in that file
+
+    try:
+        result = tag_programs(
+            policy, settings, started_by, summary.mode, source_folder(policy, provider),
+            out, tag_client,
+        )
+    except Exception as error:  # a tagging crash must not hide the saved index
+        logger.warning("Tagging failed: %s", type(error).__name__)
+        return f" {TAGS_NOT_SAVED}"
+    extra["tagged"] = result.scanned if result.saved else 0
+    if result.saved:
+        return f" Tagged {result.scanned} programs."
+    return f" {result.message}" if result.message.startswith("Stopped") else f" {TAGS_NOT_SAVED}"
 
 
 def _with_seconds(extra: dict, started: datetime) -> dict:
@@ -155,6 +174,8 @@ def start_rebuild(
     provider: str = "",
     mode: str = "full",
     trigger: str = "Manual",
+    settings: Settings | None = None,
+    tag_client=None,
 ) -> tuple[bool, str]:
     """Start one background build. Returns (started, message). `wait` is for tests only.
 
@@ -163,11 +184,12 @@ def start_rebuild(
     started = now or datetime.now()
     if refusal := scope_refusal(policy, provider):
         return False, refusal
-    if running_since(started, directory, TAGGER_LOCK_NAME) is not None:
-        return False, ONE_JOB_AT_A_TIME
     if running_since(started, directory) is not None or not _take_lock(started, directory):
         return False, ALREADY_RUNNING
-    args = (policy, started_by, started, embedder, directory, provider, mode, trigger)
+    args = (
+        policy, started_by, started, embedder, directory, provider, mode, trigger, settings,
+        tag_client,
+    )
     thread = threading.Thread(target=_run, args=args, daemon=True)
     thread.start()
     if wait:

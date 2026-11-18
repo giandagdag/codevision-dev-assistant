@@ -29,6 +29,7 @@ MAX_SKIPPED_SHARE = 0.10
 KEPT_RUNS = 10
 NOT_SAVED = "Not saved: over 10% failed, the old tags stay."
 MODULE_LINE = "Module: "
+STOPPED = "Stopped: the new tags were dropped, the new index stays."
 
 STATE_PROPOSED, STATE_APPROVED, STATE_REJECTED, STATE_MATCHED = (
     "proposed", "approved", "rejected", "matched",
@@ -151,13 +152,17 @@ def run_tagging(
     directory: Path | None = None,
     now: datetime | None = None,
     progress=None,
+    stop=None,
 ) -> TagRun:
-    """Tag the given modules. Saved together or not at all (over 10% skipped = not saved)."""
+    """Tag the given modules. Saved together or not at all (over 10% skipped = not saved).
+    `stop()` true between modules drops the whole run (the saved tags stay as they were)."""
     when = (now or datetime.now()).isoformat(timespec="seconds")
     sendable = [p for p in paths if is_sendable(p, exclusions or [])]
     entries: dict[str, dict] = {}
     skipped: list[str] = []
     for number, path in enumerate(sendable, start=1):
+        if stop and stop():
+            return TagRun(False, number - 1, 0, skipped, STOPPED)
         entry = _tag_one(path, root, capabilities, client)
         if entry is None:
             skipped.append(path)
@@ -176,6 +181,9 @@ def run_tagging(
         decided = current.get("state") in (STATE_APPROVED, STATE_REJECTED)
         if decided and current.get("file_hash") == entry["file_hash"]:
             continue  # keep the Admin's decision on unchanged code
+        if decided:  # code changed: refresh the text, keep the decision and the capability
+            entry = {**entry, "state": current["state"],
+                     "proposed_capability": current.get("proposed_capability", "")}
         store["modules"][path] = entry
     run = {"started_by": started_by, "started_at": when, "scanned": scanned,
            "proposed": proposed, "skipped": skipped}

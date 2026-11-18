@@ -1,14 +1,10 @@
 """Phase 11 fix 2, review rounds 1 and 2: tests for the fixes. Made-up data only."""
 
 import json
-from datetime import datetime, timedelta
 
-from agents.da_admin_rebuild import TAGGER_LOCK_NAME, _take_lock, running_since
 from agents.da_admin_tag_cards import approve_card, reject_card
 from agents.da_admin_tag_store import read_tags, save_store
 from agents.da_admin_tagger import ScriptedTaggerClient, paths_to_tag, run_tagging, text_hash
-from callbacks.screen_callbacks.da_admin_scan_callbacks import confirm_state
-from layouts.da_admin_scan_controls import HIDDEN, SCAN_NEW_BTN, SHOWN
 from pydantic_classes.da_rulebook_models import Capability
 
 CAPS = [
@@ -65,15 +61,6 @@ def test_untagged_programs_go_first(tmp_path):
     assert todo == ["b.py"] and waiting == 1
 
 
-def test_a_three_hour_old_scan_lock_still_counts_but_a_day_old_one_does_not(tmp_path):
-    started = datetime.now()
-    assert _take_lock(started, tmp_path, TAGGER_LOCK_NAME)
-
-    three = running_since(started + timedelta(hours=3), tmp_path, TAGGER_LOCK_NAME)
-    assert three == started.replace(microsecond=0)
-    assert running_since(started + timedelta(hours=13), tmp_path, TAGGER_LOCK_NAME) is None
-
-
 def test_approving_a_path_another_capability_holds_names_that_capability(
     published_rulebook, make_settings, tmp_path
 ):
@@ -87,8 +74,3 @@ def test_approving_a_path_another_capability_holds_names_that_capability(
 
     assert result.kind == "resolved" and result.new_version is None
     assert "already matches" in result.message and "'" in result.message  # names the capability
-
-
-def test_the_confirm_box_text_follows_the_button():
-    assert confirm_state(SCAN_NEW_BTN) == (True, "new", HIDDEN, SHOWN)
-    assert confirm_state("adm-scan-all-btn") == (True, "all", SHOWN, HIDDEN)
