@@ -52,10 +52,15 @@ MODE_TITLES = {
     MODE_CLOSE: "Close this escalation",
 }
 OUTCOME_RETURN, OUTCOME_ABANDON = "returned", "abandoned"
+OUTCOME_MORE = "more_decisions"  # B2 S7f: return and allow more decision rounds
 OUTCOME_CHOICES = [
     {"value": OUTCOME_RETURN, "label": "Return to developer"},
+    {"value": OUTCOME_MORE, "label": "Return with more decisions"},
     {"value": OUTCOME_ABANDON, "label": "Abandon request"},
 ]
+INBOX_ROUNDS_ID = "da-inbox-rounds"
+ROUNDS_CHOICES = [str(n) for n in range(1, 6)]
+ROUNDS_DEFAULT = "3"
 READ_ONLY_LINE = "Read-only view. Use the buttons above."
 NO_ROWS_TEXT = "Nothing is waiting."
 
@@ -120,6 +125,14 @@ def _action_dialog() -> dmc.Modal:
             ),
             dmc.SegmentedControl(
                 id=INBOX_OUTCOME_ID, data=OUTCOME_CHOICES, value=OUTCOME_RETURN, mb="sm"
+            ),
+            dmc.Select(
+                id=INBOX_ROUNDS_ID,
+                label="More decision rounds (only for Return with more decisions)",
+                data=ROUNDS_CHOICES,
+                value=ROUNDS_DEFAULT,
+                allowDeselect=False,
+                mb="sm",
             ),
             dmc.Textarea(id=INBOX_TEXT_ID, label="Text", autosize=True, minRows=3, mb="sm"),
             dmc.Text("", id=INBOX_ERROR_ID, c="red", size="sm", mb="xs"),

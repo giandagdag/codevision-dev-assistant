@@ -229,6 +229,10 @@ class UnderstandSession(_Shape):
     # B2 S7: how many of the first pending decisions the chat already listed (batch of up to 3).
     decisions_announced: int = 0
     needs_senior: bool = False
+    # B2 S7f: decisions past the limit wait here with their options, so a senior can reopen them;
+    # extra_decision_rounds is the extra room he gave (it adds to the rulebook limit).
+    aside_decisions: list[PendingDecision] = Field(default_factory=list)
+    extra_decision_rounds: int = Field(default=0, ge=0)
     # B2 S7d: the Proceed assumptions, waiting for Confirm to become acceptance criteria.
     assumed_cases: list[AssumedCase] = Field(default_factory=list)
     optional_done: bool = False

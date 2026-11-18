@@ -703,6 +703,9 @@ def _queue_material_decisions(
             session.material_decisions_asked += 1
         else:
             open_items.append(SENIOR_PREFIX + ambiguity.text)
+            session.aside_decisions.append(
+                PendingDecision(question=ambiguity.text, options=ambiguity.options)
+            )
             session.needs_senior = True
     return record.model_copy(update={"open_items": open_items})
 
@@ -1017,6 +1020,9 @@ def _apply_assumptions(turn: _Turn, items: list[str], cases: list[AssumedCase]) 
         }
     )
     session.assumed_cases = [*session.assumed_cases, *cases]
+    session.aside_decisions = [
+        d for d in session.aside_decisions if SENIOR_PREFIX + d.question not in items
+    ]
     session.last_changed_fields = ["assumptions", "open_items"]
     for assumption in added:
         turn.audit("system", "assumption_added", assumption.model_dump())
@@ -1167,7 +1173,7 @@ def _turn(db_path: Path, request_id: str, base_revision: int, now: datetime) -> 
             session=session,
             now=now,
             visible_before=visible_fields(session),
-            max_decisions=max_decisions,
+            max_decisions=max_decisions + session.extra_decision_rounds,
         )
         yield turn
         _highlight_revealed(turn)
