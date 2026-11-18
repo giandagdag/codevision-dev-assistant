@@ -12,6 +12,7 @@ from dash import ALL, Input, Output, State, ctx, no_update
 from dash.exceptions import PreventUpdate
 
 from agents import da_build_runner as build_runner
+from agents.da_ai_lock import ai_turn
 from agents.da_refine_actions import (
     SHOWN_CHAIN_ERRORS,
     Outcome,
@@ -28,7 +29,7 @@ from layouts.da_developer_assistant_page import (
 )
 from layouts.da_refine_panels import CONFLICT_PICK_TYPE
 
-SHOWN_ERRORS = SHOWN_CHAIN_ERRORS
+SHOWN_ERRORS = SHOWN_CHAIN_ERRORS  # AiBusyError is an UnderstandError, so it is shown too
 BUSY = [(Output(BUSY_ID, "style"), {"display": "block"}, {"display": "none"})]
 
 
@@ -54,7 +55,8 @@ def handle_refine_button(settings, trigger, clicks_value, state, refresh):
     if not isinstance(trigger, dict) or not clicks_value or not state.get("refine"):
         raise PreventUpdate
     try:
-        message = run_refine(settings, trigger["index"], state)
+        with ai_turn(state.get("request_id")):
+            message = run_refine(settings, trigger["index"], state)
     except SHOWN_ERRORS as error:
         return no_update, str(error)
     return (refresh or 0) + 1, message
@@ -88,7 +90,8 @@ def handle_add_case(settings, fields: dict, state, refresh):
         raise PreventUpdate
     text, criterion = fields.get("text") or "", fields.get("criterion") or ""
     try:
-        message = run_refine(settings, "add_case", state, text=text, arg=criterion)
+        with ai_turn(state.get("request_id")):
+            message = run_refine(settings, "add_case", state, text=text, arg=criterion)
     except SHOWN_ERRORS as error:
         return no_update, str(error)
     return (refresh or 0) + 1, message
