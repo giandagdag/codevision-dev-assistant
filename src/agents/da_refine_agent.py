@@ -54,6 +54,10 @@ REPRO_ROLE = "tester"
 
 # The line each prompt carries so the fake and pretend servers can tell the calls apart.
 LANE_MARKER = "Task: suggest a lane"
+EXPLAIN_MARKER = "Task: explain the lanes simply"  # B2 S3
+EXPLAIN_MAX_WORDS = 120
+DESCRIBE_MARKER = "Task: describe the bug"  # B2 S4
+DESCRIBE_MAX_WORDS = 120
 REVISION_MARKER = "Task: revise the record"
 REPRO_MARKER = "Task: write a repro test"
 OWN_TEST_MARKER = "Task: write a test for the developer"
@@ -202,6 +206,76 @@ def suggest_lane(client: LLMClient, context: RefineContext, feedback: str) -> AI
         check,
         context.record.request_id,
         "refine_lane",
+        context.policy.refine_lane_max_attempts,
+        context.policy.build_max_prompt_chars,
+    )
+
+
+def build_explain_prompt(context: RefineContext, feedback: str, lanes: dict[str, str]) -> str:
+    """B2 S3: the three choices in plain words. The record's title and objective only, no code."""
+    choices = "\n".join(f"- {label}" for label in lanes.values())
+    return (
+        f"{EXPLAIN_MARKER}\n"
+        f"Explain, for someone with no technical background, what each of these choices means "
+        f"for this change. No jargon, no code, at most {EXPLAIN_MAX_WORDS} words, plain text.\n"
+        f"Choices:\n{choices}\n"
+        f"Request: {context.record.title}. {context.record.objective}\n"
+        f"--- developer feedback starts ---\n{feedback}\n--- developer feedback ends ---"
+    )
+
+
+def explain_lanes(client: LLMClient, context: RefineContext, feedback: str, lanes) -> AIResult:
+    """One call. `value` is plain text cut to the word limit by plain code."""
+
+    def check(text: str):
+        words = text.split()
+        if not words:
+            return None, ["The reply was empty. Reply with a short plain explanation."]
+        return " ".join(words[:EXPLAIN_MAX_WORDS]), []
+
+    return _ask(
+        client,
+        build_explain_prompt(context, feedback, lanes),
+        check,
+        context.record.request_id,
+        "refine_explain",
+        context.policy.refine_lane_max_attempts,
+        context.policy.build_max_prompt_chars,
+    )
+
+
+def build_describe_prompt(context: RefineContext, failing: list[str], chat: list[str]) -> str:
+    """B2 S4: a draft of the bug in his words. Failing test names and messages, and the last chat
+    lines, between marker lines. No code."""
+    shown = "\n".join(f"- {line}" for line in failing) or "- (no failing test)"
+    talk = "\n".join(chat) or "(nothing yet)"
+    return (
+        f"{DESCRIBE_MARKER}\n"
+        "Write a short draft, in the first person, of what is not working, so a developer can "
+        f"check it and send it. Plain text, at most {DESCRIBE_MAX_WORDS} words, no code.\n"
+        f"Request: {context.record.title}. {context.record.objective}\n"
+        f"Failing tests:\n{shown}\n"
+        f"--- recent chat starts ---\n{talk}\n--- recent chat ends ---"
+    )
+
+
+def describe_bug(
+    client: LLMClient, context: RefineContext, failing: list[str], chat: list[str]
+) -> AIResult:
+    """One call. `value` is the draft text, cut to the word limit by plain code."""
+
+    def check(text: str):
+        words = text.split()
+        if not words:
+            return None, ["The reply was empty. Reply with a short plain description."]
+        return " ".join(words[:DESCRIBE_MAX_WORDS]), []
+
+    return _ask(
+        client,
+        build_describe_prompt(context, failing, chat),
+        check,
+        context.record.request_id,
+        "refine_describe",
         context.policy.refine_lane_max_attempts,
         context.policy.build_max_prompt_chars,
     )
@@ -407,7 +481,8 @@ _APPROACH_WORDS = ("approach", "design", "instead", "split", "move ")
 def is_refine_prompt(prompt: str) -> bool:
     return any(
         re.search(rf"^{re.escape(marker)}$", prompt, re.MULTILINE)
-        for marker in (LANE_MARKER, REVISION_MARKER, REPRO_MARKER, OWN_TEST_MARKER)
+        for marker in (LANE_MARKER, REVISION_MARKER, REPRO_MARKER, OWN_TEST_MARKER, EXPLAIN_MARKER,
+                       DESCRIBE_MARKER)
     )
 
 
@@ -415,6 +490,10 @@ def scripted_refine_reply(prompt: str, switches: frozenset[str] | None = None) -
     switches = build_agent.FAKE_SWITCHES if switches is None else switches
     if re.search(rf"^{re.escape(LANE_MARKER)}$", prompt, re.MULTILINE):
         return _scripted_lane(prompt, switches)
+    if re.search(rf"^{re.escape(EXPLAIN_MARKER)}$", prompt, re.MULTILINE):
+        return SCRIPTED_EXPLAIN
+    if re.search(rf"^{re.escape(DESCRIBE_MARKER)}$", prompt, re.MULTILINE):
+        return SCRIPTED_DESCRIBE
     if re.search(rf"^{re.escape(REVISION_MARKER)}$", prompt, re.MULTILINE):
         return _scripted_revision()
     own = re.search(rf"^{re.escape(OWN_TEST_MARKER)}$", prompt, re.MULTILINE)
@@ -425,6 +504,17 @@ def scripted_refine_reply(prompt: str, switches: frozenset[str] | None = None) -
         number = criterion.group(1) if criterion else "AC-1"
         return f"CONFLICT {number}: the test expects another result."
     return _scripted_repro(prompt, switches)
+
+
+SCRIPTED_EXPLAIN = (
+    "Change what it does: the request itself was wrong or incomplete, so we rewrite it. "
+    "Change how it's built: the request is right, but the plan for the code should differ. "
+    "It's not working as agreed: the request and plan are right, but the code does not do "
+    "what was agreed, so we write a test that shows the problem and fix it."
+)
+
+
+SCRIPTED_DESCRIBE = "When I upload a .csv file, it is rejected, but it should be accepted."
 
 
 def _feedback_of(prompt: str) -> str:

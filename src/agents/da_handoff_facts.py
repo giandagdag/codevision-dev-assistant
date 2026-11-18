@@ -60,6 +60,7 @@ def gather_summary_facts(conn: sqlite3.Connection, request_id: str) -> SummaryFa
         capability=record.capability,
         named_senior=record.named_senior,
         capability_confirmed=record.capability_confirmed,
+        no_negative_reason=record.no_negative_reason,
         follows_request_id=request.follows_request_id,
         build_number=build,
     )

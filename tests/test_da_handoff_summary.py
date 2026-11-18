@@ -49,6 +49,12 @@ def test_new_request_lines_in_order():
     assert lines[-1] == FOOTER
 
 
+def test_no_negative_reason_line_only_when_set():
+    assert not any(x.startswith("No negative") for x in lines_of(base()))
+    facts = base(no_negative_reason="It only reads a fixed list")
+    assert "No negative scenario: It only reads a fixed list" in lines_of(facts)  # B2-14
+
+
 def test_follows_line_only_when_set():
     assert not any(x.startswith("Follows") for x in lines_of(base()))
     assert "Follows: CVDA-2026-0001" in lines_of(base(follows_request_id="CVDA-2026-0001"))

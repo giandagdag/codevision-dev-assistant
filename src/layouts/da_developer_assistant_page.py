@@ -19,9 +19,11 @@ from agents.da_discover_flow import (
     outcome_status,
 )
 from agents.da_handoff_screen import FOLLOW_UP_KEY, READY_KEY, HandoffBox
+from agents.da_refine_describe import DESCRIBE_KEY, DESCRIBE_LABEL
 from agents.da_refine_hooks import STEP_REQ_APPROACH, STEP_REQ_FINDINGS
-from agents.da_refine_lanes import STEP_APPROACH, STEP_REQ_CHECKPOINT
+from agents.da_refine_lanes import STEP_APPROACH, STEP_BUG, STEP_REQ_CHECKPOINT
 from agents.da_refine_screen import RefineBox, RefineBuildPanel, VersionHistory
+from agents.da_understand_assume import ASSUME_BASIS
 from agents.da_understand_checks import MAX_MESSAGE_LENGTH
 from agents.da_understand_flow import (
     ALWAYS_VISIBLE,
@@ -79,9 +81,11 @@ SKIP_ID = "da-skip"
 MESSAGE_ID = "da-message"
 CHOICE_TYPE = "da-choice"
 REFINE_TYPE = "da-refine"  # Phase 8 step 16: the Refine buttons, the id index is the action key
+DESCRIBE_TYPE = "da-describe-bug"  # B2 S4: fills the text box with a draft, never sends it
 REFINE_MAIN_KEYS = (
     "confirm_v2", "findings_ok", "repro_yes", "own_add", "bug_fix", "apply", "check_edits",
 )
+REFINE_CANCEL_KEYS = ("cancel", "restore_cancel")  # drawn as plain grey outline, apart (B2 S2)
 KEYS_ID = "da-keys-ready"  # target of the Enter-to-send script; holds nothing
 BUSY_ID = "da-busy"  # the "searching" line, shown only while a Discover action runs
 # The 4-box form (Phase 6 fixes). Pattern ids, so the page can have none of them (all other
@@ -210,7 +214,7 @@ def render_home(requests: list[Request], notes: dict[str, str] | None = None) ->
                     ),
                     href="?new=1",
                     id="da-start-card",
-                    style={"textDecoration": "none"},
+                    style={"textDecoration": "none", "display": "block", "height": "100%"},
                 ),
                 enhance_card(),
                 _entry_card(
@@ -241,7 +245,7 @@ def enhance_card() -> html.Div:
         _entry_card("tabler:file-search", ENHANCE_CARD_TITLE, ENHANCE_CARD_TEXT),
         id=ENHANCE_CARD_ID,
         n_clicks=0,
-        style={"cursor": "pointer"},
+        style={"cursor": "pointer", "height": "100%"},
     )
 
 
@@ -255,6 +259,7 @@ def _entry_card(icon: str, title: str, text: str, disabled: bool = False) -> dmc
         withBorder=True,
         radius="md",
         p="lg",
+        h="100%",
         opacity=0.6 if disabled else 1,
     )
 
@@ -778,8 +783,18 @@ def _approach_composer(
     if refine is not None and refine.offered:
         prompt, text_open = refine.placeholder, refine.text_open
         send_label = refine.send_label
+    describe = (
+        [
+            parts.choice_button(
+                DESCRIBE_LABEL, {"type": DESCRIBE_TYPE, "index": DESCRIBE_KEY}, parts.SECONDARY
+            )
+        ]
+        if refine is not None and refine.offered and refine.step == STEP_BUG
+        else []
+    )
     controls = dmc.Box(
         [
+            *describe,
             dmc.Textarea(
                 id=TEXT_ID,
                 # A box that is closed because a limit was reached says so (the cap message).
@@ -971,19 +986,25 @@ def _build_bar(
 def refine_buttons(refine: RefineBox) -> list:
     """The server-run Refine buttons. The id holds the key (ASCII, never the label), so a click
     names its own action; the engine refuses an unknown key or an old window (step 16)."""
-    return [
-        parts.choice_button(
-            label,
-            {"type": REFINE_TYPE, "index": key},
-            parts.PRIMARY
+    def draw(key: str, label: str):
+        kind = (
+            parts.CANCEL
+            if key in REFINE_CANCEL_KEYS
+            else parts.PRIMARY
             if key in REFINE_MAIN_KEYS
             else parts.SECONDARY
             if key == "help"
-            else parts.NORMAL,
-            disabled=key in refine.disabled_keys,
+            else parts.NORMAL
         )
-        for key, label in refine.buttons
-    ]
+        return parts.choice_button(
+            label, {"type": REFINE_TYPE, "index": key}, kind, disabled=key in refine.disabled_keys
+        )
+
+    main = [draw(key, label) for key, label in refine.buttons if key not in REFINE_CANCEL_KEYS]
+    cancel = [draw(key, label) for key, label in refine.buttons if key in REFINE_CANCEL_KEYS]
+    # B2 S2: Cancel sits after a divider, apart from the lane buttons.
+    divider = [dmc.Divider(orientation="vertical", h=24)] if main and cancel else []
+    return [*main, *divider, *cancel]
 
 
 def _workspace_buttons(workspace: WorkspaceView) -> dmc.Box:
@@ -1278,7 +1299,7 @@ def _composer(
         ],
         style=da_styles.COMPOSER,
     )
-    if mode == "choices":
+    if mode == "choices" or choices:  # the decision limit has buttons but a paused text box
         return dmc.Box([_choices_bar(choices), controls])
     return controls
 
@@ -1357,6 +1378,18 @@ def _choices_bar(choices: list[str]) -> dmc.Box:
 # --- The Summary tab ---
 
 
+def _assumption_lines(record) -> list[str]:
+    """Proceed assumptions carry the number of their "Edit assumption N" button (P34)."""
+    lines, number = [], 0
+    for a in record.assumptions:
+        if a.basis == ASSUME_BASIS:
+            number += 1
+            lines.append(f"Assumption {number}: {a.text} (basis: {a.basis})")
+        else:
+            lines.append(f"{a.text} (basis: {a.basis})")
+    return lines
+
+
 def _summary_panel(view: UnderstandView | None) -> list:
     """The live summary. Fields changed by the last answer are highlighted. A field the screen
     does not show yet says "Waiting for your answer" (W5); the record already holds its value."""
@@ -1376,11 +1409,7 @@ def _summary_panel(view: UnderstandView | None) -> list:
     def empty(name: str, text: str) -> str:
         return text if name in shown else EMPTY_TEXT
 
-    assumptions = (
-        [f"{a.text} (basis: {a.basis})" for a in record.assumptions]
-        if record and "assumptions" in shown
-        else []
-    )
+    assumptions = _assumption_lines(record) if record and "assumptions" in shown else []
     criteria = list(record.acceptance_criteria) if record and "acceptance_criteria" in shown else []
     follows = view.request.follows_request_id if view else None
     return [

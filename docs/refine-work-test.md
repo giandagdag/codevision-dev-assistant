@@ -40,6 +40,15 @@ them without your pick.
 3. Discover runs by itself, then a new Approach. Only new and changed criteria get new test cases.
 4. Note any file the old plan had that the new one dropped ("no longer in the plan").
 
+## Test 4: the helper buttons (fix batch B2)
+
+1. At the lane choice (words: **Change what it does / Change how it's built / It's not working as
+   agreed**) press **Explain simply**: one chat message, nothing else changes. Press **Help me
+   decide**: one lane gets "(Suggested)"; no lane starts.
+2. In the bug lane press **Let the AI describe it**: a draft fills the text box. It is not sent.
+3. While the AI works, every action button is greyed except Cancel build, Cancel test and Home.
+4. Check the page at 1366 px and 1920 px wide: full width, three Home cards the same height.
+
 ## What to write down for Claude
 
 | What | Where |

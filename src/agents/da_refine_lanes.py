@@ -85,9 +85,9 @@ from pydantic_classes.da_refine_models import (
 from pydantic_classes.da_request_record_models import Speaker
 
 LANE_LABELS = {
-    "requirement": "Requirement change",
-    "approach": "Approach change",
-    "bug": "Bug",
+    "requirement": "Change what it does",
+    "approach": "Change how it's built",
+    "bug": "It's not working as agreed",
 }
 CANCEL_LABEL = "Cancel"
 CONFIRM_V2_LABEL = "Confirm v2"
@@ -277,7 +277,12 @@ def choose_lane(
         tx.audit(
             "developer",
             "refine_started",
-            {"refine": number, "suggested": state.suggested_lane, "chosen": lane},
+            {
+                "refine": number,
+                "suggested": state.suggested_lane,
+                "chosen": lane,
+                "chosen_words": LANE_LABELS[lane],  # B2 S1: Audit reads the same words
+            },
         )
         first = {"requirement": STEP_REQ_REVISE, "approach": STEP_APPROACH, "bug": STEP_BUG}[lane]
         tx.set(

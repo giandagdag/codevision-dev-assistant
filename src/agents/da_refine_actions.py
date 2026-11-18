@@ -18,6 +18,7 @@ from agents import da_build_flow as build_flow
 from agents import da_refine_approach as approach
 from agents import da_refine_bug as bug
 from agents import da_refine_edit as edit
+from agents import da_refine_explain as explain
 from agents import da_refine_fixit as fixit
 from agents import da_refine_flow as rflow
 from agents import da_refine_help as help_
@@ -76,6 +77,8 @@ LANE_KEYS = {
     "lane_bug": "bug",
 }
 PICK_LINE = lanes.PICK_LINE
+EXPLAIN_KEY, DECIDE_KEY = "explain_simple", "decide_help"  # B2 S3
+SUGGESTED_TAG = " (Suggested)"
 
 # step -> (note, buttons, text placeholder or "", Send label). The lane steps of spec sections 4-8.
 CHECKPOINT_PROMPT = "Type a correction, or press Confirm v2."
@@ -257,6 +260,9 @@ def _lane_choice_bar(state, rev: int) -> RefineBox:
     buttons = [(f"lane_{lane}", label) for lane, label in lanes.LANE_LABELS.items()]
     suggested = f"lane_{state.suggested_lane}" if state and state.suggested_lane else ""
     buttons.sort(key=lambda item: item[0] != suggested)  # the suggestion first, he still decides
+    if suggested and not state.lane_unusable:
+        buttons[0] = (suggested, buttons[0][1] + SUGGESTED_TAG)
+    buttons += [(EXPLAIN_KEY, explain.EXPLAIN_LABEL), (DECIDE_KEY, explain.DECIDE_LABEL)]
     note = (state.suggested_reason + " " if state and state.suggested_reason else "") + PICK_LINE
     if state and state.lane_unusable:
         note = lanes.NO_SUGGESTION_LINE
@@ -514,5 +520,7 @@ HANDLERS: dict[str, Callable[[_Call], Outcome]] = {
     "apply": _with_build_revision(picks.apply_choices),
     "fixit": _fix_it,
     "add_case": _add_case,
+    EXPLAIN_KEY: _plain(explain.explain_simply),
+    DECIDE_KEY: _plain(explain.help_decide),
     **{key: _lane for key in LANE_KEYS},
 }

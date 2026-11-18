@@ -89,6 +89,16 @@ class Assumption(_Shape):
     basis: ShortText
 
 
+class AssumedCase(_Shape):
+    """One assumption written at "Proceed with these assumptions", with its Given, When, Then.
+    Kept on the session until Confirm; only then does it become an acceptance criterion."""
+
+    text: ShortText
+    given: ShortText
+    when: ShortText
+    then: ShortText
+
+
 class AcceptanceCriterion(_Shape):
     """One testable case: Given a situation, when an action, then something that can be seen."""
 
@@ -143,6 +153,8 @@ class RequestRecord(_Shape):
     assumptions: Annotated[list[Assumption], Field(max_length=LIST_LENGTH_LIMIT)] = Field(
         default_factory=list
     )
+    # B2 S8: why no negative scenario applies (only the developer sets it, never the interpreter).
+    no_negative_reason: str = Field(default="", max_length=200)
     # Filled by the app only, so no length limits that could block the app's own work.
     open_items: list[str] = Field(default_factory=list)
     answered_questions: list[Annotated[int, Field(ge=1, le=QUESTION_COUNT)]] = Field(
@@ -216,7 +228,15 @@ class UnderstandSession(_Shape):
     # Asked one at a time, first in the list first.
     pending_decisions: list[PendingDecision] = Field(default_factory=list)
     material_decisions_asked: int = 0
+    # B2 S7: how many of the first pending decisions the chat already listed (batch of up to 3).
+    decisions_announced: int = 0
     needs_senior: bool = False
+    # B2 S7f: decisions past the limit wait here with their options, so a senior can reopen them;
+    # extra_decision_rounds is the extra room he gave (it adds to the rulebook limit).
+    aside_decisions: list[PendingDecision] = Field(default_factory=list)
+    extra_decision_rounds: int = Field(default=0, ge=0)
+    # B2 S7d: the Proceed assumptions, waiting for Confirm to become acceptance criteria.
+    assumed_cases: list[AssumedCase] = Field(default_factory=list)
     optional_done: bool = False
     checkpoint_help: bool = False
     # The interpreter's hint, shown with the next question.

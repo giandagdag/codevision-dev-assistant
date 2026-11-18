@@ -502,6 +502,16 @@ def test_gate_asks_for_a_negative_scenario_when_only_success_exists():
     assert confirmation_gate_problems(record, 0) == ["At least 1 negative scenario is needed."]
 
 
+def test_gate_accepts_a_reason_instead_of_a_negative_scenario():
+    """B2-13."""
+    record = complete_record(
+        acceptance_criteria=[criterion("AC-1", "success")], no_negative_reason="No inputs"
+    )
+    assert confirmation_gate_problems(record, 0) == []
+    blank = record.model_copy(update={"no_negative_reason": "   "})
+    assert confirmation_gate_problems(blank, 0) == ["At least 1 negative scenario is needed."]
+
+
 def test_gate_asks_for_a_success_criterion_when_only_failure_exists():
     record = complete_record(acceptance_criteria=[criterion("AC-1", "failure")])
 

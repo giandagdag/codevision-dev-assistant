@@ -22,6 +22,7 @@ from agents import da_safety_net_flow as net_flow
 from agents import da_safety_net_runner as net_runner
 from agents import da_tester_flow as tester_flow
 from agents import da_workspace_flow as workspace_flow
+from agents.da_ai_lock import is_busy, locked_call
 from agents.da_discover_flow import (
     add_hint_and_search,
     confirm_discovery,
@@ -41,13 +42,17 @@ from agents.da_refine_screen import (
 )
 from agents.da_senior_actions import get_chat_lock
 from agents.da_understand_flow import (
+    EDIT_ASSUMPTION_PREFIX,
     FORM_OPTIONAL_BOX,
+    NO_NEGATIVE_OPTION,
     FormError,
     choose_option,
     create_understand_request,
+    edit_assumption,
     get_understand_view,
     list_my_requests,
     set_functions_in_scope,
+    set_no_negative_reason,
     skip_optional,
     submit_answer,
     submit_form,
@@ -126,6 +131,7 @@ from layouts.da_enhance_panel import (
     scope_picker,
     test_plan_net_section,
 )
+from layouts.da_lock_buttons import lock_buttons
 from layouts.da_tester_panel import FINDING_ACT_TYPE, FINDING_REASON_TYPE
 from pydantic_classes.da_models import (
     STATUS_APPROACH_PROPOSED,
@@ -345,6 +351,8 @@ def show_page(search: str | None, refresh: int | None):
     page = _draw_page(search, refresh)
     params = parse_qs((search or "").lstrip("?"))
     if params.get("request"):
+        if is_busy(params["request"][0]):
+            lock_buttons(page)  # B2 S5: the AI is still working on it
         try:
             lock = get_chat_lock(get_settings(), params["request"][0])
         except (UnderstandError, DatabaseBusyError):
@@ -511,6 +519,15 @@ def handle_action(send_clicks, choice_clicks, skip_clicks, text, state, refresh)
 
 
 def perform_action(settings: Settings, trigger, text, state, refresh):
+    """One AI call at a time per request (B2 S5): a busy request gets a plain message."""
+    return locked_call(
+        (state or {}).get("request_id"),
+        lambda: _perform_action(settings, trigger, text, state, refresh),
+        lambda message: (no_update, no_update, message),
+    )
+
+
+def _perform_action(settings: Settings, trigger, text, state, refresh):
     """Call the one engine function the button stands for.
 
     Returns what the three outputs need: the refresh counter (redraw this request), the URL
@@ -546,6 +563,12 @@ def perform_action(settings: Settings, trigger, text, state, refresh):
             message = _discover_choice(settings, request_id, key, revision)
         elif _is_choice(trigger):
             option = _option_at(settings, request_id, revision, trigger["index"])
+            if option == NO_NEGATIVE_OPTION:  # B2 S8: the box holds the reason
+                set_no_negative_reason(settings, request_id, text or "", revision)
+                return (refresh or 0) + 1, no_update, ""
+            if option.startswith(EDIT_ASSUMPTION_PREFIX):  # B2 P34: the box holds the new sentence
+                edit_assumption(settings, request_id, option, text or "", revision)
+                return (refresh or 0) + 1, no_update, ""
             view = choose_option(settings, request_id, option, revision)
             if view.request.status == STATUS_CONFIRMED:
                 # Proceed worked: Discover starts by itself (Phase 6 fixes, section 3).
@@ -629,6 +652,14 @@ def handle_form(submit_clicks, answers, state, refresh):
 
 
 def perform_form(settings: Settings, answers, state, refresh):
+    return locked_call(
+        (state or {}).get("request_id"),
+        lambda: _perform_form(settings, answers, state, refresh),
+        lambda message: (no_update, message, [""] * len(FORM_BOXES_COUNT)),
+    )
+
+
+def _perform_form(settings: Settings, answers, state, refresh):
     """Call submit_form and return (refresh counter, message under the chat, one message per box).
 
     A box that fails shows its message on the line under it; nothing is redrawn, so every box
@@ -686,6 +717,14 @@ def handle_finding(clicks, reasons, state, refresh):
 
 
 def perform_finding_action(settings: Settings, index: str, reasons: dict, state, refresh):
+    return locked_call(
+        (state or {}).get("request_id"),
+        lambda: _perform_finding_action(settings, index, reasons, state, refresh),
+        lambda message: (no_update, message),
+    )
+
+
+def _perform_finding_action(settings: Settings, index: str, reasons: dict, state, refresh):
     """Call the one Tester flow function the button stands for. `index` is `action:F-n`.
     Returns (refresh counter, message under the chat). Every check lives in the flow."""
     state = state or {}

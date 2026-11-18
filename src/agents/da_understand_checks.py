@@ -24,6 +24,18 @@ from pydantic_classes.da_request_record_models import (
 MAX_MESSAGE_LENGTH = 4000
 SCOPE_CONFLICT_PREFIX = "Scope conflict: "
 
+# B2 S7e: a decision about any of these is never assumed; only a senior may decide it.
+# Broad on purpose: a wrong match only sends one more question to a senior (fails safe).
+NEVER_ASSUME_WORDS: tuple[str, ...] = (
+    "security", "password", "money", "amount", "payment", "balance",
+    "account number", "customer", "personal data",
+)  # fmt: skip
+
+
+def is_never_assumed(text: str) -> bool:
+    lowered = text.lower()
+    return any(word in lowered for word in NEVER_ASSUME_WORDS)
+
 # Fields where an invented file or function name would mislead later phases (spec 3.5).
 NAME_CHECKED_FIELDS: tuple[str, ...] = ("functional_flow", "expected_behaviour")
 
@@ -184,7 +196,7 @@ def confirmation_gate_problems(record: RequestRecord, waiting_decisions: int) ->
     kinds = {criterion.kind for criterion in record.acceptance_criteria}
     if "success" not in kinds:
         problems.append("At least 1 success criterion is needed.")
-    if "failure" not in kinds:
+    if "failure" not in kinds and not record.no_negative_reason.strip():
         problems.append("At least 1 negative scenario is needed.")
     problems += [f"Open item: {item}" for item in record.open_items]
     if waiting_decisions:

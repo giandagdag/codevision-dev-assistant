@@ -123,7 +123,7 @@ def stepper(current_step: int) -> dmc.Box:
     return dmc.Box(items, style=da_styles.STEPPER)
 
 
-PRIMARY, NORMAL, SECONDARY = "primary", "normal", "secondary"
+PRIMARY, NORMAL, SECONDARY, CANCEL = "primary", "normal", "secondary", "cancel"
 
 
 def choice_button(label: str, button_id: dict, kind: str = NORMAL, disabled: bool = False):
@@ -135,6 +135,11 @@ def choice_button(label: str, button_id: dict, kind: str = NORMAL, disabled: boo
     border colour is only added while the button can be clicked.
     """
     secondary = kind == SECONDARY
+    if kind == CANCEL:  # B2 S2: a plain grey outline, never looks like a lane button
+        return dmc.Button(
+            label, id=button_id, variant="outline", color="gray", radius="xl", size="sm",
+            disabled=disabled,
+        )
     return dmc.Button(
         label,
         id=button_id,

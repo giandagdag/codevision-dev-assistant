@@ -127,7 +127,9 @@ def test_at_b_written_the_bar_offers_the_box_and_send_calls_suggest(settings):
 
     assert outcome.job == "" and outcome.message == ""
     bar = actions.get_refine_bar(settings, request_id)
-    assert keys_of(bar) == ["lane_bug", "lane_requirement", "lane_approach", "cancel"]
+    assert keys_of(bar) == [
+        "lane_bug", "lane_requirement", "lane_approach", "explain_simple", "decide_help", "cancel"
+    ]
     assert bar.lane and not bar.text_open  # the suggestion (bug) comes first, he still decides
 
 
