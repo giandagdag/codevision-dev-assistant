@@ -14,6 +14,7 @@ Ids the callbacks read back (all dictionaries, CodeVision's habit for repeated c
 
 import dash_mantine_components as dmc
 from dash import dcc, html
+from dash_iconify import DashIconify
 
 from agents.da_admin_access import NOT_ADMIN_MESSAGE
 from agents.da_admin_forms import rule_counter_text
@@ -75,6 +76,7 @@ from layouts.da_admin_common import (  # noqa: F401 (some are re-exported for th
     ADMIN_TABS,
     CODE_COLUMNS,
     GOTO_TYPE,
+    HEADER_VERSION_ID,
     MOVE_TYPE,
     READONLY,
     SEVERITY_WORDS,
@@ -96,6 +98,7 @@ from layouts.da_admin_common import (  # noqa: F401 (some are re-exported for th
     aligned_row,
     body_id,
     full_row,
+    header_version,
     list_table,
     two_columns,
     version_pill,
@@ -182,7 +185,14 @@ def admin_page(
     `overview` and `report` (Phase 11c) fill the Overview tab; without them it says so."""
     return html.Div(
         [
-            dmc.Title("Admin console", order=3, c=da_styles.NAVY),
+            dmc.Group(
+                [
+                    dmc.Title("Admin console", order=3, c=da_styles.NAVY),
+                    header_version(version),
+                ],
+                justify="space-between",
+                align="center",
+            ),
             dmc.Tabs(
                 [
                     dmc.TabsList(
@@ -317,7 +327,14 @@ def tab_content(
 
 def _buttons(tab: str, version: RulebookVersion, editable: bool):
     if not editable:
-        return dmc.Button("Edit", id=act_id(tab, ACTION_EDIT))
+        # Quiet text link with a pen (Gian, 18 Nov): no filled box competing with the content.
+        return dmc.Button(
+            "Edit",
+            id=act_id(tab, ACTION_EDIT),
+            variant="subtle",
+            size="compact-sm",
+            leftSection=DashIconify(icon="tabler:pencil", width=14),
+        )
     label = next(name for tab_id, name, _ in ADMIN_TABS if tab_id == tab)
     # The shared edit bar (AF-3): stays at the bottom of the window while the Admin scrolls.
     return dmc.Paper(

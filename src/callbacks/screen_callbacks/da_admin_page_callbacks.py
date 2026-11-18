@@ -113,6 +113,7 @@ from layouts.da_admin_page import (
     GLOSSARY_COLUMNS,
     GOLDEN_COLUMNS,
     GOTO_TYPE,
+    HEADER_VERSION_ID,
     HEALTH_ID,
     HIST_CONFIRM,
     HIST_PICK_TYPE,
@@ -156,6 +157,7 @@ from layouts.da_admin_page import (
     admin_page,
     body_id,
     catalog_list,
+    header_version,
     health_numbers,
     history_view,
     message_notice,
@@ -922,6 +924,19 @@ def _register_catalog_filter(app) -> None:
 
 
 def _register_history(app) -> None:
+    @app.callback(
+        Output(HEADER_VERSION_ID, "children"),
+        *[Input(body_id(name), "children") for name, _, _ in ADMIN_TABS],
+        prevent_initial_call=True,
+    )
+    def refresh_header_version(*_bodies):
+        # Any tab redraw may follow a save, a restore or an approval: show the active version.
+        settings = get_admin_settings()
+        active = get_active_version(settings.db_path)
+        if active is None:
+            raise PreventUpdate
+        return header_version(active).children
+
     history_body = body_id(TAB_HISTORY)
 
     @app.callback(

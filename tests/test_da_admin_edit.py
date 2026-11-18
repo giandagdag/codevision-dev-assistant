@@ -122,7 +122,7 @@ def test_a_stale_save_offers_reload_with_the_newer_version(make_settings, publis
 
     reloaded, editing = run_action(settings, "build", act("reload"), {}, "", 1)
     assert editing is False
-    assert "Active rulebook v2" in all_text(reloaded)
+    assert "Started from" not in all_text(reloaded)  # back on the active version
 
 
 def test_add_row_and_remove_keep_the_typed_form(make_settings, published_rulebook):

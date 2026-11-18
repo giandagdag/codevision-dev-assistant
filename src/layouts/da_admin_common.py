@@ -4,7 +4,6 @@ Tab files (da_admin_*_tab.py) import this file and never da_admin_page.py, so th
 for each other to load (a circular import). Presentation only, like the rest of layouts/.
 """
 
-import itertools
 from datetime import datetime
 
 import dash_mantine_components as dmc
@@ -35,7 +34,6 @@ ADMIN_TABS: tuple[tuple[str, str, str], ...] = (
 )
 
 GOTO_TYPE = "adm-goto"
-_HISTORY_LINK_COUNTER = itertools.count(5000)  # each button needs its own id (all tabs are drawn)
 
 
 def goto_id(tab: str, n) -> dict:
@@ -120,57 +118,54 @@ def two_columns(left, right, left_share: int = 2):
     )
 
 
-def version_pill(version, active: bool = True) -> html.Div:
-    """The pill on the right of every tab header (L1): dot, version, who and when, View history.
+HEADER_VERSION_ID = "da-admin-header-version"
 
-    `version` is anything with version_number, saved_at and saved_by (a RulebookVersion or a
-    timeline row). After a stale save the form shows the version the Admin started from, which is
-    not active, so it says "Started from vN" with a grey dot."""
+
+def _version_text(version, active: bool) -> html.Span:
+    """Dot, "Active rulebook vN" and "Published <when>, <who>" on one quiet line."""
     saved: datetime = version.saved_at
     dot = admin_styles.GREEN if active else da_styles.MUTED
     title = f"Active rulebook v{version.version_number}" if active else (
         f"Started from v{version.version_number}"
     )
-    pill = dmc.Paper(
-        dmc.Group(
-            [
-                html.Span(
-                    style={
-                        "width": "10px",
-                        "height": "10px",
-                        "borderRadius": "50%",
-                        "background": dot,
-                        "display": "inline-block",
-                    }
-                ),
-                dmc.Stack(
-                    [
-                        dmc.Text(title, size="sm", fw=700, c=da_styles.NAVY),
-                        dmc.Text(
-                            f"Published {saved:%Y-%m-%d %H:%M}, {version.saved_by}",
-                            size="xs",
-                            c=da_styles.MUTED,
-                        ),
-                    ],
-                    gap=0,
-                ),
-                dmc.Button(
-                    "View history",
-                    id=goto_id(TAB_HISTORY, next(_HISTORY_LINK_COUNTER)),
-                    size="compact-xs",
-                    variant="default",
-                ),
-            ],
-            gap="sm",
-            wrap="nowrap",
-        ),
-        withBorder=True,
-        radius="xl",
-        px="md",
-        py=6,
+    return dmc.Group(
+        [
+            html.Span(
+                style={
+                    "width": "8px",
+                    "height": "8px",
+                    "borderRadius": "50%",
+                    "background": dot,
+                    "display": "inline-block",
+                }
+            ),
+            dmc.Text(title, size="sm", fw=600, c=da_styles.NAVY),
+            dmc.Text(
+                f"Published {saved:%Y-%m-%d %H:%M}, {version.saved_by}",
+                size="xs",
+                c=da_styles.MUTED,
+            ),
+        ],
+        gap=8,
+        wrap="nowrap",
     )
+
+
+def header_version(version) -> html.Div:
+    """The active version, once, on the right of the "Admin console" title (Gian, 18 Nov).
+
+    No View history button: the Version history tab is right there. A callback redraws it after
+    every save or restore, so it never shows an old number."""
+    return html.Div(_version_text(version, True), id=HEADER_VERSION_ID)
+
+
+def version_pill(version, active: bool = True):
+    """Inside a tab only when it matters: a stale edit form says "Started from vN" (grey dot).
+    The active version lives in the page header (header_version), so this returns None then."""
+    if active:
+        return None
     right = {"display": "flex", "justifyContent": "flex-end", "marginBottom": "8px"}
-    return html.Div(pill, style=right)
+    return html.Div(_version_text(version, False), style=right)
 
 
 TEXT_COLUMN = "text"  # a one-column table holds a list of plain strings
