@@ -213,7 +213,7 @@ def render_home(requests: list[Request], notes: dict[str, str] | None = None) ->
                     ),
                     href="?new=1",
                     id="da-start-card",
-                    style={"textDecoration": "none"},
+                    style={"textDecoration": "none", "display": "block", "height": "100%"},
                 ),
                 enhance_card(),
                 _entry_card(
@@ -244,7 +244,7 @@ def enhance_card() -> html.Div:
         _entry_card("tabler:file-search", ENHANCE_CARD_TITLE, ENHANCE_CARD_TEXT),
         id=ENHANCE_CARD_ID,
         n_clicks=0,
-        style={"cursor": "pointer"},
+        style={"cursor": "pointer", "height": "100%"},
     )
 
 
@@ -258,6 +258,7 @@ def _entry_card(icon: str, title: str, text: str, disabled: bool = False) -> dmc
         withBorder=True,
         radius="md",
         p="lg",
+        h="100%",
         opacity=0.6 if disabled else 1,
     )
 
