@@ -97,6 +97,9 @@ class SummaryFacts(_Shape):
     # Fix D1: the test report summary and file name; empty for a build with no saved report.
     report_summary: str = ""
     report_file: str = ""
+    # G5e: the rulebook version and index build the request ran on (None = not recorded).
+    rulebook_version: int | None = None
+    index_build: int | None = None
 
 
 class HandoffState(_Shape):

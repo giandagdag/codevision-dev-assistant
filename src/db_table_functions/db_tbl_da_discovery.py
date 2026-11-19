@@ -79,6 +79,8 @@ def _add_impact_column(conn: sqlite3.Connection) -> None:
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(da_discovery_results)")}
     if "impact" not in columns:
         conn.execute("ALTER TABLE da_discovery_results ADD COLUMN impact TEXT")
+    if "index_build" not in columns:  # Upgrade G5e: old rows read as "not recorded" (NULL)
+        conn.execute("ALTER TABLE da_discovery_results ADD COLUMN index_build INTEGER")
 
 
 def insert_result(conn: sqlite3.Connection, result: DiscoveryResult, now: datetime) -> None:
@@ -87,8 +89,8 @@ def insert_result(conn: sqlite3.Connection, result: DiscoveryResult, now: dateti
         conn.execute(
             "INSERT INTO da_discovery_results (request_id, round, record_version,"
             " rulebook_version, search_provider, queries, hits, findings, limitations,"
-            " summary_source, model, hint, created_at, impact)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " summary_source, model, hint, created_at, impact, index_build)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 result.request_id,
                 result.round,
@@ -104,6 +106,7 @@ def insert_result(conn: sqlite3.Connection, result: DiscoveryResult, now: dateti
                 result.hint,
                 to_db_time(now),
                 result.impact.model_dump_json() if result.impact else None,
+                result.index_build,
             ),
         )
     except sqlite3.IntegrityError as error:
@@ -203,5 +206,6 @@ def _to_result(row: sqlite3.Row) -> DiscoveryResult:
         model=row["model"],
         hint=row["hint"],
         impact=ImpactResult.model_validate_json(row["impact"]) if row["impact"] else None,
+        index_build=row["index_build"],
         created_at=datetime.fromisoformat(row["created_at"]),
     )

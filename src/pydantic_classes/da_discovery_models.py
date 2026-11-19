@@ -105,6 +105,7 @@ class DiscoveryResult(_Shape):
     hint: str = ""
     # Phase 9: what the impact walk found in this round (enhance requests only).
     impact: ImpactResult | None = None
+    index_build: int | None = Field(default=None, ge=1)  # G5e: None = not recorded
     created_at: AwareDatetime | None = None
 
     @model_validator(mode="after")

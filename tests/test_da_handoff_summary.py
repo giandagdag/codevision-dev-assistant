@@ -45,8 +45,14 @@ def test_new_request_lines_in_order():
     assert "Flag-for-review zones: none" in lines
     assert "Safety-net gaps: not applicable (new code)" in lines
     assert "Senior involvement: none" in lines
+    assert lines[-3] == "Rules not recorded · Index build not recorded"  # G5e
     assert lines[-2] == "Final check: workspace = last tested (build 3, 2026-11-14)"
     assert lines[-1] == FOOTER
+
+
+def test_summary_says_rules_and_index_build():  # G-22
+    text = build_summary(base(rulebook_version=7, index_build=4), MAX)
+    assert "Rules v7 · Index build 4" in text.split("\n")
 
 
 def test_no_negative_reason_line_only_when_set():

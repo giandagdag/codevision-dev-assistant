@@ -96,6 +96,17 @@ def test_job_panel_shows_graph_step_build_and_tagging_step_3():
     assert "Step 3 of 3: tagging programs" in job.progress_line({"step": 3, "done": 1, "total": 2})
 
 
+def test_current_build_reads_the_pieces_record(tmp_path):
+    from agents.da_code_index import PIECES_NAME
+    from agents.da_index_builds import current_build
+
+    assert current_build(tmp_path) is None  # no index
+    (tmp_path / PIECES_NAME).write_text('{"build": 6, "pieces": []}', encoding="utf-8")
+    assert current_build(tmp_path) == 6
+    (tmp_path / PIECES_NAME).write_text('{"build": 0, "pieces": []}', encoding="utf-8")
+    assert current_build(tmp_path) is None  # command-line build: not numbered
+
+
 def test_job_status_carries_build_number(tmp_path):
     job.begin(tmp_path, datetime(2026, 11, 20, 9, 0), "Admin", "full", "Manual", 5)
     assert job.read_status(tmp_path)["build"] == 5

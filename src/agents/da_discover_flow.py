@@ -33,6 +33,7 @@ from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import get_help
 from agents.da_impact import summary_line
+from agents.da_index_builds import current_build
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_search_index import (
     IndexFormatError,
@@ -313,6 +314,7 @@ def _run_round(
         model=summary.model,
         hint=hint,
         impact=impact,
+        index_build=current_build(),
     )
     with _write_transaction(settings.db_path) as conn:
         current = _require_open_request(conn, request_id)

@@ -38,6 +38,18 @@ def next_build_number(out: Path) -> int:
     return numbers[-1] + 1 if numbers else 1
 
 
+def current_build(out: Path | None = None) -> int | None:
+    """The build number the saved index carries (G5e), or None: no index, or a command-line
+    build that was not numbered."""
+    from agents.da_admin_index import index_dir  # late: that module is imported by many callers
+
+    try:
+        raw = json.loads(((out or index_dir()) / PIECES_NAME).read_text(encoding="utf-8"))
+        return int(raw.get("build") or 0) or None
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
+
+
 def read_manifest(out: Path, number: int) -> dict | None:
     try:
         manifest = json.loads((builds_dir(out) / str(number) / MANIFEST_NAME).read_text("utf-8"))

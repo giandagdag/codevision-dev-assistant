@@ -63,6 +63,8 @@ def gather_summary_facts(conn: sqlite3.Connection, request_id: str) -> SummaryFa
         no_negative_reason=record.no_negative_reason,
         follows_request_id=request.follows_request_id,
         build_number=build,
+        rulebook_version=request.rulebook_version,
+        index_build=(approach and approach.index_build) or _discovery_build(conn, request_id),
     )
     facts = _with_tests(conn, facts, request_id, build)
     facts = _with_tester(conn, facts, request_id, build)
@@ -70,6 +72,11 @@ def gather_summary_facts(conn: sqlite3.Connection, request_id: str) -> SummaryFa
     facts = _with_decisions(facts, approach)
     facts = _with_report(conn, facts, request_id, build)
     return _with_enhance(conn, facts, request_id, record)
+
+
+def _discovery_build(conn: sqlite3.Connection, request_id: str) -> int | None:
+    found = read_latest_result(conn, request_id)
+    return found.index_build if found else None
 
 
 def _with_report(conn, facts: SummaryFacts, request_id: str, build: int) -> SummaryFacts:
