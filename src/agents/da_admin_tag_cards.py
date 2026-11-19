@@ -13,6 +13,7 @@ from agents.da_admin_catalog import ResolveResult, _add_pattern, pattern_offer
 from agents.da_admin_forms import RESULT_SAVED
 from agents.da_admin_tag_store import read_store, save_store
 from agents.da_admin_tagger import STATE_APPROVED, STATE_PROPOSED, STATE_REJECTED
+from agents.da_code_clusters import remember_reject
 from db_table_functions.db_tbl_da_rulebook import get_active_version
 
 NOTHING = "Nothing to approve."
@@ -124,5 +125,9 @@ def approve_all_high(
 
 
 def reject_card(path: str, directory: Path | None = None) -> None:
-    """The program belongs in no capability. No rulebook change."""
+    """The program belongs in no capability. No rulebook change. A suggestion from code links
+    remembers its cluster, so it stays away until the cluster changes (Upgrade G2b)."""
+    fingerprint = read_store(directory)["modules"].get(path, {}).get("cluster")
+    if fingerprint:
+        remember_reject(path, fingerprint, directory)
     _mark([path], STATE_REJECTED, directory)

@@ -12,6 +12,8 @@ from pathlib import Path
 
 from agents import da_admin_job as job
 from agents.da_admin_index import index_dir, record_run
+from agents.da_code_clusters import write_suggestions
+from agents.da_code_graph import load_graph
 from agents.da_code_index import Embedder, FakeEmbedder, WorkEmbedder
 from agents.da_index_builds import next_build_number, save_build
 from configs.da_config import Settings, load_settings
@@ -136,6 +138,8 @@ def _run(
             message += _tag_step(
                 policy, settings, started_by, summary, out, tag_client, extra, provider
             )
+        if summary.saved:
+            message += _cluster_step(out)
         record_run(
             started_by, started, summary.saved, summary.count, summary.skipped,
             message, out, _with_seconds(extra, started),
@@ -187,6 +191,19 @@ def _tag_step(policy, settings, started_by, summary, out, tag_client, extra, pro
     if result.saved:
         return f" Tagged {result.scanned} programs."
     return f" {result.message}" if result.message.startswith("Stopped") else f" {TAGS_NOT_SAVED}"
+
+
+def _cluster_step(out: Path) -> str:
+    """Refresh the capability suggestion cards from the saved graph. Never undoes the index."""
+    graph = load_graph(out)
+    if graph is None:
+        return ""
+    try:
+        cards = write_suggestions(graph, out)
+    except (OSError, ValueError, KeyError) as error:
+        logger.warning("Cluster suggestions failed: %s", type(error).__name__)
+        return ""
+    return f" {cards} capability suggestions from code links." if cards else ""
 
 
 def _with_seconds(extra: dict, started: datetime) -> dict:
