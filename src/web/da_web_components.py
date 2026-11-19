@@ -8,6 +8,7 @@ or Markdown (rule R11): React shows a string as text, whatever characters it con
 from datetime import datetime
 
 import dash_mantine_components as dmc
+from dash import html
 from dash_iconify import DashIconify
 
 from agents.da_discover_flow import DISCOVER_DIVIDER
@@ -246,14 +247,28 @@ def fallback_banner() -> dmc.Alert:
     return dmc.Alert(FALLBACK_BANNER, color="orange", variant="light", id="da-fallback-banner")
 
 
+def used_by_block(modules: list[str]) -> html.Details:
+    """"Used by N modules", the list opens on click (plain HTML, no callback)."""
+    return html.Details(
+        [
+            html.Summary(f"Used by {len(modules)} modules", style={"fontSize": "12px"}),
+            *[html.Div(m, style={"fontSize": "12px", "fontFamily": "monospace"}) for m in modules],
+        ]
+    )
+
+
 def finding_card(finding: Finding, hits_by_id: dict[int, SearchHit]) -> dmc.Paper:
     """One finding: kind, title, explanation, where it comes from, and how sure the AI is."""
     label, icon, colour = FINDING_KINDS[finding.kind]
-    sources = [
-        dmc.Text(source_line(hits_by_id[hit_id]), size="xs", c=da_styles.MUTED, ff="monospace")
-        for hit_id in finding.hit_ids
-        if hit_id in hits_by_id
-    ]
+    sources = []
+    for hit_id in finding.hit_ids:
+        if hit_id in hits_by_id:
+            hit = hits_by_id[hit_id]
+            sources.append(
+                dmc.Text(source_line(hit), size="xs", c=da_styles.MUTED, ff="monospace")
+            )
+            if hit.used_by:  # Upgrade G3b: expand to see who uses it
+                sources.append(used_by_block(hit.used_by))
     return dmc.Paper(
         [
             dmc.Group(

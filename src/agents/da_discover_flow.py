@@ -12,10 +12,14 @@ own revision number for the stale-window check (planning decision 2).
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
+from agents.da_admin_index import index_dir
 from agents.da_admin_modules import module_paths
+from agents.da_code_graph import load_graph
+from agents.da_code_impact_graph import with_used_by
 from agents.da_discover_agent import (
     DiscoverSummary,
     fallback_summary,
@@ -417,6 +421,7 @@ def _search(
             policy.capabilities if policy else None,
             module_paths(policy.index_folder_scope) if policy else None,
         )
+        found = replace(found, hits=with_used_by(found.hits, load_graph(index_dir())))
         return found, list(getattr(index, "notes", []))
     except IndexNotBuiltError:
         raise

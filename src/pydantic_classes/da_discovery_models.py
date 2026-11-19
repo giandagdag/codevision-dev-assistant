@@ -67,6 +67,8 @@ class SearchHit(_Shape):
     restricted: bool = False
     # Fix 11-1: the capability this file belongs to, when Discover narrowed the search to one.
     capability: str = ""
+    # Upgrade G3: modules that use this hit's module, from the code link graph (empty: no graph).
+    used_by: list[str] = Field(default_factory=list)
 
 
 class Finding(_Shape):

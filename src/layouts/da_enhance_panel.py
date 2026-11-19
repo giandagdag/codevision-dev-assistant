@@ -317,6 +317,16 @@ def impact_card(impact: ImpactResult | None):
         ]
         body.append(dmc.Table([head, dmc.TableTbody(rows)], highlightOnHover=True))
         body.append(dmc.Text(f"{impact.more} more not shown.", size="xs") if impact.more else None)
+    if impact.users:  # Upgrade G3: 2-level users from the code link graph
+        body.append(dmc.Text("From the code links (two levels):", size="sm", fw=600, mt=6))
+        body += [
+            dmc.Text(
+                f"{'Uses it' if u.level == 1 else 'Uses a user'}: {u.module}"
+                + (f" ({u.capability})" if u.capability else ""),
+                size="xs",
+            )
+            for u in impact.users
+        ]
     body.append(dmc.Text(LIMITS_LINE, size="xs", c=da_styles.MUTED, mt=6))
     return parts.panel_section("Impact", body)
 
