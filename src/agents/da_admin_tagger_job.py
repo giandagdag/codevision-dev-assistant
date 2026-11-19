@@ -41,9 +41,9 @@ def tag_programs(
     todo, _ = paths_to_tag(
         paths, read_store(out), root, mode == "delta", max(len(paths), 1), exclusions
     )
-    job.progress(out, 0, len(todo), step=2)
+    job.progress(out, 0, len(todo), step=3)
     return run_tagging(
         todo, root, policy.capabilities, client or pick_client(settings, policy), started_by,
-        exclusions, out, None, lambda done, total: job.progress(out, done, total, step=2),
+        exclusions, out, None, lambda done, total: job.progress(out, done, total, step=3),
         stop=lambda: job.stop_requested(out),
     )

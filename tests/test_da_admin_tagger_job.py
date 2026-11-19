@@ -42,7 +42,7 @@ def test_full_tags_everything_and_the_run_row_says_so(tmp_path, make_settings):
     assert started and set(read_tags(out)) == {"m0.py", "m1.py", "m2.py"}
     row = recent_runs(out)[0]
     assert row["tagged"] == 3 and "Tagged 3 programs" in row["message"]
-    assert job.read_status(out)["step"] == 2 and not rebuild._lock_path(out).exists()
+    assert job.read_status(out)["step"] == 3 and not rebuild._lock_path(out).exists()
 
 
 def test_delta_tags_only_new_or_changed_programs(tmp_path, make_settings):
