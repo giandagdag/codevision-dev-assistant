@@ -1,13 +1,15 @@
 {
   "title": "Fix queue (since 14 Nov)",
-  "note": "Edited by Claude chat or Gian only. size = planned steps (an estimate until the plan exists). Order = build order.",
+  "note": "Edited by Claude chat or Gian only. size = planned steps (an estimate until the plan exists). Order = build order. 19 Nov: the upgrade waits for a design talk and a spec in chat; the team does not start it until its tracking issue says Go.",
   "items": [
     {"name": "Fix batch B1", "branch": "auto/phase-b1-fixes", "size": 16, "plan": "specs/fix-b1-plan.md", "done": true},
     {"name": "Phase 11 fix 1", "branch": "phase-11-fix-1", "size": 18, "plan": "specs/phase-11-fix-1-plan.md", "done": true},
     {"name": "Phase 11 fix 2", "branch": "phase-11-fix-2", "size": 9, "plan": "specs/phase-11-fix-2-plan.md", "done": true},
-    {"name": "Fix batch C", "branch": "phase-c-fixes", "size": 8, "plan": "specs/fix-batch-c-plan.md"},
-    {"name": "Fix D1 (test report)", "branch": "phase-d1-test-report", "size": 14, "plan": "specs/fix-d1-test-report-plan.md"},
-    {"name": "Phase 11 fix 3", "branch": "phase-11-fix-3", "size": 18, "plan": "specs/phase-11-fix-3-plan.md"},
-    {"name": "Fix batch B2 (screens)", "branch": "phase-b2-screens", "size": 18, "plan": "specs/fix-batch-b2-plan.md"}
+    {"name": "Fix batch C", "branch": "phase-c-fixes", "size": 8, "plan": "specs/fix-batch-c-plan.md", "done": true},
+    {"name": "Fix D1 (test report)", "branch": "phase-d1-test-report", "size": 14, "plan": "specs/fix-d1-test-report-plan.md", "done": true},
+    {"name": "Phase 11 fix 3", "branch": "phase-11-fix-3", "size": 18, "plan": "specs/phase-11-fix-3-plan.md", "done": true},
+    {"name": "Fix batch B2 (screens)", "branch": "phase-b2-screens", "size": 18, "plan": "specs/fix-batch-b2-plan.md", "done": true},
+    {"name": "Fix NP (#100, test file cannot load)", "branch": "fix-not-proven", "size": 5, "plan": "specs/fix-not-proven-plan.md"},
+    {"name": "Index, catalog and versioning upgrade (#101)", "branch": "phase-g-index-graph", "size": 20, "plan": "specs/index-catalog-versioning-plan.md"}
   ]
 }

@@ -676,3 +676,28 @@ def test_a_fix_branch_shows_its_step_review_round_and_last_commit(status_file):
 def test_the_integration_branch_and_a_fix_with_no_own_commits_show_no_now_row(status_file):
     assert "| Now:" not in build(git=FixGit(head=sb.MERGE_BASE), status_file=status_file)
     assert "| Now:" not in build(git=FixGit(rows=[]), status_file=status_file)
+
+
+class StaleBaseGit(FixGit):
+    """19 Nov: the laptop's local merge base is stale; origin/ is current."""
+
+    def __init__(self):
+        super().__init__(head="fix-not-proven", rows=[])
+        self.seen = []
+
+    def __call__(self, args):
+        if args[:1] == ["log"] and len(args) > 1 and args[1].endswith("..fix-not-proven"):
+            self.seen.append(args)
+            if args[1].startswith("origin/"):
+                return f"{int(NOW) - 60}|NP step 5: test report names a load error\n"
+            return (f"{int(NOW) - 60}|NP step 5: test report names a load error\n"
+                    f"{int(NOW) - 900}|Phase 11 fix 1 step 34: old merged work\n"
+                    f"{int(NOW) - 950}|Fix batch C review round 3 fixes\n")
+        return super().__call__(args)
+
+
+def test_the_now_row_counts_from_origin_base_without_merge_commits(status_file):
+    git = StaleBaseGit()
+    body = build(git=git, status_file=status_file)
+    assert "| Now: fix-not-proven | step 5 · last commit 15:59 |" in body
+    assert git.seen and all("--no-merges" in a for a in git.seen)
