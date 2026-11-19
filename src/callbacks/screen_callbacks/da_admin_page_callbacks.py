@@ -714,6 +714,10 @@ def register_da_admin_page_callbacks(app) -> None:
     _register_rule_pick(app)
     _register_golden(app)
     _register_rebuild(app)
+    # late import: that file reads get_admin_settings from this one
+    from callbacks.screen_callbacks.da_admin_builds_callbacks import register_builds_callbacks
+
+    register_builds_callbacks(app)
 
     @app.callback(
         Output(SONAR_STATUS, "children"),

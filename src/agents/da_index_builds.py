@@ -80,6 +80,31 @@ def save_build(out: Path, number: int, mode: str, started_by: str, when: datetim
     return manifest
 
 
+def compare_builds(out: Path, first: int, second: int) -> dict | None:
+    """What changed from build `first` to build `second`, or None when a manifest is missing."""
+    a, b = read_manifest(out, first), read_manifest(out, second)
+    if a is None or b is None:
+        return None
+    old, new = a.get("files", {}), b.get("files", {})
+    return {
+        "added": sorted(set(new) - set(old)),
+        "removed": sorted(set(old) - set(new)),
+        "changed": sorted(p for p in set(old) & set(new) if old[p] != new[p]),
+        "pieces": b.get("pieces", 0) - a.get("pieces", 0),
+        "edges": b.get("edges", 0) - a.get("edges", 0),
+    }
+
+
+def compare_text(result: dict | None, first: int, second: int) -> str:
+    if result is None:
+        return "One of these builds has no saved manifest."
+    return (
+        f"Build {first} to build {second}: {len(result['added'])} modules added, "
+        f"{len(result['removed'])} removed, {len(result['changed'])} changed. "
+        f"Pieces {result['pieces']:+d}, links {result['edges']:+d}."
+    )
+
+
 def _drop_old_copies(out: Path) -> None:
     for number in build_numbers(out)[:-KEPT_INDEX_COPIES]:
         for name in COPY_NAMES:
