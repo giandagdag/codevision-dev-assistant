@@ -46,6 +46,7 @@ from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import get_help, out_of_scope_approach
 from agents.da_guidance import USED_APPROACH, take_guidance
+from agents.da_index_builds import current_build
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_refine_hooks import approach_lane_plan_of, finish_revision, revision_plan_of
 from agents.da_tester_agent import (
@@ -1117,6 +1118,7 @@ def _new_version(
         warnings=warnings,
         zones_touched=zones,
         model=result.model,
+        index_build=current_build(),
     )
 
 

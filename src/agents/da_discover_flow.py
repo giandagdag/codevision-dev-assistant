@@ -12,10 +12,14 @@ own revision number for the stale-window check (planning decision 2).
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
+from agents.da_admin_index import index_dir
 from agents.da_admin_modules import module_paths
+from agents.da_code_graph import load_graph
+from agents.da_code_impact_graph import with_used_by
 from agents.da_discover_agent import (
     DiscoverSummary,
     fallback_summary,
@@ -29,6 +33,7 @@ from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import get_help
 from agents.da_impact import summary_line
+from agents.da_index_builds import current_build
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_search_index import (
     IndexFormatError,
@@ -309,6 +314,7 @@ def _run_round(
         model=summary.model,
         hint=hint,
         impact=impact,
+        index_build=current_build(),
     )
     with _write_transaction(settings.db_path) as conn:
         current = _require_open_request(conn, request_id)
@@ -417,6 +423,7 @@ def _search(
             policy.capabilities if policy else None,
             module_paths(policy.index_folder_scope) if policy else None,
         )
+        found = replace(found, hits=with_used_by(found.hits, load_graph(index_dir())))
         return found, list(getattr(index, "notes", []))
     except IndexNotBuiltError:
         raise

@@ -42,6 +42,7 @@ def _join(facts: SummaryFacts, per_criterion: bool) -> str:
     lines += _zones(facts)
     lines += _gaps(facts)
     lines += _list("Senior involvement", facts.senior_involvement)
+    lines.append(_basis(facts))
     lines.append(_final_check(facts))
     lines.append(FOOTER)
     return "\n".join(lines)
@@ -63,6 +64,13 @@ def _kind(facts: SummaryFacts) -> str:
         f"{line}\nCapability: {facts.capability} "
         "(picked by developer, not yet confirmed by Admin)"
     )
+
+
+def _basis(facts: SummaryFacts) -> str:
+    """G5e: which rulebook and which index build the work ran on."""
+    rules = f"Rules v{facts.rulebook_version}" if facts.rulebook_version else "Rules not recorded"
+    build = f"Index build {facts.index_build}" if facts.index_build else "Index build not recorded"
+    return f"{rules}{DOT}{build}"
 
 
 def _criteria(facts: SummaryFacts, per_criterion: bool) -> list[str]:

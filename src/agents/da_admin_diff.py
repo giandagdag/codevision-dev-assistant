@@ -199,6 +199,22 @@ def areas_touched(diff: RulebookDiff) -> list[str]:
     return sorted({area_of_path(path) for path in diff.paths})
 
 
+def open_request_lines(db_path: Path, active: int) -> list[str]:
+    """G5g: for the Restore confirm, how many open (not handed off) requests use each rulebook
+    version up to the active one. They keep their version; new work uses the restored one."""
+    open_pinned = list_pinned_request_ids(db_path, open_only=True)
+    lines = []
+    for number in sorted(open_pinned):
+        if number > active:
+            continue
+        count = len(open_pinned[number])
+        lines.append(
+            f"{count} open request{'s' if count != 1 else ''} "
+            f"use{'' if count != 1 else 's'} v{number} and keep{'' if count != 1 else 's'} it"
+        )
+    return lines
+
+
 def build_timeline(db_path: Path) -> list[TimelineRow]:
     """Every version, newest first, with the areas it touched and the requests pinned to it."""
     versions = list_versions(db_path)  # newest first

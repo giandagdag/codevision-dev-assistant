@@ -35,6 +35,7 @@ from agents.da_understand_flow import (
 )
 from layouts.da_approach_panel import approach_panel
 from layouts.da_build_panel import build_tab, poll_interval, tests_tab
+from layouts.da_capability_map_view import map_link
 from layouts.da_refine_panels import (
     approach_version_blocks,
     refine_build_blocks,
@@ -1086,6 +1087,7 @@ def _discovery_panel(view: DiscoveryView) -> list:
             id="da-discovery-input",
         ),
         parts.search_rows(),
+        map_link(),  # read only map for every developer (Upgrade G, G4c)
     ]
     if result is None:
         # SEARCHING with no saved round: the app stopped mid-round (spec section 2).

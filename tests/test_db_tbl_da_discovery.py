@@ -167,3 +167,13 @@ def test_bump_for_a_revision_that_was_never_started_is_refused(db_path, request_
 
         with pytest.raises(StaleRevisionError):
             bump_discovery_revision(conn, request_id, 3, T1)
+
+
+def test_index_build_is_stored_and_old_rows_read_as_not_recorded(db_path, request_id):
+    # G-21: a new round keeps the build; a database from before the column reads None.
+    save(db_path, make_result(request_id, 1, index_build=4))
+    assert get_results(db_path, request_id)[0].index_build == 4
+    raw_sql(db_path, "ALTER TABLE da_discovery_results DROP COLUMN index_build")
+    with open_db(db_path) as conn:
+        ensure_discovery_tables(conn)  # adds the column back, old rows get NULL
+    assert get_results(db_path, request_id)[0].index_build is None

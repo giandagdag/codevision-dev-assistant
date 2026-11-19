@@ -132,10 +132,20 @@ class ImpactRow(_Shape):
     zone: str = ""
 
 
+class ImpactUser(_Shape):
+    """One module from the code link graph that uses a target (Upgrade G3). Level 1 or 2."""
+
+    module: str
+    level: int = Field(ge=1, le=2)
+    capability: str = ""
+
+
 class ImpactResult(_Shape):
     """What impact found. `available` False = the reference copy could not be read."""
 
     available: bool = True
+    # Upgrade G3: 2-level users from the graph. Empty when there is no graph.
+    users: list[ImpactUser] = Field(default_factory=list)
     rows: list[ImpactRow] = Field(default_factory=list)
     # How many more callers were found beyond the cap ("and N more").
     more: int = Field(default=0, ge=0)

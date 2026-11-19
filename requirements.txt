@@ -9,6 +9,7 @@ python-dotenv==1.2.1
 dash==3.4.0
 dash-mantine-components==2.5.1
 dash-iconify==0.1.2
+dash-cytoscape==1.0.2
 
 # The work LLM connector (Phase 2C, spec 2.1): the standard HTTP library CodeVision already uses.
 requests==2.32.5

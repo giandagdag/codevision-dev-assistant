@@ -67,6 +67,8 @@ class SearchHit(_Shape):
     restricted: bool = False
     # Fix 11-1: the capability this file belongs to, when Discover narrowed the search to one.
     capability: str = ""
+    # Upgrade G3: modules that use this hit's module, from the code link graph (empty: no graph).
+    used_by: list[str] = Field(default_factory=list)
 
 
 class Finding(_Shape):
@@ -103,6 +105,7 @@ class DiscoveryResult(_Shape):
     hint: str = ""
     # Phase 9: what the impact walk found in this round (enhance requests only).
     impact: ImpactResult | None = None
+    index_build: int | None = Field(default=None, ge=1)  # G5e: None = not recorded
     created_at: AwareDatetime | None = None
 
     @model_validator(mode="after")

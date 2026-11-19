@@ -12,7 +12,10 @@ from pathlib import Path
 
 from agents import da_admin_job as job
 from agents.da_admin_index import index_dir, record_run
+from agents.da_code_clusters import write_suggestions
+from agents.da_code_graph import load_graph
 from agents.da_code_index import Embedder, FakeEmbedder, WorkEmbedder
+from agents.da_index_builds import next_build_number, save_build
 from configs.da_config import Settings, load_settings
 from da_build_code_index import build_index
 from da_logging import get_logger
@@ -112,7 +115,8 @@ def _run(
 ) -> None:
     out = directory or index_dir()
     embedder = embedder or pick_embedder(provider, settings)
-    job.begin(out, started, started_by, mode, trigger)
+    number = next_build_number(out)
+    job.begin(out, started, started_by, mode, trigger, number)
     extra = {"mode": mode, "trigger": trigger}
     try:
         summary = build_index(
@@ -124,13 +128,18 @@ def _run(
             mode=mode,
             progress=lambda done, total: job.progress(out, done, total),
             stop=lambda: job.stop_requested(out),
+            build=number,
+            graph_progress=lambda done, total: job.progress(out, done, total, step=2),
         )
         extra.update(mode=summary.mode, reread=summary.reread)
         message = summary.message
+        message += _save_build_copy(summary, out, number, started_by, started, extra)
         if summary.saved and (settings is not None or tag_client is not None):
             message += _tag_step(
                 policy, settings, started_by, summary, out, tag_client, extra, provider
             )
+        if summary.saved:
+            message += _cluster_step(out, policy.capabilities)
         record_run(
             started_by, started, summary.saved, summary.count, summary.skipped,
             message, out, _with_seconds(extra, started),
@@ -149,6 +158,23 @@ def _run(
         _lock_path(out).unlink(missing_ok=True)
 
 
+def _save_build_copy(summary, out, number, started_by, started, extra) -> str:
+    """Number the saved build and keep its copy. Never undoes the saved index; returns words."""
+    if not summary.saved:
+        return ""
+    words = ""
+    if summary.link_skipped:
+        extra["link_skipped"] = summary.link_skipped
+        words = f" {len(summary.link_skipped)} files had no code links read."
+    try:
+        save_build(out, number, summary.mode, started_by, started)
+    except (OSError, ValueError, KeyError) as error:
+        logger.warning("Build copy failed: %s", type(error).__name__)
+        return words + " The build copy was not saved."
+    extra["build"] = number
+    return words
+
+
 def _tag_step(policy, settings, started_by, summary, out, tag_client, extra, provider) -> str:
     """Step 2: tag the programs. Never undoes the saved index; returns words for the run row."""
     from agents.da_admin_tagger_job import TAGS_NOT_SAVED, tag_programs  # AI use stays in that file
@@ -165,6 +191,19 @@ def _tag_step(policy, settings, started_by, summary, out, tag_client, extra, pro
     if result.saved:
         return f" Tagged {result.scanned} programs."
     return f" {result.message}" if result.message.startswith("Stopped") else f" {TAGS_NOT_SAVED}"
+
+
+def _cluster_step(out: Path, capabilities=()) -> str:
+    """Refresh the capability suggestion cards from the saved graph. Never undoes the index."""
+    graph = load_graph(out)
+    if graph is None:
+        return ""
+    try:
+        cards = write_suggestions(graph, out, capabilities)
+    except (OSError, ValueError, KeyError) as error:
+        logger.warning("Cluster suggestions failed: %s", type(error).__name__)
+        return ""
+    return f" {cards} capability suggestions from code links." if cards else ""
 
 
 def _with_seconds(extra: dict, started: datetime) -> dict:

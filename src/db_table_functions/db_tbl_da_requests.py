@@ -12,7 +12,7 @@ from db_table_functions.db_tbl_da_rulebook import (
     get_active_version_number,
     get_version,
 )
-from pydantic_classes.da_models import STATUS_DRAFT, Request, check_status_move
+from pydantic_classes.da_models import STATUS_DRAFT, STATUS_HANDED_OFF, Request, check_status_move
 from pydantic_classes.da_rulebook_models import RulebookVersion
 
 logger = get_logger(__name__)
@@ -193,16 +193,19 @@ def list_my_requests(db_path: Path, developer_id: str) -> list[Request]:
     return [Request(**dict(row)) for row in rows]
 
 
-def list_pinned_request_ids(db_path: Path) -> dict[int, list[str]]:
+def list_pinned_request_ids(db_path: Path, open_only: bool = False) -> dict[int, list[str]]:
     """For each rulebook version, the IDs of the requests pinned to it (read only).
 
     Used by the Admin console's Version history. A version nobody is pinned to is not listed.
+    `open_only` leaves out requests already handed off (G5g).
     """
     with open_db(db_path) as conn:
         ensure_request_tables(conn)
         rows = conn.execute(
             "SELECT rulebook_version, request_id FROM da_requests"
-            " WHERE rulebook_version IS NOT NULL ORDER BY request_id"
+            " WHERE rulebook_version IS NOT NULL AND (? = 0 OR status != ?)"
+            " ORDER BY request_id",
+            (int(open_only), STATUS_HANDED_OFF),
         ).fetchall()
     pinned: dict[int, list[str]] = {}
     for row in rows:

@@ -87,6 +87,17 @@ def test_versions_round_trip_and_the_old_one_is_kept(db_path, request_id):
     assert latest.decisions[0].choice == "A" and latest.zones_touched == ["Login"]
 
 
+def test_index_build_is_stored_and_old_rows_read_as_not_recorded(db_path, request_id):
+    # G-21: a saved Approach keeps the index build; a database from before the column reads None.
+    with open_db(db_path) as conn:
+        ensure_approach_tables(conn)
+        insert_approach_version(conn, make_version(request_id, index_build=4), T0)
+        assert read_latest_approach(conn, request_id).index_build == 4
+        conn.execute("ALTER TABLE da_approach_versions DROP COLUMN index_build")
+        ensure_approach_tables(conn)  # adds the column back, old rows get NULL
+        assert read_latest_approach(conn, request_id).index_build is None
+
+
 def test_the_same_version_cannot_be_saved_twice(db_path, request_id):
     with open_db(db_path) as conn:
         ensure_approach_tables(conn)

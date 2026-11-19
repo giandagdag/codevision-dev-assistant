@@ -98,6 +98,9 @@ def ensure_approach_tables(conn: sqlite3.Connection) -> None:
     # These tables point at da_requests, which the Understand tables set up first.
     ensure_discovery_tables(conn)
     conn.executescript(_CREATE_TABLES_SQL)
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(da_approach_versions)")}
+    if "index_build" not in columns:  # Upgrade G5e: old rows read as "not recorded" (NULL)
+        conn.execute("ALTER TABLE da_approach_versions ADD COLUMN index_build INTEGER")
 
 
 # --- approach versions ---
@@ -111,7 +114,8 @@ def insert_approach_version(
         conn.execute(
             "INSERT INTO da_approach_versions (request_id, approach_version, source,"
             " record_version, rulebook_version, discovery_round, plan, decisions, warnings,"
-            " zones, model, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " zones, model, created_at, index_build)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 version.request_id,
                 version.approach_version,
@@ -125,6 +129,7 @@ def insert_approach_version(
                 json.dumps(version.zones_touched),
                 version.model,
                 to_db_time(now),
+                version.index_build,
             ),
         )
     except sqlite3.IntegrityError as error:
@@ -307,6 +312,7 @@ def _to_version(row: sqlite3.Row) -> ApproachVersion:
             "warnings": json.loads(row["warnings"]),
             "zones_touched": json.loads(row["zones"]),
             "model": row["model"],
+            "index_build": row["index_build"],
             "created_at": datetime.fromisoformat(row["created_at"]),
         }
     )

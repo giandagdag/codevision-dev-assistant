@@ -16,9 +16,9 @@ STATUS_NAME = "da_index_job.json"
 STOP_NAME = "da_index_job.stop"
 STALE_AFTER = timedelta(minutes=30)  # a live job writes a heartbeat before and after every item
 SHOW_TIME_LEFT_AFTER = 20  # items; the speed is only believable after a few
-STEP_LABELS = {1: "reading the code", 2: "tagging programs"}
-STEP_NOUNS = {1: "pieces", 2: "programs"}
-TOTAL_STEPS = 2
+STEP_LABELS = {1: "reading the code", 2: "reading code links", 3: "tagging programs"}
+STEP_NOUNS = {1: "pieces", 2: "files", 3: "programs"}
+TOTAL_STEPS = 3
 
 
 def _path(directory: Path | None, name: str) -> Path:
@@ -45,11 +45,12 @@ def _stamp(now: datetime | None) -> str:
 
 
 def begin(
-    directory: Path | None, started: datetime, who: str, mode: str, trigger: str
+    directory: Path | None, started: datetime, who: str, mode: str, trigger: str, build: int = 0
 ) -> None:
     clear_stop(directory)
     _write(directory, {
         "started": _stamp(started), "started_by": who, "mode": mode, "trigger": trigger,
+        "build": build,
         "step": 1, "done": 0, "total": 0, "step_started": _stamp(started),
         "updated": _stamp(None), "error": "",
     })
@@ -120,10 +121,11 @@ def _duration_text(span: timedelta) -> str:
 
 
 def progress_line(status: dict, now: datetime | None = None) -> str:
-    """"Step 1 of 2: reading the code, 340 of 1,200 pieces (28%)" plus "About 2 h left"."""
+    """"Build 7. Step 1 of 3: reading the code, 340 of 1,200 pieces (28%)" plus "About 2 h left"."""
     step = int(status.get("step") or 1)
+    build = f"Build {status['build']}. " if status.get("build") else ""
     line = (
-        f"Step {step} of {TOTAL_STEPS}: {STEP_LABELS.get(step, '')}, "
+        f"{build}Step {step} of {TOTAL_STEPS}: {STEP_LABELS.get(step, '')}, "
         f"{status.get('done', 0):,} of {status.get('total', 0):,} {STEP_NOUNS.get(step, '')} "
         f"({percent(status)}%)"
     )

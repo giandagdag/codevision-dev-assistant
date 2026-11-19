@@ -121,8 +121,13 @@ def run_line(run: dict) -> str:
         who = f"{who} (Nightly)"
     if not run.get("saved"):
         return f"{when} {who}: ❌ Not saved: {run.get('message', '')}"
+    if run.get("rolled_back_to"):  # G5d
+        return f"{when} {who}: ↩️ Rolled back to build {run['rolled_back_to']}"
+    build = f" (Build {run['build']})" if run.get("build") else ""  # G5a
     skipped = run.get("skipped") or []
     if skipped:
         noun = "piece" if len(skipped) == 1 else "pieces"
-        return f"{when} {who}: ⚠️ {len(skipped)} {noun} skipped ({run.get('count', 0)} saved)"
-    return f"{when} {who}: ✅ Done, {run.get('count', 0)} pieces"
+        return (
+            f"{when} {who}: ⚠️ {len(skipped)} {noun} skipped ({run.get('count', 0)} saved){build}"
+        )
+    return f"{when} {who}: ✅ Done, {run.get('count', 0)} pieces{build}"

@@ -1,6 +1,7 @@
 # Home only, never copied to work. Install with:
 #   .venv\Scripts\python -m pip install -r requirements-home.txt
 -r requirements.txt
+dash-cytoscape==1.0.2  # the capability map trial (also pinned in requirements.txt)
 
 # The Claude provider (DA_LLM_PROVIDER=claude). Not installed at work.
 anthropic==2.3.0

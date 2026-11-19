@@ -18,6 +18,7 @@ from pathlib import Path
 import faiss
 import numpy as np
 
+from agents.da_code_graph import build_graph, load_graph, save_graph
 from agents.da_code_index import (
     DEFAULT_INDEX_DIR,
     FAISS_NAME,
@@ -43,6 +44,7 @@ class BuildSummary:
     message: str = ""
     reread: int = 0  # pieces sent to the embedder (Delta: only new or changed files)
     mode: str = "full"  # what actually ran: Delta falls back to full when it cannot be trusted
+    link_skipped: list[str] = field(default_factory=list)  # "path: reason", files without links
 
 
 def _is_product_code(path: str) -> bool:
@@ -90,6 +92,8 @@ def build_index(
     mode: str = "full",
     progress: Callable[[int, int], None] | None = None,
     stop: Callable[[], bool] | None = None,
+    build: int = 0,
+    graph_progress: Callable[[int, int], None] | None = None,
 ) -> BuildSummary:
     """Full embeds every piece. Delta embeds only pieces of new or changed files and reuses the
     saved vectors for the rest (flat index: vector N belongs to piece N). Both save the whole
@@ -135,7 +139,8 @@ def build_index(
         elif vectors and len(vector) != len(vectors[0]):
             if reuse:  # the embedder now gives another size: the saved vectors are useless
                 return build_index(
-                    source, out_dir, embedder, now, say, extra_exclusions, "full", progress, stop
+                    source, out_dir, embedder, now, say, extra_exclusions, "full", progress, stop,
+                    build, graph_progress,
                 )
             return BuildSummary(
                 False, 0, skipped,
@@ -151,15 +156,21 @@ def build_index(
             f"Not saved: {len(skipped)} of {len(pieces)} pieces could not be embedded "
             f"(over {int(MAX_FAILED_SHARE * 100)}%, or no pieces). The old index stays.",
         )
-    _save(out_dir, source, kept, vectors, now or datetime.now(), hashes, name)
+    # Code links come after the pieces; Delta reuses the saved links of files that did not change.
+    links = build_graph(
+        source, hashes, load_graph(out_dir) if old is not None else None, graph_progress
+    )
+    _save(out_dir, source, kept, vectors, now or datetime.now(), hashes, name, build, links.graph)
     return BuildSummary(
         True, len(kept), skipped, f"Saved {len(kept)} pieces to {out_dir}.",
         reread=attempted, mode="delta" if old is not None else "full",
+        link_skipped=links.skipped,
     )
 
 
 def _save(
-    out_dir: Path, source: Path, kept, vectors, now: datetime, hashes: dict[str, str], embedder: str
+    out_dir: Path, source: Path, kept, vectors, now: datetime, hashes: dict[str, str],
+    embedder: str, build: int = 0, graph: dict | None = None,
 ) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     index = faiss.IndexFlatL2(len(vectors[0]))
@@ -169,6 +180,7 @@ def _save(
         "built_at": now.isoformat(timespec="seconds"),
         "source": str(source),
         "embedder": embedder,
+        "build": build,
         "vector_size": len(vectors[0]),
         "count": len(kept),
         "pieces": [
@@ -183,6 +195,8 @@ def _save(
     side_faiss, side_json = out_dir / (FAISS_NAME + ".new"), out_dir / (PIECES_NAME + ".new")
     faiss.write_index(index, str(side_faiss))
     side_json.write_text(json.dumps(record, indent=1), encoding="utf-8")
+    if graph is not None:
+        save_graph(graph, out_dir)  # its own .new then replace, done just before the others
     os.replace(side_faiss, out_dir / FAISS_NAME)
     os.replace(side_json, out_dir / PIECES_NAME)
 

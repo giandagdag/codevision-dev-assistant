@@ -144,6 +144,7 @@ class ApproachVersion(_Shape):
     warnings: list[str] = Field(default_factory=list)
     zones_touched: list[str] = Field(default_factory=list)
     model: str = ""
+    index_build: int | None = Field(default=None, ge=1)  # G5e: None = not recorded
     created_at: AwareDatetime | None = None
 
 

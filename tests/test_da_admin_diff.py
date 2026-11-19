@@ -5,6 +5,7 @@ from agents.da_admin_diff import (
     area_of_path,
     build_timeline,
     diff_rulebooks,
+    open_request_lines,
     text_line_diff,
 )
 from db_table_functions.db_tbl_da_requests import create_request, list_pinned_request_ids
@@ -140,6 +141,36 @@ def test_timeline_shows_a_restore_and_its_areas(db_path, seed_rulebook, publishe
 
     assert newest.restored_from == 1
     assert newest.areas == ["Build and test"]
+
+
+def test_restore_confirm_counts_only_open_requests_per_old_version(
+    db_path, seed_rulebook, published_rulebook
+):
+    # G-24: 2 open requests on v1 (a third is handed off) while v3 is active.
+    import sqlite3
+    from contextlib import closing
+
+    create_request(db_path, "Open one", "dev-0001")
+    create_request(db_path, "Open two", "dev-0002")
+    done = create_request(db_path, "Done", "dev-0003")
+    with closing(sqlite3.connect(db_path)) as conn:
+        conn.execute("UPDATE da_requests SET status = 'HANDED_OFF' WHERE request_id = ?",
+                     (done.request_id,))
+        conn.commit()
+    save_new_version(db_path, with_policy(seed_rulebook, build_max_rounds=4), 1, ADMIN, "Rounds")
+    changed = with_rule_field(
+        with_policy(seed_rulebook, build_max_rounds=4), "CV-PY-001", why="Changed."
+    )
+    save_new_version(db_path, changed, 2, ADMIN, "A reason")
+
+    assert open_request_lines(db_path, 3) == ["2 open requests use v1 and keep it"]
+
+
+def test_restore_dialog_shows_the_open_request_line():
+    from layouts.da_admin_history_tab import _restore_dialog
+
+    dialog = _restore_dialog(7, 8, ["2 open requests use v6 and keep it"])
+    assert "2 open requests use v6 and keep it" in str(dialog)
 
 
 def test_pinned_ids_are_empty_without_requests(db_path, published_rulebook):

@@ -57,7 +57,7 @@ def test_running_job_shows_step_count_percent_and_a_stop_button():
     }
     controls = panels.rebuild_controls(started, [], status=status, now=started)
     text = all_text(controls)
-    assert "Step 1 of 2: reading the code, 340 of 1,200 pieces (28%)" in text
+    assert "Step 1 of 3: reading the code, 340 of 1,200 pieces (28%)" in text
     assert "Started by admin at 02:00" in text
     ids = {getattr(c, "id", None): c for c in walk(controls)}
     assert ids[panels.REBUILD_STOP].disabled is False

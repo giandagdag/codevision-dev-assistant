@@ -44,11 +44,11 @@ def test_progress_line_percent_and_time_left_after_20_items(tmp_path):
     job.begin(out, start, "Admin", "delta", "Manual")
     job.progress(out, 10, 1200, now=start + timedelta(minutes=10))
     early = job.progress_line(job.read_status(out), start + timedelta(minutes=10))
-    assert early == "Step 1 of 2: reading the code, 10 of 1,200 pieces (0%)"  # under 20 items
+    assert early == "Step 1 of 3: reading the code, 10 of 1,200 pieces (0%)"  # under 20 items
     job.progress(out, 340, 1200, now=start + timedelta(minutes=34))
     status = job.read_status(out)
     line = job.progress_line(status, start + timedelta(minutes=34))
-    assert line.startswith("Step 1 of 2: reading the code, 340 of 1,200 pieces (28%)")
+    assert line.startswith("Step 1 of 3: reading the code, 340 of 1,200 pieces (28%)")
     assert line.endswith("About 1 h 26 min left")  # 34 min / 340 pieces * 860 pieces
 
 

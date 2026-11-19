@@ -388,7 +388,7 @@ def message_notice(
     return dmc.Alert(parts, color=color, mb="sm")
 
 
-def saved_notice(version_number: int, warnings: list[str]):
+def saved_notice(version_number: int, warnings: list[str], open_lines: list[str] | None = None):
     parts = [
         dmc.Text(
             f"Saved as v{version_number}. New requests use it from now; "
@@ -397,6 +397,7 @@ def saved_notice(version_number: int, warnings: list[str]):
             fw=600,
         )
     ]
+    parts += [dmc.Text(line, size="sm") for line in open_lines or []]  # G5g: same note as Restore
     parts += [dmc.Text(f"Warning: {line}", size="sm") for line in warnings]
     return dmc.Alert(parts, color="green", mb="sm")
 

@@ -21,7 +21,12 @@ from agents.da_admin_catalog import (
     resolved_rows,
 )
 from agents.da_admin_cited import cited_counts, fires_in
-from agents.da_admin_diff import build_timeline, diff_rulebooks, plain_diff_lines
+from agents.da_admin_diff import (
+    build_timeline,
+    diff_rulebooks,
+    open_request_lines,
+    plain_diff_lines,
+)
 from agents.da_admin_forms import (
     RESULT_PROBLEMS,
     RESULT_SAVED,
@@ -169,6 +174,7 @@ from layouts.da_admin_page import (
     tab_button_id,
     tab_content,
 )
+from layouts.da_capability_map_view import MAP_PATH
 from layouts.da_inbox_page import INBOX_PATH
 from layouts.da_test_report_page import REPORT_PREFIX
 from styles import da_styles
@@ -252,7 +258,9 @@ def health_content(settings: Settings, window: str):
 
 def developer_page_style(pathname: str | None) -> dict:
     """The developer page stays built but hidden on /admin and /inbox (layout not touched)."""
-    hidden = pathname in (ADMIN_PATH, INBOX_PATH) or (pathname or "").startswith(REPORT_PREFIX)
+    hidden = pathname in (ADMIN_PATH, INBOX_PATH, MAP_PATH) or (pathname or "").startswith(
+        REPORT_PREFIX
+    )
     return {"display": "none"} if hidden else {}
 
 
@@ -390,7 +398,7 @@ def _ai_action(
     if name == Q_AI_ALL:
         return _queue_tab(settings, ai_confirm=True)
     if name == Q_AI_REJECT:
-        reject_card(path)
+        reject_card(path, who=settings.developer_id)
         return _queue_tab(settings, notice=[message_notice("Rejected.", color="green")])
     if name == Q_AI_ALL_DO:
         result = approve_all_high(settings, settings.developer_id, base_version)
@@ -625,7 +633,8 @@ def _save(settings, tab, form, note, base_version, active):
     result = save_from_form(settings.db_path, tab, form, base_number, settings.developer_id, note)
     if result.kind == RESULT_SAVED:
         saved = get_active_version(settings.db_path)
-        notice = saved_notice(saved.version_number, result.warnings)
+        open_lines = open_request_lines(settings.db_path, saved.version_number)
+        notice = saved_notice(saved.version_number, result.warnings, open_lines)
         ask = tab == TAB_REPO and _index_source_changed(active, saved)
         return _content(settings, tab, saved, notice=[notice], ask_rebuild=ask), False
     base = get_version(settings.db_path, base_number) or active
@@ -651,7 +660,9 @@ def history_content(settings: Settings, restore_target=None, notice=None, select
         # Default: the newest older version (the one an Admin most likely wants to look at).
         selected = rows[1].version_number if len(rows) > 1 else rows[0].version_number
     changes = _selected_changes(settings, rows, selected)
-    return history_view(rows, restore_target, notice, selected, changes)
+    active = rows[0].version_number if rows else 0
+    open_lines = open_request_lines(settings.db_path, active) if restore_target else None
+    return history_view(rows, restore_target, notice, selected, changes, open_lines)
 
 
 def _selected_changes(settings: Settings, rows, selected):
@@ -714,6 +725,15 @@ def register_da_admin_page_callbacks(app) -> None:
     _register_rule_pick(app)
     _register_golden(app)
     _register_rebuild(app)
+    # late import: that file reads get_admin_settings from this one
+    from callbacks.screen_callbacks.da_admin_builds_callbacks import register_builds_callbacks
+
+    register_builds_callbacks(app)
+    from callbacks.screen_callbacks.da_admin_tag_history_callbacks import (
+        register_tag_history_callbacks,
+    )
+
+    register_tag_history_callbacks(app)
 
     @app.callback(
         Output(SONAR_STATUS, "children"),
