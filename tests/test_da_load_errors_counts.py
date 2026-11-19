@@ -1,12 +1,21 @@
 """Fix NP step 4: honest counts (NP-4) and a Resume that does not pile up rows (NP-5)."""
 
+from contextlib import contextmanager
+from types import SimpleNamespace
+
 import pytest
 
 from agents import da_build_flow as flow
 from agents import da_build_loop as loop
 from agents.da_load_errors import load_failed_text
 from layouts.da_build_panel import _layer_b_state
-from pydantic_classes.da_build_models import LayerBResult, LoadError, TestOutcome
+from pydantic_classes.da_build_models import (
+    LayerAResult,
+    LayerBResult,
+    LoadError,
+    RoundRecord,
+    TestOutcome,
+)
 from tests.da_build_play import RecordingFactory, progress_of, ready_with_workspace, rounds_of
 
 pytestmark = pytest.mark.usefixtures("published_rulebook")
@@ -23,6 +32,35 @@ def test_a_load_error_counts_no_test_as_run():
     assert load_failed_text(result) == "0 of 6 ran: the test file could not load"
     assert result.ran_count == 0
     assert _layer_b_state(result)[0] == "0 of 6 ran: the test file could not load"
+
+
+def a_record():
+    return RoundRecord(
+        request_id="CVDA-2026-0001", build_number=1, round=1, layer_a=LayerAResult(),
+        layer_b=failed_load(fault="planned_code"),
+    )  # fmt: skip
+
+
+def test_the_banner_and_a_failed_check_run_do_not_say_zero_tests_failed():
+    """Review round 2: the red banner and the Check-my-edits message use the load-error words."""
+    record = a_record()
+    banner = flow._failed_banner(record, 6, 3)
+    assert "0 of 6 ran: the test file could not load" in banner and "tests failed" not in banner
+
+    said = []
+
+    @contextmanager
+    def turn():
+        yield None
+
+    stub = SimpleNamespace(_turn=turn, _close=lambda tx, *args: said.append(args[-1]))
+    loop._Run._finish_check_failed(stub, record)
+    assert "0 of 6 ran: the test file could not load" in said[0] and "breaks" not in said[0]
+
+
+def test_the_final_sentence_says_the_file_still_could_not_load():
+    text = loop._finish_text(False, 3, "Not passing", [a_record()], 6)
+    assert "still could not load" in text and "test(s) still fail" not in text
 
 
 def test_a_normal_result_is_counted_as_before():
