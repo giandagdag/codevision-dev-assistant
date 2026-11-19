@@ -42,7 +42,7 @@ class RecordingResult(unittest.TestResult):
 
     def addError(self, test, err):
         super().addError(test, err)
-        self._record(test, "error", _message(err), _tail(err))
+        self._record(test, "error", _message(err), _tail(err), err)
 
     def addSkip(self, test, reason):
         super().addSkip(test, reason)
@@ -62,19 +62,19 @@ class RecordingResult(unittest.TestResult):
         if err is not None:
             self._record(test, "fail", _message(err), _tail(err))
 
-    def _record(self, test, result: str, message: str, tail: list[str]) -> None:
+    def _record(self, test, result: str, message: str, tail: list[str], err=None) -> None:
         # One row per test: the first non-pass outcome (a failing sub-test) is kept.
         if any(row["name"] == _name(test) for row in self.outcomes):
             return
-        self.outcomes.append(
-            {
-                "name": _name(test),
-                "result": result,
-                "message": message,
-                "traceback_tail": tail,
-                "evidence": _take_evidence(),
-            }
-        )
+        row = {
+            "name": _name(test),
+            "result": result,
+            "message": message,
+            "traceback_tail": tail,
+            "evidence": _take_evidence(),
+        }
+        row.update(_standin(test, err))
+        self.outcomes.append(row)
         _write(os.path.join(self._root, "results.json"), json.dumps({"tests": self.outcomes}))
 
 
@@ -91,6 +91,33 @@ def _take_evidence() -> list[dict]:
 
 def _name(test) -> str:
     return getattr(test, "_testMethodName", str(test))
+
+
+STANDIN_PREFIXES = ("setUpClass", "setUpModule", "tearDownClass", "tearDownModule")
+
+
+def _standin(test, err) -> dict:
+    """Extra keys for a row that is not a real test: unittest's stand-in for a test file that
+    could not be imported (`_FailedTest`) or for a failing class/module set-up or tear-down
+    (`_ErrorHolder`). The type is checked first, the name second (names differ by version)."""
+    kind = type(test).__name__
+    if kind == "_FailedTest":
+        found = "import"
+    elif kind == "_ErrorHolder" or _name(test).startswith(STANDIN_PREFIXES):
+        found = "set_up"
+    else:
+        return {}
+    if not err:
+        return {"standin": found}
+    error_type, text = err[0].__name__, str(err[1]).strip()
+    if found == "import" and text.startswith("Failed to import test module"):
+        # unittest builds this ImportError from TEXT: the real error is the text's last line,
+        # such as "ModuleNotFoundError: No module named 'x'".
+        last = text.splitlines()[-1]
+        head, _, rest = last.partition(": ")
+        if head.isidentifier():
+            error_type, text = head, rest or head
+    return {"standin": found, "error_type": error_type, "message": (text or error_type)[:500]}
 
 
 def _message(err) -> str:

@@ -40,7 +40,7 @@ from agents.da_build_flow import (
     _require_request,
     _write,
 )
-from agents.da_check_words import NOT_PROVEN_TEXT, testing_files_line
+from agents.da_check_words import is_system_message, testing_files_line
 from agents.da_code_judge import WRONG_TEST, failing_code_tests, judge_code_tests
 from agents.da_code_tests import keep_code_tests, write_code_tests
 from agents.da_enhance_build_checks import (
@@ -62,6 +62,13 @@ from agents.da_escalation_triggers import (
     tester_unable_twice,
 )
 from agents.da_guidance import USED_FIX_ROUND, USED_TESTER_REVIEW, take_guidance
+from agents.da_load_errors import (
+    classify_load_error,
+    clean_result,
+    is_system_pause,
+    load_failed_text,
+    pause_text,
+)
 from agents.da_refine_merge import his_lines, marker_text, plan_merge
 from agents.da_sandbox import run_tests
 from agents.da_workspace_checks import fingerprint
@@ -347,7 +354,7 @@ class _Run:
                 else:
                     tx.set(step="b_interrupted", message=message)
                     # A Tester pause already says what it is (spec section 2).
-                    own = message.startswith(TESTER_PAUSE) or message == NOT_PROVEN_TEXT
+                    own = message.startswith(TESTER_PAUSE) or is_system_message(message)
                     tx.say("assistant", message if own else f"The build paused: {message}")
         except _Cancelled:
             return "cancelled"
@@ -567,7 +574,7 @@ class _Run:
                 if self._layer_c(last):
                     return "done"
                 continue
-            if last is not None and last.layer_b is not None and last.layer_b.not_proven:
+            if is_system_pause(last.layer_b if last is not None else None):
                 self._retry_unproven(last, contract, tests)  # Run again: no round is used
                 continue
             used = _rounds_used(done)
@@ -577,9 +584,16 @@ class _Run:
 
     def _retry_unproven(self, last: RoundRecord, contract: Contract, tests: str) -> None:
         """Run only Layer B again on the saved code, as a new row (rounds are append-only, so the
-        unproven row stays as the record). That row does not count against the budget (F3)."""
+        unproven row stays as the record). That row does not count against the budget (F3).
+        Fix NP: the checklist keeps one Layer A and one Layer B line; the re-run writes a newer row
+        for the same two line numbers (newest row wins), so repeated Resumes do not pile up."""
+        with self._turn() as tx:
+            saved = read_progress(tx.conn, self.request_id, tx.state.build_number)
+        a_line = _last_line(saved, "Layer A")
+        b_line = _last_line(saved, "Layer B")
+        layer_b = self._layer_b(tests, b_line)
         self._record_round(
-            last.round + 1, last.layer_a, self._layer_b(tests), contract, tests
+            last.round + 1, last.layer_a, layer_b, contract, tests, layer_a_line=a_line
         )
 
     def _review_of(self, round_number: int) -> ReviewRecord | None:
@@ -886,15 +900,20 @@ class _Run:
                 )
         return found
 
-    def _layer_b(self, tests: str) -> LayerBResult:
+    def _layer_b(self, tests: str, line: int | None = None) -> LayerBResult:
+        """Run the frozen tests. `line` re-uses a progress line (a Resume re-run)."""
         self._alive()
         policy = self.inp.policy
         count = len(find_test_methods(_parse(tests)))
-        line = self._line(
+        text = (
             f"Layer B: running {count} tests in a sandbox "
-            f"(time limit {policy.build_test_timeout_seconds} seconds per run)",
-            "running",
+            f"(time limit {policy.build_test_timeout_seconds} seconds per run)"
         )
+        if line is None:
+            line = self._line(text, "running")
+        else:
+            with self._turn() as tx:
+                self._note(tx, text, "running", line)
         everything = {path: item.text for path, item in self.inp.code.items()}
         result = run_tests(
             self.reference,
@@ -906,6 +925,11 @@ class _Run:
         )
         if not result.ran:
             raise _Paused("interrupted", result.error)
+        if result.load_error is not None:  # Fix NP: whose fault, worked out once and saved
+            planned = [_clean(item.path) for item in self.inp.planned]
+            fault, _ = classify_load_error(result.load_error, self.reference / "src", planned)
+            result.load_error.fault = fault
+        clean_result(result)  # after the decision (it reads the raw trace), before it is saved
         self._layer_b_line = line
         return result
 
@@ -918,11 +942,12 @@ class _Run:
         tests: str,
         code_tests: LayerBResult | None = None,
         dropped_code_tests: list[str] | None = None,
+        layer_a_line: int | None = None,
     ) -> bool:
         passed = layer_a.ok and layer_b is not None and layer_b.ok
         # F3: tests that never reported are the Developer Assistant's problem. Show the rows,
         # then pause like an interrupted run. No repair round, no Generator call.
-        unproven = bool(layer_b and layer_b.not_proven)
+        unproven = is_system_pause(layer_b)
         planned = [_clean(i.path) for i in self.inp.planned]
         fix: list[str] = []
         report = None
@@ -947,7 +972,12 @@ class _Run:
             tx.audit(
                 "system", "layer_a_result", {"round": number, "problems": len(layer_a.problems)}
             )
-            self._note(tx, "Layer A: syntax, imports, rules", "done" if layer_a.ok else "failed")
+            self._note(
+                tx,
+                "Layer A: syntax, imports, rules",
+                "done" if layer_a.ok else "failed",
+                layer_a_line,
+            )
             if layer_b is not None:
                 body = record.model_dump(
                     mode="json",
@@ -967,9 +997,12 @@ class _Run:
                         "timed_out": layer_b.timed_out,
                     },
                 )
+                counts = load_failed_text(layer_b) or (
+                    f"{layer_b.passed} of {len(layer_b.tests)} tests passed"
+                )
                 self._note(
                     tx,
-                    f"Layer B: {layer_b.passed} of {len(layer_b.tests)} tests passed "
+                    f"Layer B: {counts} "
                     f"(time limit {self.inp.policy.build_test_timeout_seconds} seconds per run)",
                     "done" if layer_b.ok else "failed",
                     self._layer_b_line,
@@ -985,7 +1018,7 @@ class _Run:
                     )
         self.inp.rounds.append(record)
         if unproven:
-            raise _Paused("interrupted", NOT_PROVEN_TEXT)
+            raise _Paused("interrupted", pause_text(layer_b))
         return passed
 
     # --- a check run: Check my edits (Phase 8 spec section 3) ---
@@ -998,7 +1031,7 @@ class _Run:
         if not self.inp.rounds:
             self._check_round(contract, tests)
         last = self.inp.rounds[-1]
-        if last.layer_b is not None and last.layer_b.not_proven:
+        if is_system_pause(last.layer_b):
             self._retry_unproven(last, contract, tests)
             last = self.inp.rounds[-1]
         if not _round_passed(last):
@@ -1056,8 +1089,9 @@ class _Run:
     def _finish_check_failed(self, last: RoundRecord) -> str:
         """Layer A or B failed: Not passing, with the failure report. No Generator, no fix round."""
         if last.layer_b is not None:
-            what = f"{last.layer_b.failed} test(s)"
-            text = f"Your edit breaks {what}. Result: {LABEL_NOT_PASSING}."
+            failed = last.layer_b.failed
+            what = load_failed_text(last.layer_b) or f"Your edit breaks {failed} test(s)"
+            text = f"{what}. Result: {LABEL_NOT_PASSING}."
         else:
             problems = len(last.layer_a.problems)
             text = (
@@ -1631,9 +1665,15 @@ def _parse(text: str) -> ast.Module:
     return ast.parse(text)
 
 
+def _last_line(lines: list[ProgressLine], prefix: str) -> int | None:
+    """The line number of the newest progress line that starts with `prefix`."""
+    found = [item.line_number for item in lines if item.text.startswith(prefix)]
+    return found[-1] if found else None
+
+
 def _rounds_used(rounds: list[RoundRecord]) -> int:
     """Rounds against the budget. A Not proven row is the app's problem, so it is not counted."""
-    return sum(1 for item in rounds if not (item.layer_b and item.layer_b.not_proven))
+    return sum(1 for item in rounds if not is_system_pause(item.layer_b))
 
 
 def _round_passed(record: RoundRecord) -> bool:
@@ -1649,6 +1689,8 @@ def _round_failed_text(
         return f"Round {number}: {len(layer_a.problems)} problem(s) in the code checks. {only}"
     if layer_b is not None and layer_b.timed_out:
         return f"Round {number}: the tests ran out of time. {only}"
+    if layer_b is not None and layer_b.load_error is not None:
+        return f"Round {number}: {load_failed_text(layer_b)}. {only}"
     failed = layer_b.failed if layer_b else 0
     return f"Round {number}: {failed} of {cases} tests failed. {only}"
 
@@ -1698,7 +1740,9 @@ def _finish_text(
             else "The code checks failed in every round, so the tests never ran."
         )
         return f"{what} Result: {label}. {still_writing}"
-    return (
-        f"I used all {rounds} rounds and {last.failed} test(s) still fail. "
-        f"Result: {label}. {still_writing}"
+    still = (
+        f"the test file still could not load ({last.load_error.error_type})"
+        if last.load_error is not None
+        else f"{last.failed} test(s) still fail"
     )
+    return f"I used all {rounds} rounds and {still}. Result: {label}. {still_writing}"

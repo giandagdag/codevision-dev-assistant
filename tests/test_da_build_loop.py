@@ -363,7 +363,7 @@ def test_b1_3_tests_that_never_report_pause_the_build_and_no_repair_round_is_use
     rounds = rounds_of(settings, request_id)
     assert len(rounds) == 1 and len(rounds[0].layer_b.not_proven) == 3
     assert not rounds[0].layer_b.ok and rounds[0].failure_report is not None
-    assert loop.NOT_PROVEN_TEXT in chat(settings, request_id, "assistant")
+    assert NOT_PROVEN_TEXT in chat(settings, request_id, "assistant")
     assert len(factory.code_calls()) == 2  # round 1 only: nobody was asked to fix anything
 
     drop["on"] = False  # Run again: the same round is replaced, not a new round used

@@ -34,7 +34,14 @@ WriteState = Literal["not_written", "written", "stopped"]
 FileKind = Literal["contract", "test", "code"]
 MadeBy = Literal["generator", "tester", "system", "merge"]  # merge: his picks (Phase 8)
 TestResultKind = Literal[
-    "pass", "fail", "error", "skipped", "expected_failure", "unexpected_success", "not_proven"
+    "pass",
+    "fail",
+    "error",
+    "skipped",
+    "expected_failure",
+    "unexpected_success",
+    "not_proven",
+    "not_run",  # Fix NP: the test file could not load, so this test never started
 ]
 ProgressState = Literal["pending", "running", "done", "failed"]
 ContractKind = Literal["function", "class"]
@@ -146,6 +153,19 @@ class TestOutcome(_Shape):
 NOT_PASSING = ("fail", "error", "skipped", "expected_failure", "unexpected_success")
 
 
+class LoadError(_Shape):
+    """Fix NP: the frozen test file could not load (import error, or setUp/tearDown at class or
+    module level raised). Read from unittest's stand-in row, never counted as a test."""
+
+    kind: Literal["import", "set_up", "other"] = "other"
+    error_type: str = ""
+    message: str = ""
+    traceback_tail: list[str] = Field(default_factory=list, max_length=20)
+    # Whose fault, worked out once when the run ends (agents/da_load_errors.py). Empty on a row
+    # saved earlier or before it was worked out; readers treat empty as "planned_code".
+    fault: Literal["", "missing_library", "planned_code", "frozen_test"] = ""
+
+
 class LayerBResult(_Shape):
     # False when the sandbox could not run at all (not the code's fault: b_interrupted).
     ran: bool = True
@@ -162,6 +182,14 @@ class LayerBResult(_Shape):
     strict: bool = False
     # Fix D1: the test file of a code-test run (kept bugs carry over; Targets are read from it).
     source: str = ""
+    # Fix NP: set when the test file could not load; then `ok` is False and the frozen tests are
+    # `not_run`.
+    load_error: LoadError | None = None
+
+    @property
+    def ran_count(self) -> int:
+        """Frozen tests that really ran (a stand-in or not_run row never counts)."""
+        return sum(1 for item in self.tests if item.result not in ("not_run", "not_proven"))
 
     @property
     def passed(self) -> int:
@@ -185,6 +213,7 @@ class LayerBResult(_Shape):
         # Pass means proven: every test reported, and every one of them passed.
         return (
             self.ran
+            and self.load_error is None
             and not self.timed_out
             and bool(self.tests)
             and not any(item.result in self._blocking + ("not_proven",) for item in self.tests)

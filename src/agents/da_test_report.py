@@ -9,7 +9,8 @@ import re
 from typing import Any
 
 from agents.da_evidence_helper import hide_secret
-from pydantic_classes.da_build_models import TestOutcome
+from agents.da_load_errors import hide_sandbox, load_failed_text
+from pydantic_classes.da_build_models import LoadError, TestOutcome
 
 NO_EVIDENCE = "Evidence not recorded"
 ASTERISK_LEGEND = "* a negative scenario: the test passes when the code refuses or fails safely."
@@ -35,10 +36,12 @@ def case_id_of(name: str) -> str:
 
 
 def count_results(tests: list[TestOutcome]) -> dict[str, int]:
-    """Passed, failed (failed + error), not proven (skipped or never reported) of one layer."""
+    """Passed, failed (failed + error), not proven (skipped or never reported) of one layer.
+    A test that did not run because the file could not load is none of these (Fix NP)."""
     failed = sum(1 for item in tests if item.result in ("fail", "error"))
     passed = sum(1 for item in tests if item.result == "pass")
-    return {"passed": passed, "failed": failed, "other": len(tests) - passed - failed}
+    not_run = sum(1 for item in tests if item.result == "not_run")
+    return {"passed": passed, "failed": failed, "other": len(tests) - passed - failed - not_run}
 
 
 def newest_tested_round(rounds):
@@ -52,6 +55,8 @@ def report_summary_line(rounds) -> str:
     last = newest_tested_round(rounds)
     if last is None:
         return ""
+    if last.layer_b.load_error is not None:
+        return f"Load error: {load_failed_text(last.layer_b)}."
     tests = [t for t in last.layer_b.tests if case_id_of(t.name).startswith("T")]
     line = f"Against the requirement: {count_results(tests)['passed']} of {len(tests)} passed."
     if last.code_tests is not None:
@@ -99,6 +104,7 @@ def build_report(
     checks: list[dict[str, Any]],
     findings: list[dict[str, Any]],
     targets: dict[str, str] | None = None,
+    load_error: LoadError | None = None,
 ) -> dict[str, Any]:
     """The report as plain data. `layer_b` holds the T-n and (Enhance) S-n outcomes, `cases` maps
     'T-1' to its criterion_id, given, expect and negative flag. `header` passes through."""
@@ -118,7 +124,15 @@ def build_report(
         sections.append({"key": key, "title": title, "rows": rows})
     summary = {key: count_results(items) for key, items in groups.items()}
     summary["code"]["dropped"] = len(dropped_code_tests)
+    shown = None
+    if load_error is not None:  # hidden again here, so a report of an older build is safe too
+        shown = {
+            "text": f"The test file could not load. {load_error.error_type}: "
+            f"{hide_sandbox(load_error.message)}".strip(),
+            "tail": [hide_sandbox(line) for line in load_error.traceback_tail],
+        }
     return {
+        "load_error": shown,
         "header": header,
         "summary": summary,
         "sections": sections,

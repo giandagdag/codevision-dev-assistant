@@ -615,10 +615,12 @@ def choose_files_to_fix(
 
 def _files_from_tracebacks(layer_b: LayerBResult | None, planned: list[str]) -> set[str]:
     named = set()
-    for item in layer_b.tests if layer_b else []:
-        if item.result not in NOT_PASSING:
-            continue
-        for line in item.traceback_tail:
+    # Fix NP: a test file that could not load names the file to fix in its own trace.
+    tails = [layer_b.load_error.traceback_tail] if layer_b and layer_b.load_error else []
+    rows = layer_b.tests if layer_b else []
+    tails += [item.traceback_tail for item in rows if item.result in NOT_PASSING]
+    for tail in tails:
+        for line in tail:
             match = _TRACE_FILE.search(line)
             if match:
                 shown = match.group(1).replace("\\", "/")
@@ -665,6 +667,17 @@ def build_failure_report(
     except SyntaxError:
         methods = {}
     items = []
+    if layer_b and layer_b.load_error:  # Fix NP: the Generator must see why the file did not load
+        error = layer_b.load_error
+        items.append(
+            FailureItem(
+                test_id="(test file)",
+                criterion_id="",
+                expected="The test file must load.",
+                message=f"{error.error_type}: {error.message}".strip(": "),
+                traceback_tail=error.traceback_tail,
+            )
+        )
     for item in layer_b.tests if layer_b else []:
         if item.result not in NOT_PASSING:
             continue

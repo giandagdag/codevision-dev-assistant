@@ -8,6 +8,7 @@ import dash_mantine_components as dmc
 from dash import dcc, html
 
 from agents.da_check_words import CHECK_BOX_TITLE, CHECK_KIND
+from agents.da_load_errors import load_failed_text, reason_lines
 from layouts.da_test_report_page import NO_REPORT_TEXT, report_link
 from layouts.da_tester_panel import layer_c_state, tester_lines, tester_report
 from pydantic_classes.da_build_models import (
@@ -27,6 +28,7 @@ BANNER_ID = "da-build-banner"
 PROGRESS_ID = "da-build-progress"
 LAYERS_ID = "da-build-layers"
 FAILURES_ID = "da-build-failures"
+REASON_ID = "da-build-reason"
 FILES_ID = "da-build-files"
 TURN_ID = "da-build-turn"
 EDIT_HINT_ID = "da-build-edit-hint"
@@ -69,6 +71,7 @@ RESULT_TEXT = {
     "expected_failure": "Expected to fail",
     "unexpected_success": "Passed, but expected to fail",
     "not_proven": "Not proven: no result recorded",
+    "not_run": "Did not run",
     "": "-",
 }
 RESULT_COLOUR = {
@@ -79,6 +82,7 @@ RESULT_COLOUR = {
     "expected_failure": "gray",
     "unexpected_success": "red",
     "not_proven": "orange",
+    "not_run": "orange",
     "": "gray",
 }
 
@@ -99,6 +103,7 @@ def build_tab(view: BuildView, edit_hint: str = "", refine_blocks: list | None =
     if view.progress:
         blocks.append(_progress(view))
         blocks.append(_layer_boxes(view))
+        blocks.append(reason_block(view))  # Fix NP: why Layer B is not clean (None when it is)
     failure = _failures(view)
     if failure is not None:
         blocks.append(failure)
@@ -172,6 +177,7 @@ def tests_tab(view: BuildView | None) -> list:
         dmc.Stack(
             [
                 *report,
+                reason_block(view),
                 _report_block(view),
                 dmc.Text(f"{len(view.tests)} frozen tests", fw=600, size="sm"),
                 dmc.Text(view.tests_note, size="xs", c=da_styles.MUTED, id=TESTS_VERSION_ID)
@@ -292,8 +298,27 @@ def _layer_b_state(result: LayerBResult | None) -> tuple[str, str]:
         return "Waiting", "gray"
     if result.timed_out:
         return "Timed out", "red"
-    text = f"{result.passed} of {len(result.tests)} passed"
+    text = load_failed_text(result) or f"{result.passed} of {len(result.tests)} passed"
     return text, "green" if result.ok else "red"
+
+
+def reason_block(view: BuildView) -> dmc.Paper | None:
+    """Fix NP (N3): the message and the end of the trace of a load error or a Not proven row,
+    paths already shown as <sandbox>. Drawn again here so an older saved round is hidden too."""
+    last = view.rounds[-1] if view.rounds else None
+    lines = reason_lines(last.layer_b if last else None)
+    if not lines:
+        return None
+    return dmc.Paper(
+        dmc.Stack(
+            [dmc.Text(lines[0], size="sm", c="orange")]
+            + [dmc.Text(line, size="xs", ff="monospace") for line in lines[1:]],
+            gap=2,
+        ),
+        p="sm",
+        withBorder=True,
+        id=REASON_ID,
+    )
 
 
 def _layer_box(title: str, text: str, colour: str) -> dmc.Paper:
