@@ -352,9 +352,12 @@ def fix_work(branch: str, git: Git) -> FixWork | None:
     phase_branches = {f"auto/phase-{p}" for p in PHASES}
     if branch in {"", "HEAD", "main", "master", MERGE_BASE} | phase_branches:
         return None
+    # 19 Nov: origin/ first and no merge commits, like work_queue (PR #95). The laptop's local
+    # merge base can be stale, so already-merged commits ("C1/C2", "review round 3") were counted
+    # and the Now line said "step 34" on a 5-step fix.
     out = None
-    for base in (MERGE_BASE, f"origin/{MERGE_BASE}"):
-        out = _try(git, ["log", f"{base}..{branch}", "--format=%ct|%s", "-300"])
+    for base in (f"origin/{MERGE_BASE}", MERGE_BASE):
+        out = _try(git, ["log", f"{base}..{branch}", "--no-merges", "--format=%ct|%s", "-300"])
         if out is not None:
             break
     rows = [line.partition("|") for line in (out or "").splitlines()]
