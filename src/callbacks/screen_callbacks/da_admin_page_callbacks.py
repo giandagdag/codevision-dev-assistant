@@ -21,7 +21,12 @@ from agents.da_admin_catalog import (
     resolved_rows,
 )
 from agents.da_admin_cited import cited_counts, fires_in
-from agents.da_admin_diff import build_timeline, diff_rulebooks, plain_diff_lines
+from agents.da_admin_diff import (
+    build_timeline,
+    diff_rulebooks,
+    open_request_lines,
+    plain_diff_lines,
+)
 from agents.da_admin_forms import (
     RESULT_PROBLEMS,
     RESULT_SAVED,
@@ -651,7 +656,9 @@ def history_content(settings: Settings, restore_target=None, notice=None, select
         # Default: the newest older version (the one an Admin most likely wants to look at).
         selected = rows[1].version_number if len(rows) > 1 else rows[0].version_number
     changes = _selected_changes(settings, rows, selected)
-    return history_view(rows, restore_target, notice, selected, changes)
+    active = rows[0].version_number if rows else 0
+    open_lines = open_request_lines(settings.db_path, active) if restore_target else None
+    return history_view(rows, restore_target, notice, selected, changes, open_lines)
 
 
 def _selected_changes(settings: Settings, rows, selected):

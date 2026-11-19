@@ -41,6 +41,7 @@ def history_view(
     notice=None,
     selected: int | None = None,
     selected_changes=None,
+    open_lines=None,
 ):
     """Timeline on the left, the selected version's side panel on the right.
 
@@ -52,7 +53,7 @@ def history_view(
     timeline = html.Div(
         [
             *(notice or []),
-            *([_restore_dialog(restore_target, active)] if restore_target else []),
+            *([_restore_dialog(restore_target, active, open_lines)] if restore_target else []),
             dmc.Stack([_timeline_row(row, row is chosen) for row in rows], gap=0)
             if rows
             else dmc.Text("No versions yet.", style=da_styles.EMPTY_TEXT),
@@ -154,7 +155,7 @@ def _pinned(row):
     )
 
 
-def _restore_dialog(number: int, active: int = 0):
+def _restore_dialog(number: int, active: int = 0, open_lines=None):
     return dmc.Alert(
         [
             dmc.Text(f"Restore v{number} as a new version?", size="sm", fw=600),
@@ -163,6 +164,7 @@ def _restore_dialog(number: int, active: int = 0):
                 f"their version. v{active} stays in history.",
                 size="xs",
             ),
+            *[dmc.Text(line, size="xs") for line in open_lines or []],
             dmc.TextInput(
                 label="Change note (required)",
                 id=pick_id("note"),
