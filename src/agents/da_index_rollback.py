@@ -40,6 +40,9 @@ def roll_back(out: Path, number: int, who: str, now: datetime | None = None) -> 
             for side, target in sides:
                 os.replace(side, target)
         except OSError as error:  # rare (a locked file): say plainly that the files may be mixed
+            for side, _ in sides:
+                side.unlink(missing_ok=True)
+            record_run(who, started, False, 0, [], f"Roll back to build {number} failed", out, {})
             return False, (
                 f"Build {number} was only partly put back ({error}). "
                 "Run a full rebuild to make the index consistent."

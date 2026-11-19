@@ -104,3 +104,24 @@ def test_a_rejected_links_card_does_not_bring_the_ai_tag_back(tmp_path):
 
     assert read_store(directory)["modules"]["src/hub.py"]["state"] == "rejected"
     assert ai_cards(directory) == []
+
+
+def test_a_rejected_card_with_a_changed_cluster_goes_back_to_the_ai_tag(tmp_path):
+    directory = tmp_path / "index"
+    graph = _graph(tmp_path, ["a", "b", "c", "d"])
+    store = _tag(["a", "b", "c", "d"])
+    ai = {"summary": "Hub text", "proposed_capability": "Menus", "confidence": "low",
+          "reason": "AI", "state": "proposed", "file_hash": "h1"}
+    store["modules"]["src/hub.py"] = dict(ai)
+    save_store(store, directory)
+    write_suggestions(graph, directory)
+    reject_card("src/hub.py", directory)
+    bigger = _graph(tmp_path, ["a", "b", "c", "d", "e"])  # new cluster, new fingerprint
+    store = read_store(directory)
+    store["modules"]["src/e.py"] = {"state": "approved", "proposed_capability": "Limits"}
+    save_store(store, directory)
+
+    assert write_suggestions(bigger, directory) == 1
+
+    entry = read_store(directory)["modules"]["src/hub.py"]
+    assert entry["state"] == "proposed" and entry["ai"] == ai

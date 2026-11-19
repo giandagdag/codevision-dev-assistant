@@ -91,3 +91,20 @@ def test_a_failed_copy_leaves_the_current_index_alone_and_frees_the_lock(tmp_pat
     assert not ok and "index is unchanged" in text
     assert (out / PIECES_NAME).read_bytes() == before
     assert not rebuild._lock_path(out).exists()
+
+
+def test_a_failed_swap_cleans_up_and_is_logged(tmp_path, monkeypatch):
+    out = _seven_builds(tmp_path)
+    calls = []
+
+    def second_fails(source, target):
+        calls.append(target)
+        if len(calls) == 2:
+            raise OSError("locked")
+
+    monkeypatch.setattr("agents.da_index_rollback.os.replace", second_fails)
+    ok, text = roll_back(out, 5, "Admin")
+
+    assert not ok and "partly" in text and "full rebuild" in text
+    assert not list(out.glob("*.new")) and not rebuild._lock_path(out).exists()
+    assert "failed" in run_line(recent_runs(out)[0])
