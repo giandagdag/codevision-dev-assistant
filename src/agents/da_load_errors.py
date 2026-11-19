@@ -27,8 +27,10 @@ def classify_load_error(
     cannot run, and it is never rewritten silently."""
     planned = [path.replace("\\", "/") for path in planned_paths]
     stems = {Path(path).stem for path in planned}
-    if error.kind != "import":
-        return "frozen_test", ""
+    trace = "\n".join(error.traceback_tail).replace("\\", "/")
+    in_planned = any(path in trace for path in planned)
+    if error.kind != "import":  # a set-up that fails inside the written code is the AI's to fix
+        return ("planned_code" if in_planned else "frozen_test"), ""
     wanted = _MISSING.search(error.message)
     wrong_name = _FROM.search(error.message)
     name = (wanted or wrong_name).group(1) if (wanted or wrong_name) else ""
@@ -39,10 +41,7 @@ def classify_load_error(
         return "missing_library", name.split(".")[0]
     # Some other error while the file loaded: planned code if its file is in the trace, else the
     # frozen test's own code.
-    trace = "\n".join(error.traceback_tail).replace("\\", "/")
-    if any(path in trace for path in planned):
-        return "planned_code", ""
-    return "frozen_test", ""
+    return ("planned_code" if in_planned else "frozen_test"), ""
 
 
 # --- what the developer may see (N3): no server path, no secret ---

@@ -27,7 +27,8 @@ def test_np7_a_load_error_gets_its_own_line_and_is_not_counted_as_not_proven():
 
     assert report["summary"]["requirement"] == {"passed": 0, "failed": 0, "other": 0}
     page = report_html(report)
-    assert "Load error" in page and "No module named &#x27;openpyxl&#x27;" in page
+    assert "<b>Load error:</b>" in page and "<h4>Load error</h4>" in page
+    assert "No module named &#x27;openpyxl&#x27;" in page
     assert "&lt;sandbox&gt;/src/agents/x.py" in page
     assert "da_sandbox_" not in page and "abc123" not in page
 

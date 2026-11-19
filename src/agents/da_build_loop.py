@@ -1089,8 +1089,9 @@ class _Run:
     def _finish_check_failed(self, last: RoundRecord) -> str:
         """Layer A or B failed: Not passing, with the failure report. No Generator, no fix round."""
         if last.layer_b is not None:
-            what = f"{last.layer_b.failed} test(s)"
-            text = f"Your edit breaks {what}. Result: {LABEL_NOT_PASSING}."
+            failed = last.layer_b.failed
+            what = load_failed_text(last.layer_b) or f"Your edit breaks {failed} test(s)"
+            text = f"{what}. Result: {LABEL_NOT_PASSING}."
         else:
             problems = len(last.layer_a.problems)
             text = (
@@ -1688,6 +1689,8 @@ def _round_failed_text(
         return f"Round {number}: {len(layer_a.problems)} problem(s) in the code checks. {only}"
     if layer_b is not None and layer_b.timed_out:
         return f"Round {number}: the tests ran out of time. {only}"
+    if layer_b is not None and layer_b.load_error is not None:
+        return f"Round {number}: {load_failed_text(layer_b)}. {only}"
     failed = layer_b.failed if layer_b else 0
     return f"Round {number}: {failed} of {cases} tests failed. {only}"
 
@@ -1737,7 +1740,9 @@ def _finish_text(
             else "The code checks failed in every round, so the tests never ran."
         )
         return f"{what} Result: {label}. {still_writing}"
-    return (
-        f"I used all {rounds} rounds and {last.failed} test(s) still fail. "
-        f"Result: {label}. {still_writing}"
+    still = (
+        f"the test file still could not load ({last.load_error.error_type})"
+        if last.load_error is not None
+        else f"{last.failed} test(s) still fail"
     )
+    return f"I used all {rounds} rounds and {still}. Result: {label}. {still_writing}"

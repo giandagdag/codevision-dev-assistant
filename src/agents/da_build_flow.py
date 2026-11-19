@@ -290,11 +290,11 @@ def is_system_failure(state: BuildState) -> bool:
     return state.step == "b_interrupted" and is_system_message(state.message)
 
 
-def _say_the_reason(tx: BuildTx) -> None:
+def _say_the_reason(tx: BuildTx, sentence: bool = True) -> None:
     """Fix NP (N3, NP-8): Get help starts with the sentence that names the cause (a missing
     server library, a frozen test) and carries the end of the trace, so the senior reads it too.
     Not-proven pauses already said their sentence when the build paused."""
-    if tx.state.message != NOT_PROVEN_TEXT:
+    if sentence and tx.state.message != NOT_PROVEN_TEXT:
         tx.say("assistant", tx.state.message)
     rounds = read_rounds(tx.conn, tx.request.request_id, tx.state.build_number)
     lines = reason_lines(rounds[-1].layer_b if rounds else None)
@@ -315,6 +315,8 @@ def request_help(
         if system:  # F5: say whose fault it is before handing over
             _say_the_reason(tx)
             tx.say("assistant", SYSTEM_HELP_LINE)
+        else:  # rounds ran out on a load error the AI could not fix: the senior still reads why
+            _say_the_reason(tx, sentence=False)
         escalate(tx, f"{ESCALATED_PREFIX}{step}", {"step": step, "system": system})
     return get_state(settings, request_id)
 
@@ -931,8 +933,11 @@ def _failed_banner(last, cases: int, limit: int) -> str:
     report = last.failure_report
     files = ", ".join(path.rsplit("/", 1)[-1] for path in (report.files_to_fix if report else []))
     failed = last.layer_b.failed if last.layer_b else 0
+    counts = (load_failed_text(last.layer_b) if last.layer_b else None) or (
+        f"{failed} of {cases} tests failed"
+    )
     head = (
-        f"Round {last.round} of {limit}: {failed} of {cases} tests failed."
+        f"Round {last.round} of {limit}: {counts}."
         if last.layer_b
         else f"Round {last.round} of {limit}: the code did not pass the checks."
     )

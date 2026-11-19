@@ -62,6 +62,14 @@ def test_a_set_up_error_is_a_frozen_test_problem(src):
     assert fault == "frozen_test"
 
 
+def test_a_set_up_error_inside_the_written_code_is_planned_code(src):
+    tail = ['  File "/tmp/da_sandbox_x/src/agents/excel_processor.py", line 4', "ValueError: bad"]
+    fault, _ = classify_load_error(
+        error("bad", kind="set_up", error_type="ValueError", tail=tail), src, PLANNED
+    )
+    assert fault == "planned_code"
+
+
 def test_another_error_is_planned_code_only_when_a_planned_file_is_in_the_trace(src):
     in_trace = ['  File "/tmp/x/src/agents/excel_processor.py", line 3', "NameError: oops"]
     other = error("oops", error_type="NameError", tail=in_trace)
@@ -152,6 +160,12 @@ def test_np2_an_import_of_a_missing_planned_name_is_a_normal_failure(
     assert rows[0].layer_b.load_error.fault == "planned_code"
     assert rows[0].failure_report is not None and rows[0].files_to_fix == [CREATE]
     assert any("cannot import name 'convert'" in p for p in factory.code_calls()[2:])
+    said = " ".join(chat(settings, request_id, "assistant"))
+    assert "tests failed" not in said and "test(s) still fail" not in said
+    assert "the test file could not load" in said
+    # Get help after the rounds ran out still tells the senior why
+    flow.request_help(settings, request_id, flow.get_revision(settings, request_id))
+    assert any("cannot import name 'convert'" in t for t in chat(settings, request_id, "assistant"))
 
 
 def test_np3_a_set_up_class_error_says_a_frozen_test_cannot_run(settings, request_id, monkeypatch):

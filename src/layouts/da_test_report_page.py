@@ -102,10 +102,12 @@ def report_html(report: dict) -> str:
         ("Label", h["label"]),
         ("File fingerprints", "; ".join(f"{p} {f}" for p, f in h["fingerprints"].items()) or "-"),
     ]  # fmt: skip
+    load_error = report.get("load_error")  # absent in a report saved before Fix NP
     parts = [f"<h2>Test report: {_t(h['request_id'])}, build {h['build_number']}</h2>",
              _table(["Fact", "Value"], [[_t(k), _t(v)] for k, v in facts]),
              "<h3>Summary</h3>", _summary(report)]  # fmt: skip
-    load_error = report.get("load_error")  # absent in a report saved before Fix NP
+    if load_error:
+        parts.append(f"<p><b>Load error:</b> {_t(load_error['text'])}</p>")
     for section in report["sections"]:
         parts.append(f"<h3>{_t(section['title'])}</h3>")
         if load_error and section["key"] == "requirement":
