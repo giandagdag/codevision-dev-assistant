@@ -40,7 +40,7 @@ from agents.da_build_flow import (
     _require_request,
     _write,
 )
-from agents.da_check_words import NOT_PROVEN_TEXT, testing_files_line
+from agents.da_check_words import is_system_message, testing_files_line
 from agents.da_code_judge import WRONG_TEST, failing_code_tests, judge_code_tests
 from agents.da_code_tests import keep_code_tests, write_code_tests
 from agents.da_enhance_build_checks import (
@@ -62,6 +62,7 @@ from agents.da_escalation_triggers import (
     tester_unable_twice,
 )
 from agents.da_guidance import USED_FIX_ROUND, USED_TESTER_REVIEW, take_guidance
+from agents.da_load_errors import classify_load_error, is_system_pause, pause_text
 from agents.da_refine_merge import his_lines, marker_text, plan_merge
 from agents.da_sandbox import run_tests
 from agents.da_workspace_checks import fingerprint
@@ -347,7 +348,7 @@ class _Run:
                 else:
                     tx.set(step="b_interrupted", message=message)
                     # A Tester pause already says what it is (spec section 2).
-                    own = message.startswith(TESTER_PAUSE) or message == NOT_PROVEN_TEXT
+                    own = message.startswith(TESTER_PAUSE) or is_system_message(message)
                     tx.say("assistant", message if own else f"The build paused: {message}")
         except _Cancelled:
             return "cancelled"
@@ -567,7 +568,7 @@ class _Run:
                 if self._layer_c(last):
                     return "done"
                 continue
-            if last is not None and last.layer_b is not None and last.layer_b.not_proven:
+            if is_system_pause(last.layer_b if last is not None else None):
                 self._retry_unproven(last, contract, tests)  # Run again: no round is used
                 continue
             used = _rounds_used(done)
@@ -906,6 +907,10 @@ class _Run:
         )
         if not result.ran:
             raise _Paused("interrupted", result.error)
+        if result.load_error is not None:  # Fix NP: whose fault, worked out once and saved
+            planned = [_clean(item.path) for item in self.inp.planned]
+            fault, _ = classify_load_error(result.load_error, self.reference / "src", planned)
+            result.load_error.fault = fault
         self._layer_b_line = line
         return result
 
@@ -922,7 +927,7 @@ class _Run:
         passed = layer_a.ok and layer_b is not None and layer_b.ok
         # F3: tests that never reported are the Developer Assistant's problem. Show the rows,
         # then pause like an interrupted run. No repair round, no Generator call.
-        unproven = bool(layer_b and layer_b.not_proven)
+        unproven = is_system_pause(layer_b)
         planned = [_clean(i.path) for i in self.inp.planned]
         fix: list[str] = []
         report = None
@@ -985,7 +990,7 @@ class _Run:
                     )
         self.inp.rounds.append(record)
         if unproven:
-            raise _Paused("interrupted", NOT_PROVEN_TEXT)
+            raise _Paused("interrupted", pause_text(layer_b))
         return passed
 
     # --- a check run: Check my edits (Phase 8 spec section 3) ---
@@ -998,7 +1003,7 @@ class _Run:
         if not self.inp.rounds:
             self._check_round(contract, tests)
         last = self.inp.rounds[-1]
-        if last.layer_b is not None and last.layer_b.not_proven:
+        if is_system_pause(last.layer_b):
             self._retry_unproven(last, contract, tests)
             last = self.inp.rounds[-1]
         if not _round_passed(last):
@@ -1633,7 +1638,7 @@ def _parse(text: str) -> ast.Module:
 
 def _rounds_used(rounds: list[RoundRecord]) -> int:
     """Rounds against the budget. A Not proven row is the app's problem, so it is not counted."""
-    return sum(1 for item in rounds if not (item.layer_b and item.layer_b.not_proven))
+    return sum(1 for item in rounds if not is_system_pause(item.layer_b))
 
 
 def _round_passed(record: RoundRecord) -> bool:

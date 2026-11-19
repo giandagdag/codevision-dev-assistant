@@ -25,8 +25,8 @@ from agents.da_check_words import (
     CHECK_CANCEL_LABEL,
     CHECK_KIND,
     SEND_TO_SENIOR_LABEL,
-    SYSTEM_FAILURE_MESSAGES,
     SYSTEM_HELP_LINE,
+    is_system_message,
 )
 from agents.da_code_tests import targets_of
 from agents.da_escalation_flow import escalate as open_escalation
@@ -285,7 +285,7 @@ def try_again(
 
 def is_system_failure(state: BuildState) -> bool:
     """True when the build paused because of the DA's own check, not the developer's code."""
-    return state.step == "b_interrupted" and state.message in SYSTEM_FAILURE_MESSAGES
+    return state.step == "b_interrupted" and is_system_message(state.message)
 
 
 def request_help(
