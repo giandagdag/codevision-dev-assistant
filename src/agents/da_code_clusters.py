@@ -113,7 +113,12 @@ def _capability(entry: dict | None) -> str:
 
 def _is_untagged(entry: dict | None) -> bool:
     """No entry at all, or an entry that is only an earlier suggestion of ours (not approved)."""
-    return entry is None or (_ours(entry) and entry.get("state") != "approved")
+    if entry is None:
+        return True
+    if _ours(entry):
+        return entry.get("state") != "approved"
+    # An AI tag nobody has decided yet is still a guess: the links may suggest better.
+    return entry.get("state") == "proposed"
 
 
 # --- saving: suggestions are cards in the same tag file Admin already reviews ---------------------
@@ -145,17 +150,22 @@ def write_suggestions(graph: dict, directory: Path | None = None, capabilities=(
     tags = store["modules"]
     old = [p for p, e in tags.items() if _ours(e) and e.get("state") != "approved"]
     for path in old:
-        del tags[path]
+        before = tags[path].get("ai")  # the AI tag this card replaced, put back untouched
+        if isinstance(before, dict):
+            tags[path] = before
+        else:
+            del tags[path]
     # A module the catalog's path patterns already place is not "untagged" and counts for its group.
     seen = {**store, "modules": with_catalog_tags(graph, tags, capabilities)}
     cards = suggestions(graph, seen, read_rejects(directory))
     if not cards and not old:
         return 0  # nothing to write: do not create a tag file for nothing
     for card in cards:
+        ai = tags.get(card.path)  # an undecided AI tag: keep its summary and hash, show our reason
         tags[card.path] = {
-            "summary": "", "proposed_capability": card.capability, "confidence": "medium",
-            "reason": card.reason, "state": "proposed", "source": SOURCE,
-            "cluster": card.fingerprint,
+            **(ai or {"summary": ""}), "proposed_capability": card.capability,
+            "confidence": "medium", "reason": card.reason, "state": "proposed", "source": SOURCE,
+            "cluster": card.fingerprint, **({"ai": ai} if ai else {}),
         }
     save_store(store, directory)
     return len(cards)

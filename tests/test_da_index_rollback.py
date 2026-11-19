@@ -42,7 +42,8 @@ def test_g17_compare_lists_added_removed_changed(tmp_path):
     assert result["added"] == ["extra.py"] and result["changed"] == ["a.py"]
     assert result["removed"] == [] and result["pieces"] > 0
     assert compare_builds(out, 6, 5)["removed"] == ["extra.py"]
-    assert "1 modules added" in compare_text(result, 5, 6)
+    text = compare_text(result, 5, 6)
+    assert "1 added (extra.py)" in text and "1 changed (a.py)" in text
     assert compare_builds(out, 5, 99) is None
     assert "no saved manifest" in compare_text(None, 5, 99)
 
@@ -75,3 +76,18 @@ def test_g20_roll_back_refused_while_a_job_runs(tmp_path):
     assert not ok and text == BUSY
     assert (out / PIECES_NAME).read_bytes() == before
     assert rebuild._lock_path(out).exists()  # the running job's lock is not ours to free
+
+
+def test_a_failed_copy_leaves_the_current_index_alone_and_frees_the_lock(tmp_path, monkeypatch):
+    out = _seven_builds(tmp_path)
+    before = (out / PIECES_NAME).read_bytes()
+
+    def broken(source, target):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("agents.da_index_rollback.shutil.copy2", broken)
+    ok, text = roll_back(out, 5, "Admin")
+
+    assert not ok and "index is unchanged" in text
+    assert (out / PIECES_NAME).read_bytes() == before
+    assert not rebuild._lock_path(out).exists()

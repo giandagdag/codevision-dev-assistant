@@ -67,3 +67,22 @@ def test_g7_a_rejected_card_stays_away_until_the_cluster_changes(tmp_path):
     bigger = _graph(tmp_path, ["a", "b", "c", "d", "e"])  # the cluster changed
     save_store(_tag(["a", "b", "c", "d", "e"]), directory)
     assert write_suggestions(bigger, directory) == 1
+
+
+def test_an_undecided_ai_tag_does_not_hide_the_links_card(tmp_path):
+    directory = tmp_path / "index"
+    graph = _graph(tmp_path, ["a", "b", "c", "d"])
+    store = _tag(["a", "b", "c", "d"])
+    ai = {"summary": "Hub text", "proposed_capability": "Menus", "confidence": "low",
+          "reason": "AI", "state": "proposed", "file_hash": "h1"}
+    store["modules"]["src/hub.py"] = dict(ai)
+    save_store(store, directory)
+
+    assert write_suggestions(graph, directory) == 1
+
+    entry = read_store(directory)["modules"]["src/hub.py"]
+    assert entry["summary"] == "Hub text" and entry["proposed_capability"] == "Limits"
+    assert entry["reason"].startswith("Suggested from code links")
+    small = _graph(tmp_path, ["a"])  # the cluster is gone: the AI tag comes back untouched
+    assert write_suggestions(small, directory) == 0
+    assert read_store(directory)["modules"]["src/hub.py"] == ai

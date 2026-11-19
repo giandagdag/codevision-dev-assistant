@@ -43,7 +43,9 @@ def save_version(
     folder = versions_dir(directory)
     folder.mkdir(parents=True, exist_ok=True)
     rows = list_versions(directory)
-    number = (rows[0]["version"] if rows else 0) + 1
+    # Also look at the files on disk: a damaged list must never make us reuse (overwrite) a number.
+    on_disk = [int(p.stem) for p in folder.glob("*.json") if p.stem.isdigit()]
+    number = max([rows[0]["version"] if rows else 0, *on_disk]) + 1
     row = {
         "version": number, "note": note, "who": who,
         "at": (now or datetime.now()).isoformat(timespec="seconds"),

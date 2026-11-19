@@ -135,3 +135,13 @@ def test_g25_big_graph_loads_under_two_seconds(tmp_path):
     graph = load_graph(tmp_path)
     assert time.perf_counter() - started < 2
     assert sum(len(f["edges"]) for f in graph["files"].values()) >= 17000
+
+
+def test_a_graph_entry_without_a_module_is_treated_as_damaged(tmp_path):
+    import json
+
+    from agents.da_code_graph import GRAPH_NAME, load_graph
+
+    (tmp_path / GRAPH_NAME).write_text(json.dumps({"files": {"a.py": {}}}), encoding="utf-8")
+
+    assert load_graph(tmp_path) is None

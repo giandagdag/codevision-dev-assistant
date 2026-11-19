@@ -36,7 +36,7 @@ def test_panel_lists_builds_newest_first_and_sits_in_the_rebuild_controls(two_bu
 
 def test_compare_action_words(two_builds):
     assert cb.compare_action(None, "2") == "Pick two builds to compare."
-    assert "Build 1 to build 2: 0 modules added" in cb.compare_action("1", "2")
+    assert "Build 1 to build 2: 0 added" in cb.compare_action("1", "2")
 
 
 def test_use_build_rolls_back_for_admin_and_refuses_others(make_settings, two_builds):

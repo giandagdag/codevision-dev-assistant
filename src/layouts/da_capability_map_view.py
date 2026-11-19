@@ -34,7 +34,7 @@ MAP_HITS_ID = "da-map-hits"
 MAP_LINK_TEXT = "Open capability map"
 START_STATE = {"cap": "", "module": ""}
 
-FONT = "sans-serif"
+FONT = da_styles.FONT
 STYLESHEET = [
     {"selector": "node", "style": {
         "label": "data(label)", "background-color": da_styles.BLUE, "color": da_styles.INK,

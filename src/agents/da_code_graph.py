@@ -80,7 +80,10 @@ def load_graph(directory: Path) -> dict | None:
         graph = json.loads((directory / GRAPH_NAME).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    return graph if isinstance(graph, dict) and isinstance(graph.get("files"), dict) else None
+    if not isinstance(graph, dict) or not isinstance(graph.get("files"), dict):
+        return None
+    ok = all(isinstance(e, dict) and "module" in e for e in graph["files"].values())
+    return graph if ok else None
 
 
 # --- reading one file ------------------------------------------------------------------------

@@ -110,10 +110,16 @@ def compare_builds(out: Path, first: int, second: int) -> dict | None:
 def compare_text(result: dict | None, first: int, second: int) -> str:
     if result is None:
         return "One of these builds has no saved manifest."
+
+    def group(key: str) -> str:
+        names = result[key]
+        more = f", and {len(names) - 3} more" if len(names) > 3 else ""
+        listed = f" ({', '.join(names[:3])}{more})" if names else ""
+        return f"{len(names)} {key}{listed}"
+
     return (
-        f"Build {first} to build {second}: {len(result['added'])} modules added, "
-        f"{len(result['removed'])} removed, {len(result['changed'])} changed. "
-        f"Pieces {result['pieces']:+d}, links {result['edges']:+d}."
+        f"Build {first} to build {second}: {group('added')}; {group('removed')}; "
+        f"{group('changed')}. Pieces {result['pieces']:+d}, links {result['edges']:+d}."
     )
 
 

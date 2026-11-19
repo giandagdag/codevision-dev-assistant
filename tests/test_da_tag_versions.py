@@ -82,3 +82,13 @@ def test_restore_is_refused_while_a_job_runs_and_for_a_missing_version(tmp_path)
 
     assert not ok and text.startswith("A rebuild or tag job is running")
     assert read_admin_events(tmp_path) == []
+
+
+def test_a_damaged_list_never_makes_a_saved_version_be_overwritten(tmp_path):
+    save_store({"modules": {"zz/a.py": _entry("Uploads")}, "runs": []}, tmp_path)
+    from agents.da_tag_versions import LIST_NAME, save_version, versions_dir
+
+    assert save_version("first", ADMIN, tmp_path) == 1
+    (versions_dir(tmp_path) / LIST_NAME).write_text("{broken", encoding="utf-8")
+
+    assert save_version("second", ADMIN, tmp_path) == 2  # not 1 again

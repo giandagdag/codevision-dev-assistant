@@ -26,10 +26,19 @@ def roll_back(out: Path, number: int, who: str, now: datetime | None = None) -> 
     if running_since(started, out) is not None or not _take_lock(started, out):
         return False, BUSY
     try:
-        for name in COPY_NAMES:
-            side = out / (name + ".new")
-            shutil.copy2(builds_dir(out) / str(number) / name, side)
-            os.replace(side, out / name)
+        sides = [(out / (name + ".new"), out / name) for name in COPY_NAMES]
+        try:  # copy everything first: a failed copy leaves the current index as it was
+            for (side, _), name in zip(sides, COPY_NAMES, strict=True):
+                shutil.copy2(builds_dir(out) / str(number) / name, side)
+        except OSError as error:
+            for side, _ in sides:
+                side.unlink(missing_ok=True)
+            return False, (
+                f"Build {number} could not be put back: {type(error).__name__}. "
+                "The current index is unchanged."
+            )
+        for side, target in sides:
+            os.replace(side, target)
         text = f"Rolled back to build {number}"
         add_admin_event(INDEX_ROLLED_BACK, who, text, out, started)
         record_run(who, started, True, 0, [], text, out, {"rolled_back_to": number})
