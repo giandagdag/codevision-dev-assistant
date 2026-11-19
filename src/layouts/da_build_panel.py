@@ -8,7 +8,7 @@ import dash_mantine_components as dmc
 from dash import dcc, html
 
 from agents.da_check_words import CHECK_BOX_TITLE, CHECK_KIND
-from agents.da_load_errors import reason_lines
+from agents.da_load_errors import load_failed_text, reason_lines
 from layouts.da_test_report_page import NO_REPORT_TEXT, report_link
 from layouts.da_tester_panel import layer_c_state, tester_lines, tester_report
 from pydantic_classes.da_build_models import (
@@ -298,7 +298,7 @@ def _layer_b_state(result: LayerBResult | None) -> tuple[str, str]:
         return "Waiting", "gray"
     if result.timed_out:
         return "Timed out", "red"
-    text = f"{result.passed} of {len(result.tests)} passed"
+    text = load_failed_text(result) or f"{result.passed} of {len(result.tests)} passed"
     return text, "green" if result.ok else "red"
 
 

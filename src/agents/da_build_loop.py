@@ -66,6 +66,7 @@ from agents.da_load_errors import (
     classify_load_error,
     clean_result,
     is_system_pause,
+    load_failed_text,
     pause_text,
 )
 from agents.da_refine_merge import his_lines, marker_text, plan_merge
@@ -583,9 +584,16 @@ class _Run:
 
     def _retry_unproven(self, last: RoundRecord, contract: Contract, tests: str) -> None:
         """Run only Layer B again on the saved code, as a new row (rounds are append-only, so the
-        unproven row stays as the record). That row does not count against the budget (F3)."""
+        unproven row stays as the record). That row does not count against the budget (F3).
+        Fix NP: the checklist keeps one Layer A and one Layer B line; the re-run writes a newer row
+        for the same two line numbers (newest row wins), so repeated Resumes do not pile up."""
+        with self._turn() as tx:
+            saved = read_progress(tx.conn, self.request_id, tx.state.build_number)
+        a_line = _last_line(saved, "Layer A")
+        b_line = _last_line(saved, "Layer B")
+        layer_b = self._layer_b(tests, b_line)
         self._record_round(
-            last.round + 1, last.layer_a, self._layer_b(tests), contract, tests
+            last.round + 1, last.layer_a, layer_b, contract, tests, layer_a_line=a_line
         )
 
     def _review_of(self, round_number: int) -> ReviewRecord | None:
@@ -892,15 +900,20 @@ class _Run:
                 )
         return found
 
-    def _layer_b(self, tests: str) -> LayerBResult:
+    def _layer_b(self, tests: str, line: int | None = None) -> LayerBResult:
+        """Run the frozen tests. `line` re-uses a progress line (a Resume re-run)."""
         self._alive()
         policy = self.inp.policy
         count = len(find_test_methods(_parse(tests)))
-        line = self._line(
+        text = (
             f"Layer B: running {count} tests in a sandbox "
-            f"(time limit {policy.build_test_timeout_seconds} seconds per run)",
-            "running",
+            f"(time limit {policy.build_test_timeout_seconds} seconds per run)"
         )
+        if line is None:
+            line = self._line(text, "running")
+        else:
+            with self._turn() as tx:
+                self._note(tx, text, "running", line)
         everything = {path: item.text for path, item in self.inp.code.items()}
         result = run_tests(
             self.reference,
@@ -929,6 +942,7 @@ class _Run:
         tests: str,
         code_tests: LayerBResult | None = None,
         dropped_code_tests: list[str] | None = None,
+        layer_a_line: int | None = None,
     ) -> bool:
         passed = layer_a.ok and layer_b is not None and layer_b.ok
         # F3: tests that never reported are the Developer Assistant's problem. Show the rows,
@@ -958,7 +972,12 @@ class _Run:
             tx.audit(
                 "system", "layer_a_result", {"round": number, "problems": len(layer_a.problems)}
             )
-            self._note(tx, "Layer A: syntax, imports, rules", "done" if layer_a.ok else "failed")
+            self._note(
+                tx,
+                "Layer A: syntax, imports, rules",
+                "done" if layer_a.ok else "failed",
+                layer_a_line,
+            )
             if layer_b is not None:
                 body = record.model_dump(
                     mode="json",
@@ -978,9 +997,12 @@ class _Run:
                         "timed_out": layer_b.timed_out,
                     },
                 )
+                counts = load_failed_text(layer_b) or (
+                    f"{layer_b.passed} of {len(layer_b.tests)} tests passed"
+                )
                 self._note(
                     tx,
-                    f"Layer B: {layer_b.passed} of {len(layer_b.tests)} tests passed "
+                    f"Layer B: {counts} "
                     f"(time limit {self.inp.policy.build_test_timeout_seconds} seconds per run)",
                     "done" if layer_b.ok else "failed",
                     self._layer_b_line,
@@ -1640,6 +1662,12 @@ def _clean(path: str) -> str:
 
 def _parse(text: str) -> ast.Module:
     return ast.parse(text)
+
+
+def _last_line(lines: list[ProgressLine], prefix: str) -> int | None:
+    """The line number of the newest progress line that starts with `prefix`."""
+    found = [item.line_number for item in lines if item.text.startswith(prefix)]
+    return found[-1] if found else None
 
 
 def _rounds_used(rounds: list[RoundRecord]) -> int:

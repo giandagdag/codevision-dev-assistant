@@ -34,7 +34,7 @@ from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import get_help
 from agents.da_evidence_helper import hide_secret
-from agents.da_load_errors import reason_lines
+from agents.da_load_errors import load_failed_text, reason_lines
 from agents.da_test_report import case_id_of, newest_tested_round, report_summary_line
 from agents.da_workspace_checks import (
     FactsProblem,
@@ -731,7 +731,9 @@ def _view(
     taken = int((run.ended_at - run.started_at).total_seconds()) if run and run.ended_at else 0
     passing = ""
     if last and last.layer_b:
-        passing = f"{last.layer_b.passed} of {len(last.layer_b.tests)}"
+        passing = load_failed_text(last.layer_b) or (
+            f"{last.layer_b.passed} of {len(last.layer_b.tests)}"
+        )
     return BuildView(
         state=state,
         revision=revision,

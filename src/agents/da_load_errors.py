@@ -106,6 +106,13 @@ def _in_source(name: str, reference_src: Path) -> bool:
     return (reference_src / top).is_dir() or (reference_src / f"{top}.py").is_file()
 
 
+def load_failed_text(result: LayerBResult) -> str | None:
+    """"0 of 6 ran: the test file could not load" for a load error, else None (count as usual)."""
+    if result.load_error is None:
+        return None
+    return f"{result.ran_count} of {len(result.tests)} ran: the test file could not load"
+
+
 def is_system_pause(result: LayerBResult | None) -> bool:
     """True when the run stops for a reason that is not the code's: tests that never reported
     (Not proven), or a load error whose fault is the server or a frozen test. No round is used
