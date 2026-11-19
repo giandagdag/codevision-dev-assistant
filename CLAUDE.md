@@ -47,7 +47,7 @@ Stop, push the work so far to the phase branch, and tell Gian what you need when
   you did not see.
 
 ## Current phase
-Fix NP (test file cannot load): in build: spec `specs/fix-not-proven-spec.md`, plan `specs/fix-not-proven-plan.md`, branch `fix-not-proven`, PR into `auto/phases-7-10`. Phase 11 fix 3 (admin polish, one index job, work embedder): PR #98, spec `specs/phase-11-fix-3.md`. Fix batches C, D1 and B2 are merged there. Phase 11 (with fixes 1 and 2) and fix batch B1 are merged. Phase 11 (a to c) is built; "Review my code" (called 10b in the spec) comes later.
+Upgrade G (index links, capability map, versioning, #101): in build: spec `specs/index-catalog-versioning.md`, plan `specs/index-catalog-versioning-plan.md`, branch `phase-g-index-graph`, PR into `auto/phases-7-10`. Fix NP is merged. Phase 11 fix 3 (admin polish, one index job, work embedder): PR #98, spec `specs/phase-11-fix-3.md`. Fix batches C, D1 and B2 are merged there. Phase 11 (with fixes 1 and 2) and fix batch B1 are merged. Phase 11 (a to c) is built; "Review my code" (called 10b in the spec) comes later.
 (Phases 0 to 6 and Phase A are merged into `main`; Phases 7 to 9 and Phase A fixes 1 to 4 are in `auto/phases-7-10`; their specs stay in `specs/`.)
 
 Phases 4 onwards were redesigned on 31 Oct 2026 (LLM writes 100% of the code, built-in testing,
