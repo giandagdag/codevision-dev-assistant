@@ -390,7 +390,7 @@ def _ai_action(
     if name == Q_AI_ALL:
         return _queue_tab(settings, ai_confirm=True)
     if name == Q_AI_REJECT:
-        reject_card(path)
+        reject_card(path, who=settings.developer_id)
         return _queue_tab(settings, notice=[message_notice("Rejected.", color="green")])
     if name == Q_AI_ALL_DO:
         result = approve_all_high(settings, settings.developer_id, base_version)
@@ -718,6 +718,11 @@ def register_da_admin_page_callbacks(app) -> None:
     from callbacks.screen_callbacks.da_admin_builds_callbacks import register_builds_callbacks
 
     register_builds_callbacks(app)
+    from callbacks.screen_callbacks.da_admin_tag_history_callbacks import (
+        register_tag_history_callbacks,
+    )
+
+    register_tag_history_callbacks(app)
 
     @app.callback(
         Output(SONAR_STATUS, "children"),

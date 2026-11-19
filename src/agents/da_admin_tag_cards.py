@@ -14,6 +14,7 @@ from agents.da_admin_forms import RESULT_SAVED
 from agents.da_admin_tag_store import read_store, save_store
 from agents.da_admin_tagger import STATE_APPROVED, STATE_PROPOSED, STATE_REJECTED
 from agents.da_code_clusters import remember_reject
+from agents.da_tag_versions import save_version
 from db_table_functions.db_tbl_da_rulebook import get_active_version
 
 NOTHING = "Nothing to approve."
@@ -53,12 +54,20 @@ def high_confidence_counts(directory: Path | None = None) -> dict[str, int]:
     return dict(Counter(c.capability for c in high_confidence(directory)))
 
 
-def _mark(paths: list[str], state: str, directory: Path | None) -> None:
+def _mark(
+    paths: list[str], state: str, directory: Path | None, who: str, note: str,
+    capabilities: dict[str, str] | None = None,
+) -> None:
+    """Close cards, then save the tag file as a new tag version (Upgrade G5f). `capabilities` is
+    what Admin chose (Assign to may differ from the AI's proposal): the tag keeps his choice."""
     store = read_store(directory)
     for path in paths:
         if path in store["modules"]:
             store["modules"][path]["state"] = state
+            if capabilities and path in capabilities:
+                store["modules"][path]["proposed_capability"] = capabilities[path]
     save_store(store, directory)
+    save_version(note, who, directory)
 
 
 def approve_pairs(
@@ -93,7 +102,7 @@ def approve_pairs(
                 stale=saved.kind == "stale",
             )
         new_version = saved.version_number
-    _mark([p for p, _c in pairs], STATE_APPROVED, directory)
+    _mark([p for p, _c in pairs], STATE_APPROVED, directory, admin_id, note, dict(pairs))
     # name the capability that already holds a path, so Admin sees where it really is
     needed_paths = {n for n, _c in needed}
     held = [pattern_offer(p, catalog, c) for p, c in pairs if p not in needed_paths]
@@ -124,10 +133,10 @@ def approve_all_high(
     )
 
 
-def reject_card(path: str, directory: Path | None = None) -> None:
+def reject_card(path: str, directory: Path | None = None, who: str = "") -> None:
     """The program belongs in no capability. No rulebook change. A suggestion from code links
     remembers its cluster, so it stays away until the cluster changes (Upgrade G2b)."""
     fingerprint = read_store(directory)["modules"].get(path, {}).get("cluster")
     if fingerprint:
         remember_reject(path, fingerprint, directory)
-    _mark([path], STATE_REJECTED, directory)
+    _mark([path], STATE_REJECTED, directory, who, f"AI scan: {path} rejected")

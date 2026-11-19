@@ -23,6 +23,7 @@ from layouts.da_admin_common import (
     list_table,
     version_pill,
 )
+from layouts.da_admin_tag_history_panel import tag_history_panel
 from pydantic_classes.da_rulebook_models import RulebookVersion
 from styles import da_admin_styles as admin_styles
 from styles import da_styles
@@ -295,6 +296,7 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
                 disabled=disabled,
             )
         )
+    parts.append(tag_history_panel())
     waiting = len(rows) + len(ai_cards)
     return admin_card("Unassigned queue", html.Div(parts), "📥", count=waiting, id=QUEUE_BLOCK_ID)
 
