@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 
 from agents.da_check_words import FROZEN_TEST_TEXT, MISSING_LIBRARY_TEXT, NOT_PROVEN_TEXT
+from agents.da_evidence_helper import hide_secret
 from pydantic_classes.da_build_models import LayerBResult, LoadError
 
 _MISSING = re.compile(r"No module named '([^']+)'")
@@ -42,6 +43,62 @@ def classify_load_error(
     if any(path in trace for path in planned):
         return "planned_code", ""
     return "frozen_test", ""
+
+
+# --- what the developer may see (N3): no server path, no secret ---
+
+SANDBOX = "<sandbox>"
+TAIL_LINES = 20
+# A path: starts at a non-word character, so "and/or" is not one. Brackets and commas end it.
+_PART = r"[^\s'\"<>:|*?()\[\]\\/,]"
+_PATH = re.compile(rf"(?<![\w.])(?:[A-Za-z]:)?[\\/](?:{_PART}+[\\/])*{_PART}*")
+
+
+def _swap_path(match: re.Match) -> str:
+    parts = match.group(0).replace("\\", "/").split("/")
+    named = [i for i, part in enumerate(parts) if part.startswith("da_sandbox_")]
+    if named:
+        rest = parts[named[0] + 1 :]
+    elif "src" in parts:  # keep the tail from src on, so the file can still be found
+        rest = parts[parts.index("src") :]
+    else:
+        rest = parts[-1:]
+    rest = [part for part in rest if part]
+    return f"{SANDBOX}/{'/'.join(rest)}" if rest else SANDBOX
+
+
+def hide_sandbox(text: str) -> str:
+    """Server paths become `<sandbox>/...` (the part from src on is kept) and a line that looks
+    like a secret becomes [hidden] (the same patterns D1 uses, one line at a time)."""
+    return "\n".join(hide_secret(_PATH.sub(_swap_path, line)) for line in text.split("\n"))
+
+
+def clean_result(result: LayerBResult) -> None:
+    """Hide paths and secrets in what Layer B saved, so nothing unsafe is stored or drawn."""
+    error = result.load_error
+    if error is not None:
+        error.message = hide_sandbox(error.message)
+        error.traceback_tail = [hide_sandbox(line) for line in error.traceback_tail][-TAIL_LINES:]
+    for item in result.tests:
+        item.message = hide_sandbox(item.message)
+        item.traceback_tail = [hide_sandbox(line) for line in item.traceback_tail][-TAIL_LINES:]
+
+
+def reason_lines(result: LayerBResult | None) -> list[str]:
+    """The reason a run is not clean, as plain lines: a load error with the end of its trace,
+    and every Not proven row with its message. Empty when there is nothing to explain."""
+    if result is None:
+        return []
+    lines: list[str] = []
+    error = result.load_error
+    if error is not None:
+        lines.append(f"The test file could not load. {error.error_type}: {error.message}".strip())
+        lines += error.traceback_tail
+    for item in result.tests:
+        if item.result == "not_proven":
+            lines.append(f"{item.name}: {item.message or 'Not proven: no result recorded'}")
+            lines += item.traceback_tail
+    return [hide_sandbox(line) for line in lines]
 
 
 def _in_source(name: str, reference_src: Path) -> bool:

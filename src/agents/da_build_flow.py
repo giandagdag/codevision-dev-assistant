@@ -24,6 +24,7 @@ from agents.da_check_words import (
     CHECK_BANNER,
     CHECK_CANCEL_LABEL,
     CHECK_KIND,
+    NOT_PROVEN_TEXT,
     SEND_TO_SENIOR_LABEL,
     SYSTEM_HELP_LINE,
     is_system_message,
@@ -33,6 +34,7 @@ from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import get_help
 from agents.da_evidence_helper import hide_secret
+from agents.da_load_errors import reason_lines
 from agents.da_test_report import case_id_of, newest_tested_round, report_summary_line
 from agents.da_workspace_checks import (
     FactsProblem,
@@ -288,6 +290,18 @@ def is_system_failure(state: BuildState) -> bool:
     return state.step == "b_interrupted" and is_system_message(state.message)
 
 
+def _say_the_reason(tx: BuildTx) -> None:
+    """Fix NP (N3, NP-8): Get help starts with the sentence that names the cause (a missing
+    server library, a frozen test) and carries the end of the trace, so the senior reads it too.
+    Not-proven pauses already said their sentence when the build paused."""
+    if tx.state.message != NOT_PROVEN_TEXT:
+        tx.say("assistant", tx.state.message)
+    rounds = read_rounds(tx.conn, tx.request.request_id, tx.state.build_number)
+    lines = reason_lines(rounds[-1].layer_b if rounds else None)
+    if lines:
+        tx.say("assistant", "\n".join(lines))
+
+
 def request_help(
     settings, request_id: str, base_revision: int, now: datetime | None = None
 ) -> BuildState:
@@ -299,6 +313,7 @@ def request_help(
         system = is_system_failure(tx.state)
         tx.say("developer", SEND_TO_SENIOR_LABEL if system else HELP_BUTTON)
         if system:  # F5: say whose fault it is before handing over
+            _say_the_reason(tx)
             tx.say("assistant", SYSTEM_HELP_LINE)
         escalate(tx, f"{ESCALATED_PREFIX}{step}", {"step": step, "system": system})
     return get_state(settings, request_id)

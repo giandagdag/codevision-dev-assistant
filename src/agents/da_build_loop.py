@@ -62,7 +62,12 @@ from agents.da_escalation_triggers import (
     tester_unable_twice,
 )
 from agents.da_guidance import USED_FIX_ROUND, USED_TESTER_REVIEW, take_guidance
-from agents.da_load_errors import classify_load_error, is_system_pause, pause_text
+from agents.da_load_errors import (
+    classify_load_error,
+    clean_result,
+    is_system_pause,
+    pause_text,
+)
 from agents.da_refine_merge import his_lines, marker_text, plan_merge
 from agents.da_sandbox import run_tests
 from agents.da_workspace_checks import fingerprint
@@ -911,6 +916,7 @@ class _Run:
             planned = [_clean(item.path) for item in self.inp.planned]
             fault, _ = classify_load_error(result.load_error, self.reference / "src", planned)
             result.load_error.fault = fault
+        clean_result(result)  # after the decision (it reads the raw trace), before it is saved
         self._layer_b_line = line
         return result
 
