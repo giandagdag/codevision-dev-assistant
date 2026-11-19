@@ -151,6 +151,8 @@ def write_suggestions(graph: dict, directory: Path | None = None, capabilities=(
     old = [p for p, e in tags.items() if _ours(e) and e.get("state") != "approved"]
     for path in old:
         before = tags[path].get("ai")  # the AI tag this card replaced, put back untouched
+        if tags[path].get("state") == "rejected" and isinstance(before, dict):
+            continue  # Admin said no to the card: keep that decision, do not reopen the AI tag
         if isinstance(before, dict):
             tags[path] = before
         else:
@@ -162,6 +164,8 @@ def write_suggestions(graph: dict, directory: Path | None = None, capabilities=(
         return 0  # nothing to write: do not create a tag file for nothing
     for card in cards:
         ai = tags.get(card.path)  # an undecided AI tag: keep its summary and hash, show our reason
+        if _ours(ai):  # a rejected card of ours, now with a changed cluster: go back to its AI tag
+            ai = ai.get("ai")
         tags[card.path] = {
             **(ai or {"summary": ""}), "proposed_capability": card.capability,
             "confidence": "medium", "reason": card.reason, "state": "proposed", "source": SOURCE,

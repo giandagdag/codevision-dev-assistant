@@ -86,3 +86,21 @@ def test_an_undecided_ai_tag_does_not_hide_the_links_card(tmp_path):
     small = _graph(tmp_path, ["a"])  # the cluster is gone: the AI tag comes back untouched
     assert write_suggestions(small, directory) == 0
     assert read_store(directory)["modules"]["src/hub.py"] == ai
+
+
+def test_a_rejected_links_card_does_not_bring_the_ai_tag_back(tmp_path):
+    directory = tmp_path / "index"
+    graph = _graph(tmp_path, ["a", "b", "c", "d"])
+    store = _tag(["a", "b", "c", "d"])
+    store["modules"]["src/hub.py"] = {
+        "summary": "Hub text", "proposed_capability": "Menus", "confidence": "low",
+        "reason": "AI", "state": "proposed", "file_hash": "h1",
+    }
+    save_store(store, directory)
+    write_suggestions(graph, directory)
+    reject_card("src/hub.py", directory)
+
+    assert write_suggestions(graph, directory) == 0
+
+    assert read_store(directory)["modules"]["src/hub.py"]["state"] == "rejected"
+    assert ai_cards(directory) == []

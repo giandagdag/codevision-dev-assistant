@@ -34,11 +34,16 @@ def roll_back(out: Path, number: int, who: str, now: datetime | None = None) -> 
             for side, _ in sides:
                 side.unlink(missing_ok=True)
             return False, (
-                f"Build {number} could not be put back: {type(error).__name__}. "
-                "The current index is unchanged."
+                f"Build {number} could not be put back ({error}). The current index is unchanged."
             )
-        for side, target in sides:
-            os.replace(side, target)
+        try:
+            for side, target in sides:
+                os.replace(side, target)
+        except OSError as error:  # rare (a locked file): say plainly that the files may be mixed
+            return False, (
+                f"Build {number} was only partly put back ({error}). "
+                "Run a full rebuild to make the index consistent."
+            )
         text = f"Rolled back to build {number}"
         add_admin_event(INDEX_ROLLED_BACK, who, text, out, started)
         record_run(who, started, True, 0, [], text, out, {"rolled_back_to": number})
