@@ -25,6 +25,9 @@ from callbacks.screen_callbacks.da_admin_page_callbacks import (  # noqa: E402
     DEV_WRAP_ID,
     register_da_admin_page_callbacks,
 )
+from callbacks.screen_callbacks.da_capability_map_callbacks import (  # noqa: E402
+    register_da_capability_map_callbacks,
+)
 from callbacks.screen_callbacks.da_developer_assistant_page_callbacks import (  # noqa: E402
     get_settings,
     register_da_developer_assistant_page_callbacks,
@@ -39,6 +42,7 @@ from configs.da_config import ConfigError  # noqa: E402
 from db_table_functions.da_db import DatabaseBusyError  # noqa: E402
 from db_table_functions.db_tbl_da_rulebook import RulebookError, get_active_version  # noqa: E402
 from layouts.da_admin_page import ADMIN_CONTENT_ID, ADMIN_PATH  # noqa: E402
+from layouts.da_capability_map_view import map_shell  # noqa: E402
 from layouts.da_developer_assistant_page import (  # noqa: E402
     DEMO_PAGE_BANNER,
     LOCATION_ID,
@@ -104,6 +108,7 @@ def create_app() -> Dash:
                         html.Div(id=ADMIN_CONTENT_ID),
                         inbox_shell(),
                         report_shell(),
+                        map_shell(),
                     ],
                     bg=da_styles.CANVAS,
                 ),
@@ -116,6 +121,7 @@ def create_app() -> Dash:
     register_da_developer_assistant_page_callbacks(app)
     register_da_admin_page_callbacks(app)
     register_da_test_report_page_callbacks(app)
+    register_da_capability_map_callbacks(app)
     # `?as=<id>` (pretend to be another senior) lives in this home shell only: the inbox code
     # that goes to work never reads it (spec D-G).
     register_da_inbox_page_callbacks(app, identify=as_user, keep_query=keep_as)

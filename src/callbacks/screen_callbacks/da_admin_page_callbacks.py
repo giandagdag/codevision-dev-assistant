@@ -174,6 +174,7 @@ from layouts.da_admin_page import (
     tab_button_id,
     tab_content,
 )
+from layouts.da_capability_map_view import MAP_PATH
 from layouts.da_inbox_page import INBOX_PATH
 from layouts.da_test_report_page import REPORT_PREFIX
 from styles import da_styles
@@ -257,7 +258,9 @@ def health_content(settings: Settings, window: str):
 
 def developer_page_style(pathname: str | None) -> dict:
     """The developer page stays built but hidden on /admin and /inbox (layout not touched)."""
-    hidden = pathname in (ADMIN_PATH, INBOX_PATH) or (pathname or "").startswith(REPORT_PREFIX)
+    hidden = pathname in (ADMIN_PATH, INBOX_PATH, MAP_PATH) or (pathname or "").startswith(
+        REPORT_PREFIX
+    )
     return {"display": "none"} if hidden else {}
 
 

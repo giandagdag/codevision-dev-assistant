@@ -24,6 +24,7 @@ from layouts.da_admin_common import (
     version_pill,
 )
 from layouts.da_admin_tag_history_panel import tag_history_panel
+from layouts.da_capability_map_view import map_link
 from pydantic_classes.da_rulebook_models import RulebookVersion
 from styles import da_admin_styles as admin_styles
 from styles import da_styles
@@ -107,7 +108,9 @@ def catalog_view(
         )
     catalog = admin_card(
         "Capabilities",
-        html.Div([dmc.Text(CATALOG_HINT, size="xs", c=da_styles.MUTED, mb="xs"), table]),
+        html.Div(
+            [dmc.Text(CATALOG_HINT, size="xs", c=da_styles.MUTED, mb="xs"), map_link(), table]
+        ),
         "🧩",
         count=len(rows),
         actions=version_pill(version, active),
