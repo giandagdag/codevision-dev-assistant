@@ -34,12 +34,13 @@ class FakeGit:
         if args[0] == "log" and "--merges" in args:
             return self.merges
         if args[0] == "log" and args[1] in self.logs:
+            assert "--no-merges" in args
             return self.logs[args[1]]
         raise RuntimeError("not scripted")
 
 
 def test_done_flag_counts_and_running_entry_shows_steps(tmp_path):
-    git = FakeGit(logs={f"{BASE}..phase-c-fixes":
+    git = FakeGit(logs={f"origin/{BASE}..origin/phase-c-fixes":
                         "C3: step 2 done\nFix batch C: steps 1 and 2\nreview round 1 fixes\n"})
     v = wq.view(git, tmp_path, BASE)
     # B1 10 done; C: 10 + 70*2/4 + 5 = 50% of 10 = 5 -> 15 of 40 = 37%
@@ -57,12 +58,13 @@ def test_branch_merged_by_ancestor_or_by_merge_subject(tmp_path):
 
 
 def test_step_ids_at_the_start_of_subjects_count_once(tmp_path):
-    git = FakeGit(logs={f"{BASE}..phase-c-fixes": "C3: three\nC1/C2: one and two\nC3: again\n"})
+    subjects = "C3: three\nC1/C2: one and two\nC3: again\n"
+    git = FakeGit(logs={f"origin/{BASE}..origin/phase-c-fixes": subjects})
     assert wq.view(git, tmp_path, BASE).now_detail == "step 3 of 4"
 
 
 def test_running_entry_never_reaches_100_before_merge(tmp_path):
-    git = FakeGit(logs={f"{BASE}..phase-c-fixes": "step 4\nreview round 3\n"})
+    git = FakeGit(logs={f"origin/{BASE}..origin/phase-c-fixes": "step 4\nreview round 3\n"})
     v = wq.view(git, tmp_path, BASE)
     assert v.percent == int((10 + 9.5) * 100 / 40)
 
@@ -96,3 +98,9 @@ def test_board_body_shows_the_queue_rows():
 def test_board_body_without_queue_is_unchanged():
     body = sb.build_body(sb.Inputs(result="idle", now=1_800_000_000.0))
     assert "Fix queue" not in body
+
+
+def test_origin_base_is_used_before_a_stale_local_base(tmp_path):
+    git = FakeGit(logs={f"origin/{BASE}..origin/phase-c-fixes": "C step 1\n",
+                        f"{BASE}..phase-c-fixes": "C1/C2/C3/C4: old batch\nreview round 3\n"})
+    assert wq.view(git, tmp_path, BASE).now_detail == "step 1 of 4"
