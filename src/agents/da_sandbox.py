@@ -23,7 +23,7 @@ from pathlib import Path
 from agents.da_build_checks import find_test_methods
 from agents.da_workspace_checks import path_problem
 from da_logging import get_logger
-from pydantic_classes.da_build_models import LayerBResult, TestOutcome
+from pydantic_classes.da_build_models import LayerBResult, LoadError, TestOutcome
 
 logger = get_logger(__name__)
 
@@ -35,6 +35,7 @@ EVIDENCE_NAME = "da_evidence.py"
 # Always skipped when copying, on top of the policy's `build_sandbox_exclude`.
 ALWAYS_SKIPPED = ("__pycache__", "*.pyc")
 NOT_PROVEN_MESSAGE = "Not proven: no result recorded"
+NOT_RUN_MESSAGE = "Did not run: the test file could not load"
 START_FAILED ="The sandbox could not start: "
 
 
@@ -233,7 +234,7 @@ def _read_results(
     returncode,
     expected: list[str],
 ) -> LayerBResult:
-    tests = _read_outcomes(root / "results.json")
+    tests, stand_ins = _read_outcomes(root / "results.json")
     running = _read_text(root / "running.txt")
     if timed_out:
         # The test that was running when time ran out counts as failed and is named.
@@ -251,7 +252,17 @@ def _read_results(
             strict=True,
         )
     error = ""
-    if not tests and returncode not in (0, None):
+    # Fix NP: a stand-in row means the file (or its set-up) could not load. The first one is the
+    # reason; only the methods with no real result of their own did not run.
+    load_error = stand_ins[0] if stand_ins else None
+    if load_error is not None:
+        reported = {item.name for item in tests}
+        tests += [
+            TestOutcome(result="not_run", name=name, message=NOT_RUN_MESSAGE)
+            for name in expected
+            if name not in reported
+        ]
+    elif not tests and returncode not in (0, None):
         tests = [
             TestOutcome(
                 name="(test run)",
@@ -269,17 +280,39 @@ def _read_results(
             for name in expected
             if name not in reported
         ]
-    return LayerBResult(output_cut=cut, output=output, tests=tests, error=error, strict=True)
+    return LayerBResult(
+        output_cut=cut, output=output, tests=tests, error=error, strict=True,
+        load_error=load_error,
+    )
 
 
-def _read_outcomes(path: Path) -> list[TestOutcome]:
+def _read_outcomes(path: Path) -> tuple[list[TestOutcome], list[LoadError]]:
+    """Real test rows, and the stand-in rows (a file that could not load) apart from them.
+    The runner's extra keys are taken off before validation: TestOutcome refuses unknown keys."""
     if not path.is_file():
-        return []
+        return [], []
+    tests: list[TestOutcome] = []
+    stand_ins: list[LoadError] = []
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        return [TestOutcome.model_validate(item) for item in data["tests"]]
-    except ValueError, KeyError, TypeError:
-        return []
+        for item in data["tests"]:
+            kind = item.pop("standin", "")
+            error_type = item.pop("error_type", "")
+            row = TestOutcome.model_validate(item)
+            if kind:
+                stand_ins.append(
+                    LoadError(
+                        kind=kind,
+                        error_type=error_type,
+                        message=row.message,
+                        traceback_tail=row.traceback_tail,
+                    )
+                )
+            else:
+                tests.append(row)
+    except ValueError, KeyError, TypeError, AttributeError:
+        return [], []
+    return tests, stand_ins
 
 
 def _read_text(path: Path) -> str:

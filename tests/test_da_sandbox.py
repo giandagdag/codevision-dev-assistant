@@ -137,10 +137,10 @@ def test_an_error_and_a_skip_are_told_apart():
 def test_a_test_file_that_cannot_be_imported_is_an_error_not_a_crash():
     result = run("import module_that_does_not_exist\n")
 
-    assert result.ran and result.failed == 1
-    assert "module_that_does_not_exist" in " ".join(
-        t.message + " ".join(t.traceback_tail) for t in result.tests
-    )
+    # Fix NP: named as a load error, not one fake failed test
+    assert result.ran and not result.ok and result.failed == 0
+    assert result.load_error is not None
+    assert "module_that_does_not_exist" in result.load_error.message
 
 
 def test_the_build_files_are_laid_on_top_of_the_reference_copy():
@@ -432,9 +432,10 @@ def test_a_frozen_test_with_no_result_is_not_proven(monkeypatch):
     monkeypatch.setattr(
         da_sandbox,
         "_read_outcomes",
-        lambda path: [
-            da_sandbox.TestOutcome(name=f"test_t{n}_ac{n}_x", result="pass") for n in range(5)
-        ],
+        lambda path: (
+            [da_sandbox.TestOutcome(name=f"test_t{n}_ac{n}_x", result="pass") for n in range(5)],
+            [],
+        ),
     )
 
     result = run(text)
