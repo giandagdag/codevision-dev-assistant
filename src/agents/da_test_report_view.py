@@ -91,4 +91,5 @@ def get_report(settings, request_id: str, build_number: int) -> dict | None:
         is_enhance=any(case_id_of(o.name).startswith("S") for o in outcomes),  # S-n = Enhance
         checks=checks, findings=findings,
         targets=targets_of(code_tests.source) if code_tests else {},
+        load_error=layer_b.load_error if layer_b else None,
     )  # fmt: skip

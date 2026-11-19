@@ -94,6 +94,19 @@ notepad .env
   that build stays in the Audit tab.
 - Anything else: copy the message text. No real code or names in what you share.
 
+## After the Fix NP merge: resume CVDA-2026-0002
+
+A build used to say "7 tests, 0 passed" when the frozen test file could not even load. After the
+merge, resume `CVDA-2026-0002` at work (**Resume build**) and expect one of two things:
+
+- The real reason, in plain words, with paths shown as `<sandbox>`. Most likely a missing library
+  such as `openpyxl` or `pandas` ("The server's Python is missing `openpyxl`"). That is for the
+  CodeVision team to install; it is not a code change and uses no round. Use **Send to my senior**.
+- Or real test results, if the server has the libraries.
+
+The Layer B line says "0 of 6 ran: the test file could not load", and the test report shows a
+"Load error" line, never "Not proven".
+
 ## Clean up
 
 `rmdir /s /q C:\Dev\practice`
