@@ -15,6 +15,7 @@ from pathlib import Path
 
 from agents.da_admin_index import index_dir
 from agents.da_admin_tag_store import read_store, save_store
+from agents.da_code_impact_graph import with_catalog_tags
 
 ROUNDS = 20
 MIN_TAGGED = 3
@@ -135,7 +136,7 @@ def remember_reject(path: str, fingerprint: str, directory: Path | None = None) 
     side.replace(folder / REJECTS_NAME)
 
 
-def write_suggestions(graph: dict, directory: Path | None = None) -> int:
+def write_suggestions(graph: dict, directory: Path | None = None, capabilities=()) -> int:
     """Refresh the suggestion cards in the tag file. Returns how many cards are open.
 
     Old cards of ours are dropped first (an approved one is kept: Admin decided), so a card whose
@@ -145,7 +146,9 @@ def write_suggestions(graph: dict, directory: Path | None = None) -> int:
     old = [p for p, e in tags.items() if _ours(e) and e.get("state") != "approved"]
     for path in old:
         del tags[path]
-    cards = suggestions(graph, store, read_rejects(directory))
+    # A module the catalog's path patterns already place is not "untagged" and counts for its group.
+    seen = {**store, "modules": with_catalog_tags(graph, tags, capabilities)}
+    cards = suggestions(graph, seen, read_rejects(directory))
     if not cards and not old:
         return 0  # nothing to write: do not create a tag file for nothing
     for card in cards:

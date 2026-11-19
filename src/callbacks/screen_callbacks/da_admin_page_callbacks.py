@@ -633,7 +633,8 @@ def _save(settings, tab, form, note, base_version, active):
     result = save_from_form(settings.db_path, tab, form, base_number, settings.developer_id, note)
     if result.kind == RESULT_SAVED:
         saved = get_active_version(settings.db_path)
-        notice = saved_notice(saved.version_number, result.warnings)
+        open_lines = open_request_lines(settings.db_path, saved.version_number)
+        notice = saved_notice(saved.version_number, result.warnings, open_lines)
         ask = tab == TAB_REPO and _index_source_changed(active, saved)
         return _content(settings, tab, saved, notice=[notice], ask_rebuild=ask), False
     base = get_version(settings.db_path, base_number) or active

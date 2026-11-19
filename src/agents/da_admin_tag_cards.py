@@ -14,7 +14,7 @@ from agents.da_admin_forms import RESULT_SAVED
 from agents.da_admin_tag_store import read_store, save_store
 from agents.da_admin_tagger import STATE_APPROVED, STATE_PROPOSED, STATE_REJECTED
 from agents.da_code_clusters import remember_reject
-from agents.da_tag_versions import save_version
+from agents.da_tag_versions import list_versions, save_version
 from db_table_functions.db_tbl_da_rulebook import get_active_version
 
 NOTHING = "Nothing to approve."
@@ -60,6 +60,8 @@ def _mark(
 ) -> None:
     """Close cards, then save the tag file as a new tag version (Upgrade G5f). `capabilities` is
     what Admin chose (Assign to may differ from the AI's proposal): the tag keeps his choice."""
+    if not list_versions(directory):  # so even the first Approve all can be undone
+        save_version("Starting tags (before the first Admin decision)", "system", directory)
     store = read_store(directory)
     for path in paths:
         if path in store["modules"]:

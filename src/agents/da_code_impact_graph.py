@@ -71,6 +71,22 @@ def with_used_by(hits: list, graph: dict | None) -> list:
     ]
 
 
+def with_catalog_tags(graph: dict, tags: dict[str, dict], capabilities) -> dict[str, dict]:
+    """Tags plus the catalog's own path patterns, so the map, impact and clusters agree with the
+    Admin catalog page. A module Admin did not decide, but a pattern places, counts as approved."""
+    from agents.da_admin_meaning import UNASSIGNED, capability_of  # late: heavy module
+
+    out = dict(tags)
+    for path in graph["files"]:
+        entry = tags.get(path)
+        if isinstance(entry, dict) and entry.get("state") == STATE_APPROVED:
+            continue
+        name = capability_of(path, list(capabilities)) if capabilities else UNASSIGNED
+        if name != UNASSIGNED:
+            out[path] = {"state": STATE_APPROVED, "proposed_capability": name}
+    return out
+
+
 def _capabilities(graph: dict, tags: dict[str, dict]) -> dict[str, str]:
     """module -> capability, only for tags Admin approved (a proposal is not a tag yet)."""
     out: dict[str, str] = {}

@@ -44,8 +44,8 @@ STYLESHEET = [
      "style": {"background-color": da_styles.NAVY, "shape": "round-rectangle"}},
     {"selector": ".faded", "style": {"opacity": 0.35, "background-color": da_styles.MUTED}},
     {"selector": "edge", "style": {
-        "line-color": da_styles.LINE, "width": "data(px)", "curve-style": "bezier",
-        "target-arrow-shape": "triangle", "target-arrow-color": da_styles.LINE,
+        "line-color": da_styles.MUTED, "width": "data(px)", "curve-style": "bezier",
+        "target-arrow-shape": "triangle", "target-arrow-color": da_styles.MUTED,
     }},
 ]  # fmt: skip
 
@@ -53,7 +53,7 @@ STYLESHEET = [
 def map_link(new_tab: bool = True) -> dmc.Anchor:
     """The 'Open capability map' link used on the Admin catalog and on Discover."""
     return dmc.Anchor(MAP_LINK_TEXT, href=MAP_PATH, target="_blank" if new_tab else "_self",
-                      size="sm", id="da-map-link")  # fmt: skip
+                      size="sm")  # fmt: skip
 
 
 def _elements(view: MapView) -> list[dict]:

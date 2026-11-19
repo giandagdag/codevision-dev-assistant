@@ -139,7 +139,7 @@ def _run(
                 policy, settings, started_by, summary, out, tag_client, extra, provider
             )
         if summary.saved:
-            message += _cluster_step(out)
+            message += _cluster_step(out, policy.capabilities)
         record_run(
             started_by, started, summary.saved, summary.count, summary.skipped,
             message, out, _with_seconds(extra, started),
@@ -193,13 +193,13 @@ def _tag_step(policy, settings, started_by, summary, out, tag_client, extra, pro
     return f" {result.message}" if result.message.startswith("Stopped") else f" {TAGS_NOT_SAVED}"
 
 
-def _cluster_step(out: Path) -> str:
+def _cluster_step(out: Path, capabilities=()) -> str:
     """Refresh the capability suggestion cards from the saved graph. Never undoes the index."""
     graph = load_graph(out)
     if graph is None:
         return ""
     try:
-        cards = write_suggestions(graph, out)
+        cards = write_suggestions(graph, out, capabilities)
     except (OSError, ValueError, KeyError) as error:
         logger.warning("Cluster suggestions failed: %s", type(error).__name__)
         return ""

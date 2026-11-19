@@ -222,6 +222,9 @@ def recent_refreshes(runs: list[dict]):
         # Path and symbol only, never the code text.
         if run.get("skipped"):
             lines.append(dmc.Text("Skipped: " + "; ".join(run["skipped"]), size="xs", c="dimmed"))
+        if run.get("link_skipped"):  # G1c: files whose code links could not be read, with reason
+            text = "No code links: " + "; ".join(run["link_skipped"])
+            lines.append(dmc.Text(text, size="xs", c="dimmed"))
         rows.append(html.Div(lines, style=admin_styles.ROW))  # V5: rows with thin dividers
     return html.Div(rows)
 

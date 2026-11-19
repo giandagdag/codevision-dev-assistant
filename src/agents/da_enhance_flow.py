@@ -21,7 +21,7 @@ from agents.da_admin_tag_store import read_tags
 from agents.da_approach_checks import normalise_path
 from agents.da_build_agent import AIResult, get_build_client
 from agents.da_code_graph import file_module, load_graph
-from agents.da_code_impact_graph import impact_of
+from agents.da_code_impact_graph import impact_of, with_catalog_tags
 from agents.da_enhance_agent import TODAY_ROLE, draft_today
 from agents.da_enhance_checks import (
     NO_CANDIDATES_TEXT,
@@ -442,16 +442,17 @@ def impact_for_record(settings: Settings, record: RequestRecord) -> ImpactResult
         resolve_reference_dir(settings), scope_by_target, rules.capabilities,
         rules.flag_review_zones, rules.impact_max_callers,
     )
-    return result.model_copy(update={"users": graph_users(list(scope_by_target))})
+    users = graph_users(list(scope_by_target), rules.capabilities)
+    return result.model_copy(update={"users": users})
 
 
-def graph_users(paths: list[str]) -> list[ImpactUser]:
+def graph_users(paths: list[str], capabilities=()) -> list[ImpactUser]:
     """2-level users of the target files from the code link graph. [] when there is no graph, so
     the light search above stays the whole answer (Upgrade G3)."""
     graph = load_graph(index_dir())
     if graph is None:
         return []
-    tags = read_tags()
+    tags = with_catalog_tags(graph, read_tags(), capabilities)  # same source as the catalog
     found: dict[str, ImpactUser] = {}
     for path in paths:
         for user in impact_of(graph, file_module(path), tags):
