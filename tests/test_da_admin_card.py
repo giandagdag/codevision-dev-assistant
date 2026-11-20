@@ -53,16 +53,24 @@ def test_every_top_level_section_is_a_card(published_rulebook, tab, label, _):
     kids = inner.children if isinstance(inner.children, list) else [inner.children]
     # the Edit button row (right aligned) and the version Store are not sections
     kids = [k for k in kids if type(k).__name__ != "Store" and not _is_edit_holder(k)]
-    assert all(_is_section(k) for k in kids)
+    assert all(_is_section(k) for k in kids), [type(k).__name__ for k in kids]
 
 
 def _is_section(node) -> bool:
     """A card, a card grid, or a card stack / the rule-panel wrapper holding only those."""
     if is_card(node) or is_card_row(node):
         return True
+    if type(node).__name__ == "SegmentedControl":  # the catalog's view switch
+        return True
     style = getattr(node, "style", None)
-    wrapper = getattr(node, "id", None) == "adm-rule-panel"
-    if style == s.CARD_STACK or wrapper:
+    kids_of = node.children if isinstance(getattr(node, "children", None), list) else []
+    if any(type(k).__name__ == "SegmentedControl" for k in kids_of):  # the catalog's switch holder
+        return all(_is_section(k) for k in kids_of)
+    # Fix G4: a PAIR holds two cards side by side; the catalog's two panes switch with the control
+    wrapper = getattr(node, "id", None) in ("adm-rule-panel", "adm-cat-pane-caps")
+    if getattr(node, "id", None) == "adm-cat-pane-queue":  # its content is the queue's own parts
+        return True
+    if style in (s.CARD_STACK, s.PAIR) or wrapper:
         kids = node.children if isinstance(node.children, list) else [node.children]
         return all(_is_section(k) for k in kids)
     return False

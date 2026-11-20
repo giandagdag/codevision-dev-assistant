@@ -163,6 +163,44 @@ def test_bad_max_tokens_names_the_setting(bad):
         load_settings(env_file=None, environ={"DA_ONPREM_MAX_TOKENS": bad})
 
 
+def test_thinking_and_sampling_settings_are_read():
+    settings = load_settings(env_file=None, environ={})
+    assert (settings.onprem_thinking, settings.onprem_temperature) == ("", None)
+    settings = load_settings(
+        env_file=None,
+        environ={
+            "DA_ONPREM_THINKING": "OFF",
+            "DA_ONPREM_TEMPERATURE": "0.6",
+            "DA_ONPREM_TOP_P": "0.95",
+            "DA_ONPREM_PRESENCE_PENALTY": "1.5",
+            "DA_ONPREM_MAX_TOKENS_BUILD": "24000",
+        },
+    )
+    assert settings.onprem_thinking == "off"
+    assert (settings.onprem_temperature, settings.onprem_top_p) == (0.6, 0.95)
+    assert settings.onprem_presence_penalty == 1.5
+    assert settings.onprem_max_tokens_build == 24000
+
+
+@pytest.mark.parametrize(
+    ("name", "bad"),
+    [
+        ("DA_ONPREM_THINKING", "maybe"),
+        ("DA_ONPREM_TEMPERATURE", "abc"),
+        ("DA_ONPREM_TEMPERATURE", "2.5"),
+        ("DA_ONPREM_TOP_P", "0"),
+        ("DA_ONPREM_TOP_P", "1.5"),
+        ("DA_ONPREM_PRESENCE_PENALTY", "-1"),
+        ("DA_ONPREM_PRESENCE_PENALTY", "nan"),
+        ("DA_ONPREM_MAX_TOKENS_BUILD", "0"),
+    ],
+)
+def test_bad_thinking_and_sampling_settings_name_the_setting(name, bad):
+    """G4-2: the app stops at start, naming the setting."""
+    with pytest.raises(ConfigError, match=name):
+        load_settings(env_file=None, environ={name: bad})
+
+
 def test_discover_defaults():
     settings = load_settings(env_file=None, environ={})
 

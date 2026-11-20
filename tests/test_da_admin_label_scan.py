@@ -136,3 +136,27 @@ def test_fix2_new_parts_show_no_raw_names():
     # A module path on a result button is the program itself, like a code chip: skip exact paths.
     lines = [ln for ln in text.splitlines() if ln != path]
     assert not [ln for ln in lines if raw_names_in(ln, CODE_NAMES)]
+
+
+def test_g4_new_screen_parts_show_no_raw_names(published_rulebook):
+    """G4-19: the Review queue, bulk bar, patterns panel, Add modules pop-up and charter."""
+    from agents.da_admin_review import ReviewFilter, bulk_plan
+    from agents.da_admin_tag_cards import AiCard
+    from layouts.da_admin_catalog_panels import modules_modal, patterns_panel
+    from layouts.da_admin_page import charter_view
+    from layouts.da_admin_review_view import bulk_bar, bulk_confirm, review_pane
+
+    cards = [AiCard("src/agents/docs_folder_to_md.py", "Documents", "high", "Writes", "fits")]
+    caps = published_rulebook.rulebook.policy.capabilities
+    names = [c.name for c in caps]
+    path = cards[0].path
+    plan = bulk_plan([path], cards)
+    parts = [
+        review_pane(ReviewFilter(), ["src"], 1, 1, [], [], bulk_bar([path], cards, names)),
+        bulk_confirm("approve", plan, 1, ""), bulk_confirm("reject", plan, 1, ""),
+        patterns_panel("capability", 0, names[0], "src/agents/*limits*", [path]),
+        modules_modal("capability", caps, [path], {}, ""),
+        charter_view(published_rulebook, editable=True),
+    ]
+    lines = [ln for p in parts for ln in shown_text(p).splitlines() if ln != path]
+    assert not [ln for ln in lines if raw_names_in(ln, CODE_NAMES)]

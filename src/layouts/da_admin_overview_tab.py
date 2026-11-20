@@ -99,6 +99,12 @@ def _areas_table(areas):
     return dmc.Table([head, dmc.TableTbody(rows)])
 
 
+def _jump_label(item) -> str:
+    if item.filter == "review_queue":
+        return "Open Review queue"
+    return "Assign" if item.filter else f"Open {item.area}"
+
+
 def _attention_list(items):
     if not items:
         return dmc.Text("Nothing needs attention.", size="sm", c=da_styles.MUTED)
@@ -114,7 +120,7 @@ def _attention_list(items):
                     ),
                     dmc.Text(item.text, size="sm"),
                     dmc.Button(
-                        "Assign" if item.filter else f"Open {item.area}",
+                        _jump_label(item),
                         # n carries the catalog filter: the callback reads only "tab" for now.
                         id=goto_id(
                             _tab_of_area(item.area),

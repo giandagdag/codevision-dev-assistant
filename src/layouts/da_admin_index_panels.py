@@ -46,6 +46,9 @@ FIX_HINT = (
     "Set DA_CODEVISION_SRC (and DA_CODEVISION_PYTHON if CodeVision uses its own Python) "
     "in the .env file, restart the server, then try again."
 )
+MADE_UP_HINT = (
+    "Open Repository and index, clear Folder scope, save, then run the job again."
+)
 OTHER_HINT = "Check the server settings, then run the job again."
 
 
@@ -72,6 +75,8 @@ def estimate_line(runs: list[dict], mode: str) -> str:
 
 def error_box(message: str):
     hint = FIX_HINT if "CodeVision" in message else OTHER_HINT
+    if "made-up" in message:
+        hint = MADE_UP_HINT
     return dmc.Alert(
         [dmc.Text(message, size="sm"), dmc.Text(hint, size="xs", fw=600)],
         title="The last job did not finish",

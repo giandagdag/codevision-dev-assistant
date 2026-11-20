@@ -69,6 +69,76 @@ def module_chips(paths: list[str], counts: dict[str, int]) -> tuple[list[str], i
     return labels, max(0, len(paths) - SHOWN_MODULES)
 
 
+# --- Fix G4 L2/L3: the patterns list and the Add modules picker (plain code) ---
+
+
+def split_patterns(text: str) -> list[str]:
+    """The Patterns cell is one pattern per line."""
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def is_exact(pattern: str) -> bool:
+    """An exact file has no wildcard; anything else is a pattern."""
+    return not any(ch in pattern for ch in "*?[")
+
+
+def count_matches(pattern: str, paths: list[str]) -> int:
+    """How many indexed modules the pattern matches now (same matching as the catalog)."""
+    return sum(1 for p in paths if fnmatchcase(p.lower(), pattern.strip().lower()))
+
+
+def edit_patterns(form: dict, index: int, remove: str = "", add: str = "") -> dict:
+    """Remove or add one pattern in catalog row `index` of the draft. A blank add is ignored."""
+    rows = form.get("capabilities", [])
+    if 0 <= index < len(rows):
+        lines = [p for p in split_patterns(rows[index].get("path_patterns", "")) if p != remove]
+        if add.strip() and add.strip() not in lines:
+            lines.append(add.strip())
+        rows[index]["path_patterns"] = "\n".join(lines)
+    return form
+
+
+def add_modules_to_form(form: dict, capability: str, paths: list[str]) -> dict:
+    """Exact-path patterns on `capability`; the same exact entry leaves other capabilities (a move).
+    Known limit: a module an earlier wildcard pattern claims stays with that capability."""
+    for row in form.get("capabilities", []):
+        lines = split_patterns(row.get("path_patterns", ""))
+        if row.get("name") == capability:
+            lines += [p for p in paths if p not in lines]
+        else:
+            lines = [p for p in lines if p not in paths]
+        row["path_patterns"] = "\n".join(lines)
+    return form
+
+
+def module_rows(
+    capabilities: list[Capability],
+    paths: list[str],
+    summaries: dict[str, str],
+    target: str = "",
+    search: str = "",
+    unassigned_only: bool = True,
+) -> list[dict]:
+    """One row per indexed module: path, current capability (first match), summary, and the name
+    it would move from when `target` is another capability."""
+    owner: dict[str, str] = {}
+    for name, mine in modules_by_capability(capabilities, paths).items():
+        for p in mine:
+            owner.setdefault(p, name)
+    needle = search.strip().lower()
+    rows = []
+    for p in paths:
+        current = owner.get(p, "")
+        summary = summaries.get(p, "")
+        if unassigned_only and current:
+            continue
+        if needle and needle not in p.lower() and needle not in summary.lower():
+            continue
+        moves = current if current and current != target else ""
+        rows.append({"path": p, "current": current, "summary": summary, "moves_from": moves})
+    return rows
+
+
 def matches_search(
     name: str, description: str, paths: list[str], text: str, seniors: tuple[str, ...] = ()
 ) -> bool:

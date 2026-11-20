@@ -5,6 +5,7 @@ and changed apart (spec 11-44). The logic is in plain functions (run_action, for
 tests call without Dash; the Dash wrappers at the bottom only read ids and values and pass them on.
 """
 
+from contextvars import ContextVar
 from functools import lru_cache
 from pathlib import PurePosixPath
 
@@ -39,20 +40,44 @@ from agents.da_admin_forms import (
 from agents.da_admin_index import recent_runs
 from agents.da_admin_meaning import meaning_search
 from agents.da_admin_metrics import WINDOW_ALL, WINDOW_LABELS, health_report
-from agents.da_admin_modules import module_paths
+from agents.da_admin_modules import (
+    add_modules_to_form,
+    edit_patterns,
+    module_paths,
+    module_rows,
+)
 from agents.da_admin_overview import (
     MISSING_BACKUP_FILTER,
+    REVIEW_QUEUE_FILTER,
     build_overview,
     server_settings_view,
 )
 from agents.da_admin_rebuild import running_since, start_rebuild
+from agents.da_admin_recheck import start_recheck
+from agents.da_admin_review import (
+    ReviewFilter,
+    bulk_plan,
+    count_line,
+    filter_ai_cards,
+    filter_from_values,
+)
 from agents.da_admin_sonar import load_snapshot, refresh_snapshot, source_pill
+from agents.da_admin_starter import ACTION_ALL, ACTION_ONE, remove_starter
+from agents.da_admin_suggestions import (
+    assign_suggestion,
+    create_and_assign,
+    reject_suggestion,
+    remove_from_suggestion,
+    suggestions,
+)
 from agents.da_admin_tag_cards import (
     ai_cards,
     approve_all_high,
     approve_card,
+    approve_pairs,
     high_confidence_counts,
     reject_card,
+    reject_cards,
 )
 from agents.da_admin_tag_store import read_tags
 from configs.da_config import Settings, load_settings
@@ -68,12 +93,34 @@ from layouts.da_admin_catalog_meaning import (
     meaning_results,
     no_hits_line,
 )
+from layouts.da_admin_catalog_panels import (
+    HINT_ID,
+    MOD_ALL_ID,
+    MOD_CAP_ID,
+    MOD_PICKED_ID,
+    MOD_SEARCH_ID,
+    MOD_SUMMARY_ID,
+    MOD_TABLE_ID,
+    MOD_TYPE,
+    MOD_UNASSIGNED_ID,
+    NEW_PATTERN_ID,
+    add_label,
+    hint_text,
+    modules_table,
+)
 from layouts.da_admin_catalog_tab import (
     Q_AI_ALL,
     Q_AI_ALL_DO,
     Q_AI_APPROVE,
     Q_AI_ASSIGN,
     Q_AI_REJECT,
+    Q_RECHECK,
+    Q_SG_ASSIGN,
+    Q_SG_OPEN,
+    Q_SG_REJECT,
+    Q_SG_REMOVE,
+    Q_SG_SAVE,
+    review_items,
 )
 from layouts.da_admin_coding_tab import (
     GOLDEN_CHANGE_TYPE,
@@ -82,6 +129,7 @@ from layouts.da_admin_coding_tab import (
     module_start,
     rule_panel,
 )
+from layouts.da_admin_common import PAT_TYPE, pat_id
 from layouts.da_admin_index_panels import (
     REBUILD_BTN,
     REBUILD_CONFIRM,
@@ -174,6 +222,32 @@ from layouts.da_admin_page import (
     tab_button_id,
     tab_content,
 )
+from layouts.da_admin_queue_ids import (
+    BULK_APPROVE,
+    BULK_ASSIGN,
+    BULK_PICK_UID,
+    BULK_REJECT,
+    CAT_PANE_CAPS,
+    CAT_PANE_QUEUE,
+    CAT_VIEW_ID,
+    Q_BULK_ASK,
+    Q_BULK_DO,
+    Q_CLEAR_FILTERS,
+    Q_SELECT_ALL,
+    RQ_BAR_ID,
+    RQ_CONF_ID,
+    RQ_COUNT_ID,
+    RQ_FOLDER_ID,
+    RQ_LIST_ID,
+    RQ_PROPOSAL_ID,
+    RQ_SEARCH_ID,
+    RQ_SEL_TYPE,
+    RQ_SORT_ID,
+    RQ_SOURCE_ID,
+    VIEW_CAPS,
+    VIEW_QUEUE,
+)
+from layouts.da_admin_review_view import bulk_bar, empty_list
 from layouts.da_capability_map_view import MAP_PATH
 from layouts.da_inbox_page import INBOX_PATH
 from layouts.da_test_report_page import REPORT_PREFIX
@@ -337,10 +411,15 @@ def run_action(
     form: dict,
     note: str,
     base_version: int | None,
+    inputs: dict | None = None,
 ):
-    """Returns (new tab content, True while the tab is being edited). Writes only on Save."""
+    """Returns (new tab content, True while the tab is being edited). Writes only on Save.
+    `inputs` holds the side panel and pop-up values by name (newpat, cap, picked)."""
     active = get_active_version(settings.db_path)
     kind = action["type"]
+    if kind == PAT_TYPE:
+        inputs = inputs or {}
+        return _pattern_action(settings, tab, action, form, note, base_version, active, inputs)
     if kind == "adm-act":
         name = action["action"]
         if name == ACTION_EDIT:
@@ -349,6 +428,11 @@ def run_action(
             return _content(settings, tab, active), False
         if name == ACTION_SAVE:
             return _save(settings, tab, form, note, base_version, active)
+        if name == ACTION_ALL or name.startswith(ACTION_ONE):
+            text = remove_starter(settings, settings.developer_id, name)
+            saved = get_active_version(settings.db_path)
+            notice = [message_notice(text, color="green")]
+            return _content(settings, tab, saved, notice=notice), False
     base = get_version(settings.db_path, base_version or active.version_number) or active
     notice = None
     if kind == "adm-add" and action["table"] == MODULE_TABLE:
@@ -365,11 +449,40 @@ def run_action(
     return _content(settings, tab, base, editable=True, draft=form, notice=notice), True
 
 
+def _pattern_action(settings, tab, action, form, note, base_version, active, inputs):
+    """Fix G4 L2, L3: the patterns side panel and the Add modules pop-up. Nothing is written until
+    Save (one version); Add modules only changes the draft, so the page's Save writes it."""
+    name, index = action["action"], action["index"]
+    base = get_version(settings.db_path, base_version or active.version_number) or active
+    typed = (inputs.get("newpat") or "").strip()
+    panel = None
+    if name == "open":
+        panel = {"kind": "patterns", "index": index}
+    elif name == "openmods":
+        panel = {"kind": "modules"}
+    elif name == "remove":
+        form = edit_patterns(form, index, remove=action["pat"])
+        panel = {"kind": "patterns", "index": index}
+    elif name == "add":
+        form = edit_patterns(form, index, add=typed)
+        panel = {"kind": "patterns", "index": index}
+    elif name == "save":
+        form = edit_patterns(form, index, add=typed)  # text typed but not yet added counts too
+        return _save(settings, tab, form, note, base_version, active)
+    elif name == "addmods":
+        target, picked = inputs.get("cap") or "", inputs.get("picked") or []
+        if target and picked:
+            form = add_modules_to_form(form, target, picked)
+        else:
+            panel = {"kind": "modules"}  # nothing to add yet: keep the pop-up open
+    return _content(settings, tab, base, editable=True, draft=form, panel=panel), True
+
+
 def _content(settings: Settings, tab: str, version, **kwargs):
     """tab_content, plus the Cited counts on the Coding tab (read from the Tester's findings)."""
     cited = cited_counts(settings.db_path) if tab == TAB_CODING else None
     queue = queue_data(settings) if tab == TAB_CAPABILITY else None
-    server = server_settings_view(settings) if tab == TAB_REPO else None
+    server = server_settings_view(settings) if tab in (TAB_REPO, TAB_BUILD) else None
     fires = fires_in(settings.db_path) if tab == TAB_CODING else None
     return tab_content(tab, version, cited=cited, queue=queue, server=server, fires=fires, **kwargs)
 
@@ -378,17 +491,68 @@ def _content(settings: Settings, tab: str, version, **kwargs):
 
 
 def queue_data(
-    settings: Settings, show_resolved: bool = False, dialog=None, notice=None, ai_confirm=False
+    settings: Settings, show_resolved: bool = False, dialog=None, notice=None, ai_confirm=False,
+    suggest_dialog: str | None = None, review: dict | None = None,
 ) -> dict:
-    """What the layout needs to draw the queue block."""
+    """What the layout needs to draw the queue block. `review` is the search, filters, sort and
+    selection of the Review queue view (Fix G4 L9, L10)."""
+    waiting = suggestions()
+    confirm = {"counts": high_confidence_counts(), "suggestions": len(waiting)}
+    cards = ai_cards()
+    review = dict(review or {})
+    open_paths = {c.path for c in cards}
+    review["selected"] = [p for p in review.get("selected", []) if p in open_paths]
     return {
         "rows": queue_rows(settings),
         "resolved": resolved_rows(settings) if show_resolved else None,
         "dialog": dialog,
         "notice": notice or [],
-        "ai_cards": ai_cards(),
-        "ai_confirm": {"counts": high_confidence_counts()} if ai_confirm else None,
+        "review": review,
+        "ai_cards": cards,
+        "ai_confirm": confirm if ai_confirm else None,
+        "suggestions": waiting,
+        "suggest_dialog": suggest_dialog,
     }
+
+
+def _suggest_action(
+    settings: Settings, name: str, key: str, picks: dict, notes: dict, base_version: int | None
+):
+    """Create and assign, Assign to, Reject and Remove on a new-capability suggestion card (S4)."""
+    admin = settings.developer_id
+    if name == Q_SG_REMOVE:  # `key` is the program's path
+        remove_from_suggestion(key)
+        done = message_notice("Removed from the suggestion.", color="green")
+        return _queue_tab(settings, notice=[done])
+    current = next((s for s in suggestions() if s.name == key), None)
+    if current is None:
+        gone = message_notice("That suggestion is not open any more.")
+        return _queue_tab(settings, notice=[gone])
+    paths = list(current.modules)
+    if name == Q_SG_OPEN:
+        return _queue_tab(settings, suggest_dialog=key)
+    if name == Q_SG_REJECT:
+        reject_suggestion(paths, admin)
+        return _queue_tab(settings, notice=[message_notice("Rejected.", color="green")])
+    if name == Q_SG_ASSIGN:
+        target = picks.get(key) or ""
+        if not target:
+            return _queue_tab(settings, notice=[message_notice("Choose a capability first.")])
+        result = assign_suggestion(settings, target, paths, admin, base_version)
+    else:  # Q_SG_SAVE
+        text = {f: notes.get(f"{key}|{f}", "") for f in ("name", "desc", "named", "backup")}
+        result = create_and_assign(
+            settings, text["name"], text["desc"], text["named"], text["backup"], paths, admin,
+            base_version,
+        )
+    if result.kind == "resolved":
+        version = f" The catalog is now v{result.new_version}." if result.new_version else ""
+        return _queue_tab(settings, notice=[message_notice(f"Done.{version}", color="green")])
+    if result.stale:
+        newest = get_active_version(settings.db_path).version_number
+        notice = message_notice(result.message, reload_tab=TAB_CAPABILITY, newest=newest)
+        return _queue_tab(settings, notice=[notice])
+    return _queue_tab(settings, notice=[problem_notice(result.problems or [result.message])])
 
 
 def _ai_action(
@@ -407,23 +571,74 @@ def _ai_action(
         if not target:
             return _queue_tab(settings, notice=[message_notice("Choose a capability first.")])
         result = approve_card(settings, path, target, settings.developer_id, base_version)
+    return _ai_result(settings, result)
+
+
+def _ai_result(settings: Settings, result, **kwargs):
+    """The notice for an approval result: done, stale (catalog moved on) or refused."""
     if result.kind == "resolved":
         text = "Card closed."
         if result.new_version:
             text = f"Approved. The catalog is now v{result.new_version}."
         if result.message:  # some paths were already matched: say by which capability
             text += f" {result.message}"
-        return _queue_tab(settings, notice=[message_notice(text, color="green")])
+        return _queue_tab(settings, notice=[message_notice(text, color="green")], **kwargs)
     if result.stale:
         newest = get_active_version(settings.db_path).version_number
         notice = message_notice(result.message, reload_tab=TAB_CAPABILITY, newest=newest)
-        return _queue_tab(settings, notice=[notice])
-    return _queue_tab(settings, notice=[problem_notice(result.problems or [result.message])])
+        return _queue_tab(settings, notice=[notice], **kwargs)
+    return _queue_tab(
+        settings, notice=[problem_notice(result.problems or [result.message])], **kwargs
+    )
+
+
+# The Review queue's filter, sort and selection for the click being handled, so every redraw keeps
+# them (L9). Set by run_queue_action; read by _queue_tab.
+_review_state: ContextVar[dict | None] = ContextVar("review_state", default=None)
 
 
 def _queue_tab(settings: Settings, **kwargs):
     active = get_active_version(settings.db_path)
+    kwargs.setdefault("review", _review_state.get() or {})
     return tab_content(TAB_CAPABILITY, active, queue=queue_data(settings, **kwargs))
+
+
+def _bulk_action(settings: Settings, name: str, action: dict, picks: dict, base_version, review):
+    """Select all shown, Clear filters, and the bulk bar's ask and do steps (L10)."""
+    rf = review.get("filter") or ReviewFilter()
+    cards = ai_cards()
+    selected = review.get("selected", [])
+    if name == Q_CLEAR_FILTERS:
+        return _queue_tab(settings, review={**review, "filter": ReviewFilter()})
+    if name == Q_SELECT_ALL:
+        every = [c.path for c in filter_ai_cards(cards, rf)]
+        return _queue_tab(settings, review={**review, "selected": every})
+    kind = action["state"]
+    plan = bulk_plan(selected, cards)
+    open_selected = [p for p in selected if p in {c.path for c in cards}]
+    target = picks.get(BULK_PICK_UID) or action["cap"] if kind == BULK_ASSIGN else ""
+    if not open_selected or (kind == BULK_ASSIGN and not target) or (
+        kind == BULK_APPROVE and not plan.pairs
+    ):
+        text = "Choose a capability first." if kind == BULK_ASSIGN and open_selected else (
+            "Nothing to do: select programs that have a proposal."
+        )
+        return _queue_tab(settings, notice=[message_notice(text)])
+    if name == Q_BULK_ASK:
+        return _queue_tab(settings, review={**review, "bulk": {"kind": kind, "target": target}})
+    admin = settings.developer_id  # Q_BULK_DO
+    cleared = {**review, "selected": [], "bulk": None}
+    if kind == BULK_REJECT:
+        reject_cards(open_selected, who=admin)
+        done = message_notice(f"Rejected {len(open_selected)} programs.", color="green")
+        return _queue_tab(settings, notice=[done], review=cleared)
+    if kind == BULK_APPROVE:
+        pairs, note = plan.pairs, f"AI scan: {len(plan.pairs)} programs approved"
+    else:
+        pairs = [(p, target) for p in open_selected]
+        note = f"AI scan: {len(pairs)} programs assigned to {target}"
+    result = approve_pairs(settings, pairs, admin, note, base_version)
+    return _ai_result(settings, result, review=cleared)
 
 
 def run_queue_action(
@@ -432,14 +647,34 @@ def run_queue_action(
     picks: dict,
     notes: dict,
     base_version: int | None,
+    review: dict | None = None,
 ):
-    """One click in the Unassigned queue. Returns the whole Capability catalog tab, redrawn.
+    """One click in the Review queue. Returns the whole Capability catalog tab, redrawn.
 
-    `picks` is {unassigned_id: chosen capability}, `notes` {unassigned_id: change note}. Writes only
-    on Resolve (and, with the pattern, one new catalog version)."""
+    `picks` is {unassigned_id: chosen capability}, `notes` {unassigned_id: change note}. `review`
+    is the view, filter and selection to keep. Writes only on Resolve (and, with the pattern, one
+    new catalog version)."""
+    review = review or {}
+    token = _review_state.set(review)
+    try:
+        return _run_queue_action(settings, action, picks, notes, base_version, review)
+    finally:
+        _review_state.reset(token)
+
+
+def _run_queue_action(settings, action, picks, notes, base_version, review):
     name, uid = action["action"], action["uid"]
+    if name in (Q_SELECT_ALL, Q_CLEAR_FILTERS, Q_BULK_ASK, Q_BULK_DO):
+        return _bulk_action(settings, name, action, picks, base_version, review)
     if name in (Q_AI_APPROVE, Q_AI_ASSIGN, Q_AI_REJECT, Q_AI_ALL, Q_AI_ALL_DO):
         return _ai_action(settings, name, uid, picks, base_version, action["cap"])
+    if name in (Q_SG_OPEN, Q_SG_SAVE, Q_SG_ASSIGN, Q_SG_REJECT, Q_SG_REMOVE):
+        return _suggest_action(settings, name, uid, picks, notes, base_version)
+    if name == Q_RECHECK:
+        policy = get_active_version(settings.db_path).rulebook.policy
+        started, text = start_recheck(policy, settings, settings.developer_id)
+        notice = message_notice(text, color="green") if started else message_notice(text)
+        return _queue_tab(settings, notice=[notice])
     if name == Q_SHOW_RESOLVED:
         return _queue_tab(settings, show_resolved=True)
     if name == Q_APPROVE:  # take the suggestion: same as Move to <suggested>
@@ -908,7 +1143,64 @@ def _register_rule_pick(app) -> None:
         return pick_rule(get_admin_settings(), triggered["rule"])
 
 
+def modules_table_for(
+    settings: Settings, target, search, unassigned, show_summary, picked, select_all=False
+):
+    """The Add modules table for the pop-up's filters (Fix G4 L3)."""
+    if not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    policy = get_active_version(settings.db_path).rulebook.policy
+    paths = module_paths(policy.index_folder_scope)
+    summaries = {p: str(e.get("summary", "")) for p, e in read_tags().items()}
+    caps, target, search = list(policy.capabilities), target or "", search or ""
+    if select_all:  # tick every row now shown
+        rows = module_rows(caps, paths, summaries, target, search, unassigned)
+        picked = [r["path"] for r in rows]
+    return modules_table(
+        caps, paths, summaries, target, search, bool(unassigned), bool(show_summary), picked
+    )
+
+
+def pattern_hint(settings: Settings, text) -> str:
+    """The live "matches N modules" hint for the Add pattern field (Fix G4 L2)."""
+    policy = get_active_version(settings.db_path).rulebook.policy
+    return hint_text(text or "", module_paths(policy.index_folder_scope))
+
+
 def _register_catalog_filter(app) -> None:
+    @app.callback(
+        Output(HINT_ID, "children"),
+        Input(NEW_PATTERN_ID, "value"),
+        prevent_initial_call=True,
+    )
+    def on_pattern_typed(text):
+        return pattern_hint(get_admin_settings(), text)
+
+    @app.callback(
+        Output(MOD_TABLE_ID, "children"),
+        Input(MOD_SEARCH_ID, "value"),
+        Input(MOD_UNASSIGNED_ID, "checked"),
+        Input(MOD_SUMMARY_ID, "checked"),
+        Input(MOD_ALL_ID, "n_clicks"),
+        Input(MOD_CAP_ID, "value"),
+        State(MOD_PICKED_ID, "value"),
+        prevent_initial_call=True,
+    )
+    def on_modules_filter(search, unassigned, summary, _all, target, picked):
+        everything = ctx.triggered_id == MOD_ALL_ID
+        return modules_table_for(
+            get_admin_settings(), target, search, unassigned, summary, picked, everything
+        )
+
+    @app.callback(
+        Output(pat_id(TAB_CAPABILITY, "addmods"), "children"),
+        Input(MOD_PICKED_ID, "value"),
+        Input(MOD_CAP_ID, "value"),
+        prevent_initial_call=True,
+    )
+    def on_modules_ticked(picked, target):
+        return add_label(len(picked or []), target or "")
+
     @app.callback(
         Output(CAP_LIST_ID, "children"),
         Output(CAP_MEANING_ID, "children"),
@@ -993,13 +1285,124 @@ def _register_history(app) -> None:
 def queue_inputs_from_states(states_list: list) -> tuple[dict, dict]:
     """Picks and notes by Unassigned ID from the queue callback's three States (picks, notes,
     base store). The clicked button is an Input, so it is not in this list."""
-    pick_states, note_states, _base = states_list
+    pick_states, note_states, *_rest = states_list
     picks = {item["id"]["uid"]: item.get("value") for item in pick_states}
     notes = {item["id"]["uid"]: item.get("value") or "" for item in note_states}
     return picks, notes
 
 
+def review_from_states(states_list: list) -> dict:
+    """The Review queue's view, filter and ticked cards from the callback's States (after the
+    picks, notes and base store): search, source, proposal, confidence, folder, sort, view, ticks.
+    """
+    if len(states_list) < 11:
+        return {}
+    search, source, proposal, confidence, folder, sort, view = (
+        item.get("value") for item in states_list[3:10]
+    )
+    ticked = [t["id"]["path"] for t in states_list[10] if t.get("value")]
+    return {
+        "view": view or VIEW_CAPS,
+        "filter": filter_from_values(search, source, proposal, confidence, folder, sort),
+        "selected": ticked,
+    }
+
+
+def _review_view_controls() -> list:
+    return [
+        State(RQ_SEARCH_ID, "value"),
+        State(RQ_SOURCE_ID, "value"),
+        State(RQ_PROPOSAL_ID, "value"),
+        State(RQ_CONF_ID, "value"),
+        State(RQ_FOLDER_ID, "value"),
+        State(RQ_SORT_ID, "value"),
+        State(CAT_VIEW_ID, "value"),
+        State({"type": RQ_SEL_TYPE, "path": ALL}, "checked"),
+    ]
+
+
+def _register_review(app) -> None:
+    """Live parts of the Review queue: the filter, the bulk bar, the view switch."""
+
+    @app.callback(
+        Output(RQ_LIST_ID, "children"),
+        Output(RQ_COUNT_ID, "children"),
+        Output(RQ_BAR_ID, "children", allow_duplicate=True),
+        Input(RQ_SEARCH_ID, "value"),
+        Input(RQ_SOURCE_ID, "value"),
+        Input(RQ_PROPOSAL_ID, "value"),
+        Input(RQ_CONF_ID, "value"),
+        Input(RQ_FOLDER_ID, "value"),
+        Input(RQ_SORT_ID, "value"),
+        prevent_initial_call=True,
+    )
+    def on_review_filter(search, source, proposal, confidence, folder, sort):
+        settings = get_admin_settings()
+        rf = filter_from_values(search, source, proposal, confidence, folder, sort)
+        queue = queue_data(settings)
+        names = _capability_names(settings)
+        items, shown, total = review_items(queue, names, False, rf, [])
+        return items or empty_list(), count_line(shown, total), []
+
+    @app.callback(
+        Output(RQ_BAR_ID, "children"),
+        Input({"type": RQ_SEL_TYPE, "path": ALL}, "checked"),
+        prevent_initial_call=True,
+    )
+    def on_review_ticks(_checked):
+        settings = get_admin_settings()
+        ticked = [t["id"]["path"] for t in ctx.inputs_list[0] if t.get("value")]
+        return bulk_bar(ticked, ai_cards(), _capability_names(settings))
+
+    @app.callback(
+        Output(CAT_PANE_CAPS, "style"),
+        Output(CAT_PANE_QUEUE, "style"),
+        Input(CAT_VIEW_ID, "value"),
+        prevent_initial_call=True,
+    )
+    def on_view_switch(view):
+        hidden = {"display": "none"}
+        return ({}, hidden) if view == VIEW_CAPS else (hidden, {})
+
+    @app.callback(
+        Output(CAT_VIEW_ID, "value"),
+        Input({"type": GOTO_TYPE, "tab": ALL, "n": ALL}, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def open_review_queue(_clicks):
+        # The Overview's "AI proposals" line carries REVIEW_QUEUE_FILTER in its "n".
+        triggered = ctx.triggered_id
+        if not isinstance(triggered, dict) or not ctx.triggered[0]["value"]:
+            raise PreventUpdate
+        if REVIEW_QUEUE_FILTER not in str(triggered["n"]):
+            raise PreventUpdate
+        return VIEW_QUEUE
+
+    # Keep the list's scroll position across a redraw (L9): remember it while scrolling and put
+    # it back when the tab body is drawn again.
+    app.clientside_callback(
+        """function(children) {
+            const box = document.getElementById('LIST_ID');
+            if (!box) { return window.dash_clientside.no_update; }
+            if (!box.dataset.watching) {
+                box.dataset.watching = '1';
+                box.addEventListener('scroll', () => { window.__rqScroll = box.scrollTop; });
+            }
+            if (window.__rqScroll) { box.scrollTop = window.__rqScroll; }
+            return window.dash_clientside.no_update;
+        }""".replace("LIST_ID", RQ_LIST_ID),
+        Output(CAT_PANE_QUEUE, "data-scroll"),
+        Input(body_id(TAB_CAPABILITY), "children"),
+        prevent_initial_call=True,
+    )
+
+
+def _capability_names(settings: Settings) -> list[str]:
+    return [c.name for c in get_active_version(settings.db_path).rulebook.policy.capabilities]
+
+
 def _register_queue(app) -> None:
+    _register_review(app)
     button = {"type": QUEUE_BUTTON_TYPE, "action": ALL, "uid": ALL, "cap": ALL, "state": ALL}
 
     @app.callback(
@@ -1012,9 +1415,10 @@ def _register_queue(app) -> None:
         State({"type": QUEUE_PICK_TYPE, "uid": ALL}, "value"),
         State({"type": QUEUE_NOTE_TYPE, "uid": ALL}, "value"),
         State({"type": BASE_STORE_TYPE, "tab": TAB_CAPABILITY}, "data"),
+        *_review_view_controls(),
         prevent_initial_call=True,
     )
-    def on_queue_click(_clicks, _picks, _notes, base_version):
+    def on_queue_click(_clicks, _picks, _notes, base_version, *_controls):
         settings = get_admin_settings()
         triggered = ctx.triggered_id
         if not isinstance(triggered, dict) or not ctx.triggered[0]["value"]:
@@ -1022,7 +1426,8 @@ def _register_queue(app) -> None:
         if not is_admin(settings, settings.developer_id):
             raise PreventUpdate
         picks, notes = queue_inputs_from_states(ctx.states_list)
-        content = run_queue_action(settings, triggered, picks, notes, base_version)
+        review = review_from_states(ctx.states_list)
+        content = run_queue_action(settings, triggered, picks, notes, base_version, review)
         if triggered["action"] == Q_NEW:  # now editing: lock the other tabs (11-4)
             return (content, *tabs_disabled(TAB_CAPABILITY))
         return (content, *[no_update] * len(ADMIN_TABS))
@@ -1042,13 +1447,15 @@ def _register_tab(app, tab: str) -> None:
         Input(pattern("adm-add", "table", "index"), "n_clicks"),
         Input(pattern("adm-remove", "table", "index"), "n_clicks"),
         Input(pattern(MOVE_TYPE, "table", "index", "step"), "n_clicks"),
+        Input(pattern(PAT_TYPE, "action", "index", "pat"), "n_clicks"),
         State(pattern("adm-cell", "table", "row", "col"), "value"),
         State(pattern("adm-field", "name"), "value"),
         State(pattern("adm-switch", "name"), "checked"),
         State({"type": BASE_STORE_TYPE, "tab": tab}, "data"),
+        State({"type": MOD_TYPE, "name": ALL}, "value"),
         prevent_initial_call=True,
     )
-    def on_click(_acts, _adds, _removes, _moves, cells, fields, switches, base_version):
+    def on_click(_acts, _adds, _removes, _moves, _pats, cells, fields, switches, base_version, _m):
         settings = get_admin_settings()
         triggered = ctx.triggered_id
         # Buttons that were just drawn also "trigger"; a real click has a click count.
@@ -1057,7 +1464,8 @@ def _register_tab(app, tab: str) -> None:
         if not is_admin(settings, settings.developer_id):
             raise PreventUpdate
         # ctx.states_list holds, per State, a list of {"id", "property", "value"} entries.
-        cell_states, field_states, switch_states, _base = ctx.states_list
+        cell_states, field_states, switch_states, _base, mod_states = ctx.states_list
         form, note = form_from_cells(tab, cell_states, field_states, switch_states)
-        content, editing = run_action(settings, tab, triggered, form, note, base_version)
+        inputs = {item["id"]["name"]: item.get("value") for item in mod_states}
+        content, editing = run_action(settings, tab, triggered, form, note, base_version, inputs)
         return (content, *tabs_disabled(tab if editing else None))

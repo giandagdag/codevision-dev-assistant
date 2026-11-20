@@ -310,9 +310,13 @@ def test_the_fake_client_can_be_told_not_to_answer_or_that_the_prompt_is_big(
 
 def test_other_providers_use_the_generator_and_tester_roles(make_settings, monkeypatch):
     roles = []
-    monkeypatch.setattr(agent, "get_llm_client", lambda role, settings: roles.append(role) or role)
+    monkeypatch.setattr(
+        agent, "get_llm_client",
+        lambda role, settings, model=None, build=False: roles.append((role, build)) or role,
+    )
 
     agent.get_build_client(make_settings(llm_provider="onprem"), "tester")
     agent.get_build_client(make_settings(llm_provider="onprem"), "generator")
 
-    assert roles == ["tester", "generator"]
+    # build=True is what gives the build its own length (G4 T3)
+    assert roles == [("tester", True), ("generator", True)]

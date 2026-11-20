@@ -99,9 +99,7 @@ def word_chips(words: list[str], style: dict | None = None, variant: str = "ligh
     variant "outline" (the code-chip look the label scan skips)."""
     if not words:
         return dmc.Text("None.", style=da_styles.EMPTY_TEXT)
-    return dmc.Group(
-        [dmc.Badge(w, variant=variant, tt="none", style=style) for w in words], gap=4
-    )
+    return dmc.Group([dmc.Badge(w, variant=variant, tt="none", style=style) for w in words], gap=4)
 
 
 def two_columns(left, right, left_share: int = 2):
@@ -125,8 +123,10 @@ def _version_text(version, active: bool) -> html.Span:
     """Dot, "Active rulebook vN" and "Published <when>, <who>" on one quiet line."""
     saved: datetime = version.saved_at
     dot = admin_styles.GREEN if active else da_styles.MUTED
-    title = f"Active rulebook v{version.version_number}" if active else (
-        f"Started from v{version.version_number}"
+    title = (
+        f"Active rulebook v{version.version_number}"
+        if active
+        else (f"Started from v{version.version_number}")
     )
     return dmc.Group(
         [
@@ -182,6 +182,8 @@ def _plain(text: str) -> str:
 
 CODE_COLUMNS = ("good_example", "bad_example", "code")  # drawn in a code box in the read view
 READONLY = "readonly"  # a cell kind: a disabled input that is still read back like any cell
+PAT_TYPE = "adm-pat"  # id type of the patterns panel and Add modules buttons
+PATTERNS = "patterns"  # a cell kind: a count chip that opens the patterns side panel
 
 
 def list_table(
@@ -193,26 +195,44 @@ def list_table(
     kinds: dict | None = None,
     static: tuple[str, ...] = (),
     movable: bool = False,
+    widths: dict[str, str] | None = None,
+    input_height: str = "",
+    marker: str = "",
 ):
     """A table drawn from column names. Read mode is plain text; edit mode adds Add row and Remove.
 
+    `marker` ("tick", "dot" or "number") turns a one-column list into rows with thin dividers and
+    no header (Fix G4 L6); edit mode keeps the same inputs, Add row and Remove.
+
     Edit cells carry pattern-matching ids so the callbacks can read them back.
-    `kinds` says a column is READONLY or a dropdown (a list of choices). A `static` column is plain
-    text in both modes and is never read back (the Cited counts).
+    `kinds` says a column is READONLY, PATTERNS or a dropdown (a list of choices). A `static`
+    column is plain text in both modes and is never read back (the Cited counts).
+    `widths` (column -> "18%", "actions" for the buttons) fixes the layout; `input_height` gives
+    every edit input the same height (Fix G4 L1).
     """
     kinds = kinds or {}
-    head = dmc.TableThead(
-        dmc.TableTr([dmc.TableTh(col.replace("_", " ").capitalize()) for col in columns])
-    )
+    heads = [
+        dmc.TableTh(col.replace("_", " ").capitalize(), w=(widths or {}).get(col))
+        for col in columns
+    ]
+    if widths and editable:
+        heads.append(dmc.TableTh("", w=widths.get("actions")))
+    head = dmc.TableThead(dmc.TableTr(heads))
+    if marker and not editable:
+        return html.Div(_marker_rows(rows, marker) or _empty_note())
     body = dmc.TableTbody(
         [
-            _table_row(tab, table_id, columns, i, row, editable, kinds, static, movable)
+            _table_row(
+                tab, table_id, columns, i, row, editable, kinds, static, movable, input_height
+            )
             for i, row in enumerate(rows)
         ]
     )
-    parts: list = [dmc.Table([head, body], withTableBorder=True, withColumnBorders=True)]
+    style = {"tableLayout": "fixed"} if widths else None
+    table = [body] if marker else [head, body]  # a marker list has no "Text" header
+    parts: list = [dmc.Table(table, withTableBorder=True, withColumnBorders=True, style=style)]
     if not rows:
-        parts.append(dmc.Text("Nothing here yet.", style=da_styles.EMPTY_TEXT))
+        parts.append(_empty_note())
     if editable:
         parts.append(
             dmc.Button(
@@ -226,8 +246,42 @@ def list_table(
     return html.Div(parts)
 
 
-def _table_row(tab, table_id, columns, index, row, editable, kinds, static, movable=False):
+def _empty_note():
+    return dmc.Text("Nothing here yet.", style=da_styles.EMPTY_TEXT)
+
+
+def _marker_rows(rows: list[dict], marker: str) -> list:
+    """Read-only list rows: a green tick, a red dot or a small number, then the text."""
+    out = []
+    for i, row in enumerate(rows, 1):
+        if marker == "tick":
+            mark = html.Span("✓", style={"color": admin_styles.GREEN, "fontWeight": 700})
+        elif marker == "dot":
+            mark = html.Span("●", style={"color": admin_styles.RED})
+        else:
+            mark = html.Span(str(i), style={"color": da_styles.MUTED, "fontSize": "12px"})
+        out.append(
+            html.Div(
+                [
+                    html.Span(mark, style={"width": "24px", "flexShrink": 0}),
+                    dmc.Text(_cell_text(row.get(TEXT_COLUMN, "")), size="sm"),
+                ],
+                style={"display": "flex", "gap": "8px", **admin_styles.ROW},
+            )
+        )
+    return out
+
+
+def pat_id(tab: str, action: str, index: int = 0, pat: str = "") -> dict:
+    """A button of the patterns side panel (Fix G4 L2). One id shape for one callback."""
+    return {"type": PAT_TYPE, "tab": tab, "action": action, "index": index, "pat": pat}
+
+
+def _table_row(
+    tab, table_id, columns, index, row, editable, kinds, static, movable=False, input_height=""
+):
     cells = []
+    same = {"styles": {"input": {"height": input_height, "minHeight": input_height}}}
     for col in columns:
         value = _cell_text(row.get(col, ""))
         if editable and col not in static:
@@ -239,12 +293,29 @@ def _table_row(tab, table_id, columns, index, row, editable, kinds, static, mova
                 "col": col,
             }
             kind = kinds.get(col)
+            extra = same if input_height else {}
             if kind == READONLY:
-                widget = dmc.TextInput(value=value, id=cell_id, disabled=True, size="xs")
+                widget = dmc.TextInput(value=value, id=cell_id, disabled=True, size="xs", **extra)
+            elif kind == PATTERNS:
+                # The text stays in a hidden box so Save still reads it; the chip opens the panel.
+                count = len([line for line in value.splitlines() if line.strip()])
+                widget = html.Div(
+                    [
+                        dmc.Button(
+                            f"{count} pattern{'' if count == 1 else 's'}",
+                            id=pat_id(tab, "open", index),
+                            variant="light",
+                            size="compact-xs",
+                        ),
+                        html.Div(dmc.Textarea(value=value, id=cell_id), style={"display": "none"}),
+                    ]
+                )
             elif kind:
                 widget = dmc.Select(
-                    data=kind, value=value or None, id=cell_id, size="xs", searchable=True
+                    data=kind, value=value or None, id=cell_id, size="xs", searchable=True, **extra
                 )
+            elif input_height:
+                widget = dmc.Textarea(value=value, id=cell_id, autosize=False, size="xs", **extra)
             else:
                 widget = dmc.Textarea(value=value, id=cell_id, autosize=True, minRows=1, size="xs")
             cells.append(dmc.TableTd(widget))

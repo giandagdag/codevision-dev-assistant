@@ -1,5 +1,6 @@
 from da_load_starter_rulebook import load_starter_rulebook, main
 from db_table_functions.db_tbl_da_rulebook import list_versions
+from layouts.da_admin_catalog_tab import catalog_list
 
 
 def test_first_run_publishes_v1_from_the_seed(db_path, seed_rulebook):
@@ -51,6 +52,29 @@ def test_work_first_run_describes_codevision(db_path, monkeypatch):
     charter = list_versions(db_path)[0].rulebook.charter
     assert "CodeVision" in charter.purpose
     assert "Harbour Loans" not in charter.purpose
+
+
+def test_work_first_run_has_an_empty_catalog_and_scope_and_refresh_keeps_it(
+    db_path, monkeypatch
+):
+    _work_env(monkeypatch, db_path)
+
+    assert main(env_file=None, argv=[]) == 0
+
+    policy = list_versions(db_path)[0].rulebook.policy
+    assert policy.capabilities == []
+    assert policy.index_folder_scope == ""
+    assert "No capabilities yet" in str(catalog_list([], []))
+    assert main(env_file=None, argv=["--refresh-purpose"]) == 0  # nothing to change, nothing added
+
+
+def test_refresh_purpose_keeps_the_catalog(db_path, monkeypatch):
+    load_starter_rulebook(db_path)  # home seed with its 3 capabilities
+    _work_env(monkeypatch, db_path)
+
+    assert main(env_file=None, argv=["--refresh-purpose"]) == 0
+
+    assert len(list_versions(db_path)[-1].rulebook.policy.capabilities) == 3
 
 
 def test_refresh_purpose_makes_new_version_then_nothing_to_change(

@@ -27,10 +27,11 @@ class AiCard:
     confidence: str
     summary: str
     reason: str
+    tagged_at: str = ""  # for "Newest first"
 
 
 def ai_cards(directory: Path | None = None) -> list[AiCard]:
-    """Open proposals, by path."""
+    """Open proposals, by path. Programs in a new-capability suggestion have their own card."""
     modules = read_store(directory)["modules"]
     return [
         AiCard(
@@ -39,9 +40,10 @@ def ai_cards(directory: Path | None = None) -> list[AiCard]:
             str(e.get("confidence", "")),
             str(e.get("summary", "")),
             str(e.get("reason", "")),
+            str(e.get("tagged_at", "")),
         )
         for path, e in sorted(modules.items())
-        if isinstance(e, dict) and e.get("state") == STATE_PROPOSED
+        if isinstance(e, dict) and e.get("state") == STATE_PROPOSED and not e.get("new_name")
     ]
 
 
@@ -135,10 +137,18 @@ def approve_all_high(
     )
 
 
+def reject_cards(paths: list[str], directory: Path | None = None, who: str = "") -> None:
+    """The programs belong in no capability. No rulebook change, ONE new tag version. A suggestion
+    from code links remembers its cluster, so it stays away until the cluster changes (G2b)."""
+    modules = read_store(directory)["modules"]
+    for path in paths:
+        fingerprint = modules.get(path, {}).get("cluster")
+        if fingerprint:
+            remember_reject(path, fingerprint, directory)
+    many = f"{len(paths)} programs"
+    note = f"AI scan: {paths[0] if len(paths) == 1 else many} rejected"
+    _mark(paths, STATE_REJECTED, directory, who, note)
+
+
 def reject_card(path: str, directory: Path | None = None, who: str = "") -> None:
-    """The program belongs in no capability. No rulebook change. A suggestion from code links
-    remembers its cluster, so it stays away until the cluster changes (Upgrade G2b)."""
-    fingerprint = read_store(directory)["modules"].get(path, {}).get("cluster")
-    if fingerprint:
-        remember_reject(path, fingerprint, directory)
-    _mark([path], STATE_REJECTED, directory, who, f"AI scan: {path} rejected")
+    reject_cards([path], directory, who)

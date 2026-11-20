@@ -48,6 +48,9 @@ def load_starter_rulebook(db_path: Path, at_work: bool = False) -> str:
     seed = load_rulebook_file(SEED_RULEBOOK_FILE)
     if at_work:
         seed = _with_work_purpose(seed)
+        # G4 C3: first publish only; refresh_purpose keeps whatever catalog Admin has built
+        empty = seed.policy.model_copy(update={"capabilities": []})
+        seed = seed.model_copy(update={"policy": empty})
     # publish_first_version refuses if another run published in the meantime.
     version = publish_first_version(db_path, seed, SAVED_BY, CHANGE_NOTE)
     return f"Rulebook v{version.version_number} published."

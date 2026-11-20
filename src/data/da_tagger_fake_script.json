@@ -7,5 +7,12 @@
     "src/agents/limits_expiry_report.py": {"summary": "Builds one report line per customer limit and counts days left.", "capability": "Reports", "confidence": "medium", "reason": "Builds report lines."},
     "src/agents/docs_markdown_export.py": {"summary": "Creates a Markdown file with a heading and one bullet per line.", "capability": "Reports", "confidence": "high", "reason": "Writes a report document."},
     "src/agents/docs_folder_to_md.py": {"summary": "Creates one Markdown file for each text note in a folder.", "capability": "none", "confidence": "low", "reason": "No capability covers notes."}
+  },
+  "new_replies": {
+    "_about": "Fix G4 S7: three made-up modules suggest one new capability (two spellings) and one reply is bad.",
+    "src/agents/notes_to_md.py": {"summary": "Turns text notes into Markdown files.", "capability": "new", "new_name": "Document export", "new_description": "Programs that write documents from notes.", "confidence": "high", "reason": "Writes documents."},
+    "src/agents/notes_index.py": {"summary": "Lists the Markdown files made from notes.", "capability": "new", "new_name": "document  exports", "new_description": "Document writing.", "confidence": "medium", "reason": "Lists documents."},
+    "src/agents/notes_clean.py": {"summary": "Cleans note text before export.", "capability": "new", "new_name": "Document Export", "new_description": "Document writing.", "confidence": "low", "reason": "Prepares documents."},
+    "src/agents/notes_bad.py": {"summary": "Does something.", "capability": "new", "new_name": "src/agents/x.py", "new_description": "A path is not a name.", "confidence": "high", "reason": "Bad name."}
   }
 }

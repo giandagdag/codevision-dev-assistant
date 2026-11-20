@@ -9,6 +9,7 @@ from agents.da_admin_forms import (
     field_bounds,
 )
 from agents.da_admin_labels import label as field_label
+from agents.da_admin_overview import THINKING_LABEL
 from layouts.da_admin_card import admin_card, card_grid
 from layouts.da_admin_common import (
     TAB_BUILD,
@@ -42,8 +43,11 @@ def build_view(
     editable: bool = False,
     draft: dict | None = None,
     active: bool = True,
+    server: list[tuple[str, str]] | None = None,
 ):
     policy = version.rulebook.policy
+    # Fix G4 T9: one read-only line from the server settings (the .env value, never editable here)
+    thinking = dict(server or []).get(THINKING_LABEL)
     limits = dmc.Stack(
         [
             _number_fields(policy, CORE_BUILD_FIELDS, editable, draft),
@@ -73,6 +77,8 @@ def build_view(
                     _model_field(policy, "generator_model", "Generator model", editable, draft),
                     _model_field(policy, "tester_model", "Tester model", editable, draft),
                     _model_field(policy, "tagger_model", "Program tagger", editable, draft),
+                    *([dmc.Text(f"AI thinking: {thinking}", size="xs", c="dimmed")] if thinking
+                      else []),
                 ],
                 gap=2,
             ),

@@ -6,7 +6,12 @@ from types import SimpleNamespace
 import pytest
 import requests
 
-from agents.da_llm_client import LLMClientError, OnPremLLMClient, get_llm_client
+from agents.da_llm_client import (
+    ContextTooLargeError,
+    LLMClientError,
+    OnPremLLMClient,
+    get_llm_client,
+)
 from configs.da_config import ConfigError
 
 URL = "https://llm.example.com/v1/chat/completions"
@@ -194,8 +199,6 @@ def test_model_falls_back_to_the_setting(make_settings, monkeypatch):
     [
         {"error": "no choices here"},
         {"choices": []},
-        {"choices": [{"message": {}}]},
-        {"choices": [{"message": {"content": None}}]},
         {"choices": "oops"},
         ["not", "a", "dict"],
     ],
@@ -205,6 +208,134 @@ def test_wrong_shape_gives_a_plain_message(make_settings, monkeypatch, payload):
 
     with pytest.raises(LLMClientError, match=r"choices\[0\]\.message\.content"):
         client.complete("hi")
+
+
+def message_reply(message, finish_reason=None):
+    choice = {"message": message}
+    if finish_reason:
+        choice["finish_reason"] = finish_reason
+    return reply_with(200, {"choices": [choice], "model": "m"}, text="{}")
+
+
+def error_of(make_settings, monkeypatch, reply, **changes):
+    client = make_client(make_settings, FakePost(reply), monkeypatch, **changes)
+    with pytest.raises(LLMClientError) as caught:
+        client.complete("hi")
+    return str(caught.value)
+
+
+@pytest.mark.parametrize("message", [{}, {"content": None}])
+def test_choice_without_text_does_not_blame_the_url(make_settings, monkeypatch, message):
+    text = error_of(make_settings, monkeypatch, message_reply(message))
+
+    assert "DA_ONPREM_URL" not in text
+
+
+def test_loop_in_the_thinking_gets_the_loop_sentence(make_settings, monkeypatch):
+    """G4-3: the real case, `reasoning` (not reasoning_content) ending in NON-NON-NON."""
+    thinking = "Let me plan the code carefully. " + "NON-" * 400
+    reply = message_reply({"content": None, "reasoning": thinking}, "length")
+
+    text = error_of(make_settings, monkeypatch, reply)
+
+    assert "stuck repeating itself" in text
+    assert "DA_ONPREM_THINKING=off" in text
+    assert "DA_ONPREM_URL" not in text
+
+
+def test_length_without_a_loop_and_only_thinking_and_no_choices(make_settings, monkeypatch):
+    """G4-4: three different causes, three different sentences."""
+    varied = " ".join(f"step{n} word{n * 7}" for n in range(200))
+
+    length = error_of(
+        make_settings, monkeypatch, message_reply({"reasoning": varied}, "length")
+    )
+    only = error_of(
+        make_settings, monkeypatch, message_reply({"reasoning": varied}, "stop")
+    )
+    nothing = error_of(make_settings, monkeypatch, reply_with(200, {"model": "m"}))
+
+    assert "length limit before it wrote an answer" in length
+    assert "DA_ONPREM_URL" not in length
+    assert "only its thinking" in only
+    assert "DA_ONPREM_URL points at the chat endpoint" in nothing
+
+
+def test_thinking_off_adds_the_switch_and_empty_adds_nothing(make_settings, monkeypatch):
+    """G4-1."""
+    off = FakePost(answer())
+    make_client(make_settings, off, monkeypatch, onprem_thinking="off").complete("hi")
+    empty = FakePost(answer())
+    make_client(make_settings, empty, monkeypatch).complete("hi")
+
+    assert off.calls[0]["json"]["chat_template_kwargs"] == {"enable_thinking": False}
+    assert "chat_template_kwargs" not in empty.calls[0]["json"]
+
+
+def test_sampling_values_sent(make_settings, monkeypatch):
+    """G4-2: thinking on with nothing set sends Qwen's values; explicit values win."""
+    on = FakePost(answer())
+    make_client(make_settings, on, monkeypatch, onprem_thinking="on").complete("hi")
+    own = FakePost(answer())
+    make_client(
+        make_settings, own, monkeypatch,
+        onprem_temperature=0.3, onprem_top_p=0.5, onprem_presence_penalty=1.5,
+    ).complete("hi")
+
+    assert (on.calls[0]["json"]["temperature"], on.calls[0]["json"]["top_p"]) == (0.6, 0.95)
+    assert "presence_penalty" not in on.calls[0]["json"]
+    sent = own.calls[0]["json"]
+    assert (sent["temperature"], sent["top_p"], sent["presence_penalty"]) == (0.3, 0.5, 1.5)
+
+
+def test_build_calls_send_the_build_length_and_others_the_normal_one(make_settings, monkeypatch):
+    """G4-6."""
+    from agents.da_build_agent import get_build_client
+
+    settings = onprem_settings(
+        make_settings, onprem_max_tokens=8000, onprem_max_tokens_build=24000
+    )
+    post = FakePost(answer())
+    monkeypatch.setattr(requests, "post", post)
+
+    get_build_client(settings, "generator").complete("hi")
+    get_llm_client("generator", settings).complete("hi")
+
+    assert [call["json"]["max_tokens"] for call in post.calls] == [24000, 8000]
+
+
+def test_build_length_empty_falls_back_to_the_normal_one(make_settings, monkeypatch):
+    from agents.da_build_agent import get_build_client
+
+    post = FakePost(answer())
+    monkeypatch.setattr(requests, "post", post)
+
+    get_build_client(onprem_settings(make_settings, onprem_max_tokens=8000), "tester").complete("x")
+
+    assert post.calls[0]["json"]["max_tokens"] == 8000
+
+
+def test_sampling_line_is_logged_once(make_settings, monkeypatch, caplog):
+    import agents.da_llm_client as module
+
+    monkeypatch.setattr(module, "_sampling_logged", False)
+    caplog.set_level(logging.INFO)
+    for _ in range(2):
+        make_client(make_settings, FakePost(answer()), monkeypatch)
+
+    assert sum("On-prem AI settings" in line for line in caplog.messages) == 1
+
+
+def test_server_refusing_the_thinking_switch_is_named_and_not_retried(make_settings, monkeypatch):
+    """G4-5: no second call without the switch, and not the "too large" error."""
+    post = FakePost(reply_with(400, None, "unknown field enable_thinking"))
+    client = make_client(make_settings, post, monkeypatch, onprem_thinking="off")
+
+    with pytest.raises(LLMClientError, match="does not accept the thinking switch") as caught:
+        client.complete("hi")
+
+    assert len(post.calls) == 1
+    assert not isinstance(caught.value, ContextTooLargeError)
 
 
 def test_reply_that_is_not_json_gives_a_plain_message(make_settings, monkeypatch):

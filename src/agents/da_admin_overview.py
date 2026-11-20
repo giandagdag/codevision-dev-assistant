@@ -21,7 +21,10 @@ from agents.da_admin_diff import (
     build_timeline,
 )
 from agents.da_admin_forms import capabilities_without_backup
+from agents.da_admin_starter import starter_at_work
+from agents.da_admin_suggestions import suggestions
 from agents.da_admin_tag_cards import ai_cards
+from agents.da_llm_client import sampling_for
 from agents.da_sandbox_python import test_python
 from db_table_functions.da_db import open_db
 from db_table_functions.db_tbl_da_build import ensure_build_tables
@@ -47,6 +50,7 @@ STATUS_RED = "red"
 NOTHING_TO_DO = "Nothing needs attention."
 NEVER_CHANGED = "not changed since v1"
 MISSING_BACKUP_FILTER = "missing_backup"
+REVIEW_QUEUE_FILTER = "review_queue"  # the jump button opens the Review queue view (Fix G4 L7)
 
 
 @dataclass(frozen=True)
@@ -82,7 +86,7 @@ def build_overview(settings, now: datetime | None = None) -> Overview | None:
     waiting = [row.waiting_since for row in queue_rows(settings)]
     return overview_from(
         active, waiting, build_timeline(settings.db_path), now, open_escalations(settings),
-        len(ai_cards()),
+        len(ai_cards()) + len(suggestions()), len(starter_at_work(active.rulebook)),
     )
 
 
@@ -100,14 +104,19 @@ def overview_from(
     now: datetime | None = None,
     escalations: list[EscalationRow] | None = None,
     ai_proposals: int = 0,
+    starter_items: int = 0,
 ) -> Overview:
     """The pure part: given the version, the open queue's ages and the timeline, no database."""
     rulebook = version.rulebook
     items = attention_items(rulebook, waiting_since, now)
+    if starter_items:  # Fix G4 C2: home starter data still in the work catalog
+        noun = "item" if starter_items == 1 else "items"
+        text = f"Starter items in the catalog: {starter_items} made-up {noun} to remove."
+        items.append(AttentionItem(AREA_CATALOG, LEVEL_INFO, text))
     if ai_proposals:  # fix 11-2: the AI scan's open cards
         noun = "proposal" if ai_proposals == 1 else "proposals"
         text = f"{ai_proposals} AI {noun} to review (Capability catalog tab)."
-        items.append(AttentionItem(AREA_CATALOG, LEVEL_INFO, text))
+        items.append(AttentionItem(AREA_CATALOG, LEVEL_INFO, text, REVIEW_QUEUE_FILTER))
     items += escalation_items(escalations or [], rulebook.policy.admin_unassigned_stale_days, now)
     summaries = area_summaries(rulebook, len(waiting_since))
     changed = last_changed(timeline)
@@ -277,6 +286,16 @@ def _tests_run_with(settings) -> str:
     return python.error or python.label
 
 
+THINKING_LABEL = "AI thinks before answering"
+
+
+def _thinking_text(settings) -> str:
+    """Fix G4 T9: the thinking switch and the sampling values in plain words (no DA_ names)."""
+    temperature, top_p, _ = sampling_for(settings)
+    word = {"off": "off", "on": "on"}.get(settings.onprem_thinking, "server default")
+    return f"{word}; temperature {temperature}, top_p {top_p}"
+
+
 def server_settings_view(settings) -> list[tuple[str, str]]:
     """The read-only "Server settings" block of Repository and index (spec 11): .env name and the
     value to show. The folder is only "set" or "not set": no path, no key, no secret."""
@@ -289,6 +308,7 @@ def server_settings_view(settings) -> list[tuple[str, str]]:
         ("DA_CODEVISION_SRC", "set" if settings.codevision_src else "not set"),
         ("DA_CODEVISION_PYTHON", "set" if settings.codevision_python else "not set"),
         ("Tests run with", _tests_run_with(settings)),
+        (THINKING_LABEL, _thinking_text(settings)),
         # URL and token are only "set" / "not set": never the value
         ("DA_SONAR_URL", "set" if settings.sonar_url else "not set"),
         ("DA_SONAR_TOKEN", "set" if settings.sonar_token else "not set"),

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
-from agents.da_llm_client import LLMClientError, get_llm_client
+from agents.da_llm_client import LLMClientError, get_llm_client, sampling_for
 from configs.da_config import DEFAULT_ENV_FILE, ConfigError, Settings, load_settings
 
 PING_SYSTEM = "Reply with the single word OK."
@@ -29,6 +29,22 @@ class PingResult:
     seconds: float
     text: str = ""
     error: str = ""
+    # Fix G4 T8: what was sent and what came back (never the key or a header).
+    settings_line: str = ""
+    finish_reason: str = ""
+    usage: dict | None = None
+    had_thinking: bool = False
+
+
+def _settings_line(settings: Settings) -> str:
+    if settings.llm_provider != "onprem":
+        return ""
+    temperature, top_p, penalty = sampling_for(settings)
+    return (
+        f"AI thinking: {settings.onprem_thinking or 'server default'}; "
+        f"temperature {temperature}, top_p {top_p}, "
+        f"presence penalty {'not sent' if penalty is None else penalty}"
+    )
 
 
 def ping(settings: Settings) -> PingResult:
@@ -43,7 +59,16 @@ def ping(settings: Settings) -> PingResult:
         seconds = time.perf_counter() - started
         return PingResult(False, provider, "", host, seconds, error=str(error))
     return PingResult(
-        True, reply.provider, reply.model, host, time.perf_counter() - started, text=reply.text
+        True,
+        reply.provider,
+        reply.model,
+        host,
+        time.perf_counter() - started,
+        text=reply.text,
+        settings_line=_settings_line(settings),
+        finish_reason=reply.finish_reason,
+        usage=reply.usage,
+        had_thinking=reply.had_thinking,
     )
 
 
@@ -55,6 +80,16 @@ def format_result(result: PingResult) -> list[str]:
         f"Time taken: {result.seconds:.2f} seconds",
     ]
     if result.ok:
+        if result.settings_line:
+            lines.append(result.settings_line)
+        if result.finish_reason:
+            usage = result.usage or {}
+            lines.append(
+                f"Finish reason: {result.finish_reason}; tokens: "
+                f"prompt {usage.get('prompt_tokens', '?')}, "
+                f"answer {usage.get('completion_tokens', '?')}; "
+                f"thinking text: {'yes' if result.had_thinking else 'no'}"
+            )
         lines.append(f"Reply: {result.text[:REPLY_PREVIEW_LENGTH]}")
         lines.append("Ping OK.")
     else:

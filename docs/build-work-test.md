@@ -121,6 +121,21 @@ version stops the run with a plain message and uses no round.
   told "approved but not installed" and picks another library, and the Approach prompt lists those
   libraries as "do not use".
 
+## The AI keeps thinking and never answers (Fix G4, A6)
+
+Qwen3 models think first. With near-greedy settings they can repeat themselves until the length
+limit, and no bigger limit helps.
+
+1. In `.env` add `DA_ONPREM_THINKING=off` and restart. Run `python src\da_llm_ping.py`: expect
+   `Finish reason: stop` and `thinking text: no`. If it says the server does not accept the thinking
+   switch, leave it empty and set `DA_ONPREM_PRESENCE_PENALTY=1.5` instead.
+2. Resume the build (for example CVDA-2026-0004).
+3. Optional: `DA_ONPREM_MAX_TOKENS_BUILD` gives code-writing calls a longer limit than the rest.
+   `DA_ONPREM_TEMPERATURE` and `DA_ONPREM_TOP_P` change the sampling (with thinking `on` and both
+   empty, 0.6 and 0.95 are sent).
+4. The Admin settings list ("AI thinks before answering") and the Build tab's model card show what
+   is sent.
+
 ## Wiring the capability map into CodeVision's own page setup (Fix G1)
 
 At home the map page is wired only in the home shell (`src/web/da_home_web_server.py`). CodeVision's
