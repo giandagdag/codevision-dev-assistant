@@ -1,7 +1,7 @@
 """Fix G4 L7 to L10: the Review queue view, scrolling box, filters kept, bulk bar (made-up data)."""
 
 from agents.da_admin_overview import build_overview
-from agents.da_admin_review import ReviewFilter
+from agents.da_admin_review import ReviewFilter, bulk_plan
 from agents.da_admin_tag_store import read_tags, save_store
 from agents.da_tag_versions import list_versions as list_tag_versions
 from callbacks.screen_callbacks import da_admin_page_callbacks as page
@@ -118,6 +118,21 @@ def test_g4_25_approve_proposals_saves_one_version_and_the_box_says_what_it_skip
     assert "The catalog is now v2" in text_of(done)
     assert read_tags(tmp_path)["zz/a.py"]["state"] == "approved"
     assert read_tags(tmp_path)["zz/d.py"]["state"] == "proposed"
+
+
+def test_the_drawn_bulk_buttons_carry_their_kind_in_the_state_slot():
+    from agents.da_admin_tag_cards import AiCard
+    from layouts.da_admin_review_view import bulk_bar, bulk_confirm
+
+    cards = [AiCard("zz/a.py", "Uploads", "high", "Does", "fits")]
+    bar = bulk_bar(["zz/a.py"], cards, ["Uploads"])
+    asks = {n.id["state"] for n in walk(bar) if isinstance(getattr(n, "id", None), dict)
+            and n.id.get("action") == "bulk_ask"}
+    assert asks == {"assign", "approve", "reject"}
+    box = bulk_confirm("approve", bulk_plan(["zz/a.py"], cards), 1, "Uploads")
+    confirm = next(n.id for n in walk(box) if getattr(n, "children", "") == "Confirm")
+    got = (confirm["action"], confirm["state"], confirm["cap"])
+    assert got == ("bulk_do", "approve", "Uploads")
 
 
 def test_bulk_assign_needs_a_capability_and_bulk_reject_is_one_tag_version(

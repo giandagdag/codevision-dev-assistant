@@ -133,6 +133,20 @@ def test_starter_at_work_is_empty_at_home(published_rulebook, monkeypatch):
     assert starter.starter_at_work(published_rulebook.rulebook) == []
 
 
+def test_overview_lists_starter_items_at_work_only(make_settings, published_rulebook, monkeypatch):
+    from agents.da_admin_overview import build_overview
+
+    settings = make_settings(admin_ids=("admin-0001",), developer_id="admin-0001")
+    lines = lambda: [i.text for i in build_overview(settings).attention]  # noqa: E731
+
+    monkeypatch.setattr(starter, "load_settings", lambda: type("S", (), {"llm_provider": "fake"})())
+    assert not [t for t in lines() if t.startswith("Starter items in the catalog")]
+
+    work = type("S", (), {"llm_provider": "onprem"})()
+    monkeypatch.setattr(starter, "load_settings", lambda: work)
+    assert [t for t in lines() if t.startswith("Starter items in the catalog")]
+
+
 def test_the_screens_show_the_red_box_and_the_card(published_rulebook):
     found = starter_leftovers(published_rulebook.rulebook)
 

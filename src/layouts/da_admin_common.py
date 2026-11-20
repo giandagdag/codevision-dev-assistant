@@ -255,23 +255,18 @@ def _marker_rows(rows: list[dict], marker: str) -> list:
     out = []
     for i, row in enumerate(rows, 1):
         if marker == "tick":
-            mark = html.Span("✓", style={"color": "#2B8A3E", "fontWeight": 700})
+            mark = html.Span("✓", style={"color": admin_styles.GREEN, "fontWeight": 700})
         elif marker == "dot":
-            mark = html.Span("●", style={"color": "#C92A2A"})
+            mark = html.Span("●", style={"color": admin_styles.RED})
         else:
-            mark = html.Span(str(i), style={"color": "#667085", "fontSize": "12px"})
+            mark = html.Span(str(i), style={"color": da_styles.MUTED, "fontSize": "12px"})
         out.append(
             html.Div(
                 [
                     html.Span(mark, style={"width": "24px", "flexShrink": 0}),
                     dmc.Text(_cell_text(row.get(TEXT_COLUMN, "")), size="sm"),
                 ],
-                style={
-                    "display": "flex",
-                    "gap": "8px",
-                    "padding": "8px 0",
-                    "borderBottom": "1px solid #E3E7EE",
-                },
+                style={"display": "flex", "gap": "8px", **admin_styles.ROW},
             )
         )
     return out

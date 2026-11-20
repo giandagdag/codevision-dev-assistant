@@ -60,6 +60,16 @@ Settings are read in `configs/da_config.py` (`load_settings`, `_parse_*` helpers
 8. **L11, G4-19, G4-26**: screenshots at 1366 and 1920 px, layout fixes in one batch, AF-2 label scan.
 Then code review (max 3 rounds), full pytest, ruff, smoke, PR.
 
+PARKED step 2 (part): `.env.example` lines for `DA_ONPREM_THINKING=off` (Qwen3 comment) and the four
+empty new settings. A safety hook refuses every read and edit of `.env*` files, so the builder cannot
+change it. Gian adds the lines by hand, then adds the five names to `EXPECTED_SETTINGS` in
+`tests/test_da_env_example.py`. Medium: the settings work without the lines (the default is "server default").
+
+Review round 1 decisions: S4 named senior stays a free text box and an empty senior is refused (asked
+Gian, not decided); the L1 "expand on focus" and the L5 1,100 px stack rule are left as built (the pair
+already stacks below about 1,250 px); the Independent Tester call site in `da_tester_agent.py` is the
+Approach tester, so it correctly does not use the build length.
+
 Each run builds at most 3 steps; the rest continue on this branch.
 
 ## Checks

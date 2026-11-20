@@ -150,7 +150,7 @@ def bulk_bar(selected: list[str], cards, capability_names: list[str], disabled: 
 
 def _bulk_button(label: str, kind: str, disabled: bool, red: bool = False):
     return dmc.Button(
-        label, id=queue_button_id(Q_BULK_ASK, kind), size="xs", variant="default",
+        label, id=queue_button_id(Q_BULK_ASK, state=kind), size="xs", variant="default",
         disabled=disabled, **({"color": "red"} if red else {}),
     )
 
@@ -171,7 +171,9 @@ def bulk_confirm(kind: str, plan: BulkPlan, selected: int, target: str):
             dmc.Text(text, size="sm"),
             dmc.Group(
                 [
-                    dmc.Button("Confirm", id=queue_button_id(Q_BULK_DO, kind, target), size="xs"),
+                    dmc.Button(
+                        "Confirm", id=queue_button_id(Q_BULK_DO, cap=target, state=kind), size="xs"
+                    ),
                     dmc.Button(
                         "Cancel", id=queue_button_id(Q_CANCEL), size="xs", variant="default"
                     ),
@@ -191,9 +193,15 @@ def review_pane(
     return html.Div(
         [
             *above,
-            control_bar(rf, folders),
-            count_row(shown, total, disabled),
-            html.Div(bar, id=RQ_BAR_ID),
+            # Sticky: when the page scrolls to show more cards, search and bulk bar stay in view.
+            html.Div(
+                [
+                    control_bar(rf, folders),
+                    count_row(shown, total, disabled),
+                    html.Div(bar, id=RQ_BAR_ID),
+                ],
+                style=admin_styles.REVIEW_BAR,
+            ),
             html.Div(items or empty_list(), id=RQ_LIST_ID, style=admin_styles.REVIEW_BOX),
         ]
     )

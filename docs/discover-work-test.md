@@ -36,3 +36,11 @@ Set `DA_SEARCH_PROVIDER=codevision`, open Discover and run a search in both mode
 chat says: "The CodeVision index needs building: run `python src\da_build_code_index.py`." and the
 request carries on. Setting `DA_CODE_INDEX_MAX_DISTANCE` (default 0.90) controls how close a meaning hit
 must be.
+
+## After the 20 Nov work test (Fix G4)
+
+In Admin, Capability catalog: click **Remove all starter items** (the made-up Harbour Loans capabilities
+and the demo folder), then run a **Full rebuild**. Open the **Review queue** view: the AI may now suggest
+new capabilities (a suggestion card with Create and assign, Assign to, Reject). The Overview lists
+"Starter items in the catalog" until they are removed. The home fake run shows no suggestion card
+(only the tests use that script).

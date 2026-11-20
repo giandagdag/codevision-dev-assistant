@@ -21,6 +21,7 @@ from agents.da_admin_diff import (
     build_timeline,
 )
 from agents.da_admin_forms import capabilities_without_backup
+from agents.da_admin_starter import starter_at_work
 from agents.da_admin_suggestions import suggestions
 from agents.da_admin_tag_cards import ai_cards
 from agents.da_llm_client import sampling_for
@@ -85,7 +86,7 @@ def build_overview(settings, now: datetime | None = None) -> Overview | None:
     waiting = [row.waiting_since for row in queue_rows(settings)]
     return overview_from(
         active, waiting, build_timeline(settings.db_path), now, open_escalations(settings),
-        len(ai_cards()) + len(suggestions()),
+        len(ai_cards()) + len(suggestions()), len(starter_at_work(active.rulebook)),
     )
 
 
@@ -103,10 +104,15 @@ def overview_from(
     now: datetime | None = None,
     escalations: list[EscalationRow] | None = None,
     ai_proposals: int = 0,
+    starter_items: int = 0,
 ) -> Overview:
     """The pure part: given the version, the open queue's ages and the timeline, no database."""
     rulebook = version.rulebook
     items = attention_items(rulebook, waiting_since, now)
+    if starter_items:  # Fix G4 C2: home starter data still in the work catalog
+        noun = "item" if starter_items == 1 else "items"
+        text = f"Starter items in the catalog: {starter_items} made-up {noun} to remove."
+        items.append(AttentionItem(AREA_CATALOG, LEVEL_INFO, text))
     if ai_proposals:  # fix 11-2: the AI scan's open cards
         noun = "proposal" if ai_proposals == 1 else "proposals"
         text = f"{ai_proposals} AI {noun} to review (Capability catalog tab)."
