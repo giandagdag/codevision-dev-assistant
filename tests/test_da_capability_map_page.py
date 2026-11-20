@@ -23,7 +23,7 @@ from layouts.da_capability_map_view import (
     render_map,
 )
 from styles import da_styles
-from tests.test_da_capability_map import small
+from tests.test_da_capability_map import entry, small, tag
 
 
 def test_link_opens_the_map_in_a_new_tab():  # G-11, G-12
@@ -91,6 +91,37 @@ def test_no_server_path_no_outside_script_and_brand_colors():  # G-15
     colors = {s["style"].get("background-color") for s in view.STYLESHEET} - {None}
     assert colors <= {da_styles.BLUE, da_styles.NAVY, da_styles.MUTED}
     assert view.STYLESHEET[0]["style"]["color"] == da_styles.INK
+
+
+def long_name_graph(count=1):
+    """`count` made-up modules, all tagged to one capability."""
+    files, tags = {}, {}
+    for i in range(count):
+        name = "da_example_long_name" + (f"_{i}" if count > 1 else "")
+        path = f"src/agents/{name}.py"
+        files[path] = entry(f"src.agents.{name}", ("run",))
+        tags[path] = tag("Payments")
+    return {"files": files}, tags
+
+
+def test_module_label_is_the_short_name_and_a_click_shows_the_full_path():  # G2-3
+    graph, tags = long_name_graph()
+    state = {"cap": "Payments", "module": ""}
+    elements = render_map(pick_view(graph, tags, state), state)[0]
+    assert [e["data"]["label"] for e in elements] == ["da_example_long_name"]
+    state = {"cap": "Payments", "module": "src.agents.da_example_long_name"}
+    lines = render_map(pick_view(graph, tags, state), state)[3]
+    assert "File: src/agents/da_example_long_name.py" in lines
+
+
+def test_labels_wrap_and_the_layout_spaces_nodes_by_label_size():  # G2-4
+    node_style = view.STYLESHEET[0]["style"]
+    assert node_style["text-wrap"] == "wrap" and node_style["text-max-width"] == view.LABEL_WIDTH
+    layout = map_shell().to_plotly_json()["props"]["children"][3].layout
+    assert layout["nodeDimensionsIncludeLabels"] is True
+    graph, tags = long_name_graph(40)
+    state = {"cap": "Payments", "module": ""}
+    assert len(render_map(pick_view(graph, tags, state), state)[0]) == 40
 
 
 def test_the_callbacks_register_on_a_dash_app():

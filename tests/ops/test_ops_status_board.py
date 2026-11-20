@@ -701,3 +701,10 @@ def test_the_now_row_counts_from_origin_base_without_merge_commits(status_file):
     body = build(git=git, status_file=status_file)
     assert "| Now: fix-not-proven | step 5 · last commit 15:59 |" in body
     assert git.seen and all("--no-merges" in a for a in git.seen)
+
+
+def test_next_idle_shows_a_calm_idle_line_not_waiting(tmp_path):
+    f = tmp_path / "STATUS.md"
+    f.write_text("# S\n- Next: idle: queue empty after Fix G1\n## Log\n", encoding="utf-8")
+    assert build("idle", status_file=f).splitlines()[0] == (
+        "## ⚪ IDLE: queue empty, waiting for your next job")

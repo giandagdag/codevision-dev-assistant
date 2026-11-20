@@ -424,6 +424,8 @@ def top_line(i: Inputs) -> str:
         started = float(i.running.get("started") or i.now)
         return (f"## 🟢 WORKING: {agent}{phase} (running {_duration(i.now - started)}, "
                 f"since {_clock(started)})")
+    if i.next_text.strip().lower().startswith("idle"):
+        return "## ⚪ IDLE: queue empty, waiting for your next job"
     if _next_is_none(i.next_text):
         return "## ⚪ IDLE: nothing to do"
     return "## 🔵 READY FOR NEXT STEP: the next tick starts it"

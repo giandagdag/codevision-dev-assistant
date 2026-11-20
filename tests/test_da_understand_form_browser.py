@@ -63,8 +63,7 @@ def test_a_bad_box_shows_its_message_and_every_box_keeps_its_text(
     assert box(page, 4).input_value() == da_play.ANSWERS[3]
     view = flow.get_understand_view(settings, _request_id(live_url))
     assert view.input_mode == "form"  # nothing was saved
-    # No Dash error about a form id. (A console error about the workspace store da-ws-ctx is
-    # already there on every Understand page before this change; it is reported, not fixed here.)
+    # No Dash error about a form id.
     assert [p for p in problems if re.search(r"id of this object is `[^`]*da-form", p)] == []
 
 

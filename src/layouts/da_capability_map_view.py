@@ -35,10 +35,16 @@ MAP_LINK_TEXT = "Open capability map"
 START_STATE = {"cap": "", "module": ""}
 
 FONT = da_styles.FONT
+LABEL_WIDTH = 90  # pixels; labels wrap here
+# cose spaces bubbles by their size; `nodeDimensionsIncludeLabels` makes it count the label too.
+LAYOUT = {"name": "cose", "nodeDimensionsIncludeLabels": True, "nodeRepulsion": 20000,
+          "idealEdgeLength": 80}  # fmt: skip
 STYLESHEET = [
     {"selector": "node", "style": {
         "label": "data(label)", "background-color": da_styles.BLUE, "color": da_styles.INK,
         "font-family": FONT, "font-size": 12, "width": "data(px)", "height": "data(px)",
+        # Long names have no spaces, so wrap anywhere, at a fixed width (P39).
+        "text-wrap": "wrap", "text-max-width": LABEL_WIDTH, "text-overflow-wrap": "anywhere",
     }},
     {"selector": ".function",
      "style": {"background-color": da_styles.NAVY, "shape": "round-rectangle"}},
@@ -74,10 +80,24 @@ def _elements(view: MapView) -> list[dict]:
 def pick_view(graph: dict | None, tags: dict, state: dict, highlight: str = "") -> MapView:
     """Which level the state asks for: capabilities, one capability, one module."""
     if state.get("module"):
-        return module_view(graph, tags, state["module"], highlight)
-    if state.get("cap"):
-        return capability_view(graph, tags, state["cap"], highlight)
-    return capabilities_view(graph, tags, highlight)
+        view = module_view(graph, tags, state["module"], highlight)
+    elif state.get("cap"):
+        view = capability_view(graph, tags, state["cap"], highlight)
+    else:
+        view = capabilities_view(graph, tags, highlight)
+    return _short_labels(view, graph, state.get("module", ""))
+
+
+def _short_labels(view: MapView, graph: dict | None, module: str) -> MapView:
+    """P39: a module bubble shows the file name without folders and `.py` (the last part of the
+    dotted module name); the full path is added to the details that a click opens."""
+    for node in view.nodes:
+        if node["kind"] == "module":
+            node["label"] = node["id"].rsplit(".", 1)[-1]
+    paths = {e["module"]: path for path, e in (graph or {}).get("files", {}).items()}
+    if view.details and module in paths:
+        view.details["path"] = paths[module]
+    return view
 
 
 def crumb_text(state: dict) -> str:
@@ -123,6 +143,7 @@ def details_lines(view: MapView) -> list[str]:
     if not d:
         return []
     return [
+        *([f"File: {d['path']}"] if d.get("path") else []),
         f"Capability: {d['capability']}",
         "Functions: " + (", ".join(d["functions"]) or "none"),
         "Called by: " + (", ".join(d["callers"]) or "none"),
@@ -139,7 +160,7 @@ def render_map(view: MapView, state: dict) -> tuple[list[dict], str, str, list]:
 def map_shell() -> html.Div:
     """Drawn once at start-up, hidden until the URL is the map path."""
     graph = cyto.Cytoscape(
-        id=MAP_GRAPH_ID, elements=[], stylesheet=STYLESHEET, layout={"name": "cose"},
+        id=MAP_GRAPH_ID, elements=[], stylesheet=STYLESHEET, layout=LAYOUT,
         style={"width": "100%", "height": "560px", "background": da_styles.CANVAS},
         userZoomingEnabled=True, userPanningEnabled=True,
     )  # fmt: skip

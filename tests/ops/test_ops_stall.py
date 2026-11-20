@@ -260,3 +260,25 @@ def test_a_git_failure_in_the_stall_check_is_logged_once_and_other_rules_still_r
     lines = open(os.environ["DA_STATUS_BOARD_LOG"], encoding="utf-8").read().splitlines()
     assert len(lines) == 1
     assert len(gh.created()) == 1  # rule 1 does not need git
+
+
+# ---- 20 Nov (#107): "Next: idle: <why>" is a resting state, not a stall ----
+
+def test_next_idle_with_nothing_open_rests_without_an_alarm(tmp_path):
+    line = "- Next: idle: queue empty after Fix G1, Gian picks the next job"
+    f, gh = idle_status(tmp_path, line), FakeGh()
+    assert tick(f, gh, FakeGit()) == "idle"
+    tick(f, gh, FakeGit())
+    assert gh.created() == [] and stall.read_stall() is None
+
+
+def test_next_idle_still_reports_unpushed_commits(tmp_path):
+    f, gh = idle_status(tmp_path, "- Next: idle: queue empty"), FakeGh()
+    stall.remember_unpushed("phase-g-fix-2")
+    tick(f, gh, FakeGit({"phase-g-fix-2": 1}))
+    assert stall.read_stall() == "unpushed commits on phase-g-fix-2"
+
+
+def test_idle_is_no_work_but_a_real_next_step_is():
+    assert not c.has_work("# S\n- Next: idle: queue empty\n## Log\n")
+    assert c.has_work("# S\n- Next: builder start Fix G2\n## Log\n")

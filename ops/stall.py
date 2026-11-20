@@ -123,6 +123,12 @@ def next_lines(text: str) -> list[str]:
     return [x for x in text.splitlines() if x.lstrip("- ").startswith("Next:")]
 
 
+def is_idle(next_line: str) -> bool:
+    """20 Nov: `Next: idle: <why>` means the queue is empty on purpose and Gian picks the next job.
+    It is a resting state, not a stall (#107 was a false alarm before this existed)."""
+    return next_line.lstrip("- ")[5:].strip().lower().startswith("idle")
+
+
 def reason(text: str, finished: Callable[[], bool], unpushed: tuple[str, int] | None) -> str | None:
     """Why the team is stalled, or None. Call it only when the tick came out `idle`.
 
@@ -132,6 +138,8 @@ def reason(text: str, finished: Callable[[], bool], unpushed: tuple[str, int] | 
     found = next_lines(text)
     if len(found) != 1:
         return NO_NEXT
+    if is_idle(found[0]):
+        return f"unpushed commits on {unpushed[0]}" if unpushed else None
     if found[0].lstrip("- ")[5:].strip().lower().startswith("none") and not finished():
         return NOT_FINISHED
     if unpushed:

@@ -347,25 +347,27 @@ def register_da_workspace_callbacks(app, current_settings) -> None:
         Input(WS_PACK_ID, "data"),
         prevent_initial_call=True,
     )
+    # The three below listen to the workspace store itself (P38). Dash runs a callback only when
+    # its Input exists, so they run on workspace pages and not on the map or Admin pages, which
+    # have no `da-ws-ctx` (a State on a missing store logged a console error).
     app.clientside_callback(
-        clientside_function("content, ctx", AUTO_WRITE_BODY),
+        clientside_function("ctx", AUTO_WRITE_BODY),
         Output(WS_SINK_ID, "data", allow_duplicate=True),
-        Input("da-page-content", "children"),
-        State(WS_CTX_ID, "data"),
-        prevent_initial_call=True,
+        Input(WS_CTX_ID, "data"),
+        # A new store counts as a first call, so "initial_duplicate" (Dash's rule for
+        # allow_duplicate) lets it run when the page is drawn.
+        prevent_initial_call="initial_duplicate",
     )
     app.clientside_callback(
-        clientside_function("content, ctx", USE_BODY),
+        clientside_function("ctx", USE_BODY),
         Output(ws_button_id(USE_KEY, "bar"), "style"),
         Output(ws_button_id(USE_KEY, "bar"), "children"),
-        Input("da-page-content", "children"),
-        State(WS_CTX_ID, "data"),
+        Input(WS_CTX_ID, "data"),
     )
     app.clientside_callback(
-        clientside_function("content, ctx", CHIP_BODY),
+        clientside_function("ctx", CHIP_BODY),
         Output(WS_PERM_OK_ID, "style"),
         Output(WS_PERM_NEEDS_ID, "style"),
         Output(ws_button_id(RECONNECT_KEY, "bar"), "style"),
-        Input("da-page-content", "children"),
-        State(WS_CTX_ID, "data"),
+        Input(WS_CTX_ID, "data"),
     )

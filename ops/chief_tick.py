@@ -133,6 +133,8 @@ def has_work(status_text: str) -> bool:
     next_lines = stall.next_lines(status_text)
     if len(next_lines) != 1:  # none, or more than one: the stall alarm (fix 3) reports it
         return False
+    if stall.is_idle(next_lines[0]):  # 20 Nov: resting on purpose, zero tokens, no alarm
+        return False
     return not next_lines[0].lstrip("- ")[5:].strip().lower().startswith("none")
 
 
