@@ -13,6 +13,7 @@ from werkzeug.serving import make_server
 
 from agents.da_admin_index import record_run
 from agents.da_admin_tagger import ScriptedTaggerClient, run_tagging
+from agents.da_code_graph import build_graph, save_graph
 from agents.da_code_index import PIECES_NAME
 from callbacks.screen_callbacks import da_admin_page_callbacks as admin_cb
 from db_table_functions.da_db import open_db
@@ -22,6 +23,7 @@ from db_table_functions.db_tbl_da_requests import create_request
 from db_table_functions.db_tbl_da_rulebook import save_new_version
 from layouts.da_admin_common import TAB_CAPABILITY, TAB_CODING
 from layouts.da_admin_page import ADMIN_PATH, ADMIN_TABS, EDITABLE_TABS
+from layouts.da_capability_map_view import MAP_PATH
 from web import da_home_web_server as server_module
 
 pytestmark = pytest.mark.usefixtures("published_rulebook")
@@ -126,3 +128,33 @@ def test_ag16_fix2_screenshots_are_saved(make_live_page, live):
     page.wait_for_timeout(500)
     page.screenshot(path=str(folder / "coding-sonar.png"), full_page=True)
     assert len(list(folder.glob("*.png"))) == 4
+
+
+def test_g1_8_capability_map_pictures(make_live_page, live, tmp_path):
+    """G1-8: the map opens with bubbles, a tap goes down one level, no console errors.
+    The live fixture set DA_CODE_INDEX_DIR to tmp_path, so the graph is saved there."""
+    fake_root = Path(__file__).resolve().parents[1] / "src" / "data" / "da_fake_codevision"
+    paths = sorted(p.relative_to(fake_root).as_posix() for p in fake_root.rglob("*.py"))
+    save_graph(build_graph(fake_root, paths).graph, tmp_path)
+    OUT.mkdir(parents=True, exist_ok=True)
+    page = make_live_page(live)
+    errors: list[str] = []
+    page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.set_viewport_size(VIEWPORT)
+    page.goto(live.replace(ADMIN_PATH, MAP_PATH))  # listeners are attached before this open
+    page.locator("#da-map-graph canvas").first.wait_for(timeout=15000)
+    cy = "document.getElementById('da-map-graph')._cyreg.cy"
+    page.wait_for_function(f"{cy}.nodes().length > 0", timeout=15000)
+    page.wait_for_timeout(1000)
+    page.screenshot(path=str(OUT / "map-level1.png"))
+    page.evaluate(f"{cy}.nodes()[0].emit('tap')")  # cytoscape's own tap event, as a click gives
+    page.wait_for_function(
+        "document.getElementById('da-map-crumb').innerText.includes(' > ')", timeout=15000
+    )
+    page.wait_for_timeout(1000)
+    page.screenshot(path=str(OUT / "map-capability.png"))
+    assert page.evaluate(f"{cy}.nodes().length") > 0
+    # Known and parked (specs/parked-items.md): the workspace callbacks read da-ws-ctx on pages
+    # without the workspace panel. It is not the map, so only that one message is left out.
+    assert [e for e in errors if "da-ws-ctx" not in e] == []
