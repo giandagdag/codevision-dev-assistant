@@ -47,7 +47,7 @@ Stop, push the work so far to the phase branch, and tell Gian what you need when
   you did not see.
 
 ## Current phase
-Fix G3 (tests run with DA_CODEVISION_PYTHON): in build: spec `specs/fix-g-3.md`, plan `specs/fix-g-3-plan.md`, branch `phase-g-fix-3`, PR into `auto/phases-7-10`. Fix G2 (PR #109), Fix G1 (PR #106), Upgrade G (PR #105) and Fix NP are merged. Phase 11 fix 3 (admin polish, one index job, work embedder): PR #98, spec `specs/phase-11-fix-3.md`. Fix batches C, D1 and B2 are merged there. Phase 11 (with fixes 1 and 2) and fix batch B1 are merged. Phase 11 (a to c) is built; "Review my code" (called 10b in the spec) comes later.
+Fix G4 (work test 20 Nov: thinking loop, starter leftovers, AI suggests capabilities, catalog layout): in build: spec `specs/fix-g-4.md`, plan `specs/fix-g-4-plan.md`, branch `phase-g-fix-4`, PR into `auto/phases-7-10`. Fix G3 (PR #110), Fix G2 (PR #109), Fix G1 (PR #106), Upgrade G (PR #105) and Fix NP are merged. Phase 11 fix 3 (admin polish, one index job, work embedder): PR #98, spec `specs/phase-11-fix-3.md`. Fix batches C, D1 and B2 are merged there. Phase 11 (with fixes 1 and 2) and fix batch B1 are merged. Phase 11 (a to c) is built; "Review my code" (called 10b in the spec) comes later.
 (Phases 0 to 6 and Phase A are merged into `main`; Phases 7 to 9 and Phase A fixes 1 to 4 are in `auto/phases-7-10`; their specs stay in `specs/`.)
 
 Phases 4 onwards were redesigned on 31 Oct 2026 (LLM writes 100% of the code, built-in testing,
