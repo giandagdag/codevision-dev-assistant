@@ -31,6 +31,8 @@ ONPREM_RETRY_WAITS = (2, 4)
 ERROR_TEXT_LIMIT = 300
 # How much of an empty reply's body may appear in the log (B1 F8).
 EMPTY_REPLY_LOG_LIMIT = 2000
+# The part of the thinking text checked for a repeat loop (Fix G4 T5).
+LOOP_TAIL = 1000
 
 
 class LLMClientError(Exception):
@@ -114,13 +116,18 @@ class OnPremLLMClient:
         self._verify = settings.onprem_verify
         self._timeout = settings.onprem_timeout_seconds
         self._max_tokens = settings.onprem_max_tokens
+        self._sampling = sampling_for(settings)
+        self._thinking = settings.onprem_thinking
+        _log_sampling_once(self._sampling, self._thinking)
         self._api_key = settings.onprem_api_key
         self._headers = _build_headers(
             settings.onprem_api_key, settings.onprem_auth_header, settings.onprem_auth_prefix
         )
 
     def complete(self, prompt: str, system: str | None = None) -> LLMReply:
-        body = _build_body(self.model, prompt, system, self._max_tokens)
+        body = _build_body(
+            self.model, prompt, system, self._max_tokens, self._sampling, self._thinking
+        )
         for attempt in range(1, ONPREM_MAX_TRIES + 1):
             try:
                 return self._send_once(body)
@@ -183,6 +190,11 @@ class OnPremLLMClient:
                 f"The AI server refused the request (HTTP {status}). Check DA_ONPREM_API_KEY, "
                 "DA_ONPREM_AUTH_HEADER and DA_ONPREM_AUTH_PREFIX."
             )
+        if status == 400 and _mentions_thinking_switch(response):
+            raise LLMClientError(
+                "The AI server does not accept the thinking switch. "
+                "Leave DA_ONPREM_THINKING empty."
+            )
         if status == 400:
             # CodeVision treats 400 as "too much context"; trying again would not help.
             raise ContextTooLargeError(
@@ -211,22 +223,47 @@ class OnPremLLMClient:
         return text[:ERROR_TEXT_LIMIT]
 
 
+def sampling_for(settings: Settings) -> tuple[float, float, float | None]:
+    """temperature, top_p and presence penalty to send (Fix G4 T2).
+
+    Thinking on and nothing set: Qwen's own thinking values, because near-greedy decoding makes a
+    thinking model repeat itself for ever."""
+    thinking_on = settings.onprem_thinking == "on"
+    temperature = settings.onprem_temperature
+    top_p = settings.onprem_top_p
+    if temperature is None:
+        temperature = 0.6 if thinking_on else ONPREM_TEMPERATURE
+    if top_p is None:
+        top_p = 0.95 if thinking_on else ONPREM_TOP_P
+    return temperature, top_p, settings.onprem_presence_penalty
+
+
 def _build_body(
-    model: str, prompt: str, system: str | None, max_tokens: int | None = None
+    model: str,
+    prompt: str,
+    system: str | None,
+    max_tokens: int | None = None,
+    sampling: tuple[float, float, float | None] = (ONPREM_TEMPERATURE, ONPREM_TOP_P, None),
+    thinking: str = "",
 ) -> dict[str, Any]:
     """The JSON body, the same fields as CodeVision sends (spec P13 2.1).
 
     A system message only when given, then the user message. max_tokens is sent only when the
-    DA_ONPREM_MAX_TOKENS setting has a number.
+    DA_ONPREM_MAX_TOKENS setting has a number. The thinking switch only when the setting says so.
     """
     messages = [{"role": "system", "content": system}] if system else []
     messages.append({"role": "user", "content": prompt})
+    temperature, top_p, presence_penalty = sampling
     body: dict[str, Any] = {
         "model": model,
         "messages": messages,
-        "temperature": ONPREM_TEMPERATURE,
-        "top_p": ONPREM_TOP_P,
+        "temperature": temperature,
+        "top_p": top_p,
     }
+    if presence_penalty is not None:
+        body["presence_penalty"] = presence_penalty
+    if thinking in ("on", "off"):
+        body["chat_template_kwargs"] = {"enable_thinking": thinking == "on"}
     if max_tokens is not None:
         body["max_tokens"] = max_tokens
     return body
@@ -274,7 +311,7 @@ def _read_reply(
             usage.get("total_tokens"),
             body[:EMPTY_REPLY_LOG_LIMIT],
         )
-        raise LLMClientError(_empty_reply_message(reason, message))
+        raise LLMClientError(_empty_reply_message(reason, message, bool(choice)))
     return LLMReply(
         text=text,
         provider="onprem",
@@ -282,24 +319,74 @@ def _read_reply(
     )
 
 
-def _empty_reply_message(reason: Any, message: dict[str, Any]) -> str:
-    """The error for a reply with no text: the old shape sentence, then why in plain words."""
-    text = (
-        "The AI server answered, but not in the expected chat-completions shape "
-        "(no choices[0].message.content). Check DA_ONPREM_URL points at the chat endpoint."
-    )
-    if reason == "length":
-        why = (
-            "The AI stopped at its length limit before it wrote an answer. "
-            "Raise DA_ONPREM_MAX_TOKENS."
+def _thinking_text(message: dict[str, Any]) -> str:
+    """The model's thinking text. Servers name the field reasoning_content or reasoning."""
+    for name in ("reasoning_content", "reasoning"):
+        value = message.get(name)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
+def _is_looping(thinking: str) -> bool:
+    """True when the last 1,000 characters are mostly one short piece (2 to 20 characters)
+    repeated, like NON-NON-NON (Fix G4 T5)."""
+    tail = thinking[-LOOP_TAIL:]
+    if len(tail) < LOOP_TAIL // 2:
+        return False
+    for size in range(2, 21):
+        for start in range(size):  # the piece may start at any place in the tail
+            piece = tail[start : start + size]
+            if tail.count(piece) * size > len(tail) * 0.6:
+                return True
+    return False
+
+
+def _empty_reply_message(reason: Any, message: dict[str, Any], has_choices: bool = True) -> str:
+    """The error for a reply with no text, worded for the real cause (Fix G4 T5, T6)."""
+    if not has_choices:
+        return (
+            "The AI server answered, but not in the expected chat-completions shape "
+            "(no choices[0].message.content). Check DA_ONPREM_URL points at the chat endpoint."
         )
-    elif message.get("reasoning_content"):
-        why = "The AI sent only its thinking and no answer."
-    elif reason:
-        why = f"The AI stopped with the reason '{reason}'."
-    else:
-        return text
-    return f"{text} {why}"
+    thinking = _thinking_text(message)
+    if reason == "length":
+        if thinking and _is_looping(thinking):
+            return (
+                "The AI got stuck repeating itself while thinking and used its whole length "
+                "limit. Set DA_ONPREM_THINKING=off (or add DA_ONPREM_PRESENCE_PENALTY=1.5), "
+                "restart, and resume the build."
+            )
+        return (
+            "The AI stopped at its length limit before it wrote an answer. "
+            "Raise DA_ONPREM_MAX_TOKENS, or set DA_ONPREM_THINKING=off."
+        )
+    if thinking:
+        return "The AI sent only its thinking and no answer. Set DA_ONPREM_THINKING=off."
+    if reason:
+        return f"The AI sent no answer and stopped with the reason '{reason}'."
+    return "The AI server sent an empty answer (no text and no stop reason)."
+
+
+def _mentions_thinking_switch(response: requests.Response) -> bool:
+    text = str(getattr(response, "text", "") or "")
+    return "chat_template_kwargs" in text or "enable_thinking" in text
+
+
+_sampling_logged = False
+
+
+def _log_sampling_once(sampling: tuple[float, float, float | None], thinking: str) -> None:
+    """One line per run saying which values are sent, not one per client."""
+    global _sampling_logged
+    if _sampling_logged:
+        return
+    _sampling_logged = True
+    logger.info(
+        "On-prem AI settings: thinking=%s temperature=%s top_p=%s presence_penalty=%s",
+        thinking or "server default",
+        *sampling,
+    )
 
 
 def get_llm_client(role: Role, settings: Settings | None = None, model: str = "") -> LLMClient:

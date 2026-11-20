@@ -68,6 +68,13 @@ class Settings:
     onprem_timeout_seconds: int = DEFAULT_ONPREM_TIMEOUT_SECONDS
     # None = do not send max_tokens (CodeVision does not). A number = send it (spec P13 2.1).
     onprem_max_tokens: int | None = None
+    # Fix G4: "off" / "on" / "" (send nothing); sampling values (None = default); a longer limit
+    # for the build calls only.
+    onprem_thinking: str = ""
+    onprem_temperature: float | None = None
+    onprem_top_p: float | None = None
+    onprem_presence_penalty: float | None = None
+    onprem_max_tokens_build: int | None = None
     # Discover settings (Phase 3).
     search_provider: str = DEFAULT_SEARCH_PROVIDER
     search_top_k: int = DEFAULT_SEARCH_TOP_K
@@ -142,6 +149,17 @@ def load_settings(
         onprem_verify=_parse_verify(read("DA_ONPREM_VERIFY")),
         onprem_timeout_seconds=_parse_timeout(read("DA_ONPREM_TIMEOUT_SECONDS")),
         onprem_max_tokens=_parse_max_tokens(read("DA_ONPREM_MAX_TOKENS")),
+        onprem_thinking=_parse_thinking(read("DA_ONPREM_THINKING")),
+        onprem_temperature=_parse_number(
+            "DA_ONPREM_TEMPERATURE", read("DA_ONPREM_TEMPERATURE"), 0, 2
+        ),
+        onprem_top_p=_parse_number("DA_ONPREM_TOP_P", read("DA_ONPREM_TOP_P"), 0, 1, False),
+        onprem_presence_penalty=_parse_number(
+            "DA_ONPREM_PRESENCE_PENALTY", read("DA_ONPREM_PRESENCE_PENALTY"), 0, 2
+        ),
+        onprem_max_tokens_build=_parse_max_tokens(
+            read("DA_ONPREM_MAX_TOKENS_BUILD"), "DA_ONPREM_MAX_TOKENS_BUILD"
+        ),
         search_provider=_parse_search_provider(read("DA_SEARCH_PROVIDER")),
         search_top_k=_parse_whole_number(
             "DA_SEARCH_TOP_K", read("DA_SEARCH_TOP_K"), DEFAULT_SEARCH_TOP_K, 1, 20
@@ -229,15 +247,45 @@ def _parse_timeout(raw: str) -> int:
     return int(raw)
 
 
-def _parse_max_tokens(raw: str) -> int | None:
+def _parse_max_tokens(raw: str, name: str = "DA_ONPREM_MAX_TOKENS") -> int | None:
     if not raw:
         return None
     if not raw.isdigit() or int(raw) < 1:
         raise ConfigError(
-            f"DA_ONPREM_MAX_TOKENS is '{raw}', which is not allowed. "
+            f"{name} is '{raw}', which is not allowed. "
             "Leave it empty, or use a whole number, 1 or more. Set it in your .env file."
         )
     return int(raw)
+
+
+def _parse_thinking(raw: str) -> str:
+    value = raw.lower()
+    if value not in ("", "on", "off"):
+        raise ConfigError(
+            f"DA_ONPREM_THINKING is '{raw}', which is not allowed. "
+            "Use off, on, or leave it empty. Set it in your .env file."
+        )
+    return value
+
+
+def _parse_number(
+    name: str, raw: str, low: float, high: float, low_allowed: bool = True
+) -> float | None:
+    """A decimal setting between low and high. Empty means not set."""
+    if not raw:
+        return None
+    try:
+        number = float(raw)
+    except ValueError:
+        number = None
+    # "not in range" (not "out of range") so nan is refused too.
+    if number is None or not (low <= number <= high) or (number == low and not low_allowed):
+        raise ConfigError(
+            f"{name} is '{raw}', which is not allowed. "
+            f"Leave it empty, or use a number from {low} to {high}"
+            f"{'' if low_allowed else ' (not 0)'}. Set it in your .env file."
+        )
+    return number
 
 
 def _parse_search_provider(raw: str) -> str:
