@@ -28,6 +28,8 @@ CONFIDENCE = ("high", "medium", "low")
 MAX_SKIPPED_SHARE = 0.10
 KEPT_RUNS = 10
 NOT_SAVED = "Not saved: over 10% failed, the old tags stay."
+NEW = "new"  # the AI suggests a capability that is not in the list (Fix G4, S1)
+NEW_NAME_MIN, NEW_NAME_MAX, NEW_DESCRIPTION_MAX = 2, 40, 120
 MODULE_LINE = "Module: "
 STOPPED = "Stopped: the new tags were dropped, the new index stays."
 
@@ -79,7 +81,7 @@ def parse_reply(text: str, capabilities: list[Capability]) -> dict | None:
         capability, confidence = data["capability"], data["confidence"]
     except ValueError, KeyError, TypeError:
         return None
-    names = {c.name for c in capabilities} | {"none"}
+    names = {c.name for c in capabilities} | {"none", NEW}
     ok = (
         isinstance(summary, str) and 1 <= len(summary.strip()) <= SUMMARY_MAX
         and isinstance(reason, str) and len(reason) <= REASON_MAX
@@ -87,8 +89,41 @@ def parse_reply(text: str, capabilities: list[Capability]) -> dict | None:
     )
     if not ok:
         return None
-    return {"summary": summary.strip(), "capability": capability, "confidence": confidence,
-            "reason": reason.strip()}
+    checked = {"summary": summary.strip(), "capability": capability, "confidence": confidence,
+               "reason": reason.strip(), "new_name": "", "new_description": ""}
+    if capability == NEW:
+        return _checked_new(checked, data, capabilities)
+    return checked
+
+
+def _checked_new(checked: dict, data: dict, capabilities: list[Capability]) -> dict | None:
+    """S2: a `new` needs a plain name and a short description; a known name is a normal proposal."""
+    name, description = data.get("new_name"), data.get("new_description")
+    if not (isinstance(name, str) and isinstance(description, str)):
+        return None
+    name, description = " ".join(name.split()), description.strip()
+    plain = name.replace(" ", "").replace("-", "").isalnum()  # no path, dots or symbols
+    if not (NEW_NAME_MIN <= len(name) <= NEW_NAME_MAX and plain):
+        return None
+    if not 1 <= len(description) <= NEW_DESCRIPTION_MAX:
+        return None
+    for capability in capabilities:
+        if name_key(capability.name) == name_key(name):
+            return {**checked, "capability": capability.name}
+    return {**checked, "new_name": name, "new_description": description}
+
+
+def name_key(name: str) -> str:
+    """Same name ignoring case, spaces and a plural "s" (S3)."""
+    return name.lower().replace(" ", "").removesuffix("s")
+
+
+def group_new_names(entries: dict[str, dict], known: list[str]) -> None:
+    """S3: modules suggesting the same new name share the first spelling seen (in place)."""
+    first = {name_key(name): name for name in known}
+    for entry in entries.values():
+        if entry.get("new_name"):
+            entry["new_name"] = first.setdefault(name_key(entry["new_name"]), entry["new_name"])
 
 
 class ScriptedTaggerClient:
@@ -176,6 +211,9 @@ def run_tagging(
         logger.warning("Tagger run not saved: %d of %d modules skipped", len(skipped), scanned)
         return TagRun(False, scanned, proposed, skipped, NOT_SAVED)
     store = read_store(directory)  # read again: Admin may have decided cards during the scan
+    waiting = [m["new_name"] for m in store["modules"].values()
+               if m.get("new_name") and m.get("state") == STATE_PROPOSED]
+    group_new_names(entries, waiting)
     for path, entry in entries.items():
         current = store["modules"].get(path, {})
         decided = current.get("state") in (STATE_APPROVED, STATE_REJECTED)
@@ -203,10 +241,14 @@ def _tag_one(path: str, root: Path, capabilities: list[Capability], client) -> d
     if checked is None:
         return None
     matched = capability_of(path, capabilities) != UNASSIGNED
+    new_name = "" if matched else checked["new_name"]  # a matched module needs no suggestion
+    proposed = "" if checked["capability"] in ("none", NEW) else checked["capability"]
+    suggestion = {"new_name": new_name, "new_description": checked["new_description"]}
     return {
         "file_hash": text_hash(text),
         "summary": checked["summary"],
-        "proposed_capability": "" if checked["capability"] == "none" else checked["capability"],
+        "proposed_capability": proposed,
+        **(suggestion if new_name else {}),
         "confidence": checked["confidence"],
         "reason": checked["reason"],
         "state": STATE_MATCHED if matched else STATE_PROPOSED,
