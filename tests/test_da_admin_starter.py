@@ -1,12 +1,15 @@
 """Fix G4 step 3a: find and remove the made-up starter data in a work rulebook (C1, C2)."""
 
 import agents.da_admin_starter as starter
+from agents.da_admin_forms import capability_rows, save_from_form
 from agents.da_admin_starter import (
     ACTION_ALL,
     ACTION_ONE,
     remove_starter,
     starter_leftovers,
 )
+from agents.da_admin_tag_store import read_tags, save_store
+from agents.da_tag_versions import list_versions as tag_versions
 from db_table_functions.db_tbl_da_rulebook import (
     get_active_version,
     list_versions,
@@ -86,6 +89,39 @@ def test_remove_one_row_and_a_capability_with_no_pattern_left_goes_too(
     names = [c.name for c in get_active_version(db_path).rulebook.policy.capabilities]
     assert "Payments" not in names
     assert len(names) == 3
+
+
+def test_approved_tags_of_a_removed_capability_go_back_to_the_queue(
+    db_path, published_rulebook, make_settings, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("DA_CODE_INDEX_DIR", str(tmp_path))
+    entry = {"state": "approved", "proposed_capability": "Limits"}
+    other = {"state": "approved", "proposed_capability": "Payments"}
+    save_store({"modules": {"a.py": entry, "b.py": other}, "runs": []}, tmp_path)
+
+    text = remove_starter(make_settings(), "admin-0001", ACTION_ALL)
+
+    tags = read_tags(tmp_path)
+    assert tags["a.py"]["state"] == "proposed"
+    assert tags["b.py"]["state"] == "approved"  # its capability was not removed
+    assert "1 approved programs back in the queue" in text
+    assert len(tag_versions(tmp_path)) == 2  # the starting tags, then the change
+
+
+def test_a_catalog_form_save_that_drops_a_capability_requeues_its_tags(
+    db_path, published_rulebook, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("DA_CODE_INDEX_DIR", str(tmp_path))
+    save_store(
+        {"modules": {"a.py": {"state": "approved", "proposed_capability": "Uploads"}}, "runs": []},
+        tmp_path,
+    )
+    rows = capability_rows(published_rulebook.rulebook.policy)[:2]  # Uploads dropped
+
+    result = save_from_form(db_path, "capability", {"capabilities": rows}, 1, "admin-0001", "drop")
+
+    assert result.kind == "saved"
+    assert read_tags(tmp_path)["a.py"]["state"] == "proposed"
 
 
 def test_starter_at_work_is_empty_at_home(published_rulebook, monkeypatch):

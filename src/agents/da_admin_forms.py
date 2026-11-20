@@ -13,6 +13,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from agents.da_admin_tag_requeue import requeue_for_removed
 from agents.da_approach_checks import library_name
 from db_table_functions.db_tbl_da_rulebook import (
     RulebookError,
@@ -171,6 +172,10 @@ def save_from_form(
     warnings = _warnings(edited)
     if tab == TAB_CAPABILITY:
         warnings += pattern_warnings(edited.policy)
+        # C4: programs approved into a removed capability return to the queue
+        kept = {c.name.lower() for c in edited.policy.capabilities}
+        removed = {c.name for c in base.rulebook.policy.capabilities if c.name.lower() not in kept}
+        requeue_for_removed(removed, user_id)
     return SaveResult(RESULT_SAVED, version_number=saved.version_number, warnings=warnings)
 
 

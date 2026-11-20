@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 from agents.da_admin_modules import PROJECT_ROOT
+from agents.da_admin_tag_requeue import requeue_for_removed
 from configs.da_config import ConfigError, load_settings
 from db_table_functions.db_tbl_da_rulebook import (
     SEED_RULEBOOK_FILE,
@@ -136,6 +137,10 @@ def remove_starter(settings, admin_id: str, action: str) -> str:
     saved = save_new_version(
         settings.db_path, _without(active.rulebook, gone), active.version_number, admin_id, note
     )
+    kept = {c.name for c in saved.rulebook.policy.capabilities}
+    removed = {c.name for c in active.rulebook.policy.capabilities} - kept
+    back = requeue_for_removed(removed, admin_id)
+    note += f" ({back} approved programs back in the queue)" if back else ""
     return (
         f"{note}. The rulebook is now v{saved.version_number}; "
         f"restore v{active.version_number} to undo."
