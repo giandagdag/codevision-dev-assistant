@@ -197,8 +197,12 @@ def list_table(
     movable: bool = False,
     widths: dict[str, str] | None = None,
     input_height: str = "",
+    marker: str = "",
 ):
     """A table drawn from column names. Read mode is plain text; edit mode adds Add row and Remove.
+
+    `marker` ("tick", "dot" or "number") turns a one-column list into rows with thin dividers and
+    no header (Fix G4 L6); edit mode keeps the same inputs, Add row and Remove.
 
     Edit cells carry pattern-matching ids so the callbacks can read them back.
     `kinds` says a column is READONLY, PATTERNS or a dropdown (a list of choices). A `static`
@@ -214,6 +218,8 @@ def list_table(
     if widths and editable:
         heads.append(dmc.TableTh("", w=widths.get("actions")))
     head = dmc.TableThead(dmc.TableTr(heads))
+    if marker and not editable:
+        return html.Div(_marker_rows(rows, marker) or _empty_note())
     body = dmc.TableTbody(
         [
             _table_row(
@@ -223,11 +229,10 @@ def list_table(
         ]
     )
     style = {"tableLayout": "fixed"} if widths else None
-    parts: list = [
-        dmc.Table([head, body], withTableBorder=True, withColumnBorders=True, style=style)
-    ]
+    table = [body] if marker else [head, body]  # a marker list has no "Text" header
+    parts: list = [dmc.Table(table, withTableBorder=True, withColumnBorders=True, style=style)]
     if not rows:
-        parts.append(dmc.Text("Nothing here yet.", style=da_styles.EMPTY_TEXT))
+        parts.append(_empty_note())
     if editable:
         parts.append(
             dmc.Button(
@@ -239,6 +244,37 @@ def list_table(
             )
         )
     return html.Div(parts)
+
+
+def _empty_note():
+    return dmc.Text("Nothing here yet.", style=da_styles.EMPTY_TEXT)
+
+
+def _marker_rows(rows: list[dict], marker: str) -> list:
+    """Read-only list rows: a green tick, a red dot or a small number, then the text."""
+    out = []
+    for i, row in enumerate(rows, 1):
+        if marker == "tick":
+            mark = html.Span("✓", style={"color": "#2B8A3E", "fontWeight": 700})
+        elif marker == "dot":
+            mark = html.Span("●", style={"color": "#C92A2A"})
+        else:
+            mark = html.Span(str(i), style={"color": "#667085", "fontSize": "12px"})
+        out.append(
+            html.Div(
+                [
+                    html.Span(mark, style={"width": "24px", "flexShrink": 0}),
+                    dmc.Text(_cell_text(row.get(TEXT_COLUMN, "")), size="sm"),
+                ],
+                style={
+                    "display": "flex",
+                    "gap": "8px",
+                    "padding": "8px 0",
+                    "borderBottom": "1px solid #E3E7EE",
+                },
+            )
+        )
+    return out
 
 
 def pat_id(tab: str, action: str, index: int = 0, pat: str = "") -> dict:

@@ -26,16 +26,21 @@ def test_size_meter_colour_at_the_boundaries(characters, colour):
     assert badge.style["color"] == colour
 
 
-def test_charter_is_cards_purpose_and_glossary_left_the_four_lists_right(published_rulebook):
+def test_charter_rows_purpose_two_pairs_glossary(published_rulebook):
     from layouts.da_admin_card import is_card
 
-    view = charter_view(published_rulebook)
+    purpose, pair1, pair2, glossary = charter_view(published_rulebook).children
 
-    main, side = view.children
-    assert len(main.children) == 2 and len(side.children) == 4
-    assert all(is_card(c) for c in main.children + side.children)
-    text = all_text(view)
-    assert "✅ In scope" in text
-    assert "🔴 Out of scope" in text
-    assert "Architecture principles" in text
-    assert "Constraints" in text
+    assert is_card(purpose) and is_card(glossary)
+    assert all(is_card(c) for c in pair1.children + pair2.children)
+    titles = [[c.children[0].children[0].children for c in p.children] for p in (pair1, pair2)]
+    assert titles == [["In scope", "Out of scope"], ["Architecture principles", "Constraints"]]
+
+
+def test_charter_lists_are_rows_without_a_text_header(published_rulebook):
+    text = all_text(charter_view(published_rulebook))
+    edit = all_text(charter_view(published_rulebook, editable=True))
+
+    assert "✓" in text and "●" in text
+    assert "Text" not in text.split() and "Text" not in edit.split()
+    assert "Add row" in edit and "Remove" in edit

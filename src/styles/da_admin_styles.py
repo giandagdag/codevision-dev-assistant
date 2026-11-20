@@ -60,6 +60,13 @@ GRID = {
 }
 # A list row: thin divider underneath (V5).
 ROW = {"padding": "8px 0", "borderBottom": "1px solid #E3E7EE"}
+# Two equal columns that stack when the container is narrow (Fix G4 L5); equal height.
+PAIR = {
+    "display": "grid",
+    "gridTemplateColumns": "repeat(auto-fit, minmax(min(100%, 480px), 1fr))",
+    "gap": "16px",
+    "alignItems": "stretch",
+}
 CARD_STACK ={"display": "flex", "flexDirection": "column", "gap": "16px", "minWidth": 0}
 
 

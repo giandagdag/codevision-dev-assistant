@@ -416,27 +416,33 @@ def charter_view(
 ):
     charter = version.rulebook.charter
     purpose = _draft(draft, "purpose", charter.purpose)
-    main = [
-        admin_card(
-            "Purpose",
-            html.Div([_charter_size(charter), _purpose(purpose, editable)]),
-            "📜",
-            actions=version_line(version, active),
+    purpose_card = admin_card(
+        "Purpose",
+        html.Div([_charter_size(charter), _purpose(purpose, editable)]),
+        "📜",
+        actions=version_line(version, active),
+    )
+    glossary_card = admin_card(
+        "Glossary",
+        list_table(
+            TAB_CHARTER,
+            "glossary",
+            GLOSSARY_COLUMNS,
+            _draft(draft, "glossary", [entry.model_dump() for entry in charter.glossary]),
+            editable,
         ),
-        admin_card(
-            "Glossary",
-            list_table(
-                TAB_CHARTER,
-                "glossary",
-                GLOSSARY_COLUMNS,
-                _draft(draft, "glossary", [entry.model_dump() for entry in charter.glossary]),
-                editable,
-            ),
-            "📖",
-        ),
-    ]
-    side = [_charter_box(charter, draft, editable, *entry) for entry in CHARTER_LISTS]
-    return card_grid(main, side)
+        "📖",
+    )
+    boxes = [_charter_box(charter, draft, editable, *entry) for entry in CHARTER_LISTS]
+    # Fix G4 L5: Purpose, two pairs side by side (equal height), Glossary; they stack when narrow.
+    return html.Div(
+        [purpose_card, _pair(boxes[:2]), _pair(boxes[2:]), glossary_card],
+        style=admin_styles.CARD_STACK,
+    )
+
+
+def _pair(cards: list):
+    return html.Div(cards, style=admin_styles.PAIR)
 
 
 def _purpose(purpose: str, editable: bool):
@@ -450,13 +456,20 @@ def _purpose(purpose: str, editable: bool):
     )
 
 
-CHARTER_BOX_ICONS = {"in_scope": "✅ ", "out_of_scope": "🔴 "}
+CHARTER_MARKERS = {
+    "in_scope": "tick",
+    "out_of_scope": "dot",
+    "architecture_principles": "number",
+    "constraints": "number",
+}
 
 
 def _charter_box(charter: Charter, draft: dict | None, editable: bool, name: str, label: str):
     rows = _text_rows(_draft(draft, name, getattr(charter, name)))
-    table = list_table(TAB_CHARTER, name, (TEXT_COLUMN,), rows, editable)
-    return admin_card(CHARTER_BOX_ICONS.get(name, "") + label, table)
+    table = list_table(
+        TAB_CHARTER, name, (TEXT_COLUMN,), rows, editable, marker=CHARTER_MARKERS[name]
+    )
+    return admin_card(label, table, style={"height": "100%", "boxSizing": "border-box"})
 
 
 def _charter_size(charter: Charter):
