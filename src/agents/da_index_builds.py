@@ -65,8 +65,17 @@ def has_copy(out: Path, number: int) -> bool:
 
 def save_build(out: Path, number: int, mode: str, started_by: str, when: datetime) -> dict:
     """Write the manifest and a copy of the index files for build `number`, then drop the copies
-    (never the manifests) of builds older than the newest KEPT_INDEX_COPIES."""
+    (never the manifests) of builds older than the newest KEPT_INDEX_COPIES.
+
+    A folder that already holds a manifest is never touched: the build takes the next free number
+    (the manifest says which), and the saved index file is renumbered to match."""
     record = json.loads((out / PIECES_NAME).read_text(encoding="utf-8"))
+    if (builds_dir(out) / str(number) / MANIFEST_NAME).is_file():
+        number = next_build_number(out)
+        record["build"] = number
+        side = out / (PIECES_NAME + ".new")
+        side.write_text(json.dumps(record), encoding="utf-8")
+        side.replace(out / PIECES_NAME)
     try:
         graph_files = json.loads((out / GRAPH_NAME).read_text(encoding="utf-8")).get("files", {})
     except (OSError, ValueError):
