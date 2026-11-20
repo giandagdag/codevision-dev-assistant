@@ -1,10 +1,15 @@
 """Callbacks for the Tag history panel (Upgrade G, G5f). Admin only for Restore."""
 
-from dash import Input, Output, State, ctx
+from dash import Input, Output, State, ctx, no_update
 from dash.exceptions import PreventUpdate
 
 from agents.da_admin_access import is_admin
-from agents.da_tag_versions import compare_text, compare_versions, restore_version
+from agents.da_tag_versions import (
+    compare_text,
+    compare_versions,
+    restore_confirm_text,
+    restore_version,
+)
 from callbacks.screen_callbacks.da_admin_page_callbacks import get_admin_settings
 from layouts.da_admin_tag_history_panel import (
     TAG_A,
@@ -16,6 +21,7 @@ from layouts.da_admin_tag_history_panel import (
     TAG_RESTORE_CONFIRM,
     TAG_RESTORE_LATER,
     TAG_RESTORE_MODAL,
+    TAG_RESTORE_NAME,
     TAG_RESTORE_OUT,
 )
 
@@ -50,6 +56,7 @@ def register_tag_history_callbacks(app) -> None:
     @app.callback(
         Output(TAG_RESTORE_MODAL, "opened"),
         Output(TAG_RESTORE_OUT, "children"),
+        Output(TAG_RESTORE_NAME, "children"),
         Input(TAG_RESTORE_BTN, "n_clicks"),
         Input(TAG_RESTORE_LATER, "n_clicks"),
         Input(TAG_RESTORE_CONFIRM, "n_clicks"),
@@ -60,7 +67,8 @@ def register_tag_history_callbacks(app) -> None:
         if not ctx.triggered[0]["value"]:
             raise PreventUpdate
         if ctx.triggered_id == TAG_RESTORE_BTN:
-            return bool(value), ("" if value else "Pick a version first.")
+            name = restore_confirm_text(int(value)) if value else ""
+            return bool(value), ("" if value else "Pick a version first."), name
         if ctx.triggered_id == TAG_RESTORE_CONFIRM:
-            return False, restore_action(get_admin_settings(), value)
-        return False, ""
+            return False, restore_action(get_admin_settings(), value), no_update
+        return False, "", no_update

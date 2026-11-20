@@ -1,6 +1,8 @@
 """Fix G1: one number per build (F5) and links cards after a tag run (F6). Made-up modules only."""
 
 import json
+from datetime import datetime
+from pathlib import Path
 from types import SimpleNamespace
 
 from agents import da_admin_rebuild as rebuild
@@ -9,7 +11,13 @@ from agents.da_admin_tag_cards import ai_cards, reject_card
 from agents.da_admin_tag_store import save_store
 from agents.da_admin_tagger import ScriptedTaggerClient, text_hash
 from agents.da_code_index import PIECES_NAME, FakeEmbedder
-from agents.da_index_builds import build_numbers, current_build, read_manifest
+from agents.da_index_builds import (
+    build_confirm_text,
+    build_numbers,
+    current_build,
+    read_manifest,
+)
+from agents.da_tag_versions import restore_confirm_text, save_version
 from db_table_functions.db_tbl_da_rulebook import SEED_RULEBOOK_FILE, load_rulebook_file
 
 
@@ -47,6 +55,29 @@ def test_g1_6_a_taken_number_is_never_overwritten(tmp_path):
     assert read_manifest(out, 7)["build"] == 7 and extra["build"] == 7
     assert json.loads((out / PIECES_NAME).read_text())["build"] == 7 == current_build(out)
     assert "Build 6 was already saved, so this is build 7." in words
+
+
+def test_g1_4_use_build_confirm_names_the_build():
+    manifest = {"build": 5, "time": "2026-11-20T03:10:00+08:00", "mode": "delta", "pieces": 1234}
+    assert build_confirm_text(manifest, 5) == (
+        "Use build 5 (20 Nov 03:10 SGT, Delta, 1,234 pieces)?"
+    )
+    assert build_confirm_text(None, 5) == "Use build 5?"
+
+
+def test_g1_5_restore_confirm_names_the_tag_version(tmp_path):
+    when = datetime.fromisoformat("2026-11-20T02:40:00+08:00")
+    save_version("Approve all", "admin1", tmp_path, when)
+    assert restore_confirm_text(1, tmp_path) == (
+        "Restore tag version 1 (20 Nov 02:40 SGT, Approve all by admin1)?"
+    )
+    assert restore_confirm_text(9, tmp_path) == "Restore tag version 9?"
+
+
+def test_g1_9_the_work_note_has_the_map_wiring_and_the_pip_line():
+    text = (Path(__file__).parents[1] / "docs" / "build-work-test.md").read_text(encoding="utf-8")
+    assert "map_shell()" in text and "pip install -r requirements.txt" in text
+    assert "dash-cytoscape" in text
 
 
 def test_g1_7_links_card_is_back_after_a_tag_run_and_a_rejected_one_is_not(

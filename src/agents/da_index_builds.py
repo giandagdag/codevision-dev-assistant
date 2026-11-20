@@ -58,6 +58,24 @@ def read_manifest(out: Path, number: int) -> dict | None:
     return manifest if isinstance(manifest, dict) else None
 
 
+def short_sgt(iso: str) -> str:
+    """"20 Nov 03:10 SGT" from a saved time (saved as the server's clock; naive = local time)."""
+    from db_table_functions.db_tbl_da_requests import SINGAPORE_TIME
+
+    return datetime.fromisoformat(iso).astimezone(SINGAPORE_TIME).strftime("%d %b %H:%M SGT")
+
+
+def build_confirm_text(manifest: dict | None, number: int) -> str:
+    """The "Use build K" question names the build it brings back."""
+    if manifest is None:
+        return f"Use build {number}?"
+    mode = str(manifest.get("mode", "")).capitalize()
+    return (
+        f"Use build {number} ({short_sgt(manifest['time'])}, {mode}, "
+        f"{manifest.get('pieces', 0):,} pieces)?"
+    )
+
+
 def has_copy(out: Path, number: int) -> bool:
     folder = builds_dir(out) / str(number)
     return all((folder / name).is_file() for name in COPY_NAMES)

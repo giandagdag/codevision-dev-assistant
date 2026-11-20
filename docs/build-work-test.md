@@ -107,6 +107,23 @@ merge, resume `CVDA-2026-0002` at work (**Resume build**) and expect one of two 
 The Layer B line says "0 of 6 ran: the test file could not load", and the test report shows a
 "Load error" line, never "Not proven".
 
+## Wiring the capability map into CodeVision's own page setup (Fix G1)
+
+At home the map page is wired only in the home shell (`src/web/da_home_web_server.py`). CodeVision's
+own page setup must add the same three things:
+
+1. Page body: add `map_shell()` next to the other page shells
+   (`from layouts.da_capability_map_view import map_shell`; home line 111).
+2. Callbacks: call `register_da_capability_map_callbacks(app)` with the other `register_...` lines
+   (`from callbacks.screen_callbacks.da_capability_map_callbacks import
+   register_da_capability_map_callbacks`; home line 124).
+3. Route: the page lives at `MAP_PATH` (`/dev-assistant/capability-map`, from
+   `layouts.da_capability_map_view`). The shell shows itself when the URL path equals it, and the
+   other pages hide on it (`da_admin_page_callbacks.py`, the `hidden = pathname in (...)` line).
+
+After downloading the new code, run `pip install -r requirements.txt`, because `dash-cytoscape` is
+new (the map is drawn with it).
+
 ## Clean up
 
 `rmdir /s /q C:\Dev\practice`

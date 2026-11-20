@@ -1,11 +1,11 @@
 """Callbacks for the index builds panel (Upgrade G, G5c/d). Admin only for "Use build"."""
 
-from dash import Input, Output, State, ctx
+from dash import Input, Output, State, ctx, no_update
 from dash.exceptions import PreventUpdate
 
 from agents.da_admin_access import is_admin
 from agents.da_admin_index import index_dir
-from agents.da_index_builds import compare_builds, compare_text
+from agents.da_index_builds import build_confirm_text, compare_builds, compare_text, read_manifest
 from agents.da_index_rollback import roll_back
 from callbacks.screen_callbacks.da_admin_page_callbacks import get_admin_settings
 from layouts.da_admin_builds_panel import (
@@ -18,6 +18,7 @@ from layouts.da_admin_builds_panel import (
     BUILD_USE_CONFIRM,
     BUILD_USE_LATER,
     BUILD_USE_MODAL,
+    BUILD_USE_NAME,
     BUILD_USE_OUT,
 )
 
@@ -52,6 +53,7 @@ def register_builds_callbacks(app) -> None:
     @app.callback(
         Output(BUILD_USE_MODAL, "opened"),
         Output(BUILD_USE_OUT, "children"),
+        Output(BUILD_USE_NAME, "children"),
         Input(BUILD_USE_BTN, "n_clicks"),
         Input(BUILD_USE_LATER, "n_clicks"),
         Input(BUILD_USE_CONFIRM, "n_clicks"),
@@ -62,7 +64,9 @@ def register_builds_callbacks(app) -> None:
         if not ctx.triggered[0]["value"]:
             raise PreventUpdate
         if ctx.triggered_id == BUILD_USE_BTN:
-            return bool(value), ("" if value else "Pick a build first.")
+            number = int(value) if value else 0
+            name = build_confirm_text(read_manifest(index_dir(), number), number) if value else ""
+            return bool(value), ("" if value else "Pick a build first."), name
         if ctx.triggered_id == BUILD_USE_CONFIRM:
-            return False, use_build(get_admin_settings(), value)
-        return False, ""
+            return False, use_build(get_admin_settings(), value), no_update
+        return False, "", no_update
