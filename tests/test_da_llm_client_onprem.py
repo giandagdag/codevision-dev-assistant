@@ -288,6 +288,33 @@ def test_sampling_values_sent(make_settings, monkeypatch):
     assert (sent["temperature"], sent["top_p"], sent["presence_penalty"]) == (0.3, 0.5, 1.5)
 
 
+def test_build_calls_send_the_build_length_and_others_the_normal_one(make_settings, monkeypatch):
+    """G4-6."""
+    from agents.da_build_agent import get_build_client
+
+    settings = onprem_settings(
+        make_settings, onprem_max_tokens=8000, onprem_max_tokens_build=24000
+    )
+    post = FakePost(answer())
+    monkeypatch.setattr(requests, "post", post)
+
+    get_build_client(settings, "generator").complete("hi")
+    get_llm_client("generator", settings).complete("hi")
+
+    assert [call["json"]["max_tokens"] for call in post.calls] == [24000, 8000]
+
+
+def test_build_length_empty_falls_back_to_the_normal_one(make_settings, monkeypatch):
+    from agents.da_build_agent import get_build_client
+
+    post = FakePost(answer())
+    monkeypatch.setattr(requests, "post", post)
+
+    get_build_client(onprem_settings(make_settings, onprem_max_tokens=8000), "tester").complete("x")
+
+    assert post.calls[0]["json"]["max_tokens"] == 8000
+
+
 def test_sampling_line_is_logged_once(make_settings, monkeypatch, caplog):
     import agents.da_llm_client as module
 

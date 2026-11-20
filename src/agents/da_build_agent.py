@@ -291,9 +291,8 @@ def get_build_client(settings: Settings, role: str, model: str = "") -> LLMClien
     model is the Admin's name for the role from the pinned rulebook (empty = the .env model)."""
     if settings.llm_provider == "fake":
         return ScriptedBuildClient(role)
-    if not model:  # keep the two-argument call when nothing is pinned
-        return get_llm_client(role, settings)  # type: ignore[arg-type]
-    return get_llm_client(role, settings, model)  # type: ignore[arg-type]
+    # Every caller of this function writes or judges code, so all get the build length (Fix G4 T3).
+    return get_llm_client(role, settings, model, build=True)  # type: ignore[arg-type]
 
 
 # --- prompts ---

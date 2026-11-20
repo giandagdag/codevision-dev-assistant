@@ -49,6 +49,10 @@ class LLMReply:
     text: str
     provider: str
     model: str
+    # Only the on-prem client fills these (Fix G4 T8, for the ping command).
+    finish_reason: str = ""
+    usage: dict[str, Any] | None = None
+    had_thinking: bool = False
 
 
 class LLMClient(Protocol):
@@ -312,10 +316,15 @@ def _read_reply(
             body[:EMPTY_REPLY_LOG_LIMIT],
         )
         raise LLMClientError(_empty_reply_message(reason, message, bool(choice)))
+    usage = data.get("usage")
+    reason = choice.get("finish_reason")
     return LLMReply(
         text=text,
         provider="onprem",
         model=model if isinstance(model, str) and model else fallback_model,
+        finish_reason=reason if isinstance(reason, str) else "",
+        usage=usage if isinstance(usage, dict) else None,
+        had_thinking=bool(_thinking_text(message)),
     )
 
 
@@ -389,8 +398,12 @@ def _log_sampling_once(sampling: tuple[float, float, float | None], thinking: st
     )
 
 
-def get_llm_client(role: Role, settings: Settings | None = None, model: str = "") -> LLMClient:
+def get_llm_client(
+    role: Role, settings: Settings | None = None, model: str = "", build: bool = False
+) -> LLMClient:
     """Return the client for the active provider, set up for this role.
+
+    build=True is for the code-writing calls: they may use DA_ONPREM_MAX_TOKENS_BUILD (Fix G4 T3).
 
     model is the Admin's model name for the role, taken from the request's pinned rulebook
     version (Phase 11, D-G). Empty means use the .env model. The fake provider ignores it.
@@ -405,7 +418,7 @@ def get_llm_client(role: Role, settings: Settings | None = None, model: str = ""
     elif provider == "claude":
         client = _make_claude_client(role, settings, model)
     elif provider == "onprem":
-        client = _make_onprem_client(settings, role, model)
+        client = _make_onprem_client(settings, role, model, build)
     else:
         # load_settings already blocks this; kept so a hand-built Settings cannot slip through.
         raise ConfigError(f"DA_LLM_PROVIDER '{provider}' is not supported.")
@@ -440,7 +453,7 @@ def _make_claude_client(role: Role, settings: Settings, admin_model: str = "") -
 
 
 def _make_onprem_client(
-    settings: Settings, role: Role = "generator", admin_model: str = ""
+    settings: Settings, role: Role = "generator", admin_model: str = "", build: bool = False
 ) -> OnPremLLMClient:
     # One model for all roles, except a Tester model when one is set (Phase 4).
     required = (("DA_ONPREM_URL", settings.onprem_url), ("DA_ONPREM_MODEL", settings.onprem_model))
@@ -459,7 +472,10 @@ def _make_onprem_client(
     if verify is False:
         logger.warning("Certificate check is OFF. Use only for the prototype.")
     env_model = settings.onprem_tester_model if role == "tester" else ""
-    return OnPremLLMClient(settings, admin_model or env_model)
+    client = OnPremLLMClient(settings, admin_model or env_model)
+    if build and settings.onprem_max_tokens_build:
+        client._max_tokens = settings.onprem_max_tokens_build
+    return client
 
 
 def _import_anthropic():

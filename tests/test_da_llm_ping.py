@@ -36,6 +36,38 @@ def test_exit_0_and_a_short_report_against_the_pretend_server(monkeypatch, capsy
     assert "Ping OK." in output
 
 
+def test_report_shows_thinking_sampling_finish_reason_and_tokens(monkeypatch, capsys):
+    """G4-7. The fake server may not send usage: the line must still print, with no key."""
+    with running_fake_onprem_server(key=KEY) as server:
+        set_onprem_env(
+            monkeypatch, server, DA_ONPREM_API_KEY=KEY, DA_ONPREM_THINKING="off"
+        )
+
+        main(env_file=None)
+
+    output = capsys.readouterr().out
+    assert "AI thinking: off; temperature 0.2, top_p 0.2, presence penalty not sent" in output
+    assert "Finish reason:" in output and "thinking text: no" in output
+    assert KEY not in output
+
+
+def test_report_line_uses_the_replys_numbers():
+    reply_usage = {"prompt_tokens": 12, "completion_tokens": 3}
+    result = ping_result_with(usage=reply_usage, finish_reason="stop", had_thinking=True)
+
+    line = [x for x in format_result(result) if x.startswith("Finish reason")][0]
+
+    assert line == (
+        "Finish reason: stop; tokens: prompt 12, answer 3; thinking text: yes"
+    )
+
+
+def ping_result_with(**changes):
+    from da_llm_ping import PingResult
+
+    return PingResult(True, "onprem", "m", "h", 1.0, text="OK", **changes)
+
+
 def test_report_shows_the_host_only_never_the_address_or_key(monkeypatch, capsys):
     with running_fake_onprem_server(key=KEY) as server:
         set_onprem_env(monkeypatch, server, DA_ONPREM_API_KEY=KEY)

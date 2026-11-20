@@ -306,8 +306,10 @@ def tab_content(
             modules = module_paths(version.rulebook.policy.index_folder_scope)
         body = catalog_view(version, editable, draft, active, queue, modules)
     else:
-        view = charter_view if tab == TAB_CHARTER else build_view
-        body = view(version, editable, draft, active)
+        if tab == TAB_CHARTER:
+            body = charter_view(version, editable, draft, active)
+        else:
+            body = build_view(version, editable, draft, active, server)
     buttons = _buttons(tab, version, editable)
     if not editable:  # Edit sits top right on its own row: the card grid keeps its width (V4)
         buttons = html.Div(

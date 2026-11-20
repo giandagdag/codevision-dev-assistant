@@ -369,7 +369,7 @@ def _content(settings: Settings, tab: str, version, **kwargs):
     """tab_content, plus the Cited counts on the Coding tab (read from the Tester's findings)."""
     cited = cited_counts(settings.db_path) if tab == TAB_CODING else None
     queue = queue_data(settings) if tab == TAB_CAPABILITY else None
-    server = server_settings_view(settings) if tab == TAB_REPO else None
+    server = server_settings_view(settings) if tab in (TAB_REPO, TAB_BUILD) else None
     fires = fires_in(settings.db_path) if tab == TAB_CODING else None
     return tab_content(tab, version, cited=cited, queue=queue, server=server, fires=fires, **kwargs)
 

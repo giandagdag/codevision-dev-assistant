@@ -22,6 +22,7 @@ from agents.da_admin_diff import (
 )
 from agents.da_admin_forms import capabilities_without_backup
 from agents.da_admin_tag_cards import ai_cards
+from agents.da_llm_client import sampling_for
 from agents.da_sandbox_python import test_python
 from db_table_functions.da_db import open_db
 from db_table_functions.db_tbl_da_build import ensure_build_tables
@@ -277,6 +278,16 @@ def _tests_run_with(settings) -> str:
     return python.error or python.label
 
 
+THINKING_LABEL = "AI thinks before answering"
+
+
+def _thinking_text(settings) -> str:
+    """Fix G4 T9: the thinking switch and the sampling values in plain words (no DA_ names)."""
+    temperature, top_p, _ = sampling_for(settings)
+    word = {"off": "off", "on": "on"}.get(settings.onprem_thinking, "server default")
+    return f"{word}; temperature {temperature}, top_p {top_p}"
+
+
 def server_settings_view(settings) -> list[tuple[str, str]]:
     """The read-only "Server settings" block of Repository and index (spec 11): .env name and the
     value to show. The folder is only "set" or "not set": no path, no key, no secret."""
@@ -289,6 +300,7 @@ def server_settings_view(settings) -> list[tuple[str, str]]:
         ("DA_CODEVISION_SRC", "set" if settings.codevision_src else "not set"),
         ("DA_CODEVISION_PYTHON", "set" if settings.codevision_python else "not set"),
         ("Tests run with", _tests_run_with(settings)),
+        (THINKING_LABEL, _thinking_text(settings)),
         # URL and token are only "set" / "not set": never the value
         ("DA_SONAR_URL", "set" if settings.sonar_url else "not set"),
         ("DA_SONAR_TOKEN", "set" if settings.sonar_token else "not set"),
