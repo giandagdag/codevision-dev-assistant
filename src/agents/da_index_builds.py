@@ -62,18 +62,19 @@ def short_sgt(iso: str) -> str:
     """"20 Nov 03:10 SGT" from a saved time (saved as the server's clock; naive = local time)."""
     from db_table_functions.db_tbl_da_requests import SINGAPORE_TIME
 
-    return datetime.fromisoformat(iso).astimezone(SINGAPORE_TIME).strftime("%d %b %H:%M SGT")
+    try:
+        return datetime.fromisoformat(iso).astimezone(SINGAPORE_TIME).strftime("%d %b %H:%M SGT")
+    except (TypeError, ValueError):
+        return ""  # a damaged row must not stop the confirm box from opening
 
 
 def build_confirm_text(manifest: dict | None, number: int) -> str:
     """The "Use build K" question names the build it brings back."""
-    if manifest is None:
+    when = short_sgt(manifest.get("time")) if manifest else ""
+    if not when:
         return f"Use build {number}?"
     mode = str(manifest.get("mode", "")).capitalize()
-    return (
-        f"Use build {number} ({short_sgt(manifest['time'])}, {mode}, "
-        f"{manifest.get('pieces', 0):,} pieces)?"
-    )
+    return f"Use build {number} ({when}, {mode}, {manifest.get('pieces', 0):,} pieces)?"
 
 
 def has_copy(out: Path, number: int) -> bool:

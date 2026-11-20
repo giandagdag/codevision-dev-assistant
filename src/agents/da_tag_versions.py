@@ -83,12 +83,10 @@ def restore_confirm_text(number: int, directory: Path | None = None) -> str:
     from agents.da_index_builds import short_sgt
 
     row = next((r for r in list_versions(directory) if r["version"] == number), None)
-    if row is None:
+    when = short_sgt(row.get("at")) if row else ""
+    if not when:
         return f"Restore tag version {number}?"
-    return (
-        f"Restore tag version {number} ({short_sgt(row['at'])}, "
-        f"{row['note']} by {row['who']})?"
-    )
+    return f"Restore tag version {number} ({when}, {row.get('note', '')} by {row.get('who', '')})?"
 
 
 def compare_versions(a: int, b: int, directory: Path | None = None) -> dict | None:

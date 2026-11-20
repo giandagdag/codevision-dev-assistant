@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from agents import da_admin_rebuild as rebuild
 from agents.da_admin_index import recent_runs
@@ -63,6 +64,9 @@ def test_g1_4_use_build_confirm_names_the_build():
         "Use build 5 (20 Nov 03:10 SGT, Delta, 1,234 pieces)?"
     )
     assert build_confirm_text(None, 5) == "Use build 5?"
+    # A damaged manifest (no time, or a time that cannot be read) still opens the box.
+    assert build_confirm_text({"build": 5}, 5) == "Use build 5?"
+    assert build_confirm_text({"time": "not a time"}, 5) == "Use build 5?"
 
 
 def test_g1_5_restore_confirm_names_the_tag_version(tmp_path):
@@ -72,6 +76,13 @@ def test_g1_5_restore_confirm_names_the_tag_version(tmp_path):
         "Restore tag version 1 (20 Nov 02:40 SGT, Approve all by admin1)?"
     )
     assert restore_confirm_text(9, tmp_path) == "Restore tag version 9?"
+
+
+def test_g1_5_a_damaged_tag_row_still_opens_the_restore_box(tmp_path):
+    save_version("Approve all", "admin1", tmp_path, datetime.fromisoformat("2026-11-20T02:40:00"))
+    assert restore_confirm_text(1, tmp_path)  # sanity: a good row names its time
+    with patch("agents.da_tag_versions.list_versions", return_value=[{"version": 3}]):
+        assert restore_confirm_text(3, tmp_path) == "Restore tag version 3?"
 
 
 def test_g1_9_the_work_note_has_the_map_wiring_and_the_pip_line():
