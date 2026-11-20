@@ -155,6 +155,16 @@ def test_g1_8_capability_map_pictures(make_live_page, live, tmp_path):
     page.wait_for_timeout(1000)
     page.screenshot(path=str(OUT / "map-capability.png"))
     assert page.evaluate(f"{cy}.nodes().length") > 0
-    # Known and parked (specs/parked-items.md): the workspace callbacks read da-ws-ctx on pages
-    # without the workspace panel. It is not the map, so only that one message is left out.
-    assert [e for e in errors if "da-ws-ctx" not in e] == []
+    assert errors == []
+
+
+def test_g2_1_no_console_errors_on_map_admin_and_developer_pages(make_live_page, live):
+    """G2-1 (P38): the workspace callbacks no longer read da-ws-ctx on pages without it."""
+    page = make_live_page(live)
+    errors: list[str] = []
+    page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    for path in (MAP_PATH, ADMIN_PATH, "/"):
+        page.goto(live.replace(ADMIN_PATH, path))
+        page.wait_for_timeout(1500)
+    assert errors == []
