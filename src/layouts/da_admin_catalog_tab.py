@@ -51,6 +51,9 @@ Q_AI_APPROVE, Q_AI_ASSIGN, Q_AI_REJECT = "ai_approve", "ai_assign", "ai_reject" 
 Q_AI_ALL, Q_AI_ALL_DO = "ai_all", "ai_all_do"  # ask first, then approve every sure proposal
 Q_SHOW_RESOLVED = "show_resolved"
 Q_HIDE_RESOLVED = "hide_resolved"
+NO_CAPABILITIES = (
+    "No capabilities yet. Add one, or run an index build and let the AI suggest them."
+)
 CATALOG_HINT = (
     "First match wins: a file goes to the first capability in this list whose pattern matches. "
     "Use Move up and Move down to change the order."
@@ -208,7 +211,8 @@ def catalog_list(capabilities, paths: list[str], search: str = "", missing_backu
     )
     parts: list = [dmc.Table([head, dmc.TableTbody(rows)])]
     if not rows:
-        parts.append(dmc.Text("No capability matches.", style=da_styles.EMPTY_TEXT))
+        text = NO_CAPABILITIES if not capabilities else "No capability matches."
+        parts.append(dmc.Text(text, style=da_styles.EMPTY_TEXT))
     return html.Div(parts)
 
 
