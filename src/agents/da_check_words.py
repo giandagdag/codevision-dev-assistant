@@ -22,12 +22,18 @@ SYSTEM_HELP_LINE = "This looks like a problem in the Developer Assistant, not yo
 SEND_TO_SENIOR_LABEL = "Send to my senior"
 # Fix NP (N2): a test file that cannot load. The first two end a build like Not proven does.
 MISSING_LIBRARY_TEXT = (
-    "The server's Python is missing `{module}`. "
+    "{who} is missing `{module}`. "
     "This needs the CodeVision team, not a code change."
 )
 FROZEN_TEST_TEXT = "A frozen test cannot run: {message}"
 SYSTEM_FAILURE_MESSAGES = (NOT_PROVEN_TEXT,)  # the paused-build messages that are the DA's fault
-_SYSTEM_PREFIXES = ("The server's Python is missing ", "A frozen test cannot run: ")
+# The first one is kept for paused builds saved before Fix G3 (they hold the old words).
+_SYSTEM_PREFIXES = (
+    "The server's Python is missing ",
+    "CodeVision's Python is missing ",
+    "The Developer Assistant's Python is missing ",
+    "A frozen test cannot run: ",
+)
 
 
 def is_system_message(message: str) -> bool:

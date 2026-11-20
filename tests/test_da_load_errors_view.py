@@ -122,9 +122,9 @@ def test_np8_get_help_starts_with_the_missing_module_sentence_and_offers_send_to
     flow.request_help(settings, request_id, flow.get_revision(settings, request_id))
 
     said = chat(settings, request_id, "assistant")
-    first = said.index(next(t for t in said if t.startswith("The server's Python is missing")))
+    first = said.index(next(t for t in said if "Python is missing" in t))
     # The sentence comes again at the head of the Get help text, before the trace and the line.
     later = said[first + 1 :]
-    again = next(i for i, t in enumerate(later) if t.startswith("The server's Python is missing"))
+    again = next(i for i, t in enumerate(later) if "Python is missing" in t)
     assert "<sandbox>" in " ".join(later[again:]) and SYSTEM_HELP_LINE in later[again:]
     assert "da_sandbox_" not in " ".join(said)

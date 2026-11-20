@@ -49,6 +49,7 @@ def test_11_38_the_server_settings_are_listed_without_any_path_or_key(make_setti
         "DA_SANDBOX_SOURCE_DIR",
         "DA_CODEVISION_SRC",
         "DA_CODEVISION_PYTHON",
+        "Tests run with",  # Fix G3
         "DA_SONAR_URL",
         "DA_SONAR_TOKEN",
         "DA_SONAR_PROFILE",

@@ -395,5 +395,7 @@ class BuildView(BaseModel):
     # Fix D1: the summary line of the newest round and whether a saved report exists.
     report_summary: str = ""
     has_report: bool = False
+    # Fix G3: "CodeVision's Python 3.14.2" (never a path), or "" when no Python could be named.
+    tests_run_with: str = ""
     # Phase 7: the Tester's report, added by da_tester_flow.get_build_view (not by the build flow).
     tester: TesterView | None = None

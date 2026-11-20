@@ -1026,7 +1026,7 @@ class _Run:
                     )
         self.inp.rounds.append(record)
         if unproven:
-            raise _Paused("interrupted", pause_text(layer_b))
+            raise _Paused("interrupted", pause_text(layer_b, test_python(self.settings).owner))
         return passed
 
     # --- a check run: Check my edits (Phase 8 spec section 3) ---

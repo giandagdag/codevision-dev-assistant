@@ -100,6 +100,8 @@ def build_tab(view: BuildView, edit_hint: str = "", refine_blocks: list | None =
     blocks: list = []
     if view.banner_text:
         blocks.append(_banner(view))
+    if view.tests_run_with:  # Fix G3: which Python the tests use, in words (no path)
+        blocks.append(dmc.Text(f"Tests run with: {view.tests_run_with}", size="xs", c="dimmed"))
     if view.progress:
         blocks.append(_progress(view))
         blocks.append(_layer_boxes(view))

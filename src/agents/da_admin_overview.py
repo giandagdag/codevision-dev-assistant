@@ -22,6 +22,7 @@ from agents.da_admin_diff import (
 )
 from agents.da_admin_forms import capabilities_without_backup
 from agents.da_admin_tag_cards import ai_cards
+from agents.da_sandbox_python import test_python
 from db_table_functions.da_db import open_db
 from db_table_functions.db_tbl_da_build import ensure_build_tables
 from db_table_functions.db_tbl_da_escalation import list_escalations
@@ -270,6 +271,12 @@ def area_summaries(rulebook: Rulebook, open_unassigned: int) -> dict[str, str]:
     }
 
 
+def _tests_run_with(settings) -> str:
+    """Fix G3: the Python the sandbox will use and its version, or why it cannot be used."""
+    python = test_python(settings)
+    return python.error or python.label
+
+
 def server_settings_view(settings) -> list[tuple[str, str]]:
     """The read-only "Server settings" block of Repository and index (spec 11): .env name and the
     value to show. The folder is only "set" or "not set": no path, no key, no secret."""
@@ -281,6 +288,7 @@ def server_settings_view(settings) -> list[tuple[str, str]]:
         ("DA_SANDBOX_SOURCE_DIR", "set" if settings.sandbox_source_dir else "not set"),
         ("DA_CODEVISION_SRC", "set" if settings.codevision_src else "not set"),
         ("DA_CODEVISION_PYTHON", "set" if settings.codevision_python else "not set"),
+        ("Tests run with", _tests_run_with(settings)),
         # URL and token are only "set" / "not set": never the value
         ("DA_SONAR_URL", "set" if settings.sonar_url else "not set"),
         ("DA_SONAR_TOKEN", "set" if settings.sonar_token else "not set"),
