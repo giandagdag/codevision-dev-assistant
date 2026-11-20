@@ -27,6 +27,7 @@ class AiCard:
     confidence: str
     summary: str
     reason: str
+    tagged_at: str = ""  # for "Newest first"
 
 
 def ai_cards(directory: Path | None = None) -> list[AiCard]:
@@ -39,6 +40,7 @@ def ai_cards(directory: Path | None = None) -> list[AiCard]:
             str(e.get("confidence", "")),
             str(e.get("summary", "")),
             str(e.get("reason", "")),
+            str(e.get("tagged_at", "")),
         )
         for path, e in sorted(modules.items())
         if isinstance(e, dict) and e.get("state") == STATE_PROPOSED and not e.get("new_name")
