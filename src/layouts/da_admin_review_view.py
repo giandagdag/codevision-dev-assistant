@@ -84,13 +84,14 @@ def control_bar(rf: ReviewFilter, folders: list[str]):
                 ],
                 gap="xs",
                 mb=4,
+                style={"flexBasis": "100%"},  # search row alone on top, chip rows wrap beside
             ),
             _chips(RQ_SOURCE_ID, "Source", SOURCES, rf.source),
             _chips(RQ_PROPOSAL_ID, "Proposal", PROPOSALS, rf.proposal),
             _chips(RQ_CONF_ID, "Confidence", {c: c for c in CONFIDENCES}, rf.confidence),
             _chips(RQ_FOLDER_ID, "Folder", folder_options, rf.folder),
         ],
-        style={"display": "flex", "flexDirection": "column", "gap": "4px", "marginBottom": "8px"},
+        style={"display": "flex", "flexWrap": "wrap", "gap": "4px 24px", "marginBottom": "8px"},
     )
 
 
