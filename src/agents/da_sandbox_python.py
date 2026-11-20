@@ -10,6 +10,7 @@ import importlib.util
 import os
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,7 +29,9 @@ _FIND_CODE = (
     "        return False\n"
     "print('\\n'.join(n for n in sys.argv[1:] if not found(n)))\n"
 )
-_versions: dict[tuple[str, float], tuple[int, ...] | None] = {}
+FAILURE_MEMORY_SECONDS = 30
+_versions: dict[tuple[str, float], tuple[int, ...]] = {}
+_failed: dict[tuple[str, float], float] = {}  # key -> time until a failed question is not asked
 
 
 @dataclass(frozen=True)
@@ -89,11 +92,14 @@ def _version_of(path: str) -> tuple[int, ...] | None:
     except OSError:
         return None
     if key not in _versions:
+        if time.monotonic() < _failed.get(key, 0):
+            return None  # failed a moment ago: screens refresh often, do not wait 10 s each time
         out = _probe(path, ["-c", _VERSION_CODE])
         try:
             _versions[key] = tuple(int(part) for part in (out or "").strip().split("."))
         except ValueError:
-            return None  # not cached: a later try may work
+            _failed[key] = time.monotonic() + FAILURE_MEMORY_SECONDS
+            return None
     return _versions[key]
 
 
@@ -124,8 +130,10 @@ def missing_libraries(python: TestPython, names: list[str]) -> set[str]:
 
 def approved_not_installed(settings, approved: list[str]) -> frozenset[str]:
     """The approved libraries (import form: lower case, `-` as `_`) the test Python lacks."""
-    names = sorted({name.strip().lower().replace("-", "_") for name in approved})
-    return frozenset(missing_libraries(test_python(settings), names))
+    # Asked as written (the import lookup is case-sensitive: PIL is not pil); answered in lower
+    # case, the form Layer A and the prompt compare with.
+    names = sorted({name.strip().replace("-", "_") for name in approved})
+    return frozenset(n.lower() for n in missing_libraries(test_python(settings), names))
 
 
 def _in_process_missing(name: str) -> bool:

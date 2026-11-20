@@ -22,6 +22,7 @@ def fake_python(tmp_path, monkeypatch):
     path.write_text("x")
     monkeypatch.setattr(da_sandbox_python, "_probe", lambda p, args: "3.14.2")
     da_sandbox_python._versions.clear()
+    da_sandbox_python._failed.clear()
     return str(path)
 
 

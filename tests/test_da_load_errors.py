@@ -161,7 +161,10 @@ def test_g3_8_with_codevisions_python_set_the_words_name_it(
     fake = tmp_path / "python.exe"
     fake.write_text("x")
     settings = dataclasses.replace(settings, codevision_python=str(fake))
-    monkeypatch.setattr(da_sandbox_python, "_probe", lambda path, args: "3.14.1")
+    # the version question gets a version; the "is it installed" question finds nothing missing
+    monkeypatch.setattr(
+        da_sandbox_python, "_probe", lambda path, args: "3.14.1" if len(args) == 2 else ""
+    )
     # the real sandbox still runs on this app's Python (the fake file cannot start)
     monkeypatch.setattr(da_sandbox, "test_python", lambda s: da_sandbox_python.test_python(None))
     inject(monkeypatch, error("No module named 'openpyxl'"))
@@ -171,6 +174,41 @@ def test_g3_8_with_codevisions_python_set_the_words_name_it(
     said = chat(settings, request_id, "assistant")
     assert any(t.startswith("CodeVision's Python is missing `openpyxl`.") for t in said)
     assert flow.is_system_failure(build_state(settings, request_id))
+
+
+def test_g3_1_the_build_loop_starts_the_python_from_the_setting(
+    settings, request_id, monkeypatch, tmp_path
+):
+    fake = tmp_path / "python.exe"
+    fake.write_text("x")
+    settings = dataclasses.replace(settings, codevision_python=str(fake))
+    monkeypatch.setattr(
+        da_sandbox_python, "_probe", lambda path, args: "3.14.1" if len(args) == 2 else ""
+    )
+    seen = []
+
+    def popen(command, **_options):
+        seen.append(command[0])
+        raise OSError("fake: not started")
+
+    monkeypatch.setattr(da_sandbox.subprocess, "Popen", popen)
+
+    assert build(settings, request_id, RecordingFactory()) == "interrupted"
+
+    assert seen and set(seen) == {str(fake)}
+
+
+def test_g3_3_a_missing_python_file_pauses_the_build_and_uses_no_round(
+    settings, request_id, tmp_path
+):
+    settings = dataclasses.replace(settings, codevision_python=str(tmp_path / "nope.exe"))
+    factory = RecordingFactory()
+
+    assert build(settings, request_id, factory) == "interrupted"
+
+    said = chat(settings, request_id, "assistant")
+    assert any("DA_CODEVISION_PYTHON points to a file that does not exist" in t for t in said)
+    assert loop._rounds_used(rounds_of(settings, request_id)) == 0
 
 
 def test_np2_an_import_of_a_missing_planned_name_is_a_normal_failure(

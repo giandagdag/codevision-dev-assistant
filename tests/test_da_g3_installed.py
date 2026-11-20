@@ -80,4 +80,5 @@ def test_approved_not_installed_asks_in_import_form(monkeypatch):
 
     found = da_sandbox_python.approved_not_installed(None, ["Dash-Iconify", "flask", "flask"])
 
-    assert asked == [["dash_iconify", "flask"]] and found == frozenset({"dash_iconify"})
+    # asked as written (the import lookup is case-sensitive), answered in lower case
+    assert asked == [["Dash_Iconify", "flask"]] and found == frozenset({"dash_iconify"})

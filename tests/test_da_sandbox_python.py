@@ -36,6 +36,7 @@ def settings_with(path=""):
 def say_version(monkeypatch, text):
     monkeypatch.setattr(da_sandbox_python, "_probe", lambda path, args: text)
     da_sandbox_python._versions.clear()
+    da_sandbox_python._failed.clear()
 
 
 def capture_start(monkeypatch):
@@ -130,12 +131,24 @@ def test_a_version_call_that_fails_is_refused(monkeypatch, fake_python):
     assert da_sandbox_python.test_python(settings_with(fake_python)).error == NO_VERSION_TEXT
 
 
+def test_a_failed_version_question_is_not_asked_again_for_a_moment(monkeypatch, fake_python):
+    """Screens refresh every few seconds: a broken Python must not cost 10 s each time."""
+    calls = []
+    monkeypatch.setattr(da_sandbox_python, "_probe", lambda path, args: calls.append(1))
+    da_sandbox_python._versions.clear()
+    da_sandbox_python._failed.clear()
+    for _ in range(3):
+        assert da_sandbox_python.test_python(settings_with(fake_python)).error == NO_VERSION_TEXT
+    assert len(calls) == 1
+
+
 def test_the_version_is_asked_once_per_file(monkeypatch, fake_python):
     calls = []
     monkeypatch.setattr(
         da_sandbox_python, "_probe", lambda path, args: calls.append(path) or "3.14.1"
     )
     da_sandbox_python._versions.clear()
+    da_sandbox_python._failed.clear()
     da_sandbox_python.test_python(settings_with(fake_python))
     da_sandbox_python.test_python(settings_with(fake_python))
     assert len(calls) == 1
