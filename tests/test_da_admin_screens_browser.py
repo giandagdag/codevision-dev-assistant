@@ -231,7 +231,8 @@ def test_g4_20_26_charter_review_queue_and_bulk_bar_pictures(make_live_page, liv
         page.locator("#adm-rq-list input[type=checkbox]").first.check()
         page.get_by_text("1 selected").wait_for(timeout=10000)
         page.screenshot(path=str(folder / f"bulk-{size['width']}.png"))
-    assert len(list(folder.glob("*.png"))) == 6
+    names = [f"{stem}-{w['width']}.png" for stem in ("charter", "review", "bulk") for w in WIDTHS]
+    assert all((folder / name).exists() for name in names)
 
 
 ROW_HEIGHTS_JS = """() => [...document.querySelectorAll('#adm-body-capability tbody tr')].map(tr =>
@@ -261,7 +262,7 @@ def test_g4_15_catalog_edit_rows_have_even_inputs_and_modal_paths_are_not_cut(
         assert page.evaluate(CUT_PATHS_JS) == []
 
 
-VISIBLE_JS ="""() => {
+VISIBLE_JS = """() => {
   const bar = document.querySelector('#adm-rq-search').closest('div[style*="sticky"]');
   const box = document.querySelector('#adm-rq-list');
   const top = bar.getBoundingClientRect().bottom;
@@ -295,10 +296,11 @@ def test_g4_22_91_cards_the_page_does_not_grow_and_eight_cards_show(
     page.locator("#adm-rq-count").wait_for(timeout=15000)
     page.wait_for_timeout(500)
     page.locator("#adm-rq-list").evaluate("e => e.scrollTop = 1500")  # scroll the list itself
-    page.evaluate("window.scrollTo(0, document.querySelector('#adm-rq-list').offsetTop - 260)")
+    page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")  # well past the bar
     page.wait_for_timeout(500)
     got = page.evaluate(VISIBLE_JS)
     assert got["page"] < 2200  # 91 cards do not make the page taller than one box
-    assert 0 <= got["barTop"] < 300  # the bar is still on screen
+    assert -1 <= got["barTop"] < 100  # sticky: the bar rode up to the top, it did not scroll off
     assert got["seen"] >= 8
-    page.screenshot(path=str(OUT / "g4" / "review-91.png"))
+    OUT.mkdir(parents=True, exist_ok=True)
+    page.screenshot(path=str(OUT / "review-91.png"))  # not in g4/: that folder is counted
