@@ -12,9 +12,17 @@ from agents.da_admin_modules import (
     modules_by_capability,
     share_counts,
 )
+from agents.da_admin_review import (
+    ReviewFilter,
+    bulk_plan,
+    filter_ai_cards,
+    filter_requests,
+    filter_suggestions,
+    top_folders,
+)
 from agents.da_admin_starter import starter_at_work
 from agents.da_admin_tag_store import last_tagged, read_tags
-from layouts.da_admin_card import admin_card, card_grid
+from layouts.da_admin_card import admin_card
 from layouts.da_admin_catalog_meaning import CAP_MEANING_ID, SEARCH_PLACEHOLDER
 from layouts.da_admin_catalog_panels import modules_modal, patterns_panel
 from layouts.da_admin_common import (
@@ -27,6 +35,41 @@ from layouts.da_admin_common import (
     pat_id,
     version_pill,
 )
+from layouts.da_admin_queue_ids import (  # noqa: F401  (other modules import these from here)
+    CAT_PANE_CAPS,
+    CAT_PANE_QUEUE,
+    CAT_VIEW_ID,
+    Q_AI_ALL,
+    Q_AI_ALL_DO,
+    Q_AI_APPROVE,
+    Q_AI_ASSIGN,
+    Q_AI_REJECT,
+    Q_APPLY,
+    Q_APPLY_PATTERN,
+    Q_APPROVE,
+    Q_CANCEL,
+    Q_CONFIRM,
+    Q_HIDE_RESOLVED,
+    Q_MOVE,
+    Q_NEW,
+    Q_RECHECK,
+    Q_REJECT,
+    Q_SG_ASSIGN,
+    Q_SG_OPEN,
+    Q_SG_REJECT,
+    Q_SG_REMOVE,
+    Q_SG_SAVE,
+    Q_SHOW_RESOLVED,
+    QUEUE_BLOCK_ID,
+    QUEUE_BUTTON_TYPE,
+    QUEUE_NOTE_TYPE,
+    QUEUE_PICK_TYPE,
+    RQ_SEL_TYPE,
+    VIEW_CAPS,
+    VIEW_QUEUE,
+    queue_button_id,
+)
+from layouts.da_admin_review_view import bulk_bar, bulk_confirm, review_pane
 from layouts.da_admin_starter_card import starter_card
 from layouts.da_admin_tag_history_panel import tag_history_panel
 from layouts.da_capability_map_view import map_link
@@ -48,36 +91,12 @@ CATALOG_WIDTHS = {
     "actions": "10%",
 }
 CATALOG_INPUT_HEIGHT = "56px"  # two lines of the xs text
-QUEUE_BUTTON_TYPE = "adm-q"
-QUEUE_PICK_TYPE = "adm-q-pick"
-QUEUE_NOTE_TYPE = "adm-q-note"
-QUEUE_BLOCK_ID = "adm-queue"
-Q_CONFIRM = "confirm"
-Q_MOVE = "move"
-Q_APPROVE = "approve"  # take the suggested capability (the id's `cap` carries it)
-Q_REJECT = "reject"  # the file belongs in no capability: closes the row as rejected
-Q_NEW = "new_capability"  # open the catalog in edit mode with one new row for this file
-Q_APPLY = "apply"
-Q_APPLY_PATTERN = "apply_pattern"
-Q_CANCEL = "cancel"
-Q_AI_APPROVE, Q_AI_ASSIGN, Q_AI_REJECT = "ai_approve", "ai_assign", "ai_reject"  # fix 11-2
-Q_AI_ALL, Q_AI_ALL_DO = "ai_all", "ai_all_do"  # ask first, then approve every sure proposal
-Q_SG_OPEN, Q_SG_SAVE = "sg_open", "sg_save"  # Fix G4 S4: Create and assign (dialog, then save)
-Q_SG_ASSIGN, Q_SG_REJECT, Q_SG_REMOVE = "sg_assign", "sg_reject", "sg_remove"
 SG_FIELDS = ("name", "desc", "named", "backup")  # dialog inputs: the id's uid is "<name>|<field>"
-Q_RECHECK = "recheck"  # S6: send the "No capability fits" programs to the AI again
-Q_SHOW_RESOLVED = "show_resolved"
-Q_HIDE_RESOLVED = "hide_resolved"
 NO_CAPABILITIES = "No capabilities yet. Add one, or run an index build and let the AI suggest them."
 CATALOG_HINT = (
     "First match wins: a file goes to the first capability in this list whose pattern matches. "
     "Use Move up and Move down to change the order."
 )
-
-
-def queue_button_id(action: str, uid: int | str = 0, cap: str = "", state: str = "") -> dict:
-    # Every queue button has the same four keys so one callback pattern matches them all.
-    return {"type": QUEUE_BUTTON_TYPE, "action": action, "uid": uid, "cap": cap, "state": state}
 
 
 def catalog_view(
@@ -154,9 +173,37 @@ def catalog_view(
     )
     names = [c.name for c in policy.capabilities]
     starter = None if editable else starter_card(starter_at_work(version.rulebook))
-    return card_grid(
-        [*([starter] if starter is not None else []), catalog],
-        [queue_block(queue, names, disabled=editable)],
+    queue = queue or {}
+    open_cards = len(queue.get("rows", ())) + len(queue.get("ai_cards", ())) + len(
+        queue.get("suggestions", ())
+    )
+    view = (queue.get("review") or {}).get("view") or VIEW_CAPS
+    shown, hidden = {}, {"display": "none"}
+    return html.Div(
+        [
+            dmc.SegmentedControl(
+                id=CAT_VIEW_ID,
+                data=[
+                    {"value": VIEW_CAPS, "label": "Capabilities"},
+                    {"value": VIEW_QUEUE, "label": f"Review queue ({open_cards})"},
+                ],
+                value=view,
+                mb="sm",
+            ),
+            html.Div(
+                html.Div(
+                    [*([starter] if starter is not None else []), catalog],
+                    style=admin_styles.CARD_STACK,
+                ),
+                id=CAT_PANE_CAPS,
+                style=shown if view == VIEW_CAPS else hidden,
+            ),
+            html.Div(
+                queue_block(queue, names, disabled=editable),
+                id=CAT_PANE_QUEUE,
+                style=shown if view == VIEW_QUEUE else hidden,
+            ),
+        ]
     )
 
 
@@ -303,20 +350,21 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
     a time)."""
     queue = queue or {"rows": [], "resolved": None, "dialog": None, "notice": []}
     rows = queue["rows"]
-    parts: list = [*queue.get("notice", [])]
-    if queue.get("dialog"):
-        parts.append(_pattern_dialog(queue["dialog"]))
     ai_cards = queue.get("ai_cards", [])
     suggested = queue.get("suggestions", [])
-    if rows:
-        parts.append(dmc.Text("From a request", size="xs", fw=600, c=da_styles.MUTED))
-        parts.extend(_queue_card(r, capability_names, disabled) for r in rows)
-    elif not ai_cards and not suggested:
-        parts.append(dmc.Text("No Unassigned files are waiting.", style=da_styles.EMPTY_TEXT))
-    if ai_cards:
-        parts.extend(_ai_section(ai_cards, capability_names, disabled, queue.get("ai_confirm")))
+    review = queue.get("review") or {}
+    rf = review.get("filter") or ReviewFilter()
+    selected = review.get("selected", [])
+    above: list = [*queue.get("notice", [])]
+    if queue.get("dialog"):
+        above.append(_pattern_dialog(queue["dialog"]))
+    above.extend(_ai_confirm_box(ai_cards, queue.get("ai_confirm"), disabled))
+    if review.get("bulk"):
+        bulk = review["bulk"]
+        above.append(bulk_confirm(bulk["kind"], bulk_plan(selected, ai_cards), len(selected),
+                                  bulk.get("target", "")))
     if any(not c.capability for c in ai_cards):
-        parts.append(
+        above.append(
             dmc.Button(
                 "Re-check the No capability fits programs against the new list",
                 id=queue_button_id(Q_RECHECK),
@@ -326,10 +374,14 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
                 mb="xs",
             )
         )
-    open_name = queue.get("suggest_dialog")
-    parts.extend(
-        _suggestion_card(s, capability_names, disabled, s.name == open_name) for s in suggested
-    )
+    items, shown, total = review_items(queue, capability_names, disabled, rf, selected)
+    paths = [*(r.path for r in rows), *(c.path for c in ai_cards)]
+    parts: list = [
+        review_pane(
+            rf, top_folders(paths), shown, total, items, above,
+            bulk_bar(selected, ai_cards, capability_names, disabled), disabled,
+        )
+    ]
     if queue.get("resolved") is None:
         parts.append(
             dmc.Button(
@@ -354,7 +406,35 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
         )
     parts.append(tag_history_panel())
     waiting = len(rows) + len(ai_cards) + len(suggested)
-    return admin_card("Unassigned queue", html.Div(parts), "📥", count=waiting, id=QUEUE_BLOCK_ID)
+    return admin_card("Review queue", html.Div(parts), "📥", count=waiting, id=QUEUE_BLOCK_ID)
+
+
+def review_items(queue: dict, capability_names: list[str], disabled: bool, rf, selected: list):
+    """The cards inside the scrolling box after the filter, and (shown, total)."""
+    rows = queue["rows"]
+    ai_cards = queue.get("ai_cards", [])
+    suggested = queue.get("suggestions", [])
+    open_name = queue.get("suggest_dialog")
+    total = len(rows) + len(ai_cards) + len(suggested)
+    if not total:
+        return [dmc.Text("No Unassigned files are waiting.", style=da_styles.EMPTY_TEXT)], 0, 0
+    shown_rows = filter_requests(rows, rf)
+    shown_suggestions = filter_suggestions(suggested, rf)
+    shown_cards = filter_ai_cards(ai_cards, rf)
+    items: list = []
+    if shown_rows:
+        items.append(dmc.Text("From a request", size="xs", fw=600, c=da_styles.MUTED))
+        items.extend(_queue_card(r, capability_names, disabled) for r in shown_rows)
+    items.extend(
+        _suggestion_card(s, capability_names, disabled, s.name == open_name)
+        for s in shown_suggestions
+    )
+    if shown_cards:
+        items.append(dmc.Text("From the AI scan", size="xs", fw=600, c=da_styles.MUTED))
+    items.extend(
+        _ai_card(c, capability_names, disabled, c.path in selected) for c in shown_cards
+    )
+    return items, len(shown_rows) + len(shown_suggestions) + len(shown_cards), total
 
 
 def _queue_card(row, capability_names: list[str], disabled: bool):
@@ -435,11 +515,11 @@ def _queue_card(row, capability_names: list[str], disabled: bool):
     )
 
 
-def _ai_section(cards, capability_names: list[str], disabled: bool, confirm: dict | None):
-    """The "From the AI scan" cards, and the Approve all box when sure proposals exist.
-    The card's path rides in the button id's `uid` (rows from a request use a number there)."""
+def _ai_confirm_box(cards, confirm: dict | None, disabled: bool) -> list:
+    """The Approve all button, or its confirm box, when sure proposals exist (above the list).
+    A card's path rides in the button id's `uid` (rows from a request use a number there)."""
     sure = [c for c in cards if c.confidence == "high" and c.capability]
-    parts: list = [dmc.Text("From the AI scan", size="xs", fw=600, c=da_styles.MUTED)]
+    parts: list = []
     if confirm:
         lines = ", ".join(f"{name}: {n}" for name, n in confirm["counts"].items())
         waiting = confirm.get("suggestions", 0)  # S5: suggestions are never approved in bulk
@@ -474,11 +554,12 @@ def _ai_section(cards, capability_names: list[str], disabled: bool, confirm: dic
                 disabled=disabled,
             )
         )
-    parts.extend(_ai_card(c, capability_names, disabled) for c in cards)
     return parts
 
 
-def _ai_card(card, capability_names: list[str], disabled: bool):
+def _ai_card(card, capability_names: list[str], disabled: bool, checked: bool = False):
+    """One AI scan card, compact (L8): line 1 path, arrow, pills and actions; line 2 the summary
+    on one line (full text on hover); the AI's reason only under "Why?"."""
     target = card.capability or "No capability fits"
     buttons = []
     if card.capability:  # no Approve when the AI found no fit
@@ -515,23 +596,30 @@ def _ai_card(card, capability_names: list[str], disabled: bool):
             disabled=disabled,
         ),
     ]
-    return dmc.Paper(
+    return html.Div(
         [
             dmc.Group(
                 [
-                    dmc.Code(card.path),
+                    dmc.Checkbox(
+                        id={"type": RQ_SEL_TYPE, "path": card.path}, checked=checked, size="xs",
+                        disabled=disabled,
+                    ),
+                    dmc.Code(card.path, style=admin_styles.REVIEW_PATH),  # never cut, wraps
                     dmc.Text(f"→ {target}", size="sm", fw=600),
                     dmc.Badge(card.confidence, variant="light", tt="none"),
+                    dmc.Group(buttons, gap="xs", ml="auto"),
                 ],
                 gap="xs",
             ),
-            dmc.Text(card.summary, size="sm"),
-            dmc.Text(card.reason, size="xs", style=da_styles.EMPTY_TEXT),
-            html.Div(dmc.Group(buttons, gap="xs"), style={"marginTop": "8px"}),
+            html.Div(card.summary, title=card.summary, style=admin_styles.REVIEW_SUMMARY),
+            html.Details(
+                [
+                    html.Summary("Why?", style={"fontSize": "12px", "cursor": "pointer"}),
+                    dmc.Text(card.reason, size="xs", style=da_styles.EMPTY_TEXT),
+                ]
+            ),
         ],
-        withBorder=True,
-        p="sm",
-        mb="xs",
+        style=admin_styles.REVIEW_ROW,
     )
 
 

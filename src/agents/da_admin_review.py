@@ -1,7 +1,7 @@
 """Search, filter and sort of the Review queue cards (Fix G4 L9), and the bulk approve plan (L10).
 
 Pure functions on made-up data: no AI, no file, no database. The screen calls these with the cards
-it already has. AS400 picture: a subfile with a position-to field and filter keys over the same rows.
+it already has. AS400 picture: a subfile with filter keys over the same rows.
 """
 
 from dataclasses import dataclass
@@ -87,7 +87,9 @@ def filter_ai_cards(cards, f: ReviewFilter) -> list:
     kept = [
         c
         for c in cards
-        if _keeps(f, SOURCE_AI, [c.path], c.capability, False, c.confidence, f"{c.path}\n{c.summary}")
+        if _keeps(
+            f, SOURCE_AI, [c.path], c.capability, False, c.confidence, f"{c.path}\n{c.summary}"
+        )
     ]
     if f.sort == SORT_PATH:
         return sorted(kept, key=lambda c: c.path.lower())
@@ -112,7 +114,7 @@ def filter_suggestions(suggested, f: ReviewFilter) -> list:
 
 
 def filter_requests(rows, f: ReviewFilter) -> list:
-    """Rows from a request (QueueRow). They have no confidence, so a confidence filter hides them."""
+    """Rows from a request (QueueRow) have no confidence or proposal: those filters hide them."""
     if f.confidence or f.proposal:
         return []
     kept = [

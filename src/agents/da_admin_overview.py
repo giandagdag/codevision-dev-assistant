@@ -49,6 +49,7 @@ STATUS_RED = "red"
 NOTHING_TO_DO = "Nothing needs attention."
 NEVER_CHANGED = "not changed since v1"
 MISSING_BACKUP_FILTER = "missing_backup"
+REVIEW_QUEUE_FILTER = "review_queue"  # the jump button opens the Review queue view (Fix G4 L7)
 
 
 @dataclass(frozen=True)
@@ -109,7 +110,7 @@ def overview_from(
     if ai_proposals:  # fix 11-2: the AI scan's open cards
         noun = "proposal" if ai_proposals == 1 else "proposals"
         text = f"{ai_proposals} AI {noun} to review (Capability catalog tab)."
-        items.append(AttentionItem(AREA_CATALOG, LEVEL_INFO, text))
+        items.append(AttentionItem(AREA_CATALOG, LEVEL_INFO, text, REVIEW_QUEUE_FILTER))
     items += escalation_items(escalations or [], rulebook.policy.admin_unassigned_stale_days, now)
     summaries = area_summaries(rulebook, len(waiting_since))
     changed = last_changed(timeline)

@@ -67,6 +67,19 @@ PAIR = {
     "gap": "16px",
     "alignItems": "stretch",
 }
+# Review queue (Fix G4 L8): the list scrolls in its own box, the control bar above stays put.
+REVIEW_BOX = {
+    "height": "calc(100vh - 260px)",
+    "minHeight": "420px",
+    "overflowY": "auto",
+    "border": "1px solid #E3E7EE",
+    "borderRadius": "8px",
+    "padding": "4px 8px",
+}
+REVIEW_ROW = {"padding": "6px 0", "borderBottom": "1px solid #E3E7EE"}
+REVIEW_PATH = {"fontFamily": "monospace", "fontSize": "13px", "overflowWrap": "anywhere"}
+REVIEW_SUMMARY = {"fontSize": "13px", "whiteSpace": "nowrap", "overflow": "hidden",
+                  "textOverflow": "ellipsis", "color": "#5B6475"}
 CARD_STACK ={"display": "flex", "flexDirection": "column", "gap": "16px", "minWidth": 0}
 
 

@@ -84,15 +84,18 @@ def test_catalog_table_left_and_queue_cards_right(make_settings, published_ruleb
 
     view = tab_content(TAB, published_rulebook, queue=queue_data(settings))
 
-    grid = next(
-        n for n in walk(view) if "gridTemplateColumns" in (getattr(n, "style", None) or {})
-    )
-    left, right = grid.children
-    assert "Backup senior" in all_text(left) and "Unassigned queue" not in all_text(left)
+    # Fix G4 L7: two views under a segmented control; the queue has its own full-width pane.
+    by_id = {n.id: n for n in walk(view) if isinstance(getattr(n, "id", None), str)}
+    switch, left = by_id["adm-cat-view"], by_id["adm-cat-pane-caps"]
+    right = by_id["adm-cat-pane-queue"]
+    assert switch.data[1]["label"] == "Review queue (2)" and switch.value == "caps"
+    assert right.style == {"display": "none"} and left.style == {}
+    assert "Backup senior" in all_text(left) and "Review queue" not in all_text(left)
     cards = [n for n in walk(right) if type(n).__name__ == "Paper"]
     assert len(cards) == 2 and "src/x/zzz.py" in all_text(cards[0]) + all_text(cards[1])
-    # Confirm, Move to..., New capability and Reject per card, plus Show resolved
-    assert len(q_buttons(right)) == 9
+    # Confirm, Move to..., New capability and Reject per card (8), Show resolved, Select all
+    # shown and Clear filters
+    assert len(q_buttons(right)) == 11
     assert "Reject" in all_text(right) and "New capability" in all_text(right)
 
 
