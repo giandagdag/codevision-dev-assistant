@@ -247,11 +247,14 @@ def fallback_banner() -> dmc.Alert:
     return dmc.Alert(FALLBACK_BANNER, color="orange", variant="light", id="da-fallback-banner")
 
 
-def used_by_block(modules: list[str]) -> html.Details:
+def used_by_block(modules: list[str]) -> html.Div | html.Details:
     """"Used by N modules", the list opens on click (plain HTML, no callback)."""
+    if not modules:
+        return html.Div("Not used by other modules", style={"fontSize": "12px"})
+    word = "module" if len(modules) == 1 else "modules"
     return html.Details(
         [
-            html.Summary(f"Used by {len(modules)} modules", style={"fontSize": "12px"}),
+            html.Summary(f"Used by {len(modules)} {word}", style={"fontSize": "12px"}),
             *[html.Div(m, style={"fontSize": "12px", "fontFamily": "monospace"}) for m in modules],
         ]
     )

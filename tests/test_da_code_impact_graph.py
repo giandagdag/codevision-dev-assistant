@@ -6,7 +6,15 @@ from agents.da_code_impact_graph import impact_of, who_uses, with_used_by
 from layouts.da_enhance_panel import impact_card
 from pydantic_classes.da_discovery_models import Finding, SearchHit
 from pydantic_classes.da_enhance_models import ImpactResult
-from web.da_web_components import finding_card
+from web.da_web_components import finding_card, used_by_block
+
+
+def test_used_by_wording_for_one_many_and_none():  # G1-2
+    one = str(used_by_block(["a"]))
+    assert "Used by 1 module" in one and "1 modules" not in one
+    assert "Used by 3 modules" in str(used_by_block(["a", "b", "c"]))
+    none = str(used_by_block([]))
+    assert "Not used by other modules" in none and "Details" not in none
 
 FILES = {
     "src/agents/limits.py": "def check():\n    return 1\n",
@@ -57,7 +65,7 @@ def test_g9_a_discover_hit_shows_used_by(tmp_path):
         kind="similar_implementation", title="Reuse check", explanation="x", hit_ids=[1],
         confidence="high",
     )
-    assert "Used by 1 modules" in str(finding_card(finding, {1: shown}))
+    assert "Used by 1 module" in str(finding_card(finding, {1: shown}))
     assert "Used by" not in str(finding_card(finding, {1: hit}))
 
 

@@ -18,6 +18,7 @@ BUILD_USE_MODAL = "adm-build-use-modal"
 BUILD_USE_CONFIRM = "adm-build-use-confirm"
 BUILD_USE_LATER = "adm-build-use-later"
 BUILD_USE_OUT = "adm-build-use-out"
+BUILD_USE_NAME = "adm-build-use-name"  # the confirm line that names the build
 USE_ASK = (
     "The index files go back to this build. Newer builds and their copies stay, so you can go "
     "forward again. Discovery uses the restored index at once."
@@ -67,6 +68,7 @@ def builds_panel(directory=None):
             dmc.Modal(
                 dmc.Stack(
                     [
+                        dmc.Text("", id=BUILD_USE_NAME, size="sm", fw=600),
                         dmc.Text(USE_ASK, size="sm"),
                         dmc.Group(
                             [

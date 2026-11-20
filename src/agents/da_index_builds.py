@@ -58,6 +58,25 @@ def read_manifest(out: Path, number: int) -> dict | None:
     return manifest if isinstance(manifest, dict) else None
 
 
+def short_sgt(iso: str) -> str:
+    """"20 Nov 03:10 SGT" from a saved time (saved as the server's clock; naive = local time)."""
+    from db_table_functions.db_tbl_da_requests import SINGAPORE_TIME
+
+    try:
+        return datetime.fromisoformat(iso).astimezone(SINGAPORE_TIME).strftime("%d %b %H:%M SGT")
+    except (TypeError, ValueError):
+        return ""  # a damaged row must not stop the confirm box from opening
+
+
+def build_confirm_text(manifest: dict | None, number: int) -> str:
+    """The "Use build K" question names the build it brings back."""
+    when = short_sgt(manifest.get("time")) if manifest else ""
+    if not when:
+        return f"Use build {number}?"
+    mode = str(manifest.get("mode", "")).capitalize()
+    return f"Use build {number} ({when}, {mode}, {manifest.get('pieces', 0):,} pieces)?"
+
+
 def has_copy(out: Path, number: int) -> bool:
     folder = builds_dir(out) / str(number)
     return all((folder / name).is_file() for name in COPY_NAMES)
@@ -65,8 +84,17 @@ def has_copy(out: Path, number: int) -> bool:
 
 def save_build(out: Path, number: int, mode: str, started_by: str, when: datetime) -> dict:
     """Write the manifest and a copy of the index files for build `number`, then drop the copies
-    (never the manifests) of builds older than the newest KEPT_INDEX_COPIES."""
+    (never the manifests) of builds older than the newest KEPT_INDEX_COPIES.
+
+    A folder that already holds a manifest is never touched: the build takes the next free number
+    (the manifest says which), and the saved index file is renumbered to match."""
     record = json.loads((out / PIECES_NAME).read_text(encoding="utf-8"))
+    if (builds_dir(out) / str(number) / MANIFEST_NAME).is_file():
+        number = next_build_number(out)
+        record["build"] = number
+        side = out / (PIECES_NAME + ".new")
+        side.write_text(json.dumps(record), encoding="utf-8")
+        side.replace(out / PIECES_NAME)
     try:
         graph_files = json.loads((out / GRAPH_NAME).read_text(encoding="utf-8")).get("files", {})
     except (OSError, ValueError):

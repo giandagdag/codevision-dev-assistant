@@ -78,6 +78,17 @@ def _tagged(modules: dict) -> dict[str, str]:
     }
 
 
+def restore_confirm_text(number: int, directory: Path | None = None) -> str:
+    """The Restore question names the version it brings back (time, note, who)."""
+    from agents.da_index_builds import short_sgt
+
+    row = next((r for r in list_versions(directory) if r["version"] == number), None)
+    when = short_sgt(row.get("at")) if row else ""
+    if not when:
+        return f"Restore tag version {number}?"
+    return f"Restore tag version {number} ({when}, {row.get('note', '')} by {row.get('who', '')})?"
+
+
 def compare_versions(a: int, b: int, directory: Path | None = None) -> dict | None:
     """What changed from version a to version b: modules added, moved and removed."""
     old, new = read_version(a, directory), read_version(b, directory)

@@ -17,6 +17,7 @@ TAG_RESTORE_MODAL = "adm-tagver-restore-modal"
 TAG_RESTORE_CONFIRM = "adm-tagver-restore-confirm"
 TAG_RESTORE_LATER = "adm-tagver-restore-later"
 TAG_RESTORE_OUT = "adm-tagver-restore-out"
+TAG_RESTORE_NAME = "adm-tagver-restore-name"  # the confirm line that names the version
 RESTORE_ASK = (
     "The program tags go back to this version and are saved as a new version. The catalog "
     "(rulebook) is not changed: undo an Approve there with History, Restore."
@@ -66,6 +67,7 @@ def tag_history_panel(directory=None):
             dmc.Modal(
                 dmc.Stack(
                     [
+                        dmc.Text("", id=TAG_RESTORE_NAME, size="sm", fw=600),
                         dmc.Text(RESTORE_ASK, size="sm"),
                         dmc.Group(
                             [

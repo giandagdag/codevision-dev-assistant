@@ -9,7 +9,8 @@
     {"name": "Fix D1 (test report)", "branch": "phase-d1-test-report", "size": 14, "plan": "specs/fix-d1-test-report-plan.md", "done": true},
     {"name": "Phase 11 fix 3", "branch": "phase-11-fix-3", "size": 18, "plan": "specs/phase-11-fix-3-plan.md", "done": true},
     {"name": "Fix batch B2 (screens)", "branch": "phase-b2-screens", "size": 18, "plan": "specs/fix-batch-b2-plan.md", "done": true},
-    {"name": "Fix NP (#100, test file cannot load)", "branch": "fix-not-proven", "size": 5, "plan": "specs/fix-not-proven-plan.md"},
-    {"name": "Index, catalog and versioning upgrade (#101)", "branch": "phase-g-index-graph", "size": 20, "plan": "specs/index-catalog-versioning-plan.md"}
+    {"name": "Fix NP (#100, test file cannot load)", "branch": "fix-not-proven", "size": 5, "plan": "specs/fix-not-proven-plan.md", "done": true},
+    {"name": "Index, catalog and versioning upgrade (#101)", "branch": "phase-g-index-graph", "size": 20, "plan": "specs/index-catalog-versioning-plan.md", "done": true},
+    {"name": "Fix G1 (Upgrade G follow-ups)", "branch": "phase-g-fix-1", "size": 8, "plan": "specs/fix-g-1-plan.md"}
   ]
 }

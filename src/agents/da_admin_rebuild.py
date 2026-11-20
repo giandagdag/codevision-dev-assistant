@@ -167,11 +167,13 @@ def _save_build_copy(summary, out, number, started_by, started, extra) -> str:
         extra["link_skipped"] = summary.link_skipped
         words = f" {len(summary.link_skipped)} files had no code links read."
     try:
-        save_build(out, number, summary.mode, started_by, started)
+        saved = save_build(out, number, summary.mode, started_by, started)["build"]
     except (OSError, ValueError, KeyError) as error:
         logger.warning("Build copy failed: %s", type(error).__name__)
         return words + " The build copy was not saved."
-    extra["build"] = number
+    extra["build"] = saved
+    if saved != number:
+        words += f" Build {number} was already saved, so this is build {saved}."
     return words
 
 
