@@ -231,6 +231,8 @@ def start_rebuild(
     `mode` is "full" or "delta" (Delta runs full when the saved index cannot be trusted)."""
     started = now or datetime.now()
     if refusal := scope_refusal(policy, provider):
+        if running_since(started, directory) is None:
+            job.fail(directory, refusal)  # C5: the job card's red box shows it, like any job error
         return False, refusal
     if running_since(started, directory) is not None or not _take_lock(started, directory):
         return False, ALREADY_RUNNING

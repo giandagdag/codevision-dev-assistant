@@ -107,6 +107,11 @@ def test_onprem_refuses_the_made_up_folder(tmp_path):
                                                  provider="onprem")
         assert (started, message) == (False, rebuild.MADE_UP_SCOPE_REFUSED)
     assert not (out / rebuild.LOCK_NAME).exists()
+    # C5: the refusal sits in the job status, so the card shows it in the red box with its hint
+    from layouts import da_admin_index_panels as panels
+    box = panels.job_panel(job.read_status(out), None)[0]
+    assert box.color == "red"
+    assert rebuild.MADE_UP_SCOPE_REFUSED in str(box) and panels.MADE_UP_HINT in str(box)
     # the same folder is fine at home
     assert rebuild.scope_refusal(_policy("src/data/da_fake_codevision"), "fake") == ""
 
