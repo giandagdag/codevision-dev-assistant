@@ -8,6 +8,7 @@ from agents import da_admin_job as job
 from agents.da_admin_index import read_health, recent_runs
 from agents.da_admin_labels import label as field_label
 from agents.da_admin_rebuild import running_since
+from agents.da_admin_starter import starter_at_work
 from layouts.da_admin_build_tab import _number_field
 from layouts.da_admin_card import admin_card, card_grid
 from layouts.da_admin_common import (
@@ -28,6 +29,7 @@ from layouts.da_admin_index_panels import (
     recent_refreshes,
     refresh_tiles,
 )
+from layouts.da_admin_starter_card import scope_alert
 from pydantic_classes.da_rulebook_models import Policy, RulebookVersion
 
 # --- Repository and index (Phase 11c, spec 11) ---
@@ -69,7 +71,7 @@ def repo_view(
     main = [
         admin_card(
             "Connection",
-            _connection(policy, editable, draft),
+            _connection(policy, editable, draft, version.rulebook),
             "🔗",
             actions=version_pill(version, active),
         ),
@@ -177,9 +179,12 @@ def _exclusion_rows(policy: Policy) -> list[dict]:
     return [e.model_dump() for e in policy.index_exclusions]
 
 
-def _connection(policy: Policy, editable: bool, draft: dict | None):
+def _connection(policy: Policy, editable: bool, draft: dict | None, rulebook=None):
     scope = _draft(draft, "index_folder_scope", policy.index_folder_scope)
+    show = rulebook is not None and not editable
+    alert = scope_alert(starter_at_work(rulebook)) if show else None
     lines = [
+        *([alert] if alert is not None else []),
         dmc.Text(f"Bitbucket repository: {policy.index_repo or '(not set)'}", size="sm"),
         dmc.Text(f"Branch indexed: {policy.index_branch} 🔒", size="sm"),
     ]

@@ -47,6 +47,7 @@ from agents.da_admin_overview import (
 )
 from agents.da_admin_rebuild import running_since, start_rebuild
 from agents.da_admin_sonar import load_snapshot, refresh_snapshot, source_pill
+from agents.da_admin_starter import ACTION_ALL, ACTION_ONE, remove_starter
 from agents.da_admin_tag_cards import (
     ai_cards,
     approve_all_high,
@@ -349,6 +350,11 @@ def run_action(
             return _content(settings, tab, active), False
         if name == ACTION_SAVE:
             return _save(settings, tab, form, note, base_version, active)
+        if name == ACTION_ALL or name.startswith(ACTION_ONE):
+            text = remove_starter(settings, settings.developer_id, name)
+            saved = get_active_version(settings.db_path)
+            notice = [message_notice(text, color="green")]
+            return _content(settings, tab, saved, notice=notice), False
     base = get_version(settings.db_path, base_version or active.version_number) or active
     notice = None
     if kind == "adm-add" and action["table"] == MODULE_TABLE:

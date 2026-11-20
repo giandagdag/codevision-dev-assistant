@@ -12,6 +12,7 @@ from agents.da_admin_modules import (
     modules_by_capability,
     share_counts,
 )
+from agents.da_admin_starter import starter_at_work
 from agents.da_admin_tag_store import last_tagged, read_tags
 from layouts.da_admin_card import admin_card, card_grid
 from layouts.da_admin_catalog_meaning import CAP_MEANING_ID, SEARCH_PLACEHOLDER
@@ -23,6 +24,7 @@ from layouts.da_admin_common import (
     list_table,
     version_pill,
 )
+from layouts.da_admin_starter_card import starter_card
 from layouts.da_admin_tag_history_panel import tag_history_panel
 from layouts.da_capability_map_view import map_link
 from pydantic_classes.da_rulebook_models import RulebookVersion
@@ -116,7 +118,11 @@ def catalog_view(
         actions=version_pill(version, active),
     )
     names = [c.name for c in policy.capabilities]
-    return card_grid([catalog], [queue_block(queue, names, disabled=editable)])
+    starter = None if editable else starter_card(starter_at_work(version.rulebook))
+    return card_grid(
+        [*([starter] if starter is not None else []), catalog],
+        [queue_block(queue, names, disabled=editable)],
+    )
 
 
 def tagged_header():
