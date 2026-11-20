@@ -60,7 +60,6 @@ from layouts.da_admin_catalog_tab import (  # noqa: F401 (callbacks and tests im
     QUEUE_BUTTON_TYPE,
     QUEUE_NOTE_TYPE,
     QUEUE_PICK_TYPE,
-    _add_module_panel,
     _pattern_dialog,
     _person,
     _queue_card,
@@ -289,6 +288,7 @@ def tab_content(
     modules: list[str] | None = None,
     fires: dict[str, int] | None = None,
     ask_rebuild: bool = False,
+    panel: dict | None = None,
 ):
     """One editable tab: notice lines, the view or the form, and the buttons that fit the mode.
 
@@ -304,7 +304,7 @@ def tab_content(
     elif tab == TAB_CAPABILITY:
         if modules is None:
             modules = module_paths(version.rulebook.policy.index_folder_scope)
-        body = catalog_view(version, editable, draft, active, queue, modules)
+        body = catalog_view(version, editable, draft, active, queue, modules, panel=panel)
     else:
         if tab == TAB_CHARTER:
             body = charter_view(version, editable, draft, active)

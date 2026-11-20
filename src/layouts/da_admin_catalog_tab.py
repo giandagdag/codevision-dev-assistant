@@ -16,12 +16,15 @@ from agents.da_admin_starter import starter_at_work
 from agents.da_admin_tag_store import last_tagged, read_tags
 from layouts.da_admin_card import admin_card, card_grid
 from layouts.da_admin_catalog_meaning import CAP_MEANING_ID, SEARCH_PLACEHOLDER
+from layouts.da_admin_catalog_panels import modules_modal, patterns_panel
 from layouts.da_admin_common import (
+    PATTERNS,
     TAB_CAPABILITY,
     TAB_REPO,
     _draft,
     goto_id,
     list_table,
+    pat_id,
     version_pill,
 )
 from layouts.da_admin_starter_card import starter_card
@@ -35,6 +38,16 @@ from styles import da_styles
 
 CATALOG_TABLE = "capabilities"
 CATALOG_COLUMNS = ("name", "description", "named_senior", "backup_senior", "path_patterns")
+# Fix G4 L1: fixed column widths and one input height, so every row lines up.
+CATALOG_WIDTHS = {
+    "name": "18%",
+    "description": "30%",
+    "named_senior": "14%",
+    "backup_senior": "14%",
+    "path_patterns": "14%",
+    "actions": "10%",
+}
+CATALOG_INPUT_HEIGHT = "56px"  # two lines of the xs text
 QUEUE_BUTTON_TYPE = "adm-q"
 QUEUE_PICK_TYPE = "adm-q-pick"
 QUEUE_NOTE_TYPE = "adm-q-note"
@@ -55,9 +68,7 @@ SG_FIELDS = ("name", "desc", "named", "backup")  # dialog inputs: the id's uid i
 Q_RECHECK = "recheck"  # S6: send the "No capability fits" programs to the AI again
 Q_SHOW_RESOLVED = "show_resolved"
 Q_HIDE_RESOLVED = "hide_resolved"
-NO_CAPABILITIES = (
-    "No capabilities yet. Add one, or run an index build and let the AI suggest them."
-)
+NO_CAPABILITIES = "No capabilities yet. Add one, or run an index build and let the AI suggest them."
 CATALOG_HINT = (
     "First match wins: a file goes to the first capability in this list whose pattern matches. "
     "Use Move up and Move down to change the order."
@@ -77,9 +88,11 @@ def catalog_view(
     queue: dict | None = None,
     modules: list[str] | None = None,
     missing_backup: bool = False,
+    panel: dict | None = None,
 ):
     """The catalog table (editable) with the Unassigned queue under it (read view only).
-    `modules` is every indexed path (da_admin_modules.module_paths)."""
+    `modules` is every indexed path (da_admin_modules.module_paths). `panel` opens the patterns
+    side panel ({"kind": "patterns", "index": n}) or the pop-up ({"kind": "modules"})."""
     policy = version.rulebook.policy
     rows = _draft(draft, CATALOG_TABLE, capability_rows(policy))
     paths = modules or []
@@ -87,9 +100,24 @@ def catalog_view(
         table = html.Div(
             [
                 list_table(
-                    TAB_CAPABILITY, CATALOG_TABLE, CATALOG_COLUMNS, rows, editable, movable=True
+                    TAB_CAPABILITY,
+                    CATALOG_TABLE,
+                    CATALOG_COLUMNS,
+                    rows,
+                    editable,
+                    movable=True,
+                    kinds={"path_patterns": PATTERNS},
+                    widths=CATALOG_WIDTHS,
+                    input_height=CATALOG_INPUT_HEIGHT,
                 ),
-                _add_module_panel([r["name"] for r in rows if r.get("name")], paths),
+                dmc.Button(
+                    "Add modules",
+                    id=pat_id(TAB_CAPABILITY, "openmods"),
+                    variant="default",
+                    size="xs",
+                    mt="xs",
+                ),
+                *_open_panel(panel, rows, policy.capabilities, paths),
             ]
         )
     else:
@@ -133,7 +161,7 @@ def catalog_view(
 
 
 def tagged_header():
-    """"Programs last tagged ..., with index build ..." and a link to Repository and index (D-C)."""
+    """ "Programs last tagged ..., with index build ..." and a link to Repository and index."""
     when, build = last_tagged(), read_health().build_id
     text = (
         f"Programs last tagged {when}, with index build {build or 'unknown'}."
@@ -236,36 +264,31 @@ def _person(name: str):
     )
 
 
-def _add_module_panel(names: list[str], paths: list[str]):
-    """Edit mode: pick a capability and an indexed path; Add module makes it an exact pattern."""
+def _open_panel(panel: dict | None, rows: list[dict], capabilities, paths: list[str]) -> list:
+    """The side panel or pop-up a click asked for. Rows come from the draft (unsaved names show)."""
+    if not panel:
+        return []
+    if panel["kind"] == "patterns" and 0 <= panel["index"] < len(rows):
+        row = rows[panel["index"]]
+        return [
+            patterns_panel(
+                TAB_CAPABILITY, panel["index"], row.get("name", ""), _patterns_text(row), paths
+            )
+        ]
+    if panel["kind"] == "modules":
+        summaries = {p: str(e.get("summary", "")) for p, e in read_tags().items()}
+        # Owners come from the saved catalog (the filter callback cannot see the unsaved draft).
+        return [
+            modules_modal(
+                TAB_CAPABILITY, list(capabilities), paths, summaries, panel.get("target", "")
+            )
+        ]
+    return []
 
-    def cell(col, data):
-        return dmc.Select(
-            data=data,
-            searchable=True,
-            size="xs",
-            id={
-                "type": "adm-cell",
-                "tab": TAB_CAPABILITY,
-                "table": MODULE_TABLE,
-                "row": 0,
-                "col": col,
-            },
-        )
 
-    return dmc.Group(
-        [
-            cell("capability", names),
-            cell("path", paths),
-            dmc.Button(
-                "Add module",
-                id={"type": "adm-add", "tab": TAB_CAPABILITY, "table": MODULE_TABLE, "index": 0},
-                variant="default",
-                size="xs",
-            ),
-        ],
-        mt="xs",
-    )
+def _patterns_text(row: dict) -> str:
+    text = row.get("path_patterns", "")
+    return "\n".join(text) if isinstance(text, list) else text
 
 
 def _waiting_text(row) -> str:
@@ -293,11 +316,16 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
     if ai_cards:
         parts.extend(_ai_section(ai_cards, capability_names, disabled, queue.get("ai_confirm")))
     if any(not c.capability for c in ai_cards):
-        parts.append(dmc.Button(
-            "Re-check the No capability fits programs against the new list",
-            id=queue_button_id(Q_RECHECK), size="xs", variant="default", disabled=disabled,
-            mb="xs",
-        ))
+        parts.append(
+            dmc.Button(
+                "Re-check the No capability fits programs against the new list",
+                id=queue_button_id(Q_RECHECK),
+                size="xs",
+                variant="default",
+                disabled=disabled,
+                mb="xs",
+            )
+        )
     open_name = queue.get("suggest_dialog")
     parts.extend(
         _suggestion_card(s, capability_names, disabled, s.name == open_name) for s in suggested
@@ -527,14 +555,31 @@ def _suggestion_card(sug, capability_names: list[str], disabled: bool, dialog_op
     ]
     key = sug.name
     buttons = [
-        dmc.Button("Create and assign", id=queue_button_id(Q_SG_OPEN, key), size="xs",
-                   disabled=disabled),
-        dmc.Select(data=capability_names, id={"type": QUEUE_PICK_TYPE, "uid": key}, size="xs",
-                   w=150, disabled=disabled),
-        dmc.Button("Assign to", id=queue_button_id(Q_SG_ASSIGN, key), size="xs",
-                   variant="default", disabled=disabled),
-        dmc.Button("Reject", id=queue_button_id(Q_SG_REJECT, key), size="xs", variant="default",
-                   color="red", disabled=disabled),
+        dmc.Button(
+            "Create and assign", id=queue_button_id(Q_SG_OPEN, key), size="xs", disabled=disabled
+        ),
+        dmc.Select(
+            data=capability_names,
+            id={"type": QUEUE_PICK_TYPE, "uid": key},
+            size="xs",
+            w=150,
+            disabled=disabled,
+        ),
+        dmc.Button(
+            "Assign to",
+            id=queue_button_id(Q_SG_ASSIGN, key),
+            size="xs",
+            variant="default",
+            disabled=disabled,
+        ),
+        dmc.Button(
+            "Reject",
+            id=queue_button_id(Q_SG_REJECT, key),
+            size="xs",
+            variant="default",
+            color="red",
+            disabled=disabled,
+        ),
     ]
     parts = [
         dmc.Group(
@@ -558,8 +603,12 @@ def _suggestion_dialog(sug):
     """Name and description to edit, senior and backup senior (empty allowed), then Save."""
 
     def field(name: str, label: str, value: str = ""):
-        return dmc.TextInput(label=label, value=value, size="xs",
-                             id={"type": QUEUE_NOTE_TYPE, "uid": f"{sug.name}|{name}"})
+        return dmc.TextInput(
+            label=label,
+            value=value,
+            size="xs",
+            id={"type": QUEUE_NOTE_TYPE, "uid": f"{sug.name}|{name}"},
+        )
 
     return dmc.Alert(
         [
@@ -569,8 +618,11 @@ def _suggestion_dialog(sug):
             field("backup", "Backup senior (optional)"),
             dmc.Group(
                 [
-                    dmc.Button(f"Save ({len(sug.modules)} programs)",
-                               id=queue_button_id(Q_SG_SAVE, sug.name), size="xs"),
+                    dmc.Button(
+                        f"Save ({len(sug.modules)} programs)",
+                        id=queue_button_id(Q_SG_SAVE, sug.name),
+                        size="xs",
+                    ),
                     dmc.Button("Cancel", id=queue_button_id(Q_CANCEL), size="xs", variant="subtle"),
                 ],
                 mt="xs",

@@ -39,7 +39,12 @@ from agents.da_admin_forms import (
 from agents.da_admin_index import recent_runs
 from agents.da_admin_meaning import meaning_search
 from agents.da_admin_metrics import WINDOW_ALL, WINDOW_LABELS, health_report
-from agents.da_admin_modules import module_paths
+from agents.da_admin_modules import (
+    add_modules_to_form,
+    edit_patterns,
+    module_paths,
+    module_rows,
+)
 from agents.da_admin_overview import (
     MISSING_BACKUP_FILTER,
     build_overview,
@@ -77,6 +82,21 @@ from layouts.da_admin_catalog_meaning import (
     meaning_results,
     no_hits_line,
 )
+from layouts.da_admin_catalog_panels import (
+    HINT_ID,
+    MOD_ALL_ID,
+    MOD_CAP_ID,
+    MOD_PICKED_ID,
+    MOD_SEARCH_ID,
+    MOD_SUMMARY_ID,
+    MOD_TABLE_ID,
+    MOD_TYPE,
+    MOD_UNASSIGNED_ID,
+    NEW_PATTERN_ID,
+    add_label,
+    hint_text,
+    modules_table,
+)
 from layouts.da_admin_catalog_tab import (
     Q_AI_ALL,
     Q_AI_ALL_DO,
@@ -97,6 +117,7 @@ from layouts.da_admin_coding_tab import (
     module_start,
     rule_panel,
 )
+from layouts.da_admin_common import PAT_TYPE, pat_id
 from layouts.da_admin_index_panels import (
     REBUILD_BTN,
     REBUILD_CONFIRM,
@@ -352,10 +373,15 @@ def run_action(
     form: dict,
     note: str,
     base_version: int | None,
+    inputs: dict | None = None,
 ):
-    """Returns (new tab content, True while the tab is being edited). Writes only on Save."""
+    """Returns (new tab content, True while the tab is being edited). Writes only on Save.
+    `inputs` holds the side panel and pop-up values by name (newpat, cap, picked)."""
     active = get_active_version(settings.db_path)
     kind = action["type"]
+    if kind == PAT_TYPE:
+        inputs = inputs or {}
+        return _pattern_action(settings, tab, action, form, note, base_version, active, inputs)
     if kind == "adm-act":
         name = action["action"]
         if name == ACTION_EDIT:
@@ -383,6 +409,35 @@ def run_action(
         table = action["table"]
         form = {**form, table: move_row(form.get(table, []), action["index"], action["step"])}
     return _content(settings, tab, base, editable=True, draft=form, notice=notice), True
+
+
+def _pattern_action(settings, tab, action, form, note, base_version, active, inputs):
+    """Fix G4 L2, L3: the patterns side panel and the Add modules pop-up. Nothing is written until
+    Save (one version); Add modules only changes the draft, so the page's Save writes it."""
+    name, index = action["action"], action["index"]
+    base = get_version(settings.db_path, base_version or active.version_number) or active
+    typed = (inputs.get("newpat") or "").strip()
+    panel = None
+    if name == "open":
+        panel = {"kind": "patterns", "index": index}
+    elif name == "openmods":
+        panel = {"kind": "modules"}
+    elif name == "remove":
+        form = edit_patterns(form, index, remove=action["pat"])
+        panel = {"kind": "patterns", "index": index}
+    elif name == "add":
+        form = edit_patterns(form, index, add=typed)
+        panel = {"kind": "patterns", "index": index}
+    elif name == "save":
+        form = edit_patterns(form, index, add=typed)  # text typed but not yet added counts too
+        return _save(settings, tab, form, note, base_version, active)
+    elif name == "addmods":
+        target, picked = inputs.get("cap") or "", inputs.get("picked") or []
+        if target and picked:
+            form = add_modules_to_form(form, target, picked)
+        else:
+            panel = {"kind": "modules"}  # nothing to add yet: keep the pop-up open
+    return _content(settings, tab, base, editable=True, draft=form, panel=panel), True
 
 
 def _content(settings: Settings, tab: str, version, **kwargs):
@@ -980,7 +1035,64 @@ def _register_rule_pick(app) -> None:
         return pick_rule(get_admin_settings(), triggered["rule"])
 
 
+def modules_table_for(
+    settings: Settings, target, search, unassigned, show_summary, picked, select_all=False
+):
+    """The Add modules table for the pop-up's filters (Fix G4 L3)."""
+    if not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    policy = get_active_version(settings.db_path).rulebook.policy
+    paths = module_paths(policy.index_folder_scope)
+    summaries = {p: str(e.get("summary", "")) for p, e in read_tags().items()}
+    caps, target, search = list(policy.capabilities), target or "", search or ""
+    if select_all:  # tick every row now shown
+        rows = module_rows(caps, paths, summaries, target, search, unassigned)
+        picked = [r["path"] for r in rows]
+    return modules_table(
+        caps, paths, summaries, target, search, bool(unassigned), bool(show_summary), picked
+    )
+
+
+def pattern_hint(settings: Settings, text) -> str:
+    """The live "matches N modules" hint for the Add pattern field (Fix G4 L2)."""
+    policy = get_active_version(settings.db_path).rulebook.policy
+    return hint_text(text or "", module_paths(policy.index_folder_scope))
+
+
 def _register_catalog_filter(app) -> None:
+    @app.callback(
+        Output(HINT_ID, "children"),
+        Input(NEW_PATTERN_ID, "value"),
+        prevent_initial_call=True,
+    )
+    def on_pattern_typed(text):
+        return pattern_hint(get_admin_settings(), text)
+
+    @app.callback(
+        Output(MOD_TABLE_ID, "children"),
+        Input(MOD_SEARCH_ID, "value"),
+        Input(MOD_UNASSIGNED_ID, "checked"),
+        Input(MOD_SUMMARY_ID, "checked"),
+        Input(MOD_ALL_ID, "n_clicks"),
+        Input(MOD_CAP_ID, "value"),
+        State(MOD_PICKED_ID, "value"),
+        prevent_initial_call=True,
+    )
+    def on_modules_filter(search, unassigned, summary, _all, target, picked):
+        everything = ctx.triggered_id == MOD_ALL_ID
+        return modules_table_for(
+            get_admin_settings(), target, search, unassigned, summary, picked, everything
+        )
+
+    @app.callback(
+        Output(pat_id(TAB_CAPABILITY, "addmods"), "children"),
+        Input(MOD_PICKED_ID, "value"),
+        Input(MOD_CAP_ID, "value"),
+        prevent_initial_call=True,
+    )
+    def on_modules_ticked(picked, target):
+        return add_label(len(picked or []), target or "")
+
     @app.callback(
         Output(CAP_LIST_ID, "children"),
         Output(CAP_MEANING_ID, "children"),
@@ -1114,13 +1226,15 @@ def _register_tab(app, tab: str) -> None:
         Input(pattern("adm-add", "table", "index"), "n_clicks"),
         Input(pattern("adm-remove", "table", "index"), "n_clicks"),
         Input(pattern(MOVE_TYPE, "table", "index", "step"), "n_clicks"),
+        Input(pattern(PAT_TYPE, "action", "index", "pat"), "n_clicks"),
         State(pattern("adm-cell", "table", "row", "col"), "value"),
         State(pattern("adm-field", "name"), "value"),
         State(pattern("adm-switch", "name"), "checked"),
         State({"type": BASE_STORE_TYPE, "tab": tab}, "data"),
+        State({"type": MOD_TYPE, "name": ALL}, "value"),
         prevent_initial_call=True,
     )
-    def on_click(_acts, _adds, _removes, _moves, cells, fields, switches, base_version):
+    def on_click(_acts, _adds, _removes, _moves, _pats, cells, fields, switches, base_version, _m):
         settings = get_admin_settings()
         triggered = ctx.triggered_id
         # Buttons that were just drawn also "trigger"; a real click has a click count.
@@ -1129,7 +1243,8 @@ def _register_tab(app, tab: str) -> None:
         if not is_admin(settings, settings.developer_id):
             raise PreventUpdate
         # ctx.states_list holds, per State, a list of {"id", "property", "value"} entries.
-        cell_states, field_states, switch_states, _base = ctx.states_list
+        cell_states, field_states, switch_states, _base, mod_states = ctx.states_list
         form, note = form_from_cells(tab, cell_states, field_states, switch_states)
-        content, editing = run_action(settings, tab, triggered, form, note, base_version)
+        inputs = {item["id"]["name"]: item.get("value") for item in mod_states}
+        content, editing = run_action(settings, tab, triggered, form, note, base_version, inputs)
         return (content, *tabs_disabled(tab if editing else None))
