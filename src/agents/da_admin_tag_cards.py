@@ -30,7 +30,7 @@ class AiCard:
 
 
 def ai_cards(directory: Path | None = None) -> list[AiCard]:
-    """Open proposals, by path."""
+    """Open proposals, by path. Programs in a new-capability suggestion have their own card."""
     modules = read_store(directory)["modules"]
     return [
         AiCard(
@@ -41,7 +41,7 @@ def ai_cards(directory: Path | None = None) -> list[AiCard]:
             str(e.get("reason", "")),
         )
         for path, e in sorted(modules.items())
-        if isinstance(e, dict) and e.get("state") == STATE_PROPOSED
+        if isinstance(e, dict) and e.get("state") == STATE_PROPOSED and not e.get("new_name")
     ]
 
 

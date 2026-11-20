@@ -50,6 +50,7 @@ def test_11_38_the_server_settings_are_listed_without_any_path_or_key(make_setti
         "DA_CODEVISION_SRC",
         "DA_CODEVISION_PYTHON",
         "Tests run with",  # Fix G3
+        "AI thinks before answering",  # Fix G4 T9
         "DA_SONAR_URL",
         "DA_SONAR_TOKEN",
         "DA_SONAR_PROFILE",

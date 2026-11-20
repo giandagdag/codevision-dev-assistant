@@ -48,6 +48,13 @@ from agents.da_admin_overview import (
 from agents.da_admin_rebuild import running_since, start_rebuild
 from agents.da_admin_sonar import load_snapshot, refresh_snapshot, source_pill
 from agents.da_admin_starter import ACTION_ALL, ACTION_ONE, remove_starter
+from agents.da_admin_suggestions import (
+    assign_suggestion,
+    create_and_assign,
+    reject_suggestion,
+    remove_from_suggestion,
+    suggestions,
+)
 from agents.da_admin_tag_cards import (
     ai_cards,
     approve_all_high,
@@ -75,6 +82,11 @@ from layouts.da_admin_catalog_tab import (
     Q_AI_APPROVE,
     Q_AI_ASSIGN,
     Q_AI_REJECT,
+    Q_SG_ASSIGN,
+    Q_SG_OPEN,
+    Q_SG_REJECT,
+    Q_SG_REMOVE,
+    Q_SG_SAVE,
 )
 from layouts.da_admin_coding_tab import (
     GOLDEN_CHANGE_TYPE,
@@ -384,17 +396,62 @@ def _content(settings: Settings, tab: str, version, **kwargs):
 
 
 def queue_data(
-    settings: Settings, show_resolved: bool = False, dialog=None, notice=None, ai_confirm=False
+    settings: Settings, show_resolved: bool = False, dialog=None, notice=None, ai_confirm=False,
+    suggest_dialog: str | None = None,
 ) -> dict:
     """What the layout needs to draw the queue block."""
+    waiting = suggestions()
+    confirm = {"counts": high_confidence_counts(), "suggestions": len(waiting)}
     return {
         "rows": queue_rows(settings),
         "resolved": resolved_rows(settings) if show_resolved else None,
         "dialog": dialog,
         "notice": notice or [],
         "ai_cards": ai_cards(),
-        "ai_confirm": {"counts": high_confidence_counts()} if ai_confirm else None,
+        "ai_confirm": confirm if ai_confirm else None,
+        "suggestions": waiting,
+        "suggest_dialog": suggest_dialog,
     }
+
+
+def _suggest_action(
+    settings: Settings, name: str, key: str, picks: dict, notes: dict, base_version: int | None
+):
+    """Create and assign, Assign to, Reject and Remove on a new-capability suggestion card (S4)."""
+    admin = settings.developer_id
+    if name == Q_SG_REMOVE:  # `key` is the program's path
+        remove_from_suggestion(key)
+        done = message_notice("Removed from the suggestion.", color="green")
+        return _queue_tab(settings, notice=[done])
+    current = next((s for s in suggestions() if s.name == key), None)
+    if current is None:
+        gone = message_notice("That suggestion is not open any more.")
+        return _queue_tab(settings, notice=[gone])
+    paths = list(current.modules)
+    if name == Q_SG_OPEN:
+        return _queue_tab(settings, suggest_dialog=key)
+    if name == Q_SG_REJECT:
+        reject_suggestion(paths, admin)
+        return _queue_tab(settings, notice=[message_notice("Rejected.", color="green")])
+    if name == Q_SG_ASSIGN:
+        target = picks.get(key) or ""
+        if not target:
+            return _queue_tab(settings, notice=[message_notice("Choose a capability first.")])
+        result = assign_suggestion(settings, target, paths, admin, base_version)
+    else:  # Q_SG_SAVE
+        text = {f: notes.get(f"{key}|{f}", "") for f in ("name", "desc", "named", "backup")}
+        result = create_and_assign(
+            settings, text["name"], text["desc"], text["named"], text["backup"], paths, admin,
+            base_version,
+        )
+    if result.kind == "resolved":
+        version = f" The catalog is now v{result.new_version}." if result.new_version else ""
+        return _queue_tab(settings, notice=[message_notice(f"Done.{version}", color="green")])
+    if result.stale:
+        newest = get_active_version(settings.db_path).version_number
+        notice = message_notice(result.message, reload_tab=TAB_CAPABILITY, newest=newest)
+        return _queue_tab(settings, notice=[notice])
+    return _queue_tab(settings, notice=[problem_notice(result.problems or [result.message])])
 
 
 def _ai_action(
@@ -446,6 +503,8 @@ def run_queue_action(
     name, uid = action["action"], action["uid"]
     if name in (Q_AI_APPROVE, Q_AI_ASSIGN, Q_AI_REJECT, Q_AI_ALL, Q_AI_ALL_DO):
         return _ai_action(settings, name, uid, picks, base_version, action["cap"])
+    if name in (Q_SG_OPEN, Q_SG_SAVE, Q_SG_ASSIGN, Q_SG_REJECT, Q_SG_REMOVE):
+        return _suggest_action(settings, name, uid, picks, notes, base_version)
     if name == Q_SHOW_RESOLVED:
         return _queue_tab(settings, show_resolved=True)
     if name == Q_APPROVE:  # take the suggestion: same as Move to <suggested>

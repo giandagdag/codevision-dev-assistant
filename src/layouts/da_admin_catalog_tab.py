@@ -49,6 +49,9 @@ Q_APPLY_PATTERN = "apply_pattern"
 Q_CANCEL = "cancel"
 Q_AI_APPROVE, Q_AI_ASSIGN, Q_AI_REJECT = "ai_approve", "ai_assign", "ai_reject"  # fix 11-2
 Q_AI_ALL, Q_AI_ALL_DO = "ai_all", "ai_all_do"  # ask first, then approve every sure proposal
+Q_SG_OPEN, Q_SG_SAVE = "sg_open", "sg_save"  # Fix G4 S4: Create and assign (dialog, then save)
+Q_SG_ASSIGN, Q_SG_REJECT, Q_SG_REMOVE = "sg_assign", "sg_reject", "sg_remove"
+SG_FIELDS = ("name", "desc", "named", "backup")  # dialog inputs: the id's uid is "<name>|<field>"
 Q_SHOW_RESOLVED = "show_resolved"
 Q_HIDE_RESOLVED = "hide_resolved"
 NO_CAPABILITIES = (
@@ -280,13 +283,18 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
     if queue.get("dialog"):
         parts.append(_pattern_dialog(queue["dialog"]))
     ai_cards = queue.get("ai_cards", [])
+    suggested = queue.get("suggestions", [])
     if rows:
         parts.append(dmc.Text("From a request", size="xs", fw=600, c=da_styles.MUTED))
         parts.extend(_queue_card(r, capability_names, disabled) for r in rows)
-    elif not ai_cards:
+    elif not ai_cards and not suggested:
         parts.append(dmc.Text("No Unassigned files are waiting.", style=da_styles.EMPTY_TEXT))
     if ai_cards:
         parts.extend(_ai_section(ai_cards, capability_names, disabled, queue.get("ai_confirm")))
+    open_name = queue.get("suggest_dialog")
+    parts.extend(
+        _suggestion_card(s, capability_names, disabled, s.name == open_name) for s in suggested
+    )
     if queue.get("resolved") is None:
         parts.append(
             dmc.Button(
@@ -310,7 +318,7 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
             )
         )
     parts.append(tag_history_panel())
-    waiting = len(rows) + len(ai_cards)
+    waiting = len(rows) + len(ai_cards) + len(suggested)
     return admin_card("Unassigned queue", html.Div(parts), "📥", count=waiting, id=QUEUE_BLOCK_ID)
 
 
@@ -399,11 +407,14 @@ def _ai_section(cards, capability_names: list[str], disabled: bool, confirm: dic
     parts: list = [dmc.Text("From the AI scan", size="xs", fw=600, c=da_styles.MUTED)]
     if confirm:
         lines = ", ".join(f"{name}: {n}" for name, n in confirm["counts"].items())
+        waiting = confirm.get("suggestions", 0)  # S5: suggestions are never approved in bulk
+        extra = f". {waiting} new-capability suggestions wait for your review." if waiting else ""
         parts.append(
             dmc.Paper(
                 [
                     dmc.Text(
-                        f"Approve {sum(confirm['counts'].values())} programs? {lines}", size="sm"
+                        f"Approve {sum(confirm['counts'].values())} programs? {lines}{extra}",
+                        size="sm",
                     ),
                     dmc.Group(
                         [
@@ -486,6 +497,80 @@ def _ai_card(card, capability_names: list[str], disabled: bool):
         withBorder=True,
         p="sm",
         mb="xs",
+    )
+
+
+def _suggestion_card(sug, capability_names: list[str], disabled: bool, dialog_open: bool):
+    """S4: "New capability suggested: <name>" with its programs. Never created by itself."""
+    chips = [
+        dmc.Group(
+            [
+                _chip(path, summary),
+                dmc.Button(
+                    "Remove",
+                    id=queue_button_id(Q_SG_REMOVE, path),
+                    size="compact-xs",
+                    variant="subtle",
+                    disabled=disabled,
+                ),
+            ],
+            gap=2,
+        )
+        for path, summary in sug.modules.items()
+    ]
+    key = sug.name
+    buttons = [
+        dmc.Button("Create and assign", id=queue_button_id(Q_SG_OPEN, key), size="xs",
+                   disabled=disabled),
+        dmc.Select(data=capability_names, id={"type": QUEUE_PICK_TYPE, "uid": key}, size="xs",
+                   w=150, disabled=disabled),
+        dmc.Button("Assign to", id=queue_button_id(Q_SG_ASSIGN, key), size="xs",
+                   variant="default", disabled=disabled),
+        dmc.Button("Reject", id=queue_button_id(Q_SG_REJECT, key), size="xs", variant="default",
+                   color="red", disabled=disabled),
+    ]
+    parts = [
+        dmc.Group(
+            [
+                dmc.Badge("New capability suggested", variant="light", tt="none"),
+                dmc.Text(sug.name, size="sm", fw=600),
+                dmc.Badge(sug.confidence, variant="light", tt="none"),
+            ],
+            gap="xs",
+        ),
+        dmc.Text(sug.description, size="sm"),
+        dmc.Group(chips, gap="xs"),
+        html.Div(dmc.Group(buttons, gap="xs"), style={"marginTop": "8px"}),
+    ]
+    if dialog_open:
+        parts.append(_suggestion_dialog(sug))
+    return dmc.Paper(parts, withBorder=True, p="sm", mb="xs")
+
+
+def _suggestion_dialog(sug):
+    """Name and description to edit, senior and backup senior (empty allowed), then Save."""
+
+    def field(name: str, label: str, value: str = ""):
+        return dmc.TextInput(label=label, value=value, size="xs",
+                             id={"type": QUEUE_NOTE_TYPE, "uid": f"{sug.name}|{name}"})
+
+    return dmc.Alert(
+        [
+            field("name", "Capability name", sug.name),
+            field("desc", "Description", sug.description),
+            field("named", "Named senior"),
+            field("backup", "Backup senior (optional)"),
+            dmc.Group(
+                [
+                    dmc.Button(f"Save ({len(sug.modules)} programs)",
+                               id=queue_button_id(Q_SG_SAVE, sug.name), size="xs"),
+                    dmc.Button("Cancel", id=queue_button_id(Q_CANCEL), size="xs", variant="subtle"),
+                ],
+                mt="xs",
+            ),
+        ],
+        color="blue",
+        mt="xs",
     )
 
 

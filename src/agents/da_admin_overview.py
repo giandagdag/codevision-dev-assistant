@@ -21,6 +21,7 @@ from agents.da_admin_diff import (
     build_timeline,
 )
 from agents.da_admin_forms import capabilities_without_backup
+from agents.da_admin_suggestions import suggestions
 from agents.da_admin_tag_cards import ai_cards
 from agents.da_llm_client import sampling_for
 from agents.da_sandbox_python import test_python
@@ -83,7 +84,7 @@ def build_overview(settings, now: datetime | None = None) -> Overview | None:
     waiting = [row.waiting_since for row in queue_rows(settings)]
     return overview_from(
         active, waiting, build_timeline(settings.db_path), now, open_escalations(settings),
-        len(ai_cards()),
+        len(ai_cards()) + len(suggestions()),
     )
 
 
