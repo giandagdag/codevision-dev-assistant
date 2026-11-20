@@ -74,9 +74,9 @@ def _elements(view: MapView) -> list[dict]:
 def pick_view(graph: dict | None, tags: dict, state: dict, highlight: str = "") -> MapView:
     """Which level the state asks for: capabilities, one capability, one module."""
     if state.get("module"):
-        return module_view(graph, tags, state["module"])
+        return module_view(graph, tags, state["module"], highlight)
     if state.get("cap"):
-        return capability_view(graph, tags, state["cap"])
+        return capability_view(graph, tags, state["cap"], highlight)
     return capabilities_view(graph, tags, highlight)
 
 

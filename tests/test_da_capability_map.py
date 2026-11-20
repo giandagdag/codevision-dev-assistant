@@ -100,6 +100,38 @@ def test_over_300_nodes_shows_300_with_a_note():  # G-14
     assert all(e["source"] in kept and e["target"] in kept for e in view.edges)
 
 
+def _faded(view):
+    return {n["id"]: n["faded"] for n in view.nodes}
+
+
+def test_filter_at_capability_level_fades_everything_outside_it():  # G1-3
+    graph, tags = small()
+    assert all(_faded(capability_view(graph, tags, "Payments", "Limits")).values())
+    assert _faded(capability_view(graph, tags, "Payments", "Payments")) == {
+        "agents.pay": False, "agents.fees": False, "Compliance": True
+    }
+    assert _faded(capability_view(graph, tags, "Payments", "Compliance")) == {
+        "agents.pay": True, "agents.fees": True, "Compliance": False
+    }
+
+
+def test_filter_at_module_level_and_cleared_restores_the_normal_view():  # G1-3
+    graph, tags = small()
+    assert _faded(module_view(graph, tags, "agents.pay", "Compliance")) == {
+        "agents.pay": True, "agents.pay.send": True, "agents.audit": False, "agents.fees": True
+    }
+    assert module_view(graph, tags, "agents.pay", "").nodes == (
+        module_view(graph, tags, "agents.pay").nodes
+    )
+    assert capability_view(graph, tags, "Payments", "").nodes == (
+        capability_view(graph, tags, "Payments").nodes
+    )
+    quiet = {"files": {"a.py": entry("a"), "b.py": entry("b")}}
+    only = {"a.py": tag("Limits"), "b.py": tag("Limits")}
+    assert not any(_faded(capability_view(quiet, only, "Limits")).values())
+    assert not any(_faded(capability_view(quiet, only, "Limits", "Limits")).values())
+
+
 def test_empty_or_missing_graph_says_run_a_full_rebuild():  # G4g
     for graph in (None, {"files": {}}):
         assert capabilities_view(graph, {}).note == EMPTY_TEXT

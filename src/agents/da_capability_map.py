@@ -96,9 +96,11 @@ def capabilities_view(graph: dict | None, tags: dict, highlight: str = "") -> Ma
     return _cap(sorted(nodes.values(), key=lambda n: n["id"]), edges, _degree(edges))
 
 
-def capability_view(graph: dict | None, tags: dict, capability: str) -> MapView:
+def capability_view(
+    graph: dict | None, tags: dict, capability: str, highlight: str = ""
+) -> MapView:
     """Level 2: the modules of one capability and their links; other capabilities that they link
-    to show as faded bubbles."""
+    to show as faded bubbles. `highlight` (the filter): only that capability's nodes stay solid."""
     if _empty(graph):
         return MapView(note=EMPTY_TEXT)
     caps = _module_capabilities(graph, tags)
@@ -117,11 +119,16 @@ def capability_view(graph: dict | None, tags: dict, capability: str) -> MapView:
                 ends.append(caps[m])
         weights[(ends[0], ends[1])] = weights.get((ends[0], ends[1]), 0) + count
     edges = [{"source": a, "target": b, "weight": w} for (a, b), w in sorted(weights.items())]
+    if highlight:
+        for node in nodes.values():
+            owner = node["id"] if node["kind"] == "capability" else capability
+            node["faded"] = owner != highlight
     return _cap(list(nodes.values()), edges, _degree(edges))
 
 
-def module_view(graph: dict | None, tags: dict, module: str) -> MapView:
-    """Level 3: one module's functions, who calls it, who it calls, capability, unresolved calls."""
+def module_view(graph: dict | None, tags: dict, module: str, highlight: str = "") -> MapView:
+    """Level 3: one module's functions, who calls it, who it calls, capability, unresolved calls.
+    `highlight` (the filter): only nodes of that capability stay solid."""
     if _empty(graph):
         return MapView(note=EMPTY_TEXT)
     caps = _module_capabilities(graph, tags)
@@ -136,6 +143,10 @@ def module_view(graph: dict | None, tags: dict, module: str) -> MapView:
     nodes += [_node(m, m, "module", 1, faded=True) for m in sorted({*callers, *callees})]
     edges = [{"source": a, "target": module, "weight": links[(a, module)]} for a in callers]
     edges += [{"source": module, "target": b, "weight": links[(module, b)]} for b in callees]
+    if highlight:
+        for node in nodes:
+            owner = caps.get(node["id"], caps[module]) if node["kind"] == "module" else caps[module]
+            node["faded"] = owner != highlight
     view = _cap(nodes, edges, _degree(edges))
     view.details = {
         "capability": caps[module],
