@@ -691,6 +691,7 @@ class _Run:
                 text,
                 exclude=policy.build_sandbox_exclude,
                 timeout_seconds=policy.build_test_timeout_seconds,
+                settings=self.settings,
             )
             if not ran.ran:
                 raise _Paused("interrupted", ran.error)
@@ -722,6 +723,7 @@ class _Run:
             tests,
             exclude=self.inp.policy.build_sandbox_exclude,
             timeout_seconds=self.inp.policy.build_test_timeout_seconds,
+            settings=self.settings,
         )
         if not result.ran:
             raise _Paused("interrupted", result.error)
@@ -922,6 +924,7 @@ class _Run:
             tests,
             exclude=policy.build_sandbox_exclude,
             timeout_seconds=policy.build_test_timeout_seconds,
+            settings=self.settings,
         )
         if not result.ran:
             raise _Paused("interrupted", result.error)
@@ -1374,6 +1377,7 @@ class _Run:
             text,
             exclude=policy.build_sandbox_exclude,
             timeout_seconds=policy.build_test_timeout_seconds,
+            settings=self.settings,
         )
         if result.ran:
             self.expected_outcomes = expected_outcomes(net, result)

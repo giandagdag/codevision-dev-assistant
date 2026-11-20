@@ -15,12 +15,12 @@ import os
 import shutil
 import signal
 import subprocess
-import sys
 import tempfile
 import threading
 from pathlib import Path
 
 from agents.da_build_checks import find_test_methods
+from agents.da_sandbox_python import test_python
 from agents.da_workspace_checks import path_problem
 from da_logging import get_logger
 from pydantic_classes.da_build_models import LayerBResult, LoadError, TestOutcome
@@ -52,20 +52,25 @@ def run_tests(
     exclude: list[str],
     timeout_seconds: int,
     parent: Path | None = None,
+    settings=None,
 ) -> LayerBResult:
     """Build the temporary folder, run the tests in a separate process, and delete the folder.
 
     `reference_dir` is the CodeVision root that holds `src/` (the reference copy, decision D-A).
     `code_files` maps a path such as src/agents/x.py to this round's text. The folder is deleted
     whatever happened. A run that cannot start returns ran=False, never an exception.
+    `settings` picks the Python (Fix G3: DA_CODEVISION_PYTHON); None means this app's own.
     """
+    python = test_python(settings)
+    if python.error:
+        return _could_not_start(python.error)
     try:
         root = Path(tempfile.mkdtemp(prefix="da_sandbox_", dir=parent))
     except OSError as error:
         return _could_not_start(f"the temporary folder could not be made ({error})")
     try:
         _build_folder(root, Path(reference_dir), code_files, test_id, test_text, exclude)
-        return _run(root, test_id, timeout_seconds, _expected_names(test_text))
+        return _run(root, test_id, timeout_seconds, _expected_names(test_text), python.path)
     except SandboxStartError as error:
         return _could_not_start(str(error))
     except OSError as error:
@@ -166,8 +171,10 @@ class _Capture:
         return bytes(self.data).decode("utf-8", errors="replace")
 
 
-def _run(root: Path, test_id: str, timeout_seconds: int, expected: list[str]) -> LayerBResult:
-    command = [sys.executable, "-I", str(root / RUNNER_NAME), str(root), test_id]
+def _run(
+    root: Path, test_id: str, timeout_seconds: int, expected: list[str], python: str
+) -> LayerBResult:
+    command = [python, "-I", str(root / RUNNER_NAME), str(root), test_id]
     options = {"start_new_session": True} if os.name != "nt" else {}
     try:
         process = subprocess.Popen(
