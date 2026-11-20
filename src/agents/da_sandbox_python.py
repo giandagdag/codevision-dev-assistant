@@ -122,6 +122,12 @@ def missing_libraries(python: TestPython, names: list[str]) -> set[str]:
     return {line.strip() for line in (out or "").splitlines() if line.strip()}
 
 
+def approved_not_installed(settings, approved: list[str]) -> frozenset[str]:
+    """The approved libraries (import form: lower case, `-` as `_`) the test Python lacks."""
+    names = sorted({name.strip().lower().replace("-", "_") for name in approved})
+    return frozenset(missing_libraries(test_python(settings), names))
+
+
 def _in_process_missing(name: str) -> bool:
     try:
         return importlib.util.find_spec(name) is None

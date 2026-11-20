@@ -432,6 +432,10 @@ class LayerAContext:
     contract: Contract
     # Top-level module names of the CodeVision source (list_codevision_modules).
     codevision_modules: set[str]
+    # Fix G3: approved libraries (import names) the test Python cannot find, and where it lives
+    # in words ("CodeVision .venv"). Asked once per build by the build loop; this file stays plain.
+    not_installed: frozenset[str] = frozenset()
+    python_where: str = ""
 
 
 def check_layer_a(files: dict[str, str], context: LayerAContext) -> LayerAResult:
@@ -486,8 +490,15 @@ def _code_import_problems(tree: ast.AST, context: LayerAContext) -> list[str]:
             continue  # a relative import stays inside CodeVision
         if top.lower() in blocked:  # a blocked module wins over an approved library (P1)
             problems.append(f"Line {line}: '{module}' is blocked and may never be imported.")
-        elif top in sys.stdlib_module_names or library_name(top) in approved:
+        elif top in sys.stdlib_module_names:
             continue
+        elif library_name(top) in approved:
+            if library_name(top) in context.not_installed:  # Fix G3: approved, but not in the venv
+                problems.append(
+                    f"Line {line}: '{top}' is approved but not installed in CodeVision's Python "
+                    f"({context.python_where or 'CodeVision .venv'}). Pick an installed library "
+                    "or ask the CodeVision team."
+                )
         elif top not in context.codevision_modules | planned_tops:
             problems.append(
                 f"Line {line}: '{module}' is not the standard library, an approved library or "
