@@ -389,6 +389,7 @@ def _run_proof(settings, work: _Work, tests: str) -> LayerBResult:
         tests,
         exclude=work.policy.build_sandbox_exclude,
         timeout_seconds=work.policy.build_test_timeout_seconds,
+        settings=settings,
     )
 
 

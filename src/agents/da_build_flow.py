@@ -35,6 +35,7 @@ from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import get_help
 from agents.da_evidence_helper import hide_secret
 from agents.da_load_errors import load_failed_text, reason_lines
+from agents.da_sandbox_python import test_python
 from agents.da_test_report import case_id_of, newest_tested_round, report_summary_line
 from agents.da_workspace_checks import (
     FactsProblem,
@@ -649,7 +650,13 @@ def _written_text(report: WriteReport, mode: WorkspaceMode) -> str:
 
 def get_build_view(settings, request_id: str) -> BuildView:
     """Everything the Build tab, the Tests tab and the chat buttons need, read on one connection
-    (no lock held)."""
+    (no lock held). Fix G3: plus the name of the Python the tests run with (never its path)."""
+    view = _read_build_view(settings, request_id)
+    python = test_python(settings)
+    return view.model_copy(update={"tests_run_with": "" if python.error else python.label})
+
+
+def _read_build_view(settings, request_id: str) -> BuildView:
     policy = get_rulebook_for_request(settings.db_path, request_id).rulebook.policy
     # Read BEFORE the read transaction below: a second connection opened while it is open can
     # deadlock with a build that is saving at the same moment (plan item P18).

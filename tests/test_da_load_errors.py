@@ -1,9 +1,12 @@
 """Fix NP step 2: whose fault is a test file that cannot load (NP-1 loop part, NP-2, NP-3)."""
 
+import dataclasses
+
 import pytest
 
 from agents import da_build_flow as flow
 from agents import da_build_loop as loop
+from agents import da_sandbox, da_sandbox_python
 from agents.da_check_words import is_system_message
 from agents.da_load_errors import classify_load_error, is_system_pause, pause_text
 from pydantic_classes.da_build_models import LayerBResult, LoadError
@@ -86,7 +89,13 @@ def test_only_server_and_frozen_test_faults_pause_the_build():
     assert not is_system_pause(result("planned_code")) and not is_system_pause(result(""))
     assert not is_system_pause(None) and not is_system_pause(LayerBResult())
     text = pause_text(result("missing_library"))
-    assert is_system_message(text) and text.startswith("The server's Python is missing")
+    assert is_system_message(text)
+    assert text.startswith("The Developer Assistant's Python is missing")
+    assert pause_text(result("missing_library"), "CodeVision's Python").startswith(
+        "CodeVision's Python is missing `a library`."  # G3-8
+    )
+    # a paused build saved before Fix G3 still counts as the Developer Assistant's problem
+    assert is_system_message("The server's Python is missing `openpyxl`. This needs the team.")
 
 
 # --- inside the build loop (real sandbox, fake AI) ---
@@ -132,7 +141,8 @@ def test_np1_a_missing_library_pauses_without_a_round_and_resume_never_calls_the
     assert build(settings, request_id, factory) == "interrupted"
 
     said = chat(settings, request_id, "assistant")
-    assert any(t.startswith("The server's Python is missing `openpyxl`.") for t in said)
+    prefix = "The Developer Assistant's Python is missing `openpyxl`."
+    assert any(t.startswith(prefix) for t in said)
     assert not any(t.startswith("The build paused:") for t in said)
     calls = len(factory.code_calls())
     for _ in range(2):  # Resume twice: the AI is never asked, no round is used
@@ -143,6 +153,62 @@ def test_np1_a_missing_library_pauses_without_a_round_and_resume_never_calls_the
     state = build_state(settings, request_id)
     assert flow.is_system_failure(state)  # NP-8: Get help offers Send to my senior
     assert ("Send to my senior") in [label for _, label in flow._build_buttons(state, False)[0]]
+
+
+def test_g3_8_with_codevisions_python_set_the_words_name_it(
+    settings, request_id, monkeypatch, tmp_path
+):
+    fake = tmp_path / "python.exe"
+    fake.write_text("x")
+    settings = dataclasses.replace(settings, codevision_python=str(fake))
+    # the version question gets a version; the "is it installed" question finds nothing missing
+    monkeypatch.setattr(
+        da_sandbox_python, "_probe", lambda path, args: "3.14.1" if len(args) == 2 else ""
+    )
+    # the real sandbox still runs on this app's Python (the fake file cannot start)
+    monkeypatch.setattr(da_sandbox, "test_python", lambda s: da_sandbox_python.test_python(None))
+    inject(monkeypatch, error("No module named 'openpyxl'"))
+
+    assert build(settings, request_id, RecordingFactory()) == "interrupted"
+
+    said = chat(settings, request_id, "assistant")
+    assert any(t.startswith("CodeVision's Python is missing `openpyxl`.") for t in said)
+    assert flow.is_system_failure(build_state(settings, request_id))
+
+
+def test_g3_1_the_build_loop_starts_the_python_from_the_setting(
+    settings, request_id, monkeypatch, tmp_path
+):
+    fake = tmp_path / "python.exe"
+    fake.write_text("x")
+    settings = dataclasses.replace(settings, codevision_python=str(fake))
+    monkeypatch.setattr(
+        da_sandbox_python, "_probe", lambda path, args: "3.14.1" if len(args) == 2 else ""
+    )
+    seen = []
+
+    def popen(command, **_options):
+        seen.append(command[0])
+        raise OSError("fake: not started")
+
+    monkeypatch.setattr(da_sandbox.subprocess, "Popen", popen)
+
+    assert build(settings, request_id, RecordingFactory()) == "interrupted"
+
+    assert seen and set(seen) == {str(fake)}
+
+
+def test_g3_3_a_missing_python_file_pauses_the_build_and_uses_no_round(
+    settings, request_id, tmp_path
+):
+    settings = dataclasses.replace(settings, codevision_python=str(tmp_path / "nope.exe"))
+    factory = RecordingFactory()
+
+    assert build(settings, request_id, factory) == "interrupted"
+
+    said = chat(settings, request_id, "assistant")
+    assert any("DA_CODEVISION_PYTHON points to a file that does not exist" in t for t in said)
+    assert loop._rounds_used(rounds_of(settings, request_id)) == 0
 
 
 def test_np2_an_import_of_a_missing_planned_name_is_a_normal_failure(

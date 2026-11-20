@@ -100,12 +100,26 @@ A build used to say "7 tests, 0 passed" when the frozen test file could not even
 merge, resume `CVDA-2026-0002` at work (**Resume build**) and expect one of two things:
 
 - The real reason, in plain words, with paths shown as `<sandbox>`. Most likely a missing library
-  such as `openpyxl` or `pandas` ("The server's Python is missing `openpyxl`"). That is for the
+  such as `openpyxl` or `pandas` ("CodeVision's Python is missing `openpyxl`"). That is for the
   CodeVision team to install; it is not a code change and uses no round. Use **Send to my senior**.
 - Or real test results, if the server has the libraries.
 
 The Layer B line says "0 of 6 ran: the test file could not load", and the test report shows a
 "Load error" line, never "Not proven".
+
+## Which Python runs the tests (Fix G3)
+
+When `DA_CODEVISION_PYTHON` is set in `.env`, every test run (requirement tests, code tests, bug
+repro, safety net) uses that Python, so CodeVision's own libraries are the ones that count. Do
+**not** install them a second time in the Developer Assistant's `.venv`. Not set: the Developer
+Assistant's own Python is used, as before. Needs Python 3.14 or newer; a missing file or an older
+version stops the run with a plain message and uses no round.
+
+- The Build tab shows "Tests run with: CodeVision's Python 3.14.x" (never the path); the Admin
+  Overview settings list shows the same under "Tests run with".
+- Layer A now also asks that Python whether each approved library is installed. If not, the AI is
+  told "approved but not installed" and picks another library, and the Approach prompt lists those
+  libraries as "do not use".
 
 ## Wiring the capability map into CodeVision's own page setup (Fix G1)
 

@@ -49,6 +49,7 @@ from agents.da_guidance import USED_APPROACH, take_guidance
 from agents.da_index_builds import current_build
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_refine_hooks import approach_lane_plan_of, finish_revision, revision_plan_of
+from agents.da_sandbox_python import approved_not_installed
 from agents.da_tester_agent import (
     CASE_STEP,
     PLAN_STEP,
@@ -1078,7 +1079,10 @@ def _generate(
         return ApproachResult(None, settings.llm_provider, "", 0, [str(error)], str(error))
     # Phase 10: a senior's guidance goes into this one call, then it is marked used.
     note = take_guidance(settings.db_path, context.record.request_id, USED_APPROACH)
-    return generate_approach(client, call, replace(context, senior_guidance=note))
+    missing = approved_not_installed(settings, context.policy.approved_libraries)
+    return generate_approach(
+        client, call, replace(context, senior_guidance=note, not_installed=missing)
+    )
 
 
 def _tester_client(

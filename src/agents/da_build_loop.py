@@ -71,6 +71,7 @@ from agents.da_load_errors import (
 )
 from agents.da_refine_merge import his_lines, marker_text, plan_merge
 from agents.da_sandbox import run_tests
+from agents.da_sandbox_python import approved_not_installed, test_python
 from agents.da_workspace_checks import fingerprint
 from configs.da_config import PROJECT_ROOT, Settings
 from da_logging import get_logger
@@ -691,6 +692,7 @@ class _Run:
                 text,
                 exclude=policy.build_sandbox_exclude,
                 timeout_seconds=policy.build_test_timeout_seconds,
+                settings=self.settings,
             )
             if not ran.ran:
                 raise _Paused("interrupted", ran.error)
@@ -722,6 +724,7 @@ class _Run:
             tests,
             exclude=self.inp.policy.build_sandbox_exclude,
             timeout_seconds=self.inp.policy.build_test_timeout_seconds,
+            settings=self.settings,
         )
         if not result.ran:
             raise _Paused("interrupted", result.error)
@@ -879,6 +882,10 @@ class _Run:
             policy=self.inp.policy,
             contract=contract,
             codevision_modules=list_codevision_modules(self.reference / "src"),
+            not_installed=approved_not_installed(
+                self.settings, self.inp.policy.approved_libraries
+            ),
+            python_where=test_python(self.settings).where,
         )
         found = check_layer_a(generated, context)
         problems = problems + self._locked_signature_problems(generated)
@@ -922,6 +929,7 @@ class _Run:
             tests,
             exclude=policy.build_sandbox_exclude,
             timeout_seconds=policy.build_test_timeout_seconds,
+            settings=self.settings,
         )
         if not result.ran:
             raise _Paused("interrupted", result.error)
@@ -1018,7 +1026,7 @@ class _Run:
                     )
         self.inp.rounds.append(record)
         if unproven:
-            raise _Paused("interrupted", pause_text(layer_b))
+            raise _Paused("interrupted", pause_text(layer_b, test_python(self.settings).owner))
         return passed
 
     # --- a check run: Check my edits (Phase 8 spec section 3) ---
@@ -1374,6 +1382,7 @@ class _Run:
             text,
             exclude=policy.build_sandbox_exclude,
             timeout_seconds=policy.build_test_timeout_seconds,
+            settings=self.settings,
         )
         if result.ran:
             self.expected_outcomes = expected_outcomes(net, result)

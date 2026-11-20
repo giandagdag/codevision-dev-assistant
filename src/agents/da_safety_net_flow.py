@@ -118,6 +118,7 @@ def sandbox_runner(settings: Settings, request_id: str, policy: Policy) -> Proof
             reference, files, request_id.lower().replace("-", "_"), test_code,
             exclude=policy.build_sandbox_exclude,
             timeout_seconds=policy.build_test_timeout_seconds,
+            settings=settings,
         )
 
     return run

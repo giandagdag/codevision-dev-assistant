@@ -18,6 +18,7 @@ from agents.da_approach_checks import (
     PROPOSE,
     SETTLE,
     find_approach_problems,
+    library_name,
     normalise_reply_paths,
     question_key,
 )
@@ -89,6 +90,8 @@ class ApproachContext:
     net_cases: list[SafetyCase] = field(default_factory=list)
     # Phase 10: guidance a senior sent, handed over once (da_guidance.py). Plain text only.
     senior_guidance: str = ""
+    # Fix G3: approved libraries (import names) the test Python cannot find; set by the flow.
+    not_installed: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -203,7 +206,7 @@ def build_prompt(call: str, context: ApproachContext) -> str:
         "findings": format_findings(context.discovery),
         "hits": format_hits(context.discovery),
         "enhance": format_enhance(context),
-        "policy": format_policy(policy),
+        "policy": format_policy(policy, context.not_installed),
         "previous": _previous_section(context.previous),
         "decisions": _decisions_section(context.decisions),
         "change_section": _change_section(context.change_text),
@@ -267,17 +270,24 @@ def format_enhance(context: ApproachContext) -> str:
     return "\n".join(lines)
 
 
-def format_policy(policy: Policy) -> str:
+def format_policy(policy: Policy, not_installed: frozenset[str] = frozenset()) -> str:
+    def lacking(name: str) -> bool:
+        return library_name(name) in not_installed
+
+    installed = [name for name in policy.approved_libraries if not lacking(name)]
     lines = [
         f"- Allowed folders: {', '.join(policy.allowed_folders)}",
         f"- New file names must match: {policy.new_file_name_pattern}",
         "- Protected files (never in files, use needs_people): "
         + ", ".join(policy.protected_files),
         "- Approved libraries besides the standard library: "
-        + ", ".join(policy.approved_libraries),
+        + ", ".join(installed),
         f"- Code files per request, soft limit: {policy.max_files}",
         f"- Design choices per proposal, at most: {policy.max_design_choices}",
     ]
+    skipped = [name for name in policy.approved_libraries if lacking(name)]
+    if skipped:
+        lines.insert(4, "- Approved, not installed: do not use: " + ", ".join(skipped))
     return "\n".join(lines)
 
 

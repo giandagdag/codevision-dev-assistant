@@ -123,13 +123,13 @@ def is_system_pause(result: LayerBResult | None) -> bool:
     return result.load_error is not None and result.load_error.fault in SYSTEM_FAULTS
 
 
-def pause_text(result: LayerBResult) -> str:
-    """The sentence for a system pause."""
+def pause_text(result: LayerBResult, who: str = "The Developer Assistant's Python") -> str:
+    """The sentence for a system pause. `who` names the Python that ran the tests (Fix G3)."""
     error = result.load_error
     if error is None or error.fault not in SYSTEM_FAULTS:
         return NOT_PROVEN_TEXT
     if error.fault == "missing_library":
-        return MISSING_LIBRARY_TEXT.format(module=missing_module(error))
+        return MISSING_LIBRARY_TEXT.format(who=who, module=missing_module(error))
     return FROZEN_TEST_TEXT.format(message=_first_line(error.message))
 
 
