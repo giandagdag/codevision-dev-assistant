@@ -46,6 +46,7 @@ from agents.da_admin_overview import (
     server_settings_view,
 )
 from agents.da_admin_rebuild import running_since, start_rebuild
+from agents.da_admin_recheck import start_recheck
 from agents.da_admin_sonar import load_snapshot, refresh_snapshot, source_pill
 from agents.da_admin_starter import ACTION_ALL, ACTION_ONE, remove_starter
 from agents.da_admin_suggestions import (
@@ -82,6 +83,7 @@ from layouts.da_admin_catalog_tab import (
     Q_AI_APPROVE,
     Q_AI_ASSIGN,
     Q_AI_REJECT,
+    Q_RECHECK,
     Q_SG_ASSIGN,
     Q_SG_OPEN,
     Q_SG_REJECT,
@@ -505,6 +507,11 @@ def run_queue_action(
         return _ai_action(settings, name, uid, picks, base_version, action["cap"])
     if name in (Q_SG_OPEN, Q_SG_SAVE, Q_SG_ASSIGN, Q_SG_REJECT, Q_SG_REMOVE):
         return _suggest_action(settings, name, uid, picks, notes, base_version)
+    if name == Q_RECHECK:
+        policy = get_active_version(settings.db_path).rulebook.policy
+        started, text = start_recheck(policy, settings, settings.developer_id)
+        notice = message_notice(text, color="green") if started else message_notice(text)
+        return _queue_tab(settings, notice=[notice])
     if name == Q_SHOW_RESOLVED:
         return _queue_tab(settings, show_resolved=True)
     if name == Q_APPROVE:  # take the suggestion: same as Move to <suggested>

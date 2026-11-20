@@ -52,6 +52,7 @@ Q_AI_ALL, Q_AI_ALL_DO = "ai_all", "ai_all_do"  # ask first, then approve every s
 Q_SG_OPEN, Q_SG_SAVE = "sg_open", "sg_save"  # Fix G4 S4: Create and assign (dialog, then save)
 Q_SG_ASSIGN, Q_SG_REJECT, Q_SG_REMOVE = "sg_assign", "sg_reject", "sg_remove"
 SG_FIELDS = ("name", "desc", "named", "backup")  # dialog inputs: the id's uid is "<name>|<field>"
+Q_RECHECK = "recheck"  # S6: send the "No capability fits" programs to the AI again
 Q_SHOW_RESOLVED = "show_resolved"
 Q_HIDE_RESOLVED = "hide_resolved"
 NO_CAPABILITIES = (
@@ -291,6 +292,12 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
         parts.append(dmc.Text("No Unassigned files are waiting.", style=da_styles.EMPTY_TEXT))
     if ai_cards:
         parts.extend(_ai_section(ai_cards, capability_names, disabled, queue.get("ai_confirm")))
+    if any(not c.capability for c in ai_cards):
+        parts.append(dmc.Button(
+            "Re-check the No capability fits programs against the new list",
+            id=queue_button_id(Q_RECHECK), size="xs", variant="default", disabled=disabled,
+            mb="xs",
+        ))
     open_name = queue.get("suggest_dialog")
     parts.extend(
         _suggestion_card(s, capability_names, disabled, s.name == open_name) for s in suggested
