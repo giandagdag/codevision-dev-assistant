@@ -158,6 +158,31 @@ def test_g1_8_capability_map_pictures(make_live_page, live, tmp_path):
     assert errors == []
 
 
+def test_g2_4_dense_capability_picture(make_live_page, live, tmp_path):
+    """G2-4: 40 made-up modules with long names in one capability (they have no tag, so they
+    all sit in 'Unassigned'), linked in a ring; the picture is saved as map-dense.png."""
+    names = [f"da_example_long_module_name_{i:02d}" for i in range(40)]
+    files = {}
+    for i, name in enumerate(names):
+        other = f"src.agents.{names[(i + 1) % 40]}"
+        files[f"src/agents/{name}.py"] = {
+            "module": f"src.agents.{name}", "defs": {"run": "function"},
+            "edges": [["imports", f"src.agents.{name}", other]], "unresolved": 0,
+        }
+    save_graph({"files": files}, tmp_path)
+    OUT.mkdir(parents=True, exist_ok=True)
+    page = make_live_page(live)
+    page.set_viewport_size(VIEWPORT)
+    page.goto(live.replace(ADMIN_PATH, MAP_PATH))
+    cy = "document.getElementById('da-map-graph')._cyreg.cy"
+    page.wait_for_function(f"{cy}.nodes().length > 0", timeout=15000)
+    page.evaluate(f"{cy}.getElementById('Unassigned').emit('tap')")
+    page.wait_for_function(f"{cy}.nodes().length >= 40", timeout=15000)
+    page.wait_for_timeout(1500)
+    page.screenshot(path=str(OUT / "map-dense.png"))
+    assert page.evaluate(f"{cy}.nodes().length") == 40
+
+
 def test_g2_1_no_console_errors_on_map_admin_and_developer_pages(make_live_page, live):
     """G2-1 (P38): the workspace callbacks no longer read da-ws-ctx on pages without it."""
     page = make_live_page(live)
