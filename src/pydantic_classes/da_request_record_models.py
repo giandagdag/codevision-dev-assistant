@@ -67,9 +67,10 @@ Speaker = Literal["developer", "assistant", "system"]
 # "form" is the 4-box form of the Phase 6 fixes batch; "question" and "optional" are only used by
 # requests saved before that change, which finish the old one-at-a-time way.
 Step = Literal[
-    "form", "question", "decision", "optional", "correction", "checkpoint", "senior", "done"
+    "form", "question", "decision", "optional", "correction", "checkpoint", "senior", "done",
+    "stopped",  # Fix G5: the safety check stopped the request
 ]
-InputMode = Literal["form", "text", "choices", "waiting", "done"]
+InputMode = Literal["form", "text", "choices", "waiting", "done", "stopped"]
 
 
 class _Shape(BaseModel):

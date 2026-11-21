@@ -71,9 +71,11 @@ Branch `phase-g-fix-5` from `origin/auto/phases-7-10`; PR into it (`--body-file`
 2. **R1, P2, P3** (G5-2, G5-4): `da_reply_reader.py`, `da_safety_prompt.md`, `check_request`, `decide`,
    with fake-provider replies and a failing-call case.
 3. **P4 flow** (G5-1, G5-2): hook in `submit_form` before `_interpret`; stop line, STOPPED status,
-   Admin Overview "Needs attention" line (the "Admin Inbox item"; Gian to confirm in the PR),
-   `safety_stop` audit event; read-only screen with Home only.
-4. **P4 Release / Keep stopped** (G5-5): Admin buttons, required note, audited, move back.
+   `safety_stop` audit event; read-only screen (session step and input mode `stopped`).
+   BUILT. The Admin Overview line moved to step 4 so step 3 stays one concern.
+4. **P4 Admin side** (G5-1 Inbox part, G5-5): Overview "Needs attention" line (the "Admin Inbox
+   item"; Gian to confirm in the PR), stopped-request panel, Release (note required, writes
+   `safety_released`, moves back to the stored status and step), Keep stopped; all audited.
 5. **P5, P6** (G5-3): destructive flag, four-item check as open decisions, zone in both seeds, senior
    required reviewer, fake scripts for the three cases.
 6. **Part 2 R2 to R5, R10** (G5-6 to G5-8): tagger accepts and cleans, reasons, one retry, no

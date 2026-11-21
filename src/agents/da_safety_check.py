@@ -25,6 +25,22 @@ DECISION_P5 = "needs_p5"  # destructive work: continues only with the four P5 it
 DECISION_GO = "go"
 
 
+# The chat line (P4) and the audit events. {what} is one of the two phrases below.
+STOP_LINE = (
+    "I can't help build this. {what} is destructive and cannot be undone, and the reason given "
+    "is not a business need. This request has been sent to Admin."
+)
+WHAT_DESTRUCTIVE = "Removing data this way"
+WHAT_OTHER = "This request"
+EVENT_STOP = "safety_stop"
+EVENT_RELEASED = "safety_released"
+
+
+def stop_line(scan: GateScan) -> str:
+    destructive = scan.kind in (KIND_DESTRUCTIVE, KIND_BOTH)
+    return STOP_LINE.format(what=WHAT_DESTRUCTIVE if destructive else WHAT_OTHER)
+
+
 @dataclass(frozen=True)
 class SafetyVerdict:
     verdict: str  # ok, stop or review

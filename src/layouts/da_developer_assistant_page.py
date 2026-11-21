@@ -1260,6 +1260,7 @@ def _composer(
         "choices": "Text input is paused until you choose",
         "waiting": prompt,
         "done": "This request is confirmed. It cannot be changed in this phase.",
+        "stopped": "This request was stopped by the safety check. Only Admin can release it.",
     }.get(mode, "")
     controls = dmc.Box(
         [

@@ -30,6 +30,15 @@ from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import get_help, out_of_scope_understand
 from agents.da_llm_client import LLMClient, LLMClientError
+from agents.da_safety_check import (
+    DECISION_STOP,
+    EVENT_RELEASED,
+    EVENT_STOP,
+    check_request,
+    decide,
+    stop_line,
+)
+from agents.da_safety_gate import scan as safety_scan
 from agents.da_understand_agent import InterpretResult, get_understand_client, interpret
 from agents.da_understand_assume import ASSUME_BASIS, AssumeError, ask_assumptions, criteria_for
 from agents.da_understand_checks import (
@@ -42,7 +51,11 @@ from configs.da_config import ConfigError, Settings
 from da_logging import get_logger
 from db_table_functions import db_tbl_da_requests
 from db_table_functions.da_db import begin_write, open_db
-from db_table_functions.db_tbl_da_audit import ensure_audit_table, insert_audit_event
+from db_table_functions.db_tbl_da_audit import (
+    ensure_audit_table,
+    insert_audit_event,
+    list_audit_events,
+)
 from db_table_functions.db_tbl_da_handoff import refuse_if_locked
 from db_table_functions.db_tbl_da_requests import (
     get_rulebook_for_request,
@@ -73,6 +86,7 @@ from pydantic_classes.da_models import (
     STATUS_DECISION_REQUIRED,
     STATUS_ESCALATION,
     STATUS_READY,
+    STATUS_STOPPED,
     Actor,
     Request,
     display_status,
@@ -210,6 +224,7 @@ _INPUT_MODES: dict[str, InputMode] = {
     "checkpoint": "choices",
     "senior": "waiting",
     "done": "done",
+    "stopped": "stopped",
 }
 
 
@@ -355,6 +370,9 @@ def submit_form(
     text = _form_text(answers, boxes)
     # The interpreter sees the opening statement AND the answers together (U3).
     prompt_text = f"{OPENING_LABEL}\n{_opening_statement(settings, request_id)}\n\n{text}"
+    # Fix G5 P2: the safety check runs before any criteria are written (no lock held here).
+    if _stopped_by_safety(settings, session, prompt_text, text, base_revision, now):
+        return get_understand_view(settings, request_id)
     result = _interpret(settings, session, FORM_STEP, FORM_QUESTION, prompt_text, client)
     if not result.ok:
         with _write_transaction(settings.db_path) as conn:
@@ -380,6 +398,46 @@ def submit_form(
     # Enhance or fix. Plain code only; it never changes the form's result.
     maybe_offer_switch(settings, request_id, now=now)
     return get_understand_view(settings, request_id)
+
+
+def _stopped_by_safety(
+    settings: Settings,
+    session: UnderstandSession,
+    checked_text: str,
+    form_text: str,
+    base_revision: int,
+    now: datetime,
+) -> bool:
+    """Run the word check and the AI check. On a stop, save the chat line, the audit event and
+    the STOPPED status, and return True. A request Admin has released is not checked again."""
+    request_id = session.request_id
+    events = list_audit_events(settings.db_path, request_id)
+    if any(event.event_type == EVENT_RELEASED for event in events):
+        return False
+    gate = safety_scan(checked_text)
+    verdict = check_request(settings, checked_text)
+    if decide(gate, verdict) != DECISION_STOP:
+        return False
+    with _turn(settings.db_path, request_id, base_revision, now) as turn:
+        previous = {"previous_status": turn.request.status, "previous_step": turn.session.step}
+        turn.say("developer", form_text)
+        turn.say("assistant", stop_line(gate))
+        # Only words and the AI's one-line reason are saved, never the request text again.
+        turn.audit(
+            "system",
+            EVENT_STOP,
+            {
+                "kind": gate.kind,
+                "words": list(gate.words),
+                "ai_verdict": verdict.verdict,
+                "ai_reason": verdict.reason,
+                "ai_failed": verdict.ai_failed,
+                **previous,
+            },
+        )
+        turn.move_to(STATUS_STOPPED)
+        turn.session.step = "stopped"
+    return True
 
 
 def _opening_statement(settings: Settings, request_id: str) -> str:
@@ -1398,6 +1456,8 @@ def _choices_for(session: UnderstandSession) -> list[str]:
 
 
 def _progress_text(request: Request, session: UnderstandSession) -> str:
+    if session.step == "stopped":
+        return "Stopped by the safety check"
     if session.step == "done":
         return f"Confirmed and saved as version {request.version}"
     if request.status == STATUS_READY:

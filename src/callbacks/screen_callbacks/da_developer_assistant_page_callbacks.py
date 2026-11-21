@@ -148,6 +148,7 @@ from pydantic_classes.da_models import (
     STATUS_READY_FOR_REVIEW,
     STATUS_READY_TO_BUILD,
     STATUS_REVISION,
+    STATUS_STOPPED,
     STATUS_TESTER_REVIEW,
 )
 from styles import da_styles
@@ -163,7 +164,10 @@ FORM_BOXES_COUNT = range(1, FORM_OPTIONAL_BOX + 1)
 # on, the Discover workspace (Phase 3); from APPROACH_PROPOSED on, the Approach workspace
 # (Phase 4). DISCOVERY_CONFIRMED stays in the Discover workspace, with the Proceed to Approach
 # button. ESCALATION_REQUIRED is Approach's if an approach exists, otherwise Discover's.
-UNDERSTAND_STATUSES = (STATUS_DRAFT, STATUS_CLARIFICATION, STATUS_DECISION_REQUIRED, STATUS_READY)
+UNDERSTAND_STATUSES = (
+    STATUS_DRAFT, STATUS_CLARIFICATION, STATUS_DECISION_REQUIRED, STATUS_READY,
+    STATUS_STOPPED,  # Fix G5: read-only Understand screen
+)
 APPROACH_STATUSES = (
     STATUS_APPROACH_PROPOSED,
     STATUS_READY_TO_BUILD,
