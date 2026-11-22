@@ -412,6 +412,32 @@ def files_to_fix(findings: list[Finding], planned: list[str]) -> list[str]:
     return chosen or list(planned)
 
 
+def repeated_must_fix(findings: list[Finding], earlier: list[Finding]) -> Finding | None:
+    """B2: the first kept Must fix that already stood in the earlier review: same rule ID, file and
+    line, or the same quoted text. Findings with no file (checks 1 and 2) never count."""
+    old = [f for f in earlier if f.kept and f.severity == "must_fix" and f.file]
+    for item in must_fix_items(findings):
+        if not item.file:
+            continue
+        for was in old:
+            same_place = (item.cites, item.file, item.line) == (was.cites, was.file, was.line)
+            if same_place or (item.quote and item.quote == was.quote):
+                return item
+    return None
+
+
+def stop_text(item: Finding, record: RequestRecord) -> str:
+    """B2: the line that replaces the next round. The buttons are the ones the Tests tab has."""
+    ac = item.cites if item.cites.startswith("AC-") else ""
+    ac = ac or required_by(item.quote, record)
+    built = f" for {ac}" if ac else ""
+    return (
+        f"The Tester's finding {item.finding_id} conflicts with what was built{built}, or cannot "
+        "be fixed without breaking a test. Your call: Dispute "
+        f"{item.finding_id}, Change what it does, or Get help."
+    )
+
+
 def report_for_generator(findings: list[Finding]) -> str:
     """One line per Must fix. Should fix and FYI never go to the Generator."""
     lines = []

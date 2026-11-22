@@ -235,6 +235,22 @@ def test_b1_the_tester_prompt_lists_the_criteria_and_the_error_path_line(approac
     assert "applies only to error\npaths: raise, except, logged errors" in prompt
 
 
+def test_b2_the_same_must_fix_again_is_found_and_the_stop_text_names_it():
+    was = Finding(finding_id="F-1", check=6, severity="must_fix", file=CREATE, line=6, cites="X")
+    same = was.model_copy(update={"finding_id": "F-2"})
+    other = was.model_copy(update={"finding_id": "F-3", "line": 99})
+    ac_one = was.model_copy(update={"finding_id": "F-4", "cites": "AC-1"})
+
+    assert review.repeated_must_fix([other], [was]) is None
+    assert review.repeated_must_fix([same], [was]) == same
+    text = review.stop_text(ac_one, sample_record())
+    assert text.startswith("The Tester's finding F-4 conflicts with what was built for AC-1,")
+    assert "Dispute F-4" in text
+
+
+# --- labels ---
+
+
 
 def finding(severity, check=5, kept=True, fid="F-1"):
     return Finding(finding_id=fid, check=check, severity=severity, kept=kept)

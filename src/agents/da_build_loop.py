@@ -1464,6 +1464,11 @@ class _Run:
                     f"Result: {LABEL_NOT_PASSING}."
                 )
                 self._close(tx, False, 0, LABEL_NOT_PASSING, text)
+            elif repeat := tester.repeated_must_fix(findings, self._earlier_findings(saved)):
+                # B2: the same Must fix came back; another round would only burn budget.
+                tx.audit("system", "tester_repeat_stop", {"finding": repeat.finding_id})
+                text = tester.stop_text(repeat, self.inp.record)
+                self._close(tx, False, used, LABEL_NOT_PASSING, text)
             elif must and used >= limit:
                 text = (
                     f"I used all {used} rounds and the Tester's Must fix is still open. "
@@ -1482,6 +1487,11 @@ class _Run:
                 self._close(tx, True, used, label, text)
             self._unable_twice(tx, saved)
         return True
+
+    def _earlier_findings(self, saved: ReviewRecord) -> list[Finding]:
+        """The findings of the review before this one in this build ([] for the first)."""
+        before = [item for item in self.inp.reviews if item.review_number < saved.review_number]
+        return before[-1].findings if before else []
 
     def _unable_twice(self, tx: BuildTx, saved: ReviewRecord) -> None:
         """Escalation trigger 4 (spec section 7): two reviews of this request ended Unable to
