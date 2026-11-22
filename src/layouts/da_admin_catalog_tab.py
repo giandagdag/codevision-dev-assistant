@@ -176,19 +176,13 @@ def catalog_view(
     names = [c.name for c in policy.capabilities]
     starter = None if editable else starter_card(starter_at_work(version.rulebook))
     queue = queue or {}
-    open_cards = len(queue.get("rows", ())) + len(queue.get("ai_cards", ())) + len(
-        queue.get("suggestions", ())
-    )
     view = (queue.get("review") or {}).get("view") or VIEW_CAPS
     shown, hidden = {}, {"display": "none"}
     return html.Div(
         [
             dmc.SegmentedControl(
                 id=CAT_VIEW_ID,
-                data=[
-                    {"value": VIEW_CAPS, "label": "Capabilities"},
-                    {"value": VIEW_QUEUE, "label": f"Review queue ({open_cards})"},
-                ],
+                data=view_options(queue),
                 value=view,
                 mb="sm",
             ),
@@ -207,6 +201,15 @@ def catalog_view(
             ),
         ]
     )
+
+
+def view_options(queue: dict) -> list[dict]:
+    """The two view buttons; the queue one carries the open count (the job watcher redraws it)."""
+    open_cards = sum(len(queue.get(k, ())) for k in ("rows", "ai_cards", "suggestions"))
+    return [
+        {"value": VIEW_CAPS, "label": "Capabilities"},
+        {"value": VIEW_QUEUE, "label": f"Review queue ({open_cards})"},
+    ]
 
 
 def tagged_header():

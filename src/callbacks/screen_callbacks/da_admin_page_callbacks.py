@@ -80,6 +80,7 @@ from agents.da_admin_tag_cards import (
     reject_cards,
 )
 from agents.da_admin_tag_store import read_tags
+from agents.da_admin_watch import watch_step
 from agents.da_safety_release import ReleaseError, keep_stopped, release
 from configs.da_config import Settings, load_settings
 from db_table_functions.db_tbl_da_rulebook import (
@@ -122,6 +123,7 @@ from layouts.da_admin_catalog_tab import (
     Q_SG_REMOVE,
     Q_SG_SAVE,
     review_items,
+    view_options,
 )
 from layouts.da_admin_coding_tab import (
     GOLDEN_CHANGE_TYPE,
@@ -168,6 +170,7 @@ from layouts.da_admin_page import (
     CAP_SEARCH_ID,
     CATALOG_COLUMNS,
     CATALOG_TABLE,
+    DATA_VERSION_ID,
     EDITABLE_TABS,
     EXCLUSION_COLUMNS,
     GLOSSARY_COLUMNS,
@@ -212,6 +215,7 @@ from layouts.da_admin_page import (
     TAB_REPO,
     TAB_UI,
     TEXT_COLUMN,
+    WATCH_ID,
     WINDOW_ID,
     ZONE_COLUMNS,
     admin_page,
@@ -1436,8 +1440,64 @@ def _capability_names(settings: Settings) -> list[str]:
     return [c.name for c in get_active_version(settings.db_path).rulebook.policy.capabilities]
 
 
+def watch_job(previous: dict | None):
+    """Fix G5 N1: (new version store value, poll interval). The store is left alone when it did
+    not change, so the redraw below fires only when a job starts or ends."""
+    data, interval = watch_step(previous, running_since() is not None)
+    return (no_update if data == previous else data), interval
+
+
+def redraw_after_job(settings: Settings, data: dict | None, search, missing_backup, rq_values):
+    """Fix G5 N1: after a job ended, redraw the lists its result changes: Overview, Capabilities,
+    the Review queue and its count. The search text and filters are read back, never reset, and
+    only list contents are replaced, so the scroll box stays where it is."""
+    if not data or data.get("running") or not data.get("n"):
+        raise PreventUpdate
+    if not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    overview = refresh_overview(settings, TAB_OVERVIEW)
+    caps = filtered_catalog(settings, search, missing_backup)
+    queue = queue_data(settings)
+    items, shown, total = review_items(
+        queue, _capability_names(settings), False, filter_from_values(*rq_values), []
+    )
+    return overview, caps, items or empty_list(), count_line(shown, total), view_options(queue)
+
+
+def _register_watcher(app) -> None:
+    @app.callback(
+        Output(DATA_VERSION_ID, "data"),
+        Output(WATCH_ID, "interval"),
+        Input(WATCH_ID, "n_intervals"),
+        State(DATA_VERSION_ID, "data"),
+    )
+    def on_watch(_ticks, previous):
+        return watch_job(previous)
+
+    @app.callback(
+        Output(body_id(TAB_OVERVIEW), "children", allow_duplicate=True),
+        Output(CAP_LIST_ID, "children", allow_duplicate=True),
+        Output(RQ_LIST_ID, "children", allow_duplicate=True),
+        Output(RQ_COUNT_ID, "children", allow_duplicate=True),
+        Output(CAT_VIEW_ID, "data"),
+        Input(DATA_VERSION_ID, "data"),
+        State(CAP_SEARCH_ID, "value"),
+        State(CAP_MISSING_ID, "checked"),
+        State(RQ_SEARCH_ID, "value"),
+        State(RQ_SOURCE_ID, "value"),
+        State(RQ_PROPOSAL_ID, "value"),
+        State(RQ_CONF_ID, "value"),
+        State(RQ_FOLDER_ID, "value"),
+        State(RQ_SORT_ID, "value"),
+        prevent_initial_call=True,
+    )
+    def on_job_ended(data, search, missing, *rq_values):
+        return redraw_after_job(get_admin_settings(), data, search, missing, rq_values)
+
+
 def _register_queue(app) -> None:
     _register_review(app)
+    _register_watcher(app)
     button = {"type": QUEUE_BUTTON_TYPE, "action": ALL, "uid": ALL, "cap": ALL, "state": ALL}
 
     @app.callback(

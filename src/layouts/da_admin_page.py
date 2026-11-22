@@ -20,6 +20,7 @@ from agents.da_admin_access import NOT_ADMIN_MESSAGE
 from agents.da_admin_forms import rule_counter_text
 from agents.da_admin_modules import module_paths
 from agents.da_admin_sonar import SAMPLE_BANNER, load_snapshot, sample_with_mapping, source_pill
+from agents.da_admin_watch import IDLE_MS, START_STATE
 from agents.da_sonar_client import NOT_CONNECTED, sonar_configured
 from configs.da_config import load_settings
 from layouts.da_admin_build_tab import (  # noqa: F401 (callbacks and tests import these)
@@ -164,6 +165,8 @@ ACTION_CANCEL = "cancel"
 ACTION_RELOAD = "reload"
 NOTE_ID_NAME = "note"
 BASE_STORE_TYPE = "adm-base"
+DATA_VERSION_ID = "admin-data-version"  # Fix G5 N1: goes up when a job ends
+WATCH_ID = "adm-job-watch"
 
 
 def tab_button_id(tab: str) -> dict:
@@ -184,6 +187,8 @@ def admin_page(
     `overview` and `report` (Phase 11c) fill the Overview tab; without them it says so."""
     return html.Div(
         [
+            dcc.Store(id=DATA_VERSION_ID, data=START_STATE),
+            dcc.Interval(id=WATCH_ID, interval=IDLE_MS),
             dmc.Group(
                 [
                     dmc.Title("Admin console", order=3, c=da_styles.NAVY),
