@@ -9,6 +9,7 @@ import sys
 
 from agents.da_code_tests import targets_of
 from agents.da_test_report import build_report, case_id_of
+from agents.da_tester_review import reason_line
 from db_table_functions.da_db import open_db
 from db_table_functions.db_tbl_da_approach import (
     ensure_approach_tables,
@@ -83,6 +84,13 @@ def get_report(settings, request_id: str, build_number: int) -> dict | None:
     }
     checks = [c.model_dump() for c in review.checks] if review else []
     findings = [f.model_dump() for f in review.findings if f.kept] if review else []
+    # B3 reason line; an approximation of the Tests tab (every kept Must fix counts as open).
+    header["reason"] = reason_line(
+        header["label"],
+        sum(1 for f in findings if f["severity"] == "must_fix"),
+        [f"Tester check {c['number']}, {c['name']}" for c in checks if c["state"] == "failed"],
+        layer_b,
+    )
     outcomes: list[TestOutcome] = layer_b.tests if layer_b else []
     return build_report(
         header, outcomes, code_tests.tests if code_tests else [],
