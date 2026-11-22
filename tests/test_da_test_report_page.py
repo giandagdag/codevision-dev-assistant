@@ -1,21 +1,12 @@
-"""Fix D1 step 6: the report page reads a saved build report; print and download use one text."""
+"""Fix G5 F3: the Tests tab downloads the saved report as one PDF (no page, no new tab)."""
 
 import pytest
 
 from agents import da_build_flow as flow
 from agents import da_build_loop as loop
-from agents.da_test_report import report_file_name
 from agents.da_test_report_view import get_report
 from callbacks.screen_callbacks.da_admin_page_callbacks import developer_page_style
-from callbacks.screen_callbacks.da_test_report_page_callbacks import report_text
-from layouts.da_test_report_page import (
-    NO_REPORT_TEXT,
-    PRINT_CSS,
-    parse_report_path,
-    report_document,
-    report_html,
-    report_shell,
-)
+from callbacks.screen_callbacks.da_test_report_page_callbacks import pdf_download
 from tests.da_build_play import ready_with_workspace
 
 pytestmark = pytest.mark.usefixtures("published_rulebook")
@@ -30,40 +21,28 @@ def built(make_settings):
     return settings, request_id
 
 
-def test_the_path_is_read_and_a_bad_one_is_refused():
-    assert parse_report_path("/dev-assistant/report/CVDA-0001/3") == ("CVDA-0001", 3)
-    for bad in (None, "/inbox", "/dev-assistant/report/x", "/dev-assistant/report/x/y"):
-        assert parse_report_path(bad) is None
-    assert developer_page_style("/dev-assistant/report/CVDA-0001/3") == {"display": "none"}
-
-
-def test_d1_9_the_page_shows_header_summary_sections_and_evidence_without_a_path(built):
+def test_g5_20_the_button_gives_one_pdf_file_with_every_test_id(built):
     settings, request_id = built
-    text = report_text(settings, f"/dev-assistant/report/{request_id}/1")
+    sent = pdf_download(settings, f"{request_id}/1")
 
-    assert request_id in text and "Summary" in text and "1. Against the requirement" in text
-    assert "<th>Input</th>" in text and "Python" in text
-    assert "Users" not in text and "\\" not in text  # no server path
+    assert sent["filename"] == f"{request_id}-build-1-test-report.pdf"
+    assert sent["base64"] is True  # dcc.send_bytes
+    from base64 import b64decode
 
-
-def test_d1_10_download_is_one_offline_file_with_the_same_content(built):
-    settings, request_id = built
-    report = get_report(settings, request_id, 1)
-    document = report_document(report)
-
-    assert report_html(report) in document
-    assert "<script" not in document and "http" not in document
-    assert report_file_name("CVDA-2026-0001", 1) == "CVDA-2026-0001-build-1-test-report.html"
+    data = b64decode(sent["content"])
+    assert data.startswith(b"%PDF-") and b"startxref" in data
+    for section in get_report(settings, request_id, 1)["sections"]:
+        for row in section["rows"]:
+            assert row["id"].encode() in data
 
 
-def test_d1_11_print_styles_hide_the_app_chrome():
-    assert "@media print" in PRINT_CSS and "mantine-AppShell-header" in PRINT_CSS
-    assert "da-no-print" in PRINT_CSS
-    assert "da-no-print" in str(report_shell())  # the buttons carry the class
-
-
-def test_a_build_with_no_saved_report_says_so(built):
+def test_a_build_with_no_saved_report_downloads_nothing(built):
     settings, request_id = built
 
     assert get_report(settings, request_id, 99) is None
-    assert report_text(settings, f"/dev-assistant/report/{request_id}/99") == NO_REPORT_TEXT
+    assert pdf_download(settings, f"{request_id}/99") is None
+    assert pdf_download(settings, "garbage") is None
+
+
+def test_the_old_report_address_is_no_longer_a_page():
+    assert developer_page_style("/dev-assistant/report/CVDA-0001/3") == {}

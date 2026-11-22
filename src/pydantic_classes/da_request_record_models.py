@@ -67,9 +67,10 @@ Speaker = Literal["developer", "assistant", "system"]
 # "form" is the 4-box form of the Phase 6 fixes batch; "question" and "optional" are only used by
 # requests saved before that change, which finish the old one-at-a-time way.
 Step = Literal[
-    "form", "question", "decision", "optional", "correction", "checkpoint", "senior", "done"
+    "form", "question", "decision", "optional", "correction", "checkpoint", "senior", "done",
+    "stopped",  # Fix G5: the safety check stopped the request
 ]
-InputMode = Literal["form", "text", "choices", "waiting", "done"]
+InputMode = Literal["form", "text", "choices", "waiting", "done", "stopped"]
 
 
 class _Shape(BaseModel):
@@ -170,6 +171,9 @@ class RequestRecord(_Shape):
     capability_confirmed: bool = True
     named_senior: str = ""
     freshness: RecordFreshness = Field(default_factory=RecordFreshness)
+    # Fix G5 P5: the safety check found destructive data work. Set by the app only; it adds the
+    # "Destructive data change" review zone to the plan (a senior becomes a required reviewer).
+    destructive: bool = False
 
 
 class Ambiguity(_Shape):

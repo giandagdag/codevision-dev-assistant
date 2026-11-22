@@ -255,7 +255,7 @@ def test_10_35_the_detail_shows_the_request_and_no_developer_control(settings):
     assert all_controls(page) == []  # no button, no text box, nothing with an id
     assert "Read-only view" in texts(page)
     assert "Developer Assistant chat" in texts(page)
-    assert "Overrule a finding" in texts(action_bar)
+    assert "Accept dispute" in texts(action_bar)
     assert [f["value"] for f in view.findings] == ["F-1"]
 
 
@@ -268,7 +268,7 @@ def test_a_closed_row_is_shown_without_action_buttons(settings):
 
     view = inbox_view(settings, INBOX_PATH, f"?escalation={target.escalation_id}", "ann")
 
-    assert "Overrule a finding" not in texts(view.detail[0])
+    assert "Accept dispute" not in texts(view.detail[0])
     assert view.findings == []
 
 

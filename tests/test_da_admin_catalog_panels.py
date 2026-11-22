@@ -42,8 +42,8 @@ def test_pattern_helpers_count_and_edit():
     edit_patterns(form, 0, add="")  # blank: ignored
 
     assert form["capabilities"][0]["path_patterns"] == "b/z.py\nb/*limits*"
-    assert hint_text("a/*", PATHS) == "matches 2 modules"
-    assert hint_text("zzz", PATHS) == "matches 0 modules"
+    assert hint_text("a/*", PATHS) == "matches 2 modules: a/x.py, a/y.py"
+    assert hint_text("zzz", PATHS).startswith("Matches nothing yet")
     assert hint_text("  ", PATHS) == ""
 
 
@@ -93,8 +93,13 @@ def test_the_edit_catalog_has_fixed_widths_one_height_chip_and_add_modules(publi
     first = capability_rows(published_rulebook.rulebook.policy)[0]
     count = len(first["path_patterns"].splitlines())
 
-    assert "Add modules" in all_text(view)
+    assert "Browse modules..." in all_text(view) and "+ Add capability" in all_text(view)
     assert f"{count} pattern" in all_text(view)
+    # L2: the first row's up and the last row's down are disabled; the others work.
+    moves = [n for n in nodes if isinstance(getattr(n, "id", None), dict)
+             and n.id.get("type") == "adm-move"]
+    off = {(n.id["index"], n.id["step"]) for n in moves if n.disabled}
+    assert off == {(0, -1), (len(moves) // 2 - 1, 1)}
     assert sum(int(v.rstrip("%")) for v in CATALOG_WIDTHS.values()) == 100
     heights = {
         n.styles["input"]["height"]
@@ -120,10 +125,11 @@ def test_open_remove_add_and_save_in_the_patterns_panel_make_one_version(
 
     run_action(settings, TAB, pat_id(TAB, "remove", 0, first), form, "", None, {})
     run_action(settings, TAB, pat_id(TAB, "add", 0), form, "", None, {"newpat": "zz/new.py"})
+    assert "zz/new.py" not in form["capabilities"][0]["path_patterns"]  # matches nothing: refused
     assert len(list_versions(settings.db_path)) == before  # nothing written yet
 
     _, editing = run_action(
-        settings, TAB, pat_id(TAB, "save", 0), form, "Tidy patterns", None, {"newpat": ""}
+        settings, TAB, pat_id(TAB, "force", 0), form, "Tidy patterns", None, {"newpat": "zz/new.py"}
     )
 
     assert editing is False
@@ -141,7 +147,7 @@ def test_add_modules_adds_three_exact_patterns_in_one_version(make_settings, pub
     picked = ["m/one.py", "m/two.py", "m/three.py"]
 
     opened, _ = run_action(settings, TAB, pat_id(TAB, "openmods"), form, "", None, {})
-    assert "Add modules" in all_text(opened)
+    assert "Browse modules" in all_text(opened)
     content, _ = run_action(
         settings, TAB, pat_id(TAB, "addmods"), form, "", None, {"cap": target, "picked": picked}
     )

@@ -153,6 +153,17 @@ own page setup must add the same three things:
 After downloading the new code, run `pip install -r requirements.txt`, because `dash-cytoscape` is
 new (the map is drawn with it).
 
+## After the Fix G5 merge (21 Nov work test)
+
+1. Before unzipping the new code: set `DA_CODE_INDEX_DIR` and the database path in `.env` to a folder
+   outside the code folder, and copy the current `src\data\da_code_index\` there once (details in
+   `docs/discover-work-test.md`).
+2. Undo the 21 Nov test change: `MAX_SKIPPED_SHARE` no longer exists after G5.
+3. Retest: the director's delete-all-tables request (it must stop; Admin Overview shows it under
+   "Needs attention"), CVDA-2026-0004 (Not passing reason line, dispute both findings, the senior
+   accepts), Full rebuild (the run row shows the Tags line), Re-check (progress bar, no F5), F5 on
+   the catalog tab, Download report (PDF).
+
 ## Clean up
 
 `rmdir /s /q C:\Dev\practice`

@@ -19,6 +19,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from agents.da_destructive import pending_for
 from agents.da_enhance_checks import (
     available_symbols,
     number_keep_items,
@@ -30,6 +31,16 @@ from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import get_help, out_of_scope_understand
 from agents.da_llm_client import LLMClient, LLMClientError
+from agents.da_safety_check import (
+    DECISION_P5,
+    DECISION_STOP,
+    EVENT_RELEASED,
+    EVENT_STOP,
+    check_request,
+    decide,
+    stop_line,
+)
+from agents.da_safety_gate import scan as safety_scan
 from agents.da_understand_agent import InterpretResult, get_understand_client, interpret
 from agents.da_understand_assume import ASSUME_BASIS, AssumeError, ask_assumptions, criteria_for
 from agents.da_understand_checks import (
@@ -42,7 +53,11 @@ from configs.da_config import ConfigError, Settings
 from da_logging import get_logger
 from db_table_functions import db_tbl_da_requests
 from db_table_functions.da_db import begin_write, open_db
-from db_table_functions.db_tbl_da_audit import ensure_audit_table, insert_audit_event
+from db_table_functions.db_tbl_da_audit import (
+    ensure_audit_table,
+    insert_audit_event,
+    list_audit_events,
+)
 from db_table_functions.db_tbl_da_handoff import refuse_if_locked
 from db_table_functions.db_tbl_da_requests import (
     get_rulebook_for_request,
@@ -73,6 +88,7 @@ from pydantic_classes.da_models import (
     STATUS_DECISION_REQUIRED,
     STATUS_ESCALATION,
     STATUS_READY,
+    STATUS_STOPPED,
     Actor,
     Request,
     display_status,
@@ -210,6 +226,7 @@ _INPUT_MODES: dict[str, InputMode] = {
     "checkpoint": "choices",
     "senior": "waiting",
     "done": "done",
+    "stopped": "stopped",
 }
 
 
@@ -355,6 +372,10 @@ def submit_form(
     text = _form_text(answers, boxes)
     # The interpreter sees the opening statement AND the answers together (U3).
     prompt_text = f"{OPENING_LABEL}\n{_opening_statement(settings, request_id)}\n\n{text}"
+    # Fix G5 P2: the safety check runs before any criteria are written (no lock held here).
+    safety = _stopped_by_safety(settings, session, prompt_text, text, base_revision, now)
+    if safety == DECISION_STOP:
+        return get_understand_view(settings, request_id)
     result = _interpret(settings, session, FORM_STEP, FORM_QUESTION, prompt_text, client)
     if not result.ok:
         with _write_transaction(settings.db_path) as conn:
@@ -372,6 +393,8 @@ def submit_form(
         turn.say("developer", text)
         turn.audit("developer", "form_submitted", {"optional_used": bool(answers[-1])})
         _apply_result(turn, result, answered=tuple(number for number, _ in FORM_BOXES))
+        if safety == DECISION_P5:
+            _require_destructive_items(turn)
         if boxes != FORM_BOXES:
             _apply_enhance_boxes(turn, answers[0], keep_items)
         turn.session.optional_done = True
@@ -380,6 +403,67 @@ def submit_form(
     # Enhance or fix. Plain code only; it never changes the form's result.
     maybe_offer_switch(settings, request_id, now=now)
     return get_understand_view(settings, request_id)
+
+
+def _stopped_by_safety(
+    settings: Settings,
+    session: UnderstandSession,
+    checked_text: str,
+    form_text: str,
+    base_revision: int,
+    now: datetime,
+) -> str:
+    """Run the word check and the AI check and return the decision (stop, needs_p5 or go). On a
+    stop, save the chat line, the audit event and the STOPPED status first. A request Admin has
+    released is never stopped again, but destructive work still goes through the P5 items."""
+    request_id = session.request_id
+    events = list_audit_events(settings.db_path, request_id)
+    released = any(event.event_type == EVENT_RELEASED for event in events)
+    gate = safety_scan(checked_text)
+    verdict = check_request(settings, checked_text)
+    decision = decide(gate, verdict)
+    if released and decision == DECISION_STOP:
+        return DECISION_P5
+    if decision != DECISION_STOP:
+        return decision
+    with _turn(settings.db_path, request_id, base_revision, now) as turn:
+        previous = {"previous_status": turn.request.status, "previous_step": turn.session.step}
+        turn.say("developer", form_text)
+        turn.say("assistant", stop_line(gate))
+        # Only words and the AI's one-line reason are saved, never the request text again.
+        turn.audit(
+            "system",
+            EVENT_STOP,
+            {
+                "kind": gate.kind,
+                "words": list(gate.words),
+                "ai_verdict": verdict.verdict,
+                "ai_reason": verdict.reason,
+                "ai_failed": verdict.ai_failed,
+                **previous,
+            },
+        )
+        turn.move_to(STATUS_STOPPED)
+        turn.session.step = "stopped"
+    return DECISION_STOP
+
+
+def _require_destructive_items(turn: _Turn) -> None:
+    """P5: mark the record destructive (the review zone follows) and send every missing item to a
+    senior as an open decision. Nothing is assumed."""
+    session = turn.session
+    record = session.record.model_copy(update={"destructive": True})
+    asked = [pending.question for pending in session.aside_decisions]
+    open_items = list(record.open_items)
+    for pending in pending_for(record):
+        if pending.question in asked:
+            continue
+        open_items.append(SENIOR_PREFIX + pending.question)
+        session.aside_decisions.append(pending)
+        session.needs_senior = True
+    session.record = record.model_copy(update={"open_items": open_items})
+    added = len(open_items) - len(record.open_items)
+    turn.audit("system", "safety_destructive", {"missing": added})
 
 
 def _opening_statement(settings: Settings, request_id: str) -> str:
@@ -1398,6 +1482,8 @@ def _choices_for(session: UnderstandSession) -> list[str]:
 
 
 def _progress_text(request: Request, session: UnderstandSession) -> str:
+    if session.step == "stopped":
+        return "Stopped by the safety check"
     if session.step == "done":
         return f"Confirmed and saved as version {request.version}"
     if request.status == STATUS_READY:

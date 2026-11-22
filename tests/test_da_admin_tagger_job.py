@@ -63,7 +63,9 @@ def test_delta_tags_only_new_or_changed_programs(tmp_path, make_settings):
     assert recent_runs(out)[0]["tagged"] == 1
 
 
-def test_over_ten_percent_failing_keeps_the_index_and_says_tags_not_saved(tmp_path, make_settings):
+def test_every_call_failing_keeps_the_index_and_saves_the_programs_as_unreadable(
+    tmp_path, make_settings
+):
     policy, _, _ = _setup(tmp_path)
     out = tmp_path / "idx"
 
@@ -74,8 +76,10 @@ def test_over_ten_percent_failing_keeps_the_index_and_says_tags_not_saved(tmp_pa
     _job(policy, out, Broken(), make_settings())
 
     row = recent_runs(out)[0]
-    assert row["saved"] and tagjob.TAGS_NOT_SAVED in row["message"]  # the index was kept
-    assert (out / "da_code_index.json").exists() and read_tags(out) == {}
+    assert row["saved"] and "Tags: 0 of 3 tagged, 3 could not be read" in row["message"]
+    assert row["tagged"] == 0
+    assert (out / "da_code_index.json").exists()
+    assert {t["state"] for t in read_tags(out).values()} == {"unreadable"}
 
 
 def test_stop_during_tagging_keeps_the_index_and_drops_the_new_tags(tmp_path, make_settings):

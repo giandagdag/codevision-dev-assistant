@@ -36,7 +36,7 @@ def test_s2_valid_new_is_kept_with_name_and_description():
 def test_s2_bad_new_is_skipped():
     for bad in (
         {"new_name": "src/agents/x.py"}, {"new_name": "A"}, {"new_name": "x" * 41},
-        {"new_description": ""}, {"new_description": "d" * 121}, {"new_name": 5},
+        {"new_description": ""}, {"new_name": 5},  # a 121-character description is now cut (G5)
     ):
         assert parse_reply(reply(**bad), CAPS) is None
     no_fields = json.loads(reply())

@@ -257,7 +257,7 @@ def test_g4_15_catalog_edit_rows_have_even_inputs_and_modal_paths_are_not_cut(
         assert rows
         for heights in rows:
             assert max(heights) - min(heights) <= 2
-        body.get_by_role("button", name="Add modules").first.click()
+        body.get_by_role("button", name="Browse modules...").first.click()
         page.locator(".mantine-Modal-body td code").first.wait_for(timeout=10000)
         assert page.evaluate(CUT_PATHS_JS) == []
 

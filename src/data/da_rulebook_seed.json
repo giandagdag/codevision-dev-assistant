@@ -166,7 +166,8 @@
     "sonar_severity_map": {"BLOCKER": "must_fix", "CRITICAL": "must_fix", "MAJOR": "should_fix", "MINOR": "fyi", "INFO": "fyi"},
     "flag_review_zones": [
       {"name": "Security", "description": "Encryption, key handling, and permission checks.", "examples": ["Encrypting a customer field", "Checking a user's role"], "path_patterns": ["*security*", "*crypto*", "*permission*"]},
-      {"name": "Login", "description": "Sign-in, sessions, and passwords.", "examples": ["Login page", "Session timeout handling"], "path_patterns": ["*login*", "*session*", "*password*"]}
+      {"name": "Login", "description": "Sign-in, sessions, and passwords.", "examples": ["Login page", "Session timeout handling"], "path_patterns": ["*login*", "*session*", "*password*"]},
+      {"name": "Destructive data change", "description": "Removing or overwriting data: a senior must review the pull request.", "examples": ["Deleting two old work tables after a backup"], "path_patterns": ["*<destructive-data-change>*"]}
     ]
   },
   "golden_examples": [

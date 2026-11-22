@@ -262,6 +262,22 @@ def _line_with_quote(lines: list[str], line: int, quote: str, window: int) -> in
     return None
 
 
+# 4 or more characters: a short word such as "id" or "admin" must not hide a real Must fix.
+_STRING_LITERAL = re.compile(r"""'([^'\\]{4,})'|"([^"\\]{4,})\"""")
+
+
+def required_by(line_text: str, record: RequestRecord) -> str:
+    """B1: the ID of the first criterion whose expected text holds a string literal of this code
+    line ("" when none). Text a requirement asks for word for word is never a Must fix."""
+    for match in _STRING_LITERAL.finditer(line_text):
+        literal = match.group(1) or match.group(2)
+        for criterion in record.acceptance_criteria:
+            # Whole words only: "valid" inside "invalid" does not count.
+            if re.search(rf"(?<!\w){re.escape(literal)}(?!\w)", criterion.then):
+                return criterion.id
+    return ""
+
+
 def split_findings(
     items: list[ReplyFinding],
     files: dict[str, str],
@@ -277,16 +293,24 @@ def split_findings(
         cites = allowed_cites(item.check, approach, record, rules, planned)
         checked, reason = check_evidence(item, files, cites, window)
         base = checked or item
+        message = base.message.strip()[:MESSAGE_LIMIT]
+        severity = base.severity
+        if checked is not None and severity != "fyi":
+            line_text = files[base.file].splitlines()[base.line - 1]
+            ac = required_by(line_text, record)
+            if ac:  # B1 guard: the audit trail is this note in the saved review
+                severity = "fyi"
+                message = f"Required by {ac}. {message}"[:MESSAGE_LIMIT]
         result.append(
             Finding(
                 finding_id="T",
                 check=base.check,
-                severity=base.severity,
+                severity=severity,
                 file=base.file,
                 line=base.line,
                 quote=base.quote.strip(),
                 cites=base.cites,
-                message=base.message.strip()[:MESSAGE_LIMIT],
+                message=message,
                 made_by="tester",
                 kept=checked is not None,
                 reject_reason=reason,
@@ -307,6 +331,9 @@ def finding_state(finding_id: str, review_number: int, actions: list[FindingActi
                 "accepted": "accepted",
                 "reopened": "open",
                 "disputed": "disputed",
+                "dispute_sent": "sent",
+                "dispute_kept": "kept",  # the senior said the finding stands
+                "withdrawn": "open",  # G5 B5: a saved dispute taken back before it was sent
                 "overruled": "overruled",
             }[action.action]
             reason = action.reason
@@ -390,6 +417,52 @@ def files_to_fix(findings: list[Finding], planned: list[str]) -> list[str]:
     return chosen or list(planned)
 
 
+def repeated_must_fix(findings: list[Finding], earlier: list[Finding]) -> Finding | None:
+    """B2: the first kept Must fix that already stood in the earlier review: same rule ID, file and
+    line, or the same quoted text. Findings with no file (checks 1 and 2) never count."""
+    old = [f for f in earlier if f.kept and f.severity == "must_fix" and f.file]
+    for item in must_fix_items(findings):
+        if not item.file:
+            continue
+        for was in old:
+            same_place = (item.cites, item.file, item.line) == (was.cites, was.file, was.line)
+            if same_place or (item.quote and item.quote == was.quote):
+                return item
+    return None
+
+
+def reason_line(
+    label: str, open_must: int, failed_checks: list[str], layer_b: LayerBResult | None
+) -> str:
+    """B3: one line for the red banner, from the result only ("" unless Not passing)."""
+    if label != LABEL_NOT_PASSING or layer_b is None:
+        return ""
+    total = len(layer_b.tests)
+    if layer_b.failed:
+        return f"{layer_b.failed} of {total} tests fail."
+    if layer_b.not_proven or not layer_b.ok:
+        return "The tests are not proven: not every test reported a result."
+    if open_must:
+        return (
+            f"All {total} tests passed, but {open_must} Must fix findings are still open: "
+            + ", ".join(failed_checks)
+            + "."
+        )
+    return ""
+
+
+def stop_text(item: Finding, record: RequestRecord) -> str:
+    """B2: the line that replaces the next round. The buttons are the ones the Tests tab has."""
+    ac = item.cites if item.cites.startswith("AC-") else ""
+    ac = ac or required_by(item.quote, record)
+    built = f" for {ac}" if ac else ""
+    return (
+        f"The Tester's finding {item.finding_id} conflicts with what was built{built}, or cannot "
+        "be fixed without breaking a test. Your call: Dispute "
+        f"{item.finding_id}, Change what it does, or Get help."
+    )
+
+
 def report_for_generator(findings: list[Finding]) -> str:
     """One line per Must fix. Should fix and FYI never go to the Generator."""
     lines = []
@@ -446,6 +519,9 @@ def build_review_prompt(data: ReviewInput, only_file: str | None = None) -> str:
         "constraints": _bullets(data.charter.constraints),
         "rules": _bullets(rules),
         "record": data.record.model_dump_json(indent=2),
+        "criteria": _bullets(
+            f"{c.id}: Given {c.given}. Expect: {c.then}" for c in data.record.acceptance_criteria
+        ),
         "approach": format_approach(approach),
         "decisions": _bullets(decisions),
         "reuse": _bullets(reuse),

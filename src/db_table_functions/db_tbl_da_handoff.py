@@ -19,10 +19,11 @@ from db_table_functions.db_tbl_da_understand import (
 from pydantic_classes.da_handoff_models import (
     ABANDONED_MESSAGE,
     LOCKED_MESSAGE,
+    STOPPED_MESSAGE,
     HandoffRow,
     HandoffState,
 )
-from pydantic_classes.da_models import STATUS_ESCALATION, STATUS_HANDED_OFF
+from pydantic_classes.da_models import STATUS_ESCALATION, STATUS_HANDED_OFF, STATUS_STOPPED
 
 _CREATE_TABLES_SQL = """
 CREATE TABLE IF NOT EXISTS da_handoff_state (
@@ -69,6 +70,8 @@ def refuse_if_locked(conn: sqlite3.Connection, request_id: str) -> None:
     ).fetchone()
     if row is not None and row["status"] == STATUS_HANDED_OFF:
         raise HandoffLockedError(LOCKED_MESSAGE)
+    if row is not None and row["status"] == STATUS_STOPPED:
+        raise HandoffLockedError(STOPPED_MESSAGE)  # Fix G5: only Admin Release opens it again
     if row is not None and row["status"] == STATUS_ESCALATION and _was_abandoned(conn, request_id):
         raise HandoffLockedError(ABANDONED_MESSAGE)  # Phase 10 D-D: locked like HANDED_OFF
 

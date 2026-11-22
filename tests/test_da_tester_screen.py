@@ -120,6 +120,29 @@ def test_7_20_a_must_fix_has_dispute_and_no_accept(settings, request_id, monkeyp
     assert "Not passing" in all_text(by_id(tree, tp.REPORT_ID))
 
 
+def test_g5_19_a_saved_dispute_shows_edit_withdraw_and_one_send_button(
+    settings, request_id, monkeypatch
+):
+    built(settings, request_id, monkeypatch, "review_must_fix_always")
+    assert "send:all" not in act_buttons(draw(request_id))
+    row = next(
+        r
+        for r in tflow.get_tester_view(settings, request_id).rows
+        if r.finding.severity == "must_fix"
+    )
+    fid = row.finding.finding_id
+    cb.perform_finding_action(
+        settings, f"dispute:{fid}", {fid: REASON}, state_of(settings, request_id), 0
+    )
+
+    tree = draw(request_id)
+
+    keys = list(act_buttons(tree))
+    assert f"withdraw:{fid}" in keys and "send:all" in keys
+    assert "Send 1 dispute to my senior" in all_text(tree)
+    assert "Disputed, not sent yet" in all_text(tree)
+
+
 def test_the_layer_c_box_and_this_build_lines(settings, request_id):
     built(settings, request_id)
 
@@ -229,7 +252,9 @@ def test_a_short_reason_shows_the_plain_message_and_redraws_nothing(settings, re
     assert refresh is cb.no_update and "10 to 300 characters" in message
 
 
-def test_the_dispute_button_hands_the_request_to_a_senior(settings, request_id, monkeypatch):
+def test_the_dispute_button_saves_and_the_send_button_hands_it_to_a_senior(
+    settings, request_id, monkeypatch
+):
     built(settings, request_id, monkeypatch, "review_must_fix_always")
     row = next(
         r
@@ -241,6 +266,9 @@ def test_the_dispute_button_hands_the_request_to_a_senior(settings, request_id, 
     cb.perform_finding_action(
         settings, f"dispute:{fid}", {fid: REASON}, state_of(settings, request_id), 0
     )
+    assert request_status(settings, request_id) == "NOT_PASSING"
+
+    cb.perform_finding_action(settings, "send:all", {}, state_of(settings, request_id), 0)
 
     assert request_status(settings, request_id) == "ESCALATION_REQUIRED"
 

@@ -168,6 +168,18 @@ def test_7_4_a_criterion_without_a_test_ends_not_passing_without_another_round(
 # --- the cap (7-14) and the write job (7-33) ---
 
 
+def test_b2_the_same_must_fix_twice_stops_before_another_round(settings, request_id, monkeypatch):
+    monkeypatch.setattr(agent, "FAKE_SWITCHES", frozenset({"review_must_fix_always"}))
+    start(settings, request_id)
+    assert loop.run_build(settings, request_id) == "done"
+
+    assert "tester_repeat_stop" in event_types(settings, request_id)
+    assert any("conflicts with what was built" in line for line in chat(settings, request_id))
+    assert request_status(settings, request_id) == "NOT_PASSING"
+    # The repeat shows in round 3 (the fake's must fix first returns then); no round is added.
+    assert run_row(settings, request_id).rounds_used == 3
+
+
 def test_7_14_and_7_33_the_cap_keeps_the_code_and_the_write_job_holds_code_only(
     settings, request_id, monkeypatch
 ):

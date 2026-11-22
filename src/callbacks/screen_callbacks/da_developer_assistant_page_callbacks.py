@@ -22,6 +22,7 @@ from agents import da_safety_net_flow as net_flow
 from agents import da_safety_net_runner as net_runner
 from agents import da_tester_flow as tester_flow
 from agents import da_workspace_flow as workspace_flow
+from agents.da_admin_index import storage_line
 from agents.da_ai_lock import is_busy, locked_call
 from agents.da_discover_flow import (
     add_hint_and_search,
@@ -64,6 +65,7 @@ from callbacks.screen_callbacks.da_handoff_callbacks import register_da_handoff_
 from callbacks.screen_callbacks.da_refine_callbacks import register_da_refine_callbacks, run_refine
 from callbacks.screen_callbacks.da_workspace_callbacks import register_da_workspace_callbacks
 from configs.da_config import ConfigError, Settings, load_settings
+from da_logging import get_logger
 from db_table_functions.da_db import DatabaseBusyError
 from db_table_functions.db_tbl_da_discovery import DiscoveryError
 from db_table_functions.db_tbl_da_rulebook import RulebookError
@@ -148,6 +150,7 @@ from pydantic_classes.da_models import (
     STATUS_READY_FOR_REVIEW,
     STATUS_READY_TO_BUILD,
     STATUS_REVISION,
+    STATUS_STOPPED,
     STATUS_TESTER_REVIEW,
 )
 from styles import da_styles
@@ -163,7 +166,10 @@ FORM_BOXES_COUNT = range(1, FORM_OPTIONAL_BOX + 1)
 # on, the Discover workspace (Phase 3); from APPROACH_PROPOSED on, the Approach workspace
 # (Phase 4). DISCOVERY_CONFIRMED stays in the Discover workspace, with the Proceed to Approach
 # button. ESCALATION_REQUIRED is Approach's if an approach exists, otherwise Discover's.
-UNDERSTAND_STATUSES = (STATUS_DRAFT, STATUS_CLARIFICATION, STATUS_DECISION_REQUIRED, STATUS_READY)
+UNDERSTAND_STATUSES = (
+    STATUS_DRAFT, STATUS_CLARIFICATION, STATUS_DECISION_REQUIRED, STATUS_READY,
+    STATUS_STOPPED,  # Fix G5: read-only Understand screen
+)
 APPROACH_STATUSES = (
     STATUS_APPROACH_PROPOSED,
     STATUS_READY_TO_BUILD,
@@ -731,7 +737,9 @@ def _perform_finding_action(settings: Settings, index: str, reasons: dict, state
     action, _, finding_id = index.partition(":")
     request_id, revision = state.get("request_id"), state.get("revision")
     try:
-        if not state.get("build") or action not in ("accept", "reopen", "dispute", "fixit"):
+        if not state.get("build") or action not in (
+            "accept", "reopen", "dispute", "withdraw", "send", "fixit",
+        ):  # fmt: skip
             raise PreventUpdate
         reason = reasons.get(finding_id) or ""
         if action == "fixit":
@@ -743,6 +751,10 @@ def _perform_finding_action(settings: Settings, index: str, reasons: dict, state
             tester_flow.accept_finding(settings, request_id, revision, finding_id, reason)
         elif action == "reopen":
             tester_flow.reopen_finding(settings, request_id, revision, finding_id)
+        elif action == "send":
+            tester_flow.send_disputes(settings, request_id, revision)
+        elif action == "withdraw":
+            tester_flow.withdraw_dispute(settings, request_id, revision, finding_id)
         else:
             tester_flow.dispute_finding(settings, request_id, revision, finding_id, reason)
     except SHOWN_ERRORS as error:
@@ -872,12 +884,26 @@ def _option_at(settings: Settings, request_id: str, revision: int, index: int) -
 
 
 def register_da_developer_assistant_page_callbacks(app) -> None:
+    # Fix G5 R9: one start-up line, so a new ZIP that lost the data is easy to spot.
+    try:
+        get_logger(__name__).info(storage_line(get_settings().db_path))
+    except ConfigError:
+        pass  # the page itself shows the settings problem
     # Draws on first load too, so this one does not use prevent_initial_call.
     app.callback(
         Output(PAGE_CONTENT_ID, "children"),
         Input(LOCATION_ID, "search"),
         Input(REFRESH_ID, "data"),
     )(show_page)
+
+    # Fix G5 N6: the old page (Home and its subtitle) stayed on screen while a slow server built the
+    # request page. The browser clears it at once when the address changes; show_page then fills it.
+    app.clientside_callback(
+        "function(search) { return 'Opening...'; }",
+        Output(PAGE_CONTENT_ID, "children", allow_duplicate=True),
+        Input(LOCATION_ID, "search"),
+        prevent_initial_call=True,
+    )
 
     # running= is the busy mode: while the engine waits for the interpreter, Send shows a
     # spinner and the text box and Skip cannot be used a second time.

@@ -25,6 +25,7 @@ from agents.da_admin_starter import starter_at_work
 from agents.da_admin_suggestions import suggestions
 from agents.da_admin_tag_cards import ai_cards
 from agents.da_llm_client import sampling_for
+from agents.da_safety_release import TITLE, StoppedRequest, list_stopped
 from agents.da_sandbox_python import test_python
 from db_table_functions.da_db import open_db
 from db_table_functions.db_tbl_da_build import ensure_build_tables
@@ -60,6 +61,9 @@ class AttentionItem:
     text: str
     # Names a catalog filter the jump button should open (step 8 reads it); "" for none.
     filter: str = ""
+    # Fix G5: a request the safety check stopped. The layout draws a Release panel for it.
+    request_id: str = ""
+    detail: str = ""
 
 
 @dataclass(frozen=True)
@@ -87,6 +91,7 @@ def build_overview(settings, now: datetime | None = None) -> Overview | None:
     return overview_from(
         active, waiting, build_timeline(settings.db_path), now, open_escalations(settings),
         len(ai_cards()) + len(suggestions()), len(starter_at_work(active.rulebook)),
+        list_stopped(settings),
     )
 
 
@@ -105,10 +110,17 @@ def overview_from(
     escalations: list[EscalationRow] | None = None,
     ai_proposals: int = 0,
     starter_items: int = 0,
+    stopped: list[StoppedRequest] | None = None,
 ) -> Overview:
     """The pure part: given the version, the open queue's ages and the timeline, no database."""
     rulebook = version.rulebook
-    items = attention_items(rulebook, waiting_since, now)
+    # Fix G5: stopped requests come first, they block a developer right now.
+    items = [
+        AttentionItem(AREA_BUILD, LEVEL_RED, TITLE, request_id=row.request_id,
+                      detail=f"{row.text}\nReason: {row.reason}")
+        for row in stopped or []
+    ]
+    items += attention_items(rulebook, waiting_since, now)
     if starter_items:  # Fix G4 C2: home starter data still in the work catalog
         noun = "item" if starter_items == 1 else "items"
         text = f"Starter items in the catalog: {starter_items} made-up {noun} to remove."

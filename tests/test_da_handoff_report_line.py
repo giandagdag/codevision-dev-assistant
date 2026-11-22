@@ -11,13 +11,13 @@ def test_d1_16_the_summary_has_the_report_lines_and_the_file_name_only_when_a_re
     with_report = FACTS.model_copy(
         update={
             "report_summary": "Against the requirement: 3 of 3 passed.",
-            "report_file": "CVDA-2026-0001-build-1-test-report.html",
+            "report_file": "CVDA-2026-0001-build-1-test-report.pdf",
         }
     )
     lines = build_summary(with_report, 6000).split("\n")
 
     assert "Against the requirement: 3 of 3 passed." in lines
-    assert "Test report: CVDA-2026-0001-build-1-test-report.html" in lines
+    assert "Test report: CVDA-2026-0001-build-1-test-report.pdf" in lines
     assert "Test report" not in build_summary(FACTS, 6000)
 
 

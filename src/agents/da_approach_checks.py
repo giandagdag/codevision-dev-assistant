@@ -11,6 +11,7 @@ import re
 import sys
 from fnmatch import fnmatchcase
 
+from agents.da_destructive import DESTRUCTIVE_ZONE
 from agents.da_understand_checks import (
     developer_message_problem,
     find_code,
@@ -294,7 +295,7 @@ def normalise_reply_paths(reply: ApproachReply) -> ApproachReply:
 
 
 def compute_warnings(
-    reply: ApproachReply, policy: Policy, discovery: DiscoveryResult
+    reply: ApproachReply, policy: Policy, discovery: DiscoveryResult, destructive: bool = False
 ) -> tuple[list[str], list[str]]:
     """The warnings and the flag-for-review zones touched. Warnings never refuse a plan."""
     warnings: list[str] = []
@@ -321,6 +322,14 @@ def compute_warnings(
                 f"Touches {zone.name}. A named senior becomes a required reviewer at the "
                 "pull request."
             )
+    # Fix G5 P5: destructive data work is its own zone, whatever the paths are. Added here even if
+    # a pinned rulebook has no such zone entry.
+    if destructive and DESTRUCTIVE_ZONE not in zones:
+        zones.append(DESTRUCTIVE_ZONE)
+        warnings.append(
+            f"Touches {DESTRUCTIVE_ZONE}. A named senior becomes a required reviewer at the "
+            "pull request."
+        )
     # Phase 9 (spec section 7): a caller found by impact inside a zone adds that zone, warning only.
     impact_rows = discovery.impact.rows if discovery.impact else []
     for name in dict.fromkeys(row.zone for row in impact_rows if row.zone):

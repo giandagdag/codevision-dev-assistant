@@ -57,6 +57,11 @@ def index_dir() -> Path:
     return Path(os.environ.get("DA_CODE_INDEX_DIR") or DEFAULT_INDEX_DIR)
 
 
+def storage_line(db_path: Path) -> str:
+    """Fix G5 R9: where the index and the database live (paths only), for the start-up log."""
+    return f"Developer Assistant data: index folder {index_dir().resolve()}, database {db_path}"
+
+
 def read_health(directory: Path | None = None) -> IndexHealth:
     """Health from the piece list. Missing or unreadable files mean "not built yet"."""
     try:
@@ -111,6 +116,19 @@ def recent_runs(directory: Path | None = None) -> list[dict]:
         return [r for r in runs if isinstance(r, dict)][:KEPT_RUNS]
     except OSError, ValueError:
         return []
+
+
+def tag_line(run: dict) -> tuple[str, str] | None:
+    """Fix G5 R6: the Tags result of a run as (text, colour), or None when the run has no tag step.
+    Green: all tagged. Amber: some could not be read. Red: the step failed."""
+    if run.get("tag_error"):
+        return f"Tags: {run['tag_error']}", "red"
+    if "tag_total" not in run:
+        return None
+    total, bad = int(run["tag_total"]), int(run.get("unreadable", 0))
+    if not bad:
+        return f"Tags: all {total} programs tagged", "green"
+    return f"Tags: {total - bad} of {total} tagged, {bad} could not be read", "orange"
 
 
 def run_line(run: dict) -> str:

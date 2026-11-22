@@ -7,6 +7,7 @@ import dash_mantine_components as dmc
 
 from agents.da_admin_index import index_dir
 from agents.da_index_builds import KEPT_INDEX_COPIES, build_numbers, has_copy
+from layouts.da_admin_job_bar import locked
 
 BUILD_A = "adm-build-a"
 BUILD_B = "adm-build-b"
@@ -60,7 +61,10 @@ def builds_panel(directory=None):
             dmc.Group(
                 [
                     _select(BUILD_USE, with_copy, "Use build"),
-                    dmc.Button("Use build", id=BUILD_USE_BTN, size="xs", variant="default"),
+                    locked(
+                        "usebuild",
+                        dmc.Button("Use build", id=BUILD_USE_BTN, size="xs", variant="default"),
+                    ),
                 ],
                 gap="xs",
             ),

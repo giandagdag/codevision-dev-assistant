@@ -1,7 +1,7 @@
 """Fix NP step 5: the test report names a load error and never counts it as Not proven (NP-7)."""
 
 from agents.da_test_report import build_report
-from layouts.da_test_report_page import report_html
+from agents.da_test_report_pdf import report_pdf
 from pydantic_classes.da_build_models import LoadError, TestOutcome
 
 HEADER = {
@@ -26,14 +26,14 @@ def test_np7_a_load_error_gets_its_own_line_and_is_not_counted_as_not_proven():
     report = make(error)
 
     assert report["summary"]["requirement"] == {"passed": 0, "failed": 0, "other": 0}
-    page = report_html(report)
-    assert "<b>Load error:</b>" in page and "<h4>Load error</h4>" in page
-    assert "No module named &#x27;openpyxl&#x27;" in page
-    assert "&lt;sandbox&gt;/src/agents/x.py" in page
-    assert "da_sandbox_" not in page and "abc123" not in page
+    page = report_pdf(report)
+    assert b"Load error: The test file could not load" in page
+    assert b"No module named 'openpyxl'" in page
+    assert b"<sandbox>/src/agents/x.py" in page
+    assert b"da_sandbox_" not in page and b"abc123" not in page
 
 
 def test_an_older_report_without_the_key_still_renders():
     report = make(None)
     del report["load_error"]
-    assert "Load error" not in report_html(report)
+    assert b"Load error" not in report_pdf(report)

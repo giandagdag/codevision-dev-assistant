@@ -18,7 +18,7 @@ from agents.da_admin_rebuild import (
     source_folder,
 )
 from agents.da_admin_tag_store import read_store
-from agents.da_admin_tagger import STATE_PROPOSED, run_tagging
+from agents.da_admin_tagger import STATE_PROPOSED, STATE_UNREADABLE, run_tagging
 from agents.da_admin_tagger_job import pick_client
 from configs.da_config import Settings
 from da_logging import get_logger
@@ -28,12 +28,30 @@ logger = get_logger(__name__)
 
 
 def recheck_paths(directory: Path | None = None) -> list[str]:
-    """Open proposals with no fit and no new-capability suggestion (the `none` ones)."""
+    """Open proposals with no fit and no new-capability suggestion (the `none` ones), and the
+    programs the AI could not read (Fix G5 R8)."""
     modules = read_store(directory)["modules"]
     return sorted(
         path for path, e in modules.items()
-        if isinstance(e, dict) and e.get("state") == STATE_PROPOSED
-        and not e.get("proposed_capability") and not e.get("new_name")
+        if isinstance(e, dict) and (e.get("state") == STATE_UNREADABLE or (
+            e.get("state") == STATE_PROPOSED
+            and not e.get("proposed_capability") and not e.get("new_name")))
+    )
+
+
+def end_line(paths: list[str], directory: Path | None = None) -> str:
+    """"Re-check done: 18 programs placed, 23 still with no fit, 0 could not be read." (N4)"""
+    modules = read_store(directory)["modules"]
+    entries = [e for e in (modules.get(p) for p in paths) if isinstance(e, dict)]
+    unreadable = sum(e.get("state") == STATE_UNREADABLE for e in entries)
+    placed = sum(
+        e.get("state") == STATE_PROPOSED and bool(e.get("proposed_capability") or e.get("new_name"))
+        for e in entries
+    )
+    no_fit = len(entries) - unreadable - placed
+    return (
+        f"Re-check done: {placed} programs placed, {no_fit} still with no fit, "
+        f"{unreadable} could not be read."
     )
 
 
@@ -48,12 +66,40 @@ def _run(policy, settings, started_by, started, directory, client, paths) -> Non
             lambda done, total: job.progress(out, done, total, step=3),
             stop=lambda: job.stop_requested(out),
         )
+        job.set_end_line(out, end_line(paths, out))
     except Exception as error:  # a crash must free the lock and leave the old tags as they were
         logger.warning("Re-check failed: %s", type(error).__name__)
         job.fail(out, f"Re-check failed: {error}")
     finally:
         job.clear_stop(out)
         _lock_path(out).unlink(missing_ok=True)
+
+
+def retry_one(
+    policy: Policy, settings: Settings, path: str, who: str, directory: Path | None = None,
+    client=None,
+) -> tuple[bool, str]:
+    """Tag one unreadable program again (R5 "Try again"). One AI call, so it runs in the click,
+    under the same job lock as every other job."""
+    started = datetime.now()
+    out = directory or index_dir()
+    if running_since(started, directory) is not None or not _take_lock(started, directory):
+        return False, ALREADY_RUNNING
+    try:
+        run_tagging(
+            [path], source_folder(policy, settings.llm_provider, settings), policy.capabilities,
+            client or pick_client(settings, policy), who,
+            [e.pattern for e in policy.index_exclusions], out, None,
+        )
+    except Exception as error:  # the old tag stays as it was
+        logger.warning("Try again failed: %s", type(error).__name__)
+        return False, "Try again failed. The program keeps its old state."
+    finally:
+        _lock_path(out).unlink(missing_ok=True)
+    entry = read_store(directory)["modules"].get(path) or {}
+    if entry.get("state") == STATE_UNREADABLE:
+        return False, "The AI still could not read this program."
+    return True, "Tagged again."
 
 
 def start_recheck(
@@ -72,4 +118,4 @@ def start_recheck(
     thread.start()
     if wait:
         thread.join()
-    return True, f"Re-checking {len(paths)} programs. Open this tab again when it is done."
+    return True, f"Re-checking {len(paths)} programs."

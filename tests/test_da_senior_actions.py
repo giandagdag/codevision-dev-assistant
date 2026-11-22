@@ -7,12 +7,14 @@ from types import SimpleNamespace
 import pytest
 
 from agents import da_senior_actions as senior
+from agents import da_tester_review as tester
 from agents.da_escalation_flow import escalate
 from agents.da_escalation_return import pick_return_status
 from agents.da_senior_actions import (
     SeniorActionError,
     chat_lock_for,
     close_escalation,
+    keep_finding,
     overrule_finding,
     route_pre_phase_10,
     send_guidance,
@@ -32,7 +34,7 @@ from db_table_functions.db_tbl_da_escalation import read_escalations, read_open_
 from db_table_functions.db_tbl_da_handoff import HandoffLockedError, refuse_if_locked
 from db_table_functions.db_tbl_da_refine import add_build_result, read_tested
 from db_table_functions.db_tbl_da_requests import read_request
-from db_table_functions.db_tbl_da_tester import insert_review, read_actions
+from db_table_functions.db_tbl_da_tester import insert_review, read_actions, read_reviews
 from db_table_functions.db_tbl_da_understand import StaleRevisionError, read_messages
 from pydantic_classes.da_build_models import BuildRun, BuildState
 from pydantic_classes.da_escalation_models import TriggerDecision
@@ -139,6 +141,32 @@ def test_overrule_needs_twenty_characters_and_an_open_finding(settings):
     fresh = row_of(settings, request_id)
     with pytest.raises(SeniorActionError, match="already overruled"):
         overrule_finding(settings, fresh.escalation_id, fresh.revision, "ann", "F-1", REASON, NOW)
+
+
+def test_g5_19_keep_finding_leaves_the_label_and_accepting_both_changes_it(settings):
+    request_id = seed(settings, severities=("must_fix", "must_fix"))
+    row = row_of(settings, request_id)
+
+    with pytest.raises(SeniorActionError, match="20"):
+        keep_finding(settings, row.escalation_id, row.revision, "ann", "F-1", "short", NOW)
+    keep_finding(settings, row.escalation_id, row.revision, "ann", "F-1", REASON, NOW)
+    with open_db(settings.db_path) as conn:
+        actions = read_actions(conn, request_id, 1)
+        review = read_reviews(conn, request_id, 1)[-1]
+    assert (actions[-1].action, actions[-1].actor) == ("dispute_kept", "senior:ann")
+    assert tester.finding_state("F-1", 1, actions)[0] == "kept"
+    assert "finding_kept" in event_types(settings, request_id)
+
+    fresh = row_of(settings, request_id)
+    overrule_finding(settings, fresh.escalation_id, fresh.revision, "ann", "F-2", REASON, NOW)
+    with open_db(settings.db_path) as conn:
+        actions = read_actions(conn, request_id, 1)
+    assert tester.compute_label(review.findings, [], "done", 1, actions) == "Not passing"
+    fresh = row_of(settings, request_id)
+    overrule_finding(settings, fresh.escalation_id, fresh.revision, "ann", "F-1", REASON, NOW)
+    with open_db(settings.db_path) as conn:
+        actions = read_actions(conn, request_id, 1)
+    assert tester.compute_label(review.findings, [], "done", 1, actions) == "Ready with warnings"
 
 
 # --- 10-46 stale ---

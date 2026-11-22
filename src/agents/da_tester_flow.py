@@ -108,21 +108,56 @@ def dispute_finding(
     reason: str,
     now: datetime | None = None,
 ) -> None:
-    """Dispute a Must fix (7-21): the request goes to a senior, like Get help, with the open item
-    `Disputed Must fix: F-n`. A Must fix can never be accepted away."""
+    """G5 B5 step one: save (or edit) the reason for a Must fix. Nothing is sent and nothing is
+    locked; the request goes to a senior only when `send_disputes` is pressed. A Must fix can
+    never be accepted away."""
     reason = _clean_reason(reason)
     with _report_turn(settings, request_id, base_revision, now) as (tx, review, actions):
-        _finding(review, finding_id, "must_fix")
-        decision = dispute_trigger(request_triggers(tx.conn, request_id), finding_id)
-        if decision.switched_off:
-            # D-I: the Must fix stays open and nothing moves; the chat says so.
-            tx.say("developer", f"Dispute {finding_id}: {reason}")
+        item = _finding(review, finding_id, "must_fix")
+        held = tester.finding_state(item.finding_id, review.review_number, actions)[0]
+        if held in ("overruled", "sent", "kept"):
+            raise BuildError(f"{finding_id} is already {held.replace('sent', 'with a senior')}.")
+        _record(tx, review, finding_id, "disputed", reason, actions)
+        tx.audit("developer", "dispute_saved", {"finding": finding_id, "reason": reason})
+
+
+def withdraw_dispute(
+    settings, request_id: str, base_revision: int, finding_id: str, now: datetime | None = None
+) -> None:
+    """Take a saved dispute back before it is sent."""
+    with _report_turn(settings, request_id, base_revision, now) as (tx, review, actions):
+        item = _finding(review, finding_id, "must_fix")
+        if tester.finding_state(item.finding_id, review.review_number, actions)[0] != "disputed":
+            raise BuildError(f"{finding_id} has no saved dispute to withdraw.")
+        _record(tx, review, finding_id, "withdrawn", "", actions)
+        tx.audit("developer", "dispute_withdrawn", {"finding": finding_id})
+
+
+def send_disputes(
+    settings, request_id: str, base_revision: int, now: datetime | None = None
+) -> None:
+    """G5 B5 step two: ONE escalation for every saved dispute (trigger `dispute`, open item
+    `Disputed Must fix: F-1, F-2`). Then the lock rule applies as for any escalation."""
+    with _report_turn(settings, request_id, base_revision, now) as (tx, review, actions):
+        saved = [
+            (item.finding_id, tester.finding_state(item.finding_id, review.review_number, actions))
+            for item in _sorted(review)
+            if item.kept and item.severity == "must_fix"
+        ]
+        saved = [(fid, why) for fid, (state, why) in saved if state == "disputed"]
+        if not saved:
+            raise BuildError("There is no saved dispute to send.")
+        ids = ", ".join(fid for fid, _ in saved)
+        decision = dispute_trigger(request_triggers(tx.conn, request_id), ids)
+        if decision.switched_off:  # D-I: the Must fix stays open and nothing moves
+            tx.say("developer", f"Dispute {ids}")
             open_escalation(tx.conn, request_id, decision, tx.now)
             return
-        _record(tx, review, finding_id, "disputed", reason, actions)
-        tx.say("developer", f"Dispute {finding_id}: {reason}")
-        tx.audit("developer", "finding_disputed", {"finding": finding_id, "reason": reason})
-        escalate(tx, f"{DISPUTE_PREFIX}{finding_id}", {"step": tx.state.step}, decision)
+        for fid, why in saved:
+            _record(tx, review, fid, "dispute_sent", why, actions)
+            tx.audit("developer", "finding_disputed", {"finding": fid, "reason": why})
+            tx.say("developer", f"Dispute {fid}: {why}")
+        escalate(tx, f"{DISPUTE_PREFIX}{ids}", {"step": tx.state.step}, decision)
 
 
 def rerun_review(
@@ -162,7 +197,17 @@ def get_tester_view(settings, request_id: str) -> TesterView:
             who = tester.finding_actor(item.finding_id, review.review_number, actions)
             rows.append(FindingRow(finding=item, state=acted, reason=why, actor=who))
     finished = state.step in DONE_STEPS
+    open_must = [
+        r for r in rows if r.finding.severity == "must_fix" and r.state not in ("overruled",)
+    ]
+    names = [
+        f"Tester check {c.number}, {c.name}" for c in review.checks if c.state == "failed"
+    ]
+    reason = tester.reason_line(
+        label, len(open_must), names, rounds[-1].layer_b if rounds else None
+    )
     return TesterView(
+        reason=reason,
         review=review,
         label=label,
         rows=rows,

@@ -81,13 +81,23 @@ SPEC_TABLE = {
 SPEC_TABLE |= {
     ("ESCALATION_REQUIRED", old) for old, new in list(SPEC_TABLE) if new == "ESCALATION_REQUIRED"
 }
+# Fix G5 P4: the four Understand statuses can be stopped, and Release moves back to them.
+UNDERSTAND = ("DRAFT", "CLARIFICATION_IN_PROGRESS", "DECISION_REQUIRED", "READY_FOR_CONFIRMATION")
+SPEC_TABLE |= {(old, "STOPPED") for old in UNDERSTAND}
+SPEC_TABLE |= {("STOPPED", new) for new in UNDERSTAND}
 
-# Every real move: 18 x 18 statuses minus the 18 "same status" pairs.
+# Every real move: 19 x 19 statuses minus the 19 "same status" pairs.
 REAL_MOVES = list(permutations(STATUSES, 2))
 
 
-def test_there_are_306_real_moves():
-    assert len(REAL_MOVES) == 306
+def test_there_are_342_real_moves():
+    assert len(REAL_MOVES) == 342
+
+
+def test_stopped_is_reachable_only_from_understand_and_returns_only_there():
+    into = {old for old, targets in ALLOWED_MOVES.items() if "STOPPED" in targets}
+    assert into == set(UNDERSTAND)
+    assert set(ALLOWED_MOVES["STOPPED"]) == set(UNDERSTAND)
 
 
 def test_confirmed_for_discovery_moves_only_to_searching_or_a_senior():

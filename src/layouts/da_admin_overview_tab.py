@@ -18,7 +18,9 @@ ATTENTION_SCROLL = {"maxHeight": "480px", "overflowY": "auto", "paddingRight": "
 # Section 15: the tiles run across the page, 5 per row on a 1366 wide screen.
 HEALTH_COLS = {"base": 2, "md": 3, "lg": 5}
 WINDOW_ID = "adm-window"
-STATUS_COLORS = {"green": "green", "amber": "yellow", "red": "red"}
+STOP_ACT_TYPE = "adm-stop-act"
+STOP_NOTE_TYPE = "adm-stop-note"
+STATUS_COLORS ={"green": "green", "amber": "yellow", "red": "red"}
 
 # The status colour is a code value; an Admin reads these words, not "green" or "amber".
 STATUS_WORDS = {"green": "✅ Up to date", "amber": "⚠️ To review", "red": "❌ Needs fixing"}
@@ -105,12 +107,34 @@ def _jump_label(item) -> str:
     return "Assign" if item.filter else f"Open {item.area}"
 
 
-def _attention_list(items):
+def _stopped_panel(item):
+    """Fix G5: the request, the reason, a note box, Release and Keep stopped."""
+    rid = item.request_id
+
+    def button(action, label, **kwargs):
+        return dmc.Button(label, id={"type": STOP_ACT_TYPE, "action": action, "rid": rid},
+                          size="xs", **kwargs)
+
+    return dmc.Paper(
+        [
+            dmc.Badge("Stopped", style=admin_styles.pill_style("red"), variant="light"),
+            dmc.Text(f"{item.text} ({rid})", size="sm", fw=600),
+            dmc.Text(item.detail, size="xs", style={"whiteSpace": "pre-wrap"}),
+            dmc.Textarea(id={"type": STOP_NOTE_TYPE, "rid": rid}, size="xs", autosize=True,
+                         placeholder="Note (required to release)"),
+            dmc.Group([button("release", "Release"),
+                       button("keep", "Keep stopped", variant="default")], gap="xs"),
+        ],
+        withBorder=True, p="xs",
+    )
+
+
+def _attention_list(items, message: str = ""):
     if not items:
         return dmc.Text("Nothing needs attention.", size="sm", c=da_styles.MUTED)
     return dmc.Stack(
-        [
-            dmc.Group(
+        ([dmc.Alert(message, color="red")] if message else []) + [
+            _stopped_panel(item) if item.request_id else dmc.Group(
                 [
                     dmc.Badge(
                         STATUS_WORDS.get(item.level, "ℹ️ For your information"),

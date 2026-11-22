@@ -739,6 +739,7 @@ def _run_dispute_steps(settings: Settings) -> None:
         settings, request_id, build.get_revision(settings, request_id), musts[0],
         "Made-up reason: the rule does not apply to this batch job.",
     )  # fmt: skip
+    tester_flow.send_disputes(settings, request_id, build.get_revision(settings, request_id))
     inbox = inbox_rows(settings, "smoke-senior", mine=False)
     if [row.request_id for row in inbox] != [request_id] or inbox[0].triggers != "Dispute":
         raise UnderstandError(f"The inbox listed {[(r.request_id, r.triggers) for r in inbox]}.")

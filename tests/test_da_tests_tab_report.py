@@ -27,7 +27,7 @@ def test_d1_12_the_tab_has_a_summary_a_link_two_groups_and_an_evidence_column(vi
     text = str(draw_tests_tab(view))
 
     assert view.has_report and view.report_summary.startswith("Against the requirement:")
-    assert "Open report" in text and "/dev-assistant/report/" in text
+    assert "Download report (PDF)" in text and "Open report" not in text
     assert "Requirement tests" in text and "Evidence" in text
     assert ("Code tests" in text) == bool(view.code_tests)
 

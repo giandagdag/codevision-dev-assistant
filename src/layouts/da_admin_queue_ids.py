@@ -14,6 +14,7 @@ Q_APPLY = "apply"
 Q_APPLY_PATTERN = "apply_pattern"
 Q_CANCEL = "cancel"
 Q_AI_APPROVE, Q_AI_ASSIGN, Q_AI_REJECT = "ai_approve", "ai_assign", "ai_reject"  # fix 11-2
+Q_AI_RETRY = "ai_retry"  # Fix G5 R5: tag one unreadable program again
 Q_AI_ALL, Q_AI_ALL_DO = "ai_all", "ai_all_do"  # ask first, then approve every sure proposal
 Q_SG_OPEN, Q_SG_SAVE = "sg_open", "sg_save"  # Fix G4 S4: Create and assign (dialog, then save)
 Q_SG_ASSIGN, Q_SG_REJECT, Q_SG_REMOVE = "sg_assign", "sg_reject", "sg_remove"

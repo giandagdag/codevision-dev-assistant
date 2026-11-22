@@ -42,6 +42,7 @@ from agents.da_admin_meaning import meaning_search
 from agents.da_admin_metrics import WINDOW_ALL, WINDOW_LABELS, health_report
 from agents.da_admin_modules import (
     add_modules_to_form,
+    count_matches,
     edit_patterns,
     module_paths,
     module_rows,
@@ -53,7 +54,7 @@ from agents.da_admin_overview import (
     server_settings_view,
 )
 from agents.da_admin_rebuild import running_since, start_rebuild
-from agents.da_admin_recheck import start_recheck
+from agents.da_admin_recheck import retry_one, start_recheck
 from agents.da_admin_review import (
     ReviewFilter,
     bulk_plan,
@@ -80,6 +81,8 @@ from agents.da_admin_tag_cards import (
     reject_cards,
 )
 from agents.da_admin_tag_store import read_tags
+from agents.da_admin_watch import watch_step
+from agents.da_safety_release import ReleaseError, keep_stopped, release
 from configs.da_config import Settings, load_settings
 from db_table_functions.db_tbl_da_rulebook import (
     RulebookError,
@@ -87,6 +90,8 @@ from db_table_functions.db_tbl_da_rulebook import (
     get_version,
     restore_version,
 )
+from layouts.da_admin_address import ADDRESS_TO_TABS_JS, TABS_TO_ADDRESS_JS, tab_and_view
+from layouts.da_admin_builds_panel import BUILD_USE_BTN
 from layouts.da_admin_catalog_meaning import (
     CAP_MEANING_ID,
     HIT_TYPE,
@@ -114,6 +119,7 @@ from layouts.da_admin_catalog_tab import (
     Q_AI_APPROVE,
     Q_AI_ASSIGN,
     Q_AI_REJECT,
+    Q_AI_RETRY,
     Q_RECHECK,
     Q_SG_ASSIGN,
     Q_SG_OPEN,
@@ -121,6 +127,7 @@ from layouts.da_admin_catalog_tab import (
     Q_SG_REMOVE,
     Q_SG_SAVE,
     review_items,
+    view_options,
 )
 from layouts.da_admin_coding_tab import (
     GOLDEN_CHANGE_TYPE,
@@ -146,6 +153,21 @@ from layouts.da_admin_index_panels import (
     job_panel,
     rebuild_status,
 )
+from layouts.da_admin_job_bar import (
+    BAR_CATALOG,
+    BAR_QUEUE,
+    JOB_STOP_TYPE,
+    LOCK_NAMES,
+    job_bar,
+    lock_id,
+    lock_state,
+)
+from layouts.da_admin_overview_tab import (
+    ATTENTION_SCROLL_ID,
+    STOP_ACT_TYPE,
+    STOP_NOTE_TYPE,
+    _attention_list,
+)
 from layouts.da_admin_page import (
     ACTION_CANCEL,
     ACTION_EDIT,
@@ -161,6 +183,7 @@ from layouts.da_admin_page import (
     CAP_SEARCH_ID,
     CATALOG_COLUMNS,
     CATALOG_TABLE,
+    DATA_VERSION_ID,
     EDITABLE_TABS,
     EXCLUSION_COLUMNS,
     GLOSSARY_COLUMNS,
@@ -205,6 +228,7 @@ from layouts.da_admin_page import (
     TAB_REPO,
     TAB_UI,
     TEXT_COLUMN,
+    WATCH_ID,
     WINDOW_ID,
     ZONE_COLUMNS,
     admin_page,
@@ -246,11 +270,12 @@ from layouts.da_admin_queue_ids import (
     RQ_SOURCE_ID,
     VIEW_CAPS,
     VIEW_QUEUE,
+    queue_button_id,
 )
 from layouts.da_admin_review_view import bulk_bar, empty_list
 from layouts.da_capability_map_view import MAP_PATH
 from layouts.da_inbox_page import INBOX_PATH
-from layouts.da_test_report_page import REPORT_PREFIX
+from layouts.da_tagger_try_panel import TRY_BTN
 from styles import da_styles
 
 NO_RULEBOOK_MESSAGE = (
@@ -292,8 +317,9 @@ def get_admin_settings() -> Settings:
     return load_settings()
 
 
-def admin_content(settings: Settings, pathname: str | None):
-    """What the admin area holds for this path: nothing, the refusal, or the console."""
+def admin_content(settings: Settings, pathname: str | None, search: str | None = None):
+    """What the admin area holds for this path: nothing, the refusal, or the console.
+    `search` is the address text; it names the tab and view to open (Fix G5 N5)."""
     if pathname != ADMIN_PATH:
         return None
     if not is_admin(settings, settings.developer_id):
@@ -301,15 +327,20 @@ def admin_content(settings: Settings, pathname: str | None):
     active = get_active_version(settings.db_path)
     if active is None:
         return html.Div(dmc.Text(NO_RULEBOOK_MESSAGE, c=da_styles.MUTED), style=da_styles.PAGE)
+    tab, view = tab_and_view(search)
+    queue = queue_data(settings)
+    if view:
+        queue["review"] = {**(queue.get("review") or {}), "view": view}
     return admin_page(
         active,
         build_timeline(settings.db_path),
         cited_counts(settings.db_path),
-        queue_data(settings),
+        queue,
         build_overview(settings),
         health_report(settings.db_path, WINDOW_ALL),
         server_settings_view(settings),
         fires_in(settings.db_path),
+        tab=tab,
     )
 
 
@@ -332,9 +363,7 @@ def health_content(settings: Settings, window: str):
 
 def developer_page_style(pathname: str | None) -> dict:
     """The developer page stays built but hidden on /admin and /inbox (layout not touched)."""
-    hidden = pathname in (ADMIN_PATH, INBOX_PATH, MAP_PATH) or (pathname or "").startswith(
-        REPORT_PREFIX
-    )
+    hidden = pathname in (ADMIN_PATH, INBOX_PATH, MAP_PATH)
     return {"display": "none"} if hidden else {}
 
 
@@ -463,12 +492,18 @@ def _pattern_action(settings, tab, action, form, note, base_version, active, inp
     elif name == "remove":
         form = edit_patterns(form, index, remove=action["pat"])
         panel = {"kind": "patterns", "index": index}
-    elif name == "add":
-        form = edit_patterns(form, index, add=typed)
-        panel = {"kind": "patterns", "index": index}
-    elif name == "save":
+    elif name in ("add", "save", "force"):
+        # A pattern that matches nothing is kept only through Save anyway (Fix G5 L3).
+        paths = module_paths(base.rulebook.policy.index_folder_scope)
+        if typed and name != "force" and count_matches(typed, paths) == 0:
+            return _content(
+                settings, tab, base, editable=True, draft=form,
+                panel={"kind": "patterns", "index": index},
+            ), True
         form = edit_patterns(form, index, add=typed)  # text typed but not yet added counts too
-        return _save(settings, tab, form, note, base_version, active)
+        if name != "add":
+            return _save(settings, tab, form, note, base_version, active)
+        panel = {"kind": "patterns", "index": index}
     elif name == "addmods":
         target, picked = inputs.get("cap") or "", inputs.get("picked") or []
         if target and picked:
@@ -564,6 +599,11 @@ def _ai_action(
     if name == Q_AI_REJECT:
         reject_card(path, who=settings.developer_id)
         return _queue_tab(settings, notice=[message_notice("Rejected.", color="green")])
+    if name == Q_AI_RETRY:
+        policy = get_active_version(settings.db_path).rulebook.policy
+        done, text = retry_one(policy, settings, path, settings.developer_id)
+        notice = message_notice(text, color="green") if done else message_notice(text)
+        return _queue_tab(settings, notice=[notice])
     if name == Q_AI_ALL_DO:
         result = approve_all_high(settings, settings.developer_id, base_version)
     else:
@@ -666,7 +706,7 @@ def _run_queue_action(settings, action, picks, notes, base_version, review):
     name, uid = action["action"], action["uid"]
     if name in (Q_SELECT_ALL, Q_CLEAR_FILTERS, Q_BULK_ASK, Q_BULK_DO):
         return _bulk_action(settings, name, action, picks, base_version, review)
-    if name in (Q_AI_APPROVE, Q_AI_ASSIGN, Q_AI_REJECT, Q_AI_ALL, Q_AI_ALL_DO):
+    if name in (Q_AI_APPROVE, Q_AI_ASSIGN, Q_AI_REJECT, Q_AI_RETRY, Q_AI_ALL, Q_AI_ALL_DO):
         return _ai_action(settings, name, uid, picks, base_version, action["cap"])
     if name in (Q_SG_OPEN, Q_SG_SAVE, Q_SG_ASSIGN, Q_SG_REJECT, Q_SG_REMOVE):
         return _suggest_action(settings, name, uid, picks, notes, base_version)
@@ -947,9 +987,29 @@ def register_da_admin_page_callbacks(app) -> None:
         Output(ADMIN_CONTENT_ID, "children"),
         Output(DEV_WRAP_ID, "style"),
         Input(LOCATION_ID, "pathname"),
+        State(LOCATION_ID, "search"),
     )
-    def show_page(pathname):
-        return admin_content(get_admin_settings(), pathname), developer_page_style(pathname)
+    def show_page(pathname, search):
+        return admin_content(get_admin_settings(), pathname, search), developer_page_style(pathname)
+
+    # Fix G5 N5: the address and the tabs follow each other in the browser (no reload).
+    app.clientside_callback(
+        ADDRESS_TO_TABS_JS,
+        Output(ADMIN_TABS_ID, "value", allow_duplicate=True),
+        Output(CAT_VIEW_ID, "value", allow_duplicate=True),
+        Input(LOCATION_ID, "search"),
+        State(ADMIN_TABS_ID, "value"),
+        State(CAT_VIEW_ID, "value"),
+        prevent_initial_call=True,
+    )
+    app.clientside_callback(
+        TABS_TO_ADDRESS_JS,
+        Output(LOCATION_ID, "search", allow_duplicate=True),
+        Input(ADMIN_TABS_ID, "value"),
+        Input(CAT_VIEW_ID, "value"),
+        State(LOCATION_ID, "search"),
+        prevent_initial_call=True,
+    )
 
     for tab in EDITABLE_TABS:
         _register_tab(app, tab)
@@ -1008,7 +1068,35 @@ def change_window(settings: Settings, window: str):
     return health_content(settings, window)
 
 
+def stopped_action(settings: Settings, triggered: dict, notes: dict[str, str]):
+    """Fix G5: Release or Keep stopped, then the Needs attention list again (with the reason if
+    the release was refused). Admin only."""
+    if not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    rid, message = triggered["rid"], ""
+    try:
+        if triggered["action"] == "release":
+            release(settings, rid, settings.developer_id, notes.get(rid, ""))
+        else:
+            keep_stopped(settings, rid, settings.developer_id, notes.get(rid, ""))
+    except ReleaseError as error:
+        message = str(error)
+    return _attention_list(build_overview(settings).attention, message)
+
+
 def _register_overview(app) -> None:
+    @app.callback(
+        Output(ATTENTION_SCROLL_ID, "children", allow_duplicate=True),
+        Input({"type": STOP_ACT_TYPE, "action": ALL, "rid": ALL}, "n_clicks"),
+        State({"type": STOP_NOTE_TYPE, "rid": ALL}, "value"),
+        prevent_initial_call=True,
+    )
+    def on_stopped_click(_clicks, _notes):
+        if not isinstance(ctx.triggered_id, dict) or not ctx.triggered[0]["value"]:
+            raise PreventUpdate
+        notes = {s["id"]["rid"]: s.get("value") or "" for s in ctx.states_list[0]}
+        return stopped_action(get_admin_settings(), ctx.triggered_id, notes)
+
     @app.callback(
         Output(body_id(TAB_OVERVIEW), "children", allow_duplicate=True),
         Input(ADMIN_TABS_ID, "value"),
@@ -1401,8 +1489,121 @@ def _capability_names(settings: Settings) -> list[str]:
     return [c.name for c in get_active_version(settings.db_path).rulebook.policy.capabilities]
 
 
+def watch_job(previous: dict | None):
+    """Fix G5 N1: (new version store value, poll interval). The store is left alone when it did
+    not change, so the redraw below fires only when a job starts or ends."""
+    data, interval = watch_step(previous, running_since() is not None)
+    return (no_update if data == previous else data), interval
+
+
+def bars_now() -> tuple[list, list]:
+    """Fix G5 N2: the same bar for the catalog header and the Review queue view."""
+    status, started = job.read_status(), running_since()
+    return job_bar(status, started, "catalog"), job_bar(status, started, "queue")
+
+
+LOCKED_BUTTONS = (
+    REBUILD_BTN, REBUILD_FULL_BTN, queue_button_id(Q_RECHECK), TRY_BTN, BUILD_USE_BTN,
+)  # same order as LOCK_NAMES
+
+
+def locks_now(own: tuple) -> list:
+    """Fix G5 N3: the five job-starting buttons greyed with the job's short status as tooltip while
+    a job runs. `own` is each button's own reason to be disabled (kept when the job ends)."""
+    status, started = job.read_status(), running_since()
+    states = [lock_state(status, started, o) for o in own]
+    return [disabled for disabled, _ in states] + [title for _, title in states]
+
+
+def stop_from_bar(settings: Settings):
+    """Stop on the bar asks the job to end (checked between items); admin only."""
+    if not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    job.request_stop()
+    return bars_now()[0]
+
+
+def redraw_after_job(settings: Settings, data: dict | None, search, missing_backup, rq_values):
+    """Fix G5 N1: after a job ended, redraw the lists its result changes: Overview, Capabilities,
+    the Review queue and its count. The search text and filters are read back, never reset, and
+    only list contents are replaced, so the scroll box stays where it is."""
+    if not data or data.get("running") or not data.get("n"):
+        raise PreventUpdate
+    if not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    overview = refresh_overview(settings, TAB_OVERVIEW)
+    caps = filtered_catalog(settings, search, missing_backup)
+    queue = queue_data(settings)
+    items, shown, total = review_items(
+        queue, _capability_names(settings), False, filter_from_values(*rq_values), []
+    )
+    return overview, caps, items or empty_list(), count_line(shown, total), view_options(queue)
+
+
+def _register_watcher(app) -> None:
+    @app.callback(
+        Output(DATA_VERSION_ID, "data"),
+        Output(WATCH_ID, "interval"),
+        Input(WATCH_ID, "n_intervals"),
+        State(DATA_VERSION_ID, "data"),
+    )
+    def on_watch(_ticks, previous):
+        return watch_job(previous)
+
+    @app.callback(
+        Output(BAR_CATALOG, "children"),
+        Output(BAR_QUEUE, "children"),
+        Input(WATCH_ID, "n_intervals"),
+        Input(DATA_VERSION_ID, "data"),
+    )
+    def on_bars(_ticks, _data):
+        return bars_now()
+
+    @app.callback(
+        *[Output(button, "disabled", allow_duplicate=True) for button in LOCKED_BUTTONS],
+        *[Output(lock_id(name), "title") for name in LOCK_NAMES],
+        Input(WATCH_ID, "n_intervals"),
+        Input(DATA_VERSION_ID, "data"),
+        *[State(lock_id(name), "data-own") for name in LOCK_NAMES],
+        prevent_initial_call=True,
+    )
+    def on_lock(_ticks, _data, *own):
+        return locks_now(own)
+
+    @app.callback(
+        Output(BAR_CATALOG, "children", allow_duplicate=True),
+        Input({"type": JOB_STOP_TYPE, "where": ALL}, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def on_bar_stop(_clicks):
+        if not ctx.triggered or not ctx.triggered[0]["value"]:
+            raise PreventUpdate
+        return stop_from_bar(get_admin_settings())
+
+    @app.callback(
+        Output(body_id(TAB_OVERVIEW), "children", allow_duplicate=True),
+        Output(CAP_LIST_ID, "children", allow_duplicate=True),
+        Output(RQ_LIST_ID, "children", allow_duplicate=True),
+        Output(RQ_COUNT_ID, "children", allow_duplicate=True),
+        Output(CAT_VIEW_ID, "data"),
+        Input(DATA_VERSION_ID, "data"),
+        State(CAP_SEARCH_ID, "value"),
+        State(CAP_MISSING_ID, "checked"),
+        State(RQ_SEARCH_ID, "value"),
+        State(RQ_SOURCE_ID, "value"),
+        State(RQ_PROPOSAL_ID, "value"),
+        State(RQ_CONF_ID, "value"),
+        State(RQ_FOLDER_ID, "value"),
+        State(RQ_SORT_ID, "value"),
+        prevent_initial_call=True,
+    )
+    def on_job_ended(data, search, missing, *rq_values):
+        return redraw_after_job(get_admin_settings(), data, search, missing, rq_values)
+
+
 def _register_queue(app) -> None:
     _register_review(app)
+    _register_watcher(app)
     button = {"type": QUEUE_BUTTON_TYPE, "action": ALL, "uid": ALL, "cap": ALL, "state": ALL}
 
     @app.callback(

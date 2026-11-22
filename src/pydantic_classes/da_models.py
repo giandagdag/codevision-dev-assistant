@@ -32,6 +32,8 @@ STATUS_TESTER_REVIEW = "TESTER_REVIEW"
 STATUS_REVISION = "REVISION_IN_PROGRESS"
 # Phase 10 (Handoff), spec section 3: the request is checked in and locked. No moves out.
 STATUS_HANDED_OFF = "HANDED_OFF"
+# Fix G5 part 1: the safety check stopped the request. Read only until Admin releases it.
+STATUS_STOPPED = "STOPPED"
 
 STATUSES: tuple[str, ...] = (
     STATUS_DRAFT,
@@ -52,6 +54,7 @@ STATUSES: tuple[str, ...] = (
     STATUS_TESTER_REVIEW,
     STATUS_REVISION,
     STATUS_HANDED_OFF,
+    STATUS_STOPPED,
 )
 
 # The only moves allowed: the spec 3.1 table, plus the Discover moves of Phase 3 (spec section 2).
@@ -130,6 +133,12 @@ ALLOWED_MOVES: dict[str, tuple[str, ...]] = {
 ALLOWED_MOVES[STATUS_ESCALATION] = tuple(
     status for status, targets in ALLOWED_MOVES.items() if STATUS_ESCALATION in targets
 )
+# Fix G5 P4: any Understand status can be stopped; only Admin Release moves back (the code checks
+# the move is to the status stored on the stop event). Never to a later status.
+UNDERSTAND_STATUSES = (STATUS_DRAFT, STATUS_CLARIFICATION, STATUS_DECISION_REQUIRED, STATUS_READY)
+for _status in UNDERSTAND_STATUSES:
+    ALLOWED_MOVES[_status] = (*ALLOWED_MOVES[_status], STATUS_STOPPED)
+ALLOWED_MOVES[STATUS_STOPPED] = UNDERSTAND_STATUSES
 
 Actor = Literal["developer", "system", "llm", "senior"]
 

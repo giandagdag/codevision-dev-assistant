@@ -21,6 +21,7 @@ LOCKED_MESSAGE = (
 ABANDONED_MESSAGE = (
     "A senior closed this request. It is locked. Start a new request for further changes."
 )
+STOPPED_MESSAGE = "This request was stopped by the safety check. Only Admin can release it."
 ESCALATION_OPEN_MESSAGE = "A senior is looking at this request."
 
 

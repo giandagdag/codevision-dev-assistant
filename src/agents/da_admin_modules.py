@@ -87,6 +87,18 @@ def count_matches(pattern: str, paths: list[str]) -> int:
     return sum(1 for p in paths if fnmatchcase(p.lower(), pattern.strip().lower()))
 
 
+def first_matches(pattern: str, paths: list[str], limit: int = 5) -> list[str]:
+    """The first few indexed paths a pattern matches, for the live hint (Fix G5 L3)."""
+    p = pattern.strip().lower()
+    return [x for x in paths if fnmatchcase(x.lower(), p)][:limit]
+
+
+def example_pattern(paths: list[str]) -> str:
+    """A placeholder built from the index: the first module's folder, like `agent_flows/*`."""
+    folder = paths[0].rpartition("/")[0] if paths else ""
+    return f"{folder}/*" if folder else "src/agents/*limits*"
+
+
 def edit_patterns(form: dict, index: int, remove: str = "", add: str = "") -> dict:
     """Remove or add one pattern in catalog row `index` of the draft. A blank add is ignored."""
     rows = form.get("capabilities", [])

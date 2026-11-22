@@ -75,6 +75,13 @@ def fail(directory: Path | None, message: str) -> None:
     _write(directory, status)
 
 
+def set_end_line(directory: Path | None, text: str) -> None:
+    """Fix G5 N4: the sentence a finished job leaves behind ("Re-check done: ...")."""
+    status = read_status(directory)
+    status["end_line"] = text
+    _write(directory, status)
+
+
 def last_heartbeat(directory: Path | None, started: datetime) -> datetime:
     """When the job last showed life. Falls back to its start when there is no status file."""
     status = read_status(directory)
@@ -118,6 +125,16 @@ def _duration_text(span: timedelta) -> str:
     minutes = max(1, round(span.total_seconds() / 60))
     hours, minutes = divmod(minutes, 60)
     return f"{hours} h {minutes} min" if hours else f"{minutes} min"
+
+
+BAR_STEP_NAMES = {1: "Reading code", 2: "Linking code", 3: "Tagging programs"}
+
+
+def step_title(status: dict) -> str:
+    """Fix G5 N2: the bar's heading. A re-check is step 3 work under its own name."""
+    if status.get("mode") == "recheck":
+        return "Re-checking programs"
+    return BAR_STEP_NAMES.get(int(status.get("step") or 1), "")
 
 
 def progress_line(status: dict, now: datetime | None = None) -> str:

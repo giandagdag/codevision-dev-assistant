@@ -167,13 +167,36 @@ def test_7_31_an_old_window_is_refused(settings, request_id):
 # --- dispute (7-20, 7-21) ---
 
 
-def test_7_21_disputing_a_must_fix_goes_to_a_senior(settings, request_id, monkeypatch):
+def test_g5_19_a_dispute_is_saved_edited_and_withdrawn_without_sending(
+    settings, request_id, monkeypatch
+):
+    built(settings, request_id, monkeypatch, "review_must_fix_always")
+    view = tflow.get_tester_view(settings, request_id)
+    must = next(r.finding.finding_id for r in view.rows if r.finding.severity == "must_fix")
+
+    tflow.dispute_finding(settings, request_id, revision(settings, request_id), must, GOOD_REASON)
+    tflow.dispute_finding(settings, request_id, revision(settings, request_id), must, "New reason")
+
+    assert request_status(settings, request_id) == "NOT_PASSING"  # nothing sent, nothing locked
+    rows = tflow.get_tester_view(settings, request_id).rows
+    row = next(r for r in rows if r.finding.severity == "must_fix")
+    assert (row.state, row.reason) == ("disputed", "New reason")
+    tflow.withdraw_dispute(settings, request_id, revision(settings, request_id), must)
+    assert tflow.get_tester_view(settings, request_id).rows[0].state == "open"
+    with pytest.raises(BuildError, match="no saved dispute to send"):
+        tflow.send_disputes(settings, request_id, revision(settings, request_id))
+    with pytest.raises(BuildError, match="no saved dispute to withdraw"):
+        tflow.withdraw_dispute(settings, request_id, revision(settings, request_id), must)
+
+
+def test_7_21_sending_the_saved_disputes_goes_to_a_senior(settings, request_id, monkeypatch):
     built(settings, request_id, monkeypatch, "review_must_fix_always")
     assert request_status(settings, request_id) == "NOT_PASSING"
     view = tflow.get_tester_view(settings, request_id)
     must = next(r.finding.finding_id for r in view.rows if r.finding.severity == "must_fix")
 
     tflow.dispute_finding(settings, request_id, revision(settings, request_id), must, GOOD_REASON)
+    tflow.send_disputes(settings, request_id, revision(settings, request_id))
 
     assert request_status(settings, request_id) == "ESCALATION_REQUIRED"
     assert open_item(settings, request_id) == f"Disputed Must fix: {must}"

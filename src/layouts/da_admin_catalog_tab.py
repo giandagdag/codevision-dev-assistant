@@ -2,6 +2,7 @@
 
 import dash_mantine_components as dmc
 from dash import html
+from dash_iconify import DashIconify
 
 from agents.da_admin_forms import capability_rows
 from agents.da_admin_index import read_health
@@ -9,6 +10,7 @@ from agents.da_admin_modules import (
     SHOWN_MODULES,
     matches_search,
     module_chips,
+    module_paths,
     modules_by_capability,
     share_counts,
 )
@@ -35,6 +37,7 @@ from layouts.da_admin_common import (
     pat_id,
     version_pill,
 )
+from layouts.da_admin_job_bar import current_bar, locked
 from layouts.da_admin_queue_ids import (  # noqa: F401  (other modules import these from here)
     CAT_PANE_CAPS,
     CAT_PANE_QUEUE,
@@ -44,6 +47,7 @@ from layouts.da_admin_queue_ids import (  # noqa: F401  (other modules import th
     Q_AI_APPROVE,
     Q_AI_ASSIGN,
     Q_AI_REJECT,
+    Q_AI_RETRY,
     Q_APPLY,
     Q_APPLY_PATTERN,
     Q_APPROVE,
@@ -73,6 +77,7 @@ from layouts.da_admin_review_view import bulk_bar, bulk_confirm, review_pane
 from layouts.da_admin_starter_card import starter_card
 from layouts.da_admin_tag_history_panel import tag_history_panel
 from layouts.da_capability_map_view import map_link
+from layouts.da_tagger_try_panel import tagger_try_panel
 from pydantic_classes.da_rulebook_models import RulebookVersion
 from styles import da_admin_styles as admin_styles
 from styles import da_styles
@@ -84,11 +89,11 @@ CATALOG_COLUMNS = ("name", "description", "named_senior", "backup_senior", "path
 # Fix G4 L1: fixed column widths and one input height, so every row lines up.
 CATALOG_WIDTHS = {
     "name": "18%",
-    "description": "30%",
+    "description": "28%",
     "named_senior": "14%",
     "backup_senior": "14%",
     "path_patterns": "14%",
-    "actions": "10%",
+    "actions": "12%",
 }
 CATALOG_INPUT_HEIGHT = "56px"  # two lines of the xs text
 SG_FIELDS = ("name", "desc", "named", "backup")  # dialog inputs: the id's uid is "<name>|<field>"
@@ -128,10 +133,12 @@ def catalog_view(
                     kinds={"path_patterns": PATTERNS},
                     widths=CATALOG_WIDTHS,
                     input_height=CATALOG_INPUT_HEIGHT,
+                    add_label="+ Add capability",
                 ),
                 dmc.Button(
-                    "Add modules",
+                    "Browse modules...",
                     id=pat_id(TAB_CAPABILITY, "openmods"),
+                    leftSection=DashIconify(icon="tabler:list", width=16),
                     variant="default",
                     size="xs",
                     mt="xs",
@@ -174,37 +181,43 @@ def catalog_view(
     names = [c.name for c in policy.capabilities]
     starter = None if editable else starter_card(starter_at_work(version.rulebook))
     queue = queue or {}
-    open_cards = len(queue.get("rows", ())) + len(queue.get("ai_cards", ())) + len(
-        queue.get("suggestions", ())
-    )
     view = (queue.get("review") or {}).get("view") or VIEW_CAPS
     shown, hidden = {}, {"display": "none"}
     return html.Div(
         [
             dmc.SegmentedControl(
                 id=CAT_VIEW_ID,
-                data=[
-                    {"value": VIEW_CAPS, "label": "Capabilities"},
-                    {"value": VIEW_QUEUE, "label": f"Review queue ({open_cards})"},
-                ],
+                data=view_options(queue),
                 value=view,
                 mb="sm",
             ),
             html.Div(
-                html.Div(
-                    [*([starter] if starter is not None else []), catalog],
-                    style=admin_styles.CARD_STACK,
-                ),
+                [
+                    current_bar("catalog"),
+                    html.Div(
+                        [*([starter] if starter is not None else []), catalog],
+                        style=admin_styles.CARD_STACK,
+                    ),
+                ],
                 id=CAT_PANE_CAPS,
                 style=shown if view == VIEW_CAPS else hidden,
             ),
             html.Div(
-                queue_block(queue, names, disabled=editable),
+                [current_bar("queue"), queue_block(queue, names, disabled=editable)],
                 id=CAT_PANE_QUEUE,
                 style=shown if view == VIEW_QUEUE else hidden,
             ),
         ]
     )
+
+
+def view_options(queue: dict) -> list[dict]:
+    """The two view buttons; the queue one carries the open count (the job watcher redraws it)."""
+    open_cards = sum(len(queue.get(k, ())) for k in ("rows", "ai_cards", "suggestions"))
+    return [
+        {"value": VIEW_CAPS, "label": "Capabilities"},
+        {"value": VIEW_QUEUE, "label": f"Review queue ({open_cards})"},
+    ]
 
 
 def tagged_header():
@@ -365,13 +378,17 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
                                   bulk.get("target", "")))
     if any(not c.capability for c in ai_cards):
         above.append(
-            dmc.Button(
-                "Re-check the No capability fits programs against the new list",
-                id=queue_button_id(Q_RECHECK),
-                size="xs",
-                variant="default",
-                disabled=disabled,
-                mb="xs",
+            locked(
+                "recheck",
+                dmc.Button(
+                    "Re-check the No capability fits programs against the new list",
+                    id=queue_button_id(Q_RECHECK),
+                    size="xs",
+                    variant="default",
+                    disabled=disabled,
+                    mb="xs",
+                ),
+                disabled,
             )
         )
     items, shown, total = review_items(queue, capability_names, disabled, rf, selected)
@@ -404,6 +421,7 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
                 disabled=disabled,
             )
         )
+    parts.append(tagger_try_panel(module_paths()))
     parts.append(tag_history_panel())
     waiting = len(rows) + len(ai_cards) + len(suggested)
     return admin_card("Review queue", html.Div(parts), "📥", count=waiting, id=QUEUE_BLOCK_ID)
@@ -571,6 +589,15 @@ def _ai_card(card, capability_names: list[str], disabled: bool, checked: bool = 
                 disabled=disabled,
             )
         )
+    if card.unreadable:  # R5: the reason is in the card body; Try again tags this one program
+        buttons.append(
+            dmc.Button(
+                "Try again",
+                id=queue_button_id(Q_AI_RETRY, card.path),
+                size="xs",
+                disabled=disabled,
+            )
+        )
     buttons += [
         dmc.Select(
             data=capability_names,
@@ -612,6 +639,11 @@ def _ai_card(card, capability_names: list[str], disabled: bool, checked: bool = 
                 gap="xs",
             ),
             html.Div(card.summary, title=card.summary, style=admin_styles.REVIEW_SUMMARY),
+            *(
+                [dmc.Text(card.reason, size="xs", style=da_styles.EMPTY_TEXT)]
+                if card.unreadable
+                else []
+            ),
             html.Details(
                 [
                     html.Summary("Why?", style={"fontSize": "12px", "cursor": "pointer"}),

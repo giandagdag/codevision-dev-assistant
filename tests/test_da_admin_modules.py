@@ -96,11 +96,14 @@ def test_the_catalog_read_view_has_search_and_chip_and_edit_view_has_the_picker(
     published_rulebook,
 ):
     read = catalog_view(published_rulebook, modules=["a/x.py"])
-    edit = catalog_view(published_rulebook, editable=True, modules=["a/x.py"])
+    # Fix G4 L3: the picker is the "Add modules" pop-up, opened through the panel state.
+    edit = catalog_view(
+        published_rulebook, editable=True, modules=["a/x.py"], panel={"kind": "modules"}
+    )
 
     read_ids = [getattr(c, "id", None) for c in walk(read)]
     assert CAP_SEARCH_ID in read_ids and CAP_MISSING_ID in read_ids
-    assert "Add module" in all_text(edit)
+    assert "modules to" in all_text(edit)
     assert CAP_SEARCH_ID not in [getattr(c, "id", None) for c in walk(edit)]
 
 

@@ -258,7 +258,8 @@ def test_register_attaches_the_callbacks_and_the_busy_state():
     cb.register_da_developer_assistant_page_callbacks(app)
     # The card 2 click (Phase 9) sits between Send and the Enter script; the build poll and the
     # Workspace hops come after.
-    draw, action, card_two, enter = app._callback_list[:4]
+    # Fix G5 N6 added one page-content callback right after the draw (index 1).
+    draw, _early, action, card_two, enter = app._callback_list[:5]
     assert card_two["inputs"][0]["id"] == page.ENHANCE_CARD_ID
     assert draw["prevent_initial_call"] is False  # it must draw on first load
     assert action["prevent_initial_call"] is True

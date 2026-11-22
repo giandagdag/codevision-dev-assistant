@@ -29,6 +29,7 @@ SCOPE_CONFLICT_PREFIX = "Scope conflict: "
 NEVER_ASSUME_WORDS: tuple[str, ...] = (
     "security", "password", "money", "amount", "payment", "balance",
     "account number", "customer", "personal data",
+    "destructive", "truncate", "drop table",  # Fix G5 P5
 )  # fmt: skip
 
 

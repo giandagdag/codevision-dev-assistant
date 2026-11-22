@@ -17,7 +17,9 @@ SEVERITY_TEXT = {"must_fix": "Must fix", "should_fix": "Should fix", "fyi": "FYI
 ReviewResult = Literal["done", "unable", "interrupted"]
 CheckState = Literal["passed", "failed", "warning", "not_run"]
 # Phase 10: a senior can overrule a finding (actor `senior:<id>`); the developer cannot.
-ActionKind = Literal["accepted", "reopened", "disputed", "overruled"]
+ActionKind = Literal[
+    "accepted", "reopened", "disputed", "withdrawn", "dispute_sent", "dispute_kept", "overruled"
+]
 MadeByTester = Literal["plain", "tester"]
 
 # The seven checks (spec section 5): number -> short name. 1, 2, 3 and 7 are plain code.
@@ -147,5 +149,6 @@ class TesterView(BaseModel):
     dropped: list[Finding] = Field(default_factory=list)
     earlier: list[ReviewRecord] = Field(default_factory=list)
     summary: str = ""
+    reason: str = ""  # G5 B3: why the label is Not passing, one line
     can_rerun: bool = False
     layer_c_ran: bool = False

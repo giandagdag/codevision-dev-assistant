@@ -8,12 +8,12 @@ import pytest
 from agents.da_admin_tag_store import read_store, read_tags
 from agents.da_admin_tagger import (
     FAKE_SCRIPT_FILE,
-    NOT_SAVED,
     ScriptedTaggerClient,
     build_prompt,
     is_sendable,
     parse_reply,
     paths_to_tag,
+    read_reply,
     run_tagging,
 )
 from pydantic_classes.da_rulebook_models import Capability
@@ -65,20 +65,118 @@ def test_ag5_one_bad_reply_in_20_is_skipped_and_named(tmp_path):
     run = run_tagging(paths, src, CAPS, scripted(paths, 1), "admin1", directory=out)
 
     assert run.saved and run.skipped == ["m0.py"]
-    assert len(read_tags(out)) == 19 and read_store(out)["runs"][0]["skipped"] == ["m0.py"]
+    tags = read_tags(out)
+    assert len(tags) == 20 and tags["m0.py"]["state"] == "unreadable"  # Fix G5: saved as unreadable
+    assert read_store(out)["runs"][0]["skipped"] == ["m0.py"]
 
 
-def test_ag5_three_bad_in_20_is_not_saved_and_old_tags_stay(tmp_path):
+def test_g5_8_most_bad_still_saves_the_good_tags_and_counts_the_reasons(tmp_path, caplog):
     src, out = tmp_path / "src", tmp_path / "out"
     src.mkdir()
-    paths = make_modules(src, 20)
-    run_tagging(paths[:5], src, CAPS, scripted(paths, 0), "admin1", directory=out)
-    before = read_store(out)
+    paths = make_modules(src, 10)
+    run_tagging(paths[:5], src, CAPS, scripted(paths, 0), "admin1", directory=out)  # old, good
 
-    run = run_tagging(paths, src, CAPS, scripted(paths, 3), "admin1", directory=out)
+    with caplog.at_level("INFO"):
+        run = run_tagging(paths, src, CAPS, scripted(paths, 7), "admin1", directory=out)
 
-    assert (run.saved, run.message) == (False, NOT_SAVED)
-    assert read_store(out) == before
+    tags = read_tags(out)
+    assert run.saved and run.reasons == {"no_json": 7}
+    assert run.message == (
+        "Tags: 3 of 10 tagged, 7 could not be read. Many programs could not be read: "
+        "check the AI model."
+    )
+    assert "10 programs, 3 tagged, 7 could not be read (no_json 7)" in caplog.text
+    assert "not json" not in caplog.text  # never the reply text
+    # the first five were tagged before: a failed re-read never replaces a good tag
+    assert all(tags[p]["state"] != "unreadable" for p in paths[:5])
+    assert [p for p in paths[5:7] if tags[p]["state"] == "unreadable"] == paths[5:7]
+    assert tags["m8.py"]["summary"] == GOOD["summary"]
+    assert tags["m5.py"]["summary"] == "AI could not read this program"
+    assert tags["m5.py"]["reason"] == "no_json"
+
+
+def test_g5_7_a_reply_with_no_json_is_asked_twice_then_unreadable(tmp_path):
+    (tmp_path / "a.py").write_text("x = 1\n")
+    prompts = []
+
+    class Silent(ScriptedTaggerClient):
+        def complete(self, prompt, system=None):
+            prompts.append(prompt)
+            return super().complete(prompt)
+
+    client = Silent({"a.py": "sorry"})
+    run = run_tagging(["a.py"], tmp_path, CAPS, client, "a", directory=tmp_path / "o")
+
+    assert len(prompts) == 2 and prompts[1].endswith("Reply with the JSON object only.")
+    assert "Reply with the JSON" not in prompts[0]
+    assert run.skipped == ["a.py"] and read_tags(tmp_path / "o")["a.py"]["state"] == "unreadable"
+
+
+def test_g5_an_unreadable_program_is_a_card_and_is_tried_again_in_delta(tmp_path):
+    from agents.da_admin_tag_cards import ai_cards
+
+    (tmp_path / "a.py").write_text("x = 1\n")
+    out = tmp_path / "o"
+    client = ScriptedTaggerClient({"a.py": "sorry"})
+    run_tagging(["a.py"], tmp_path, CAPS, client, "a", directory=out)
+
+    (card,) = ai_cards(out)
+    assert (card.unreadable, card.summary, card.reason) == (
+        True, "AI could not read this program", "no_json",
+    )
+    todo, _ = paths_to_tag(["a.py"], read_store(out), tmp_path, only_changed=True, limit=10)
+    assert todo == ["a.py"]  # the code did not change, but it was never read
+
+
+def test_a_failed_call_is_not_asked_twice_and_is_named(tmp_path):
+    (tmp_path / "a.py").write_text("x = 1\n")
+    calls = []
+
+    class Down:
+        def complete(self, prompt, system=None):
+            calls.append(1)
+            raise ConnectionError("down")
+
+    run = run_tagging(["a.py"], tmp_path, CAPS, Down(), "a", directory=tmp_path / "o")
+
+    assert len(calls) == 1 and run.reasons == {"call_failed": 1}
+
+
+def test_g5_6_five_odd_replies_are_all_tagged_and_cleaned(tmp_path):
+    new = {"capability": "new", "new_name": "Upload & Ingestion", "new_description": "Files in."}
+    replies = {
+        "a.py": "Sure! Here is the tag: " + json.dumps(GOOD) + " Hope it helps.",
+        "b.py": "<think>hmm {not json}</think>\n" + json.dumps(GOOD),
+        "c.py": json.dumps({**GOOD, "summary": "word " * 30, "reason": "r " * 100}),
+        "d.py": json.dumps({**GOOD, "confidence": "High", "capability": " reports "}),
+        "e.py": json.dumps({**GOOD, **new}),
+    }
+    for name in replies:
+        (tmp_path / name).write_text("x = 1\n")
+
+    run = run_tagging(list(replies), tmp_path, CAPS, ScriptedTaggerClient(replies), "a",
+                      directory=tmp_path / "o")
+
+    tags = read_tags(tmp_path / "o")
+    assert run.skipped == [] and set(tags) == set(replies)
+    assert len(tags["c.py"]["summary"]) <= 120 and tags["c.py"]["summary"].endswith("...")
+    assert len(tags["c.py"]["reason"]) <= 160 and tags["c.py"]["reason"].endswith("...")
+    assert (tags["d.py"]["confidence"], tags["d.py"]["proposed_capability"]) == ("high", "Reports")
+    assert tags["e.py"]["new_name"] == "Upload and Ingestion"
+
+
+@pytest.mark.parametrize(
+    ("reply", "reason"),
+    [
+        ({**GOOD, "capability": "Invented"}, "bad_capability"),
+        ({**GOOD, "confidence": "certain"}, "bad_confidence"),
+        ({**GOOD, "summary": " "}, "empty_summary"),
+        ({**GOOD, "capability": "new", "new_name": "x", "new_description": "d"}, "bad_new_name"),
+        ({**GOOD, "capability": "new", "new_name": "n" * 41, "new_description": "d"}, "bad_new_name"),  # noqa: E501
+    ],
+)
+def test_each_refusal_has_one_reason_word(reply, reason):
+    assert read_reply(json.dumps(reply), CAPS) == (None, reason)
 
 
 def test_ag9_an_unchanged_file_is_not_sent_again(tmp_path):
@@ -130,7 +228,6 @@ def test_ag10_a_skipped_path_never_reaches_the_ai(tmp_path):
     [
         "not json", "{}", json.dumps({**GOOD, "capability": "Invented"}),
         json.dumps({**GOOD, "confidence": "certain"}), json.dumps({**GOOD, "summary": ""}),
-        json.dumps({**GOOD, "summary": "x" * 121}), json.dumps({**GOOD, "reason": "y" * 161}),
     ],
 )
 def test_a_bad_reply_is_refused(reply):
