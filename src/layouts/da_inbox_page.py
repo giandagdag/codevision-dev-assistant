@@ -37,17 +37,19 @@ MENU_LINK_ID = "da-inbox-menu"
 BANNER_ID = "da-inbox-banner"
 
 FILTER_MINE, FILTER_ALL = "mine", "all"
-MODE_OVERRULE, MODE_GUIDANCE, MODE_TAKE_OVER, MODE_CLOSE = (
-    "overrule", "guidance", "take_over", "close",
+MODE_OVERRULE, MODE_GUIDANCE, MODE_TAKE_OVER, MODE_CLOSE, MODE_KEEP = (
+    "overrule", "guidance", "take_over", "close", "keep",
 )  # fmt: skip
 ACTIONS: tuple[tuple[str, str], ...] = (
-    (MODE_OVERRULE, "Overrule a finding"),
+    (MODE_OVERRULE, "Accept dispute"),
+    (MODE_KEEP, "Keep finding"),
     (MODE_GUIDANCE, "Send guidance"),
     (MODE_TAKE_OVER, "Take over"),
     (MODE_CLOSE, "Close"),
 )
 MODE_TITLES = {
-    MODE_OVERRULE: "Overrule a finding",
+    MODE_OVERRULE: "Accept dispute (overrule the finding)",
+    MODE_KEEP: "Keep finding (the dispute is refused)",
     MODE_GUIDANCE: "Send guidance to the developer",
     MODE_CLOSE: "Close this escalation",
 }

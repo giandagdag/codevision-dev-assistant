@@ -108,6 +108,34 @@ def overrule_finding(
         _say(conn, row, senior_id, line, now)
 
 
+def keep_finding(
+    settings, escalation_id: int, base_revision: int, senior_id: str, finding_id: str,
+    reason: str, now: datetime | None = None,
+) -> None:  # fmt: skip
+    """G5 B5: the senior says a disputed finding stands. The label does not change; the finding
+    can not be disputed again, and a senior can still overrule it later."""
+    text = " ".join((reason or "").split())
+    if not OVERRULE_MIN_CHARS <= len(text) <= ACCEPT_MAX_CHARS:
+        raise SeniorActionError(OVERRULE_REASON_MESSAGE)
+    now = now or datetime.now(UTC)
+    with _write(settings.db_path) as conn:
+        row = _open_row(conn, escalation_id, base_revision)
+        number = _build_number(conn, row.request_id)
+        reviews = read_reviews(conn, row.request_id, number) if number else []
+        if not reviews:
+            raise SeniorActionError("There is no Tester review to keep a finding in.")
+        review, actions = reviews[-1], read_actions(conn, row.request_id, number)
+        item = _open_finding(review, finding_id, actions)
+        insert_action(conn, FindingAction(
+            request_id=row.request_id, build_number=number, review_number=review.review_number,
+            finding_id=item.finding_id, action="dispute_kept", reason=text,
+            actor=f"senior:{senior_id}",
+        ), now)  # fmt: skip
+        update_escalation(conn, row, base_revision, now)
+        _audit(conn, row, "finding_kept", senior_id, {"finding": finding_id, "reason": text}, now)
+        _say(conn, row, senior_id, f"Kept {finding_id}: {text}.", now)
+
+
 def send_guidance(
     settings, escalation_id: int, base_revision: int, senior_id: str, text: str,
     now: datetime | None = None,

@@ -193,12 +193,12 @@ def _finding_row(row: FindingRow, can_act: bool, can_fix: bool) -> dmc.TableTr:
     if item.quote:
         message.append(dmc.Text(item.quote, size="xs", ff="monospace", c=da_styles.MUTED))
     message.append(dmc.Text(detail, size="xs", c=da_styles.MUTED))
+    # G5 B5: a Must fix whose dispute the senior accepted shows as FYI
+    shown = "fyi" if item.severity == "must_fix" and row.state == "overruled" else item.severity
     return dmc.TableTr(
         [
             dmc.TableTd(dmc.Text(item.finding_id, size="xs", fw=600, style=ID_STYLE)),
-            dmc.TableTd(
-                dmc.Text(SEVERITY_TEXT[item.severity], size="xs", c=SEVERITY_COLOUR[item.severity])
-            ),
+            dmc.TableTd(dmc.Text(SEVERITY_TEXT[shown], size="xs", c=SEVERITY_COLOUR[shown])),
             dmc.TableTd(dmc.Text(where, size="xs", ff="monospace", style=WHERE_STYLE)),
             dmc.TableTd(dmc.Stack(message, gap=2)),
             dmc.TableTd(_actions(row, can_act, can_fix)),
@@ -212,8 +212,12 @@ def _actions(row: FindingRow, can_act: bool, can_fix: bool):
         return dmc.Text("-", size="xs")
     if row.state == "overruled":  # Phase 10: a senior's decision, no button left to press
         who = row.actor.removeprefix("senior:") or "a senior"
-        return dmc.Text(f"Overruled by {who}: {row.reason}", size="xs")
+        what = "Dispute accepted" if item.severity == "must_fix" else "Overruled"
+        return dmc.Text(f"{what} by {who}: {row.reason}", size="xs")
     if item.severity == "must_fix":
+        if row.state == "kept":
+            who = row.actor.removeprefix("senior:") or "a senior"
+            return dmc.Text(f"Kept by {who}: {row.reason}", size="xs")
         if row.state == "sent":
             return dmc.Text(f"Disputed, with your senior: {row.reason}", size="xs")
         if row.state == "disputed":  # G5 B5: saved, not sent yet

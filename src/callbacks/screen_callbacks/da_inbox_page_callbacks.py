@@ -67,6 +67,7 @@ from layouts.da_inbox_page import (
     MENU_LINK_ID,
     MODE_CLOSE,
     MODE_GUIDANCE,
+    MODE_KEEP,
     MODE_OVERRULE,
     MODE_TAKE_OVER,
     MODE_TITLES,
@@ -228,6 +229,11 @@ def run_senior_action(
             raise senior.SeniorActionError("Pick the finding to overrule.")
         senior.overrule_finding(settings, escalation_id, revision, user, finding, text or "")
         return f"Overruled {finding} on {request_id}"
+    if mode == MODE_KEEP:
+        if not finding:
+            raise senior.SeniorActionError("Pick the finding to keep.")
+        senior.keep_finding(settings, escalation_id, revision, user, finding, text or "")
+        return f"Kept {finding} on {request_id}"
     if mode == MODE_GUIDANCE:
         senior.send_guidance(settings, escalation_id, revision, user, text or "")
         return f"Guidance sent to {request_id}"
@@ -341,7 +347,7 @@ def _register_actions(app, who) -> None:
                     no_update, line, "green", (refresh or 0) + 1, no_update)  # fmt: skip
         return (
             True, MODE_TITLES[mode], mode,
-            {} if mode == MODE_OVERRULE else HIDDEN,
+            {} if mode in (MODE_OVERRULE, MODE_KEEP) else HIDDEN,
             {} if mode == MODE_CLOSE else HIDDEN,
             "", "", no_update, no_update, no_update,
             {} if mode == MODE_CLOSE else HIDDEN,
