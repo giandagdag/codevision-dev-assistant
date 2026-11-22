@@ -77,6 +77,10 @@ def test_release_goes_back_and_the_request_continues(settings, stopped):
         settings, stopped, ["I hate my boss", *ANSWERS[1:], ""], session.revision, now=T0
     )
     assert view.request.status != "STOPPED"
+    # Release lifts the stop, not the P5 safeguards: destructive, and a senior is asked.
+    after = get_session(settings.db_path, stopped)
+    assert after.record.destructive
+    assert after.needs_senior
 
 
 def test_release_of_a_request_that_is_not_stopped_is_refused(settings, stopped):

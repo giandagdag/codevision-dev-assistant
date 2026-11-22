@@ -107,6 +107,8 @@ def test_g5_4_a_failed_ai_call_with_destructive_words_does_not_stop_but_is_not_s
 
     # Destructive without intent goes to the P5 checks (step 5), never straight on silently.
     assert view.request.status != "STOPPED"
+    session = get_session(settings.db_path, view.request.request_id)
+    assert session.record.destructive and session.needs_senior
 
 
 def test_a_stopped_request_refuses_every_developer_action(settings, no_interpreter):

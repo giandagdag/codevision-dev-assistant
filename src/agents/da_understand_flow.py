@@ -416,14 +416,15 @@ def _stopped_by_safety(
 ) -> str:
     """Run the word check and the AI check and return the decision (stop, needs_p5 or go). On a
     stop, save the chat line, the audit event and the STOPPED status first. A request Admin has
-    released is not checked again."""
+    released is never stopped again, but destructive work still goes through the P5 items."""
     request_id = session.request_id
     events = list_audit_events(settings.db_path, request_id)
-    if any(event.event_type == EVENT_RELEASED for event in events):
-        return DECISION_GO
+    released = any(event.event_type == EVENT_RELEASED for event in events)
     gate = safety_scan(checked_text)
     verdict = check_request(settings, checked_text)
     decision = decide(gate, verdict)
+    if released and decision == DECISION_STOP:
+        return DECISION_P5
     if decision != DECISION_STOP:
         return decision
     with _turn(settings.db_path, request_id, base_revision, now) as turn:
