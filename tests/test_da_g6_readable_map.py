@@ -68,6 +68,25 @@ def test_one_tap_focuses_two_quick_taps_or_open_move_in_and_clear_resets():
     assert "Calls: " in "\n".join(v.panel_lines("Hub", cmap.focus_panel(*_star(), "Hub")))
 
 
+def test_drawing_rules_g6_11_g6_12():
+    from layouts import da_capability_map_view as v
+    from styles.da_admin_styles import CAPABILITY_PALETTE, capability_colour
+
+    node_style = v.STYLESHEET[0]["style"]
+    assert node_style["text-wrap"] == "wrap" and "text-overflow-wrap" not in node_style  # G6-11
+    assert node_style["text-valign"] == "bottom" and node_style["font-size"] == 12
+    assert v.LAYOUT["name"] == "concentric"
+    graph, tags = _star()
+    state = v.START_STATE
+    draw = lambda: v.render_map(v.pick_view(graph, tags, state, "", [], {}), state)[0]  # noqa: E731
+    assert draw() == draw()  # G6-12: same data, same drawing
+    nodes = [e["data"] for e in draw() if "source" not in e["data"]]
+    assert max(n["px"] for n in nodes) <= 3 * min(n["px"] for n in nodes)
+    assert all(1 <= e["data"]["px"] <= 6 for e in draw() if "source" in e["data"])
+    assert capability_colour("Embedding and Vector") == capability_colour("Embedding and Vector")
+    assert capability_colour("Hub") in CAPABILITY_PALETTE
+
+
 def test_show_unassigned_and_low_slider_bring_them_back():
     graph, tags = _star()
     view = cmap.readable_view(graph, tags, show_unassigned=True, min_calls=1, top_only=False)

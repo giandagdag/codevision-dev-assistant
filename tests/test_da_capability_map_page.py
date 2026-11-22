@@ -89,7 +89,8 @@ def test_no_server_path_no_outside_script_and_brand_colors():  # G-15
     page = json.dumps([elements, map_shell().to_plotly_json()], default=str)
     assert "http" not in page and ":\\" not in page and "/Users/" not in page
     colors = {s["style"].get("background-color") for s in view.STYLESHEET} - {None}
-    assert colors <= {da_styles.BLUE, da_styles.NAVY, da_styles.MUTED}
+    # G6 C5: bubble colours come from the palette in styles/ through data(color)
+    assert colors <= {da_styles.BLUE, da_styles.NAVY, da_styles.MUTED, "data(color)"}
     assert view.STYLESHEET[0]["style"]["color"] == da_styles.INK
 
 

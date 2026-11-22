@@ -6,6 +6,8 @@ fails at work, replace this one file (and its tests) with a Plotly drawing.
 Read only: no Admin buttons. Colors come from the brand constants, never library defaults.
 """
 
+import math
+
 import dash_cytoscape as cyto
 import dash_mantine_components as dmc
 from dash import dcc, html
@@ -20,6 +22,10 @@ from agents.da_capability_map import (
     search,
 )
 from styles import da_styles
+from styles.da_admin_styles import capability_colour
+
+BASE_PX = 36  # the smallest bubble
+MAX_SIZE_RATIO = 3
 
 MAP_PATH = "/dev-assistant/capability-map"
 MAP_SHELL_ID = "da-map-shell"
@@ -48,15 +54,18 @@ ADMIN_LINK = "/admin"  # the Review queue lives on the Admin page (cannot import
 
 FONT = da_styles.FONT
 LABEL_WIDTH = 90  # pixels; labels wrap here
-# cose spaces bubbles by their size; `nodeDimensionsIncludeLabels` makes it count the label too.
-LAYOUT = {"name": "cose", "nodeDimensionsIncludeLabels": True, "nodeRepulsion": 20000,
-          "idealEdgeLength": 80}  # fmt: skip
+# G6 C5: concentric puts the most-linked bubble in the middle and gives the same picture every
+# time (cose moved bubbles around on each draw). Labels count in the spacing.
+LAYOUT = {"name": "concentric", "nodeDimensionsIncludeLabels": True, "minNodeSpacing": 60,
+          "animate": False}  # fmt: skip
 STYLESHEET = [
     {"selector": "node", "style": {
-        "label": "data(label)", "background-color": da_styles.BLUE, "color": da_styles.INK,
+        "label": "data(label)", "background-color": "data(color)", "color": da_styles.INK,
         "font-family": FONT, "font-size": 12, "width": "data(px)", "height": "data(px)",
-        # Long names have no spaces, so wrap anywhere, at a fixed width (P39).
-        "text-wrap": "wrap", "text-max-width": LABEL_WIDTH, "text-overflow-wrap": "anywhere",
+        # Wrap at spaces only (G6-11), the label sits below the bubble on a white background.
+        "text-wrap": "wrap", "text-max-width": LABEL_WIDTH, "text-valign": "bottom",
+        "text-margin-y": 6, "text-background-color": "white", "text-background-opacity": 1,
+        "text-background-padding": 2,
     }},
     {"selector": ".function",
      "style": {"background-color": da_styles.NAVY, "shape": "round-rectangle"}},
@@ -80,14 +89,19 @@ def map_link(new_tab: bool = True) -> dmc.Anchor:
 def _elements(view: MapView) -> list[dict]:
     """Plain nodes and edges to cytoscape elements."""
     out = []
+    smallest = min((n["size"] for n in view.nodes if n["size"] > 0), default=1)
     for node in view.nodes:
         classes = " ".join(c for c in (node["kind"], "faded" if node["faded"] else "") if c)
-        px = 30 + min(node["size"], 40) * 3
-        data = {"id": node["id"], "label": node["label"], "kind": node["kind"], "px": px}
+        # bubble size by program count, never more than 3 times the smallest bubble
+        px = round(BASE_PX * min(max(node["size"], smallest) / smallest, MAX_SIZE_RATIO))
+        colour = capability_colour(node["label"])
+        data = {"id": node["id"], "label": node["label"], "kind": node["kind"], "px": px,
+                "color": colour}  # fmt: skip
         out.append({"data": data, "classes": classes})
     for i, edge in enumerate(view.edges):
+        # width 1 to 6 px by the log of the calls: one hot link cannot drown the rest
         data = {"id": f"e{i}", "source": edge["source"], "target": edge["target"],
-                "px": 1 + min(edge["weight"], 10)}  # fmt: skip
+                "px": min(6, 1 + int(math.log2(max(edge["weight"], 1))))}  # fmt: skip
         # levels 2 and 3 have no "focused" key: their calls keep their arrows
         classes = " ".join(c for c in ("focused" if edge.get("focused", True) else "",
                                        "also" if edge.get("also") else "") if c)  # fmt: skip
