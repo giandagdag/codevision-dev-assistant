@@ -49,6 +49,8 @@ from layouts.da_admin_queue_ids import (  # noqa: F401  (other modules import th
     Q_AI_ASSIGN,
     Q_AI_REJECT,
     Q_AI_RETRY,
+    Q_ALSO_ADD,
+    Q_ALSO_REJECT,
     Q_APPLY,
     Q_APPLY_PATTERN,
     Q_APPROVE,
@@ -378,6 +380,7 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
         bulk = review["bulk"]
         above.append(bulk_confirm(bulk["kind"], bulk_plan(selected, ai_cards), len(selected),
                                   bulk.get("target", "")))
+    above.extend(_also_cards(queue.get("also_cards", []), disabled))
     if queue.get("offer_suggest"):
         above.append(
             dmc.Button(
@@ -434,6 +437,31 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
     parts.append(tag_history_panel())
     waiting = len(rows) + len(ai_cards) + len(suggested)
     return admin_card("Review queue", html.Div(parts), "📥", count=waiting, id=QUEUE_BLOCK_ID)
+
+
+def also_title(card) -> str:
+    return f"Also add {card.path} to {card.capability}?"
+
+
+def _also_cards(cards, disabled: bool) -> list:
+    """Fix G6 M4: one small card per program the AI thinks belongs in a second capability."""
+    return [
+        dmc.Paper(
+            dmc.Group(
+                [
+                    dmc.Text(also_title(c), size="sm", fw=600),
+                    dmc.Text(c.summary, size="xs", c=da_styles.MUTED),
+                    dmc.Button("Add", id=queue_button_id(Q_ALSO_ADD, c.path, c.capability),
+                               size="compact-xs", disabled=disabled),
+                    dmc.Button("Reject", id=queue_button_id(Q_ALSO_REJECT, c.path),
+                               size="compact-xs", variant="default", disabled=disabled),
+                ],
+                gap="xs",
+            ),
+            withBorder=True, p="xs", mb="xs",
+        )
+        for c in cards
+    ]
 
 
 def review_items(queue: dict, capability_names: list[str], disabled: bool, rf, selected: list):

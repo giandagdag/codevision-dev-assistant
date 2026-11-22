@@ -114,10 +114,16 @@ def read_reply(text: str, capabilities: list[Capability]) -> tuple[dict | None, 
         return None, BAD_CONFIDENCE
     checked = {"summary": _cut(summary, SUMMARY_MAX), "capability": capability,
                "confidence": confidence, "reason": _cut(str(reason or ""), REASON_MAX),
-               "new_name": "", "new_description": ""}
+               "new_name": "", "new_description": "", "also": _exact_also(data, capabilities)}
     if capability == NEW:
         return _checked_new(checked, data, capabilities)
     return checked, ""
+
+
+def _exact_also(data: dict, capabilities: list[Capability]) -> str:
+    """Fix G6 M4: the optional `also` is one catalog name (any case); anything else is dropped."""
+    wanted = name_key(str(data.get("also") or ""))
+    return next((c.name for c in capabilities if wanted and name_key(c.name) == wanted), "")
 
 
 def clean_name(name: str) -> str:
@@ -327,6 +333,7 @@ def _tag_one(
         "summary": checked["summary"],
         "proposed_capability": proposed,
         **(suggestion if new_name else {}),
+        **({"also": checked["also"]} if checked["also"] not in ("", checked["capability"]) else {}),
         "confidence": checked["confidence"],
         "reason": checked["reason"],
         "state": STATE_MATCHED if matched else STATE_PROPOSED,

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from agents.da_admin_catalog import ResolveResult, _add_pattern, pattern_offer
 from agents.da_admin_forms import RESULT_SAVED
+from agents.da_admin_modules import modules_by_capability
 from agents.da_admin_tag_store import read_store, save_store
 from agents.da_admin_tagger import (
     STATE_APPROVED,
@@ -54,6 +55,61 @@ def ai_cards(directory: Path | None = None) -> list[AiCard]:
         and e.get("state") in (STATE_PROPOSED, STATE_UNREADABLE)
         and not e.get("new_name")
     ]
+
+
+@dataclass(frozen=True)
+class AlsoCard:
+    """Fix G6 M4: "Also add <path> to <capability>?" Its own card; Approve all never takes it."""
+
+    path: str
+    capability: str
+    summary: str
+
+
+def also_cards(directory: Path | None = None) -> list[AlsoCard]:
+    modules = read_store(directory)["modules"]
+    return [
+        AlsoCard(path, e["also"], str(e.get("summary", "")))
+        for path, e in sorted(modules.items())
+        if isinstance(e, dict) and e.get("also")
+    ]
+
+
+def _clear_also(path: str, directory: Path | None) -> None:
+    store = read_store(directory)
+    store["modules"].get(path, {}).pop("also", None)
+    save_store(store, directory)
+
+
+def approve_also(
+    settings, path: str, capability: str, admin_id: str, base_version: int | None = None,
+    directory: Path | None = None,
+) -> ResolveResult:
+    """Add: one exact pattern on the other capability; the main one keeps the module."""
+    active = get_active_version(settings.db_path)
+    held = [c for c in active.rulebook.policy.capabilities if c.name == capability]
+    if not held:
+        missing = f"Capability '{capability}' is not in the catalog."
+        return ResolveResult("refused", problems=[missing])
+    if modules_by_capability(held, [path])[capability]:  # already matched there, nothing to add
+        _clear_also(path, directory)
+        return ResolveResult("resolved")
+    note = f"AI scan: also add {path} to {capability}"
+    saved = _add_pattern(
+        settings, active.rulebook.policy, [(path, capability)],
+        base_version or active.version_number, admin_id, note,
+    )
+    if saved.kind != RESULT_SAVED:
+        return ResolveResult(
+            "refused", message=saved.message, problems=saved.problems or [saved.message],
+            stale=saved.kind == "stale",
+        )
+    _clear_also(path, directory)
+    return ResolveResult("resolved", new_version=saved.version_number)
+
+
+def reject_also(path: str, directory: Path | None = None) -> None:
+    _clear_also(path, directory)
 
 
 def high_confidence(directory: Path | None = None) -> list[AiCard]:

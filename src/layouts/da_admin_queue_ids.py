@@ -20,6 +20,7 @@ Q_SG_OPEN, Q_SG_SAVE = "sg_open", "sg_save"  # Fix G4 S4: Create and assign (dia
 Q_SG_ASSIGN, Q_SG_REJECT, Q_SG_REMOVE = "sg_assign", "sg_reject", "sg_remove"
 Q_RECHECK = "recheck"  # S6: send the "No capability fits" programs to the AI again
 Q_SUGGEST = "suggest_catalog"  # Fix G6 S4: Suggest capabilities from the code
+Q_ALSO_ADD, Q_ALSO_REJECT = "also_add", "also_reject"  # Fix G6 M4: the "Also add ... ?" card
 Q_SHOW_RESOLVED ="show_resolved"
 Q_HIDE_RESOLVED = "hide_resolved"
 # Fix G4 L10: select several at once. The id's `state` says which bulk action.

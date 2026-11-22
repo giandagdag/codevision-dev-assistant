@@ -74,10 +74,13 @@ from agents.da_admin_suggestions import (
 )
 from agents.da_admin_tag_cards import (
     ai_cards,
+    also_cards,
     approve_all_high,
+    approve_also,
     approve_card,
     approve_pairs,
     high_confidence_counts,
+    reject_also,
     reject_card,
     reject_cards,
 )
@@ -131,6 +134,8 @@ from layouts.da_admin_catalog_tab import (
     Q_AI_ASSIGN,
     Q_AI_REJECT,
     Q_AI_RETRY,
+    Q_ALSO_ADD,
+    Q_ALSO_REJECT,
     Q_RECHECK,
     Q_SG_ASSIGN,
     Q_SG_OPEN,
@@ -558,6 +563,7 @@ def queue_data(
         "notice": notice or [],
         "review": review,
         "ai_cards": cards,
+        "also_cards": also_cards(),
         "ai_confirm": confirm if ai_confirm else None,
         "suggestions": waiting,
         "suggest_dialog": suggest_dialog,
@@ -742,6 +748,12 @@ def _run_queue_action(settings, action, picks, notes, base_version, review):
         return _bulk_action(settings, name, action, picks, base_version, review)
     if name in (Q_AI_APPROVE, Q_AI_ASSIGN, Q_AI_REJECT, Q_AI_RETRY, Q_AI_ALL, Q_AI_ALL_DO):
         return _ai_action(settings, name, uid, picks, base_version, action["cap"])
+    if name == Q_ALSO_REJECT:
+        reject_also(uid)
+        return _queue_tab(settings, notice=[message_notice("Rejected.", color="green")])
+    if name == Q_ALSO_ADD:
+        result = approve_also(settings, uid, action["cap"], settings.developer_id, base_version)
+        return _ai_result(settings, result)
     if name in (Q_SG_OPEN, Q_SG_SAVE, Q_SG_ASSIGN, Q_SG_REJECT, Q_SG_REMOVE):
         return _suggest_action(settings, name, uid, picks, notes, base_version)
     if name == Q_SUGGEST:
