@@ -12,7 +12,12 @@ from pathlib import Path
 from agents.da_admin_catalog import ResolveResult, _add_pattern, pattern_offer
 from agents.da_admin_forms import RESULT_SAVED
 from agents.da_admin_tag_store import read_store, save_store
-from agents.da_admin_tagger import STATE_APPROVED, STATE_PROPOSED, STATE_REJECTED
+from agents.da_admin_tagger import (
+    STATE_APPROVED,
+    STATE_PROPOSED,
+    STATE_REJECTED,
+    STATE_UNREADABLE,
+)
 from agents.da_code_clusters import remember_reject
 from agents.da_tag_versions import list_versions, save_version
 from db_table_functions.db_tbl_da_rulebook import get_active_version
@@ -28,6 +33,7 @@ class AiCard:
     summary: str
     reason: str
     tagged_at: str = ""  # for "Newest first"
+    unreadable: bool = False  # Fix G5 R5: "AI could not read this program"; `reason` is the word
 
 
 def ai_cards(directory: Path | None = None) -> list[AiCard]:
@@ -41,9 +47,12 @@ def ai_cards(directory: Path | None = None) -> list[AiCard]:
             str(e.get("summary", "")),
             str(e.get("reason", "")),
             str(e.get("tagged_at", "")),
+            e.get("state") == STATE_UNREADABLE,
         )
         for path, e in sorted(modules.items())
-        if isinstance(e, dict) and e.get("state") == STATE_PROPOSED and not e.get("new_name")
+        if isinstance(e, dict)
+        and e.get("state") in (STATE_PROPOSED, STATE_UNREADABLE)
+        and not e.get("new_name")
     ]
 
 

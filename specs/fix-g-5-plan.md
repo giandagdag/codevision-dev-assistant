@@ -76,10 +76,17 @@ Branch `phase-g-fix-5` from `origin/auto/phases-7-10`; PR into it (`--body-file`
 4. **P4 Admin side** (G5-1 Inbox part, G5-5): Overview "Needs attention" line (the "Admin Inbox
    item"; Gian to confirm in the PR), stopped-request panel, Release (note required, writes
    `safety_released`, moves back to the stored status and step), Keep stopped; all audited.
+   BUILT (step 4): `da_safety_release.py`, line and panel in Admin Overview, tests in
+   `test_da_safety_release.py`.
 5. **P5, P6** (G5-3): destructive flag, four-item check as open decisions, zone in both seeds, senior
    required reviewer, fake scripts for the three cases.
+   BUILT. The zone is in `da_rulebook_seed.json` and in `_default_zones` (the work seed has no
+   policy block, so it takes the defaults). Gaps go to a senior as open items (`da_destructive.py`).
 6. **Part 2 R2 to R5, R10** (G5-6 to G5-8): tagger accepts and cleans, reasons, one retry, no
    `MAX_SKIPPED_SHARE`, `unreadable` entries and cards.
+   BUILT. Left for step 7: the card buttons "Try again" and the amber run-row colour (the text
+   "Tags: N of M tagged, K could not be read" is already in the run row message). A new capability
+   name that looks like a path (`/`, `\`, `.`, `:`) is still refused (`bad_new_name`).
 7. **R6 to R9** (G5-9, G5-10): run rows, Try the tagger, re-check, env docs and start log.
 8. **Part 3 N1 to N4** (G5-11, G5-12): job watcher, version store, progress bar, disabled buttons.
 9. **N5, N6** (G5-13, G5-14): tab address, request page header per entry path.
