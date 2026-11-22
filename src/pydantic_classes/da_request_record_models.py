@@ -171,6 +171,9 @@ class RequestRecord(_Shape):
     capability_confirmed: bool = True
     named_senior: str = ""
     freshness: RecordFreshness = Field(default_factory=RecordFreshness)
+    # Fix G5 P5: the safety check found destructive data work. Set by the app only; it adds the
+    # "Destructive data change" review zone to the plan (a senior becomes a required reviewer).
+    destructive: bool = False
 
 
 class Ambiguity(_Shape):

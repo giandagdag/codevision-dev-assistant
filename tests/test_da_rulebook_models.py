@@ -17,6 +17,9 @@ from pydantic_classes.da_rulebook_models import (
     without_retired_fields,
 )
 
+# Fix G5 P5 added the third zone to both seeds and to the defaults.
+ZONE_NAMES = ["Security", "Login", "Destructive data change"]
+
 
 def with_policy(rulebook: Rulebook, **changes) -> Rulebook:
     return rulebook.model_copy(update={"policy": rulebook.policy.model_copy(update=changes)})
@@ -60,7 +63,7 @@ def test_seed_rulebook_has_the_contents_the_spec_asks_for(seed_rulebook):
 
     assert kinds.count("judgement") == 5
     assert kinds.count("ui_convention") == 2
-    assert [zone.name for zone in policy.flag_review_zones] == ["Security", "Login"]
+    assert [zone.name for zone in policy.flag_review_zones] == ZONE_NAMES
     # 11-27: no retired field; five triggers, all on; the new fields hold their defaults.
     assert policy.default_level is None
     assert policy.max_level is None
@@ -231,7 +234,7 @@ def test_old_shape_gets_the_phase_4_to_9_defaults():
     assert policy.build_max_rounds == 3
     assert policy.max_files == 5
     assert policy.capabilities == []
-    assert [zone.name for zone in policy.flag_review_zones] == ["Security", "Login"]
+    assert [zone.name for zone in policy.flag_review_zones] == ZONE_NAMES
     assert find_rulebook_problems(old_shape_rulebook()) == []
 
 
@@ -324,7 +327,7 @@ def test_seed_has_the_phase_4_policy_values(seed_rulebook):
     assert "src/web/web_server.py" in policy.protected_files
     assert "openpyxl" in policy.approved_libraries
     assert (policy.max_files, policy.max_design_choices) == (5, 3)
-    assert [zone.name for zone in policy.flag_review_zones] == ["Security", "Login"]
+    assert [zone.name for zone in policy.flag_review_zones] == ZONE_NAMES
 
 
 def test_seed_has_the_phase_5_policy_values(seed_rulebook):

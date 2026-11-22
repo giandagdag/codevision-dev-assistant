@@ -271,6 +271,15 @@ def test_4_10_a_login_file_touches_the_login_zone(policy, discovery):
     )
 
 
+def test_g5_a_destructive_request_touches_the_destructive_zone_once(policy, discovery):
+    plan = reply(files=[file_entry("src/layouts/login_page.py")])
+
+    _, zones = compute_warnings(plan, policy, discovery, destructive=True)
+
+    assert zones == ["Login", "Destructive data change"]
+    assert compute_warnings(plan, policy, discovery)[1] == ["Login"]
+
+
 def test_4_11_needs_people_is_a_warning(policy, discovery):
     plan = reply(needs_people=[{"path": "src/web/web_server.py", "reason": "Add a route"}])
 

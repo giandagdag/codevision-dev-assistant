@@ -19,6 +19,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from agents.da_destructive import pending_for
 from agents.da_enhance_checks import (
     available_symbols,
     number_keep_items,
@@ -31,6 +32,8 @@ from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import get_help, out_of_scope_understand
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_safety_check import (
+    DECISION_GO,
+    DECISION_P5,
     DECISION_STOP,
     EVENT_RELEASED,
     EVENT_STOP,
@@ -371,7 +374,8 @@ def submit_form(
     # The interpreter sees the opening statement AND the answers together (U3).
     prompt_text = f"{OPENING_LABEL}\n{_opening_statement(settings, request_id)}\n\n{text}"
     # Fix G5 P2: the safety check runs before any criteria are written (no lock held here).
-    if _stopped_by_safety(settings, session, prompt_text, text, base_revision, now):
+    safety = _stopped_by_safety(settings, session, prompt_text, text, base_revision, now)
+    if safety == DECISION_STOP:
         return get_understand_view(settings, request_id)
     result = _interpret(settings, session, FORM_STEP, FORM_QUESTION, prompt_text, client)
     if not result.ok:
@@ -390,6 +394,8 @@ def submit_form(
         turn.say("developer", text)
         turn.audit("developer", "form_submitted", {"optional_used": bool(answers[-1])})
         _apply_result(turn, result, answered=tuple(number for number, _ in FORM_BOXES))
+        if safety == DECISION_P5:
+            _require_destructive_items(turn)
         if boxes != FORM_BOXES:
             _apply_enhance_boxes(turn, answers[0], keep_items)
         turn.session.optional_done = True
@@ -407,17 +413,19 @@ def _stopped_by_safety(
     form_text: str,
     base_revision: int,
     now: datetime,
-) -> bool:
-    """Run the word check and the AI check. On a stop, save the chat line, the audit event and
-    the STOPPED status, and return True. A request Admin has released is not checked again."""
+) -> str:
+    """Run the word check and the AI check and return the decision (stop, needs_p5 or go). On a
+    stop, save the chat line, the audit event and the STOPPED status first. A request Admin has
+    released is not checked again."""
     request_id = session.request_id
     events = list_audit_events(settings.db_path, request_id)
     if any(event.event_type == EVENT_RELEASED for event in events):
-        return False
+        return DECISION_GO
     gate = safety_scan(checked_text)
     verdict = check_request(settings, checked_text)
-    if decide(gate, verdict) != DECISION_STOP:
-        return False
+    decision = decide(gate, verdict)
+    if decision != DECISION_STOP:
+        return decision
     with _turn(settings.db_path, request_id, base_revision, now) as turn:
         previous = {"previous_status": turn.request.status, "previous_step": turn.session.step}
         turn.say("developer", form_text)
@@ -437,7 +445,25 @@ def _stopped_by_safety(
         )
         turn.move_to(STATUS_STOPPED)
         turn.session.step = "stopped"
-    return True
+    return DECISION_STOP
+
+
+def _require_destructive_items(turn: _Turn) -> None:
+    """P5: mark the record destructive (the review zone follows) and send every missing item to a
+    senior as an open decision. Nothing is assumed."""
+    session = turn.session
+    record = session.record.model_copy(update={"destructive": True})
+    asked = [pending.question for pending in session.aside_decisions]
+    open_items = list(record.open_items)
+    for pending in pending_for(record):
+        if pending.question in asked:
+            continue
+        open_items.append(SENIOR_PREFIX + pending.question)
+        session.aside_decisions.append(pending)
+        session.needs_senior = True
+    session.record = record.model_copy(update={"open_items": open_items})
+    added = len(open_items) - len(record.open_items)
+    turn.audit("system", "safety_destructive", {"missing": added})
 
 
 def _opening_statement(settings: Settings, request_id: str) -> str:

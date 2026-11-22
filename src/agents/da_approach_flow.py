@@ -1109,7 +1109,9 @@ def _new_version(
 ) -> ApproachVersion:
     # Phase 8 passes "revision" or "refine"; the calls of Phase 4 keep their own names.
     source = source or {PROPOSE: "proposal", SETTLE: "settled", CHANGE: "change"}[call]
-    warnings, zones = compute_warnings(result.reply, pinned.rulebook.policy, snap.discovery)
+    warnings, zones = compute_warnings(
+        result.reply, pinned.rulebook.policy, snap.discovery, snap.record.destructive
+    )
     return ApproachVersion(
         request_id=snap.request.request_id,
         approach_version=number,

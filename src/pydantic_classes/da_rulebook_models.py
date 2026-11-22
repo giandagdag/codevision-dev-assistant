@@ -263,7 +263,19 @@ def _default_zones() -> list[FlagReviewZone]:
             examples=["Login page", "Session timeout handling"],
             path_patterns=["*login*", "*session*", "*password*"],
         ),
+        _destructive_zone(),
     ]
+
+
+def _destructive_zone() -> FlagReviewZone:
+    """Fix G5 P5. Set by the app when the safety check finds destructive data work, so the
+    pattern is a placeholder that no real path matches (path_patterns needs one)."""
+    return FlagReviewZone(
+        name="Destructive data change",
+        description="Removing or overwriting data: a senior must review the pull request.",
+        examples=["Deleting two old work tables after a backup"],
+        path_patterns=["*<destructive-data-change>*"],
+    )
 
 
 class EscalationTrigger(_RulebookPart):
