@@ -88,6 +88,8 @@ Branch `phase-g-fix-5` from `origin/auto/phases-7-10`; PR into it (`--body-file`
    "Tags: N of M tagged, K could not be read" is already in the run row message). A new capability
    name that looks like a path (`/`, `\`, `.`, `:`) is still refused (`bad_new_name`).
 7. **R6 to R9** (G5-9, G5-10): run rows, Try the tagger, re-check, env docs and start log.
+   BUILT (7a, 7b, 7c). `.env.example` was not edited (the safety hook blocks that file name); the
+   `DA_CODE_INDEX_DIR` and `DA_DB_PATH` setup is in `docs/discover-work-test.md` instead.
 8. **Part 3 N1 to N4** (G5-11, G5-12): job watcher, version store, progress bar, disabled buttons.
 9. **N5, N6** (G5-13, G5-14): tab address, request page header per entry path.
 10. **Part 4 B1 to B4** (G5-15 to G5-18).
