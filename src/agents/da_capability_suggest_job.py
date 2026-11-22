@@ -82,8 +82,9 @@ def _run(policy, settings, started_by, started, directory, client) -> None:
         def say(step: str) -> None:
             job.set_step_name(out, step, STEPS.index(step) + 1)
 
+        exclusions = [e.pattern for e in policy.index_exclusions]
         named = suggest(
-            graph, _summaries(out), client or _pick(settings, policy), known, say
+            graph, _summaries(out), client or _pick(settings, policy), known, say, exclusions
         )
         save_suggestions(named, out)
         job.set_end_line(out, f"{len(named)} capability suggestions from code links. Review them.")

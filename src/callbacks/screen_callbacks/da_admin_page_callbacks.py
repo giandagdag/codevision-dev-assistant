@@ -128,6 +128,7 @@ from layouts.da_admin_catalog_panels import (
     modules_table,
 )
 from layouts.da_admin_catalog_tab import (
+    LINKS_KEY,
     Q_AI_ALL,
     Q_AI_ALL_DO,
     Q_AI_APPROVE,
@@ -572,20 +573,25 @@ def queue_data(
 
 
 def _suggest_action(
-    settings: Settings, name: str, key: str, picks: dict, notes: dict, base_version: int | None
+    settings: Settings, name: str, key: str, picks: dict, notes: dict, base_version: int | None,
+    state: str = "",
 ):
     """Create and assign, Assign to, Reject and Remove on a new-capability suggestion card (S4)."""
     admin = settings.developer_id
     links = {s.name: s for s in group_suggestions()}  # Fix G6: "Suggested from code links" cards
-    if name == Q_SG_REMOVE:  # `key` is the program's path
+    if name == Q_SG_REMOVE:  # `key` is the program's path; state says which kind of card
         owner = next((n for n, s in links.items() if key in s.modules), None)
-        if owner:
+        if state == LINKS_KEY and owner:
             remove_program(owner, key)
         else:
             remove_from_suggestion(key)
         done = message_notice("Removed from the suggestion.", color="green")
         return _queue_tab(settings, notice=[done])
-    current = links.get(key) or next((s for s in suggestions() if s.name == key), None)
+    # a "links:" key is a code-links card; any other key is a tagger card (same names can occur)
+    if key.startswith(LINKS_KEY):
+        current = links.get(key.removeprefix(LINKS_KEY))
+    else:
+        current = next((s for s in suggestions() if s.name == key), None)
     if current is None:
         gone = message_notice("That suggestion is not open any more.")
         return _queue_tab(settings, notice=[gone])
@@ -594,7 +600,7 @@ def _suggest_action(
         return _queue_tab(settings, suggest_dialog=key)
     if name == Q_SG_REJECT:
         if current.from_links:
-            reject_group_card(key)
+            reject_group_card(current.name)
         else:
             reject_suggestion(paths, admin)
         return _queue_tab(settings, notice=[message_notice("Rejected.", color="green")])
@@ -603,15 +609,15 @@ def _suggest_action(
         if not target:
             return _queue_tab(settings, notice=[message_notice("Choose a capability first.")])
         if current.from_links:
-            result = assign_card(settings, key, target, admin, base_version)
+            result = assign_card(settings, current.name, target, admin, base_version)
         else:
             result = assign_suggestion(settings, target, paths, admin, base_version)
     else:  # Q_SG_SAVE
         text = {f: notes.get(f"{key}|{f}", "") for f in ("name", "desc", "named", "backup")}
         if current.from_links:
             result = create_card(
-                settings, text["name"], text["desc"], text["named"], text["backup"], admin, key,
-                base_version,
+                settings, text["name"], text["desc"], text["named"], text["backup"], admin,
+                current.name, base_version,
             )
         else:
             result = create_and_assign(
@@ -755,7 +761,7 @@ def _run_queue_action(settings, action, picks, notes, base_version, review):
         result = approve_also(settings, uid, action["cap"], settings.developer_id, base_version)
         return _ai_result(settings, result)
     if name in (Q_SG_OPEN, Q_SG_SAVE, Q_SG_ASSIGN, Q_SG_REJECT, Q_SG_REMOVE):
-        return _suggest_action(settings, name, uid, picks, notes, base_version)
+        return _suggest_action(settings, name, uid, picks, notes, base_version, action["state"])
     if name == Q_SUGGEST:
         policy = get_active_version(settings.db_path).rulebook.policy
         started, text = start_suggest(policy, settings, settings.developer_id)

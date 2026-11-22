@@ -74,9 +74,12 @@ def read_group_reply(text: str, programs: tuple[str, ...]) -> dict | None:
             "not_in_group": left_out, "confidence": confidence}  # fmt: skip
 
 
-def name_group(group: Group, summaries: dict[str, str], client) -> NamedGroup | None:
-    """One AI call for one group, one retry when the reply cannot be read. None = could not name."""
-    sendable = [p for p in group.programs if is_sendable(p, [])]
+def name_group(
+    group: Group, summaries: dict[str, str], client, exclusions: list[str] | None = None
+) -> NamedGroup | None:
+    """One AI call for one group, one retry when the reply cannot be read. None = could not name.
+    `exclusions` are the Admin's index exclusions: those paths never go to the AI (AG-10)."""
+    sendable = [p for p in group.programs if is_sendable(p, exclusions or [])]
     if not sendable:
         return None
     prompt = build_group_prompt(sendable, summaries)
@@ -198,14 +201,17 @@ def mark_existing(named: list[NamedGroup], known: list[str]) -> list[NamedGroup]
     return [replace(g, existing=by_key.get(name_key(g.name), g.existing)) for g in named]
 
 
-def suggest(graph: dict, summaries: dict[str, str], client, known: list[str], progress=None):
+def suggest(
+    graph: dict, summaries: dict[str, str], client, known: list[str], progress=None,
+    exclusions: list[str] | None = None,
+):
     """The whole job: groups, names, merges. `progress(step_name)` is called as each step starts."""
     say = progress or (lambda _step: None)
     weights = path_weights(graph)
     say(STEP_GROUPING)
     found = groups(graph)
     say(STEP_NAMING)
-    named = [n for n in (name_group(g, summaries, client) for g in found) if n]
+    named = [n for n in (name_group(g, summaries, client, exclusions) for g in found) if n]
     say(STEP_MERGING)
     named = merge_same_names(named, weights)
     named = ai_merge(named, weights, client)

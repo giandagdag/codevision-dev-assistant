@@ -130,7 +130,7 @@ def modules_table(
     return html.Div([dmc.CheckboxGroup(table, id=MOD_PICKED_ID, value=keep), *empty])
 
 
-ALSO_ADD_LABEL = "Also add here (keep the other capability)"
+ALSO_ADD_LABEL = "Also add here"  # M3; the other button (add_label) is the "Move here" one
 
 
 def add_label(count: int, target: str) -> str:

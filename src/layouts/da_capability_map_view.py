@@ -60,7 +60,9 @@ LINK_HEADS = ["From", "To", "Calls", "Programs", "Also"]
 START_STATE = {"cap": "", "module": "", "focus": "", "tap": ["", 0]}
 FOUNDATION = "Shared foundation"
 DOUBLE_TAP_MS = 500  # two taps this close on one bubble count as a double click
-ADMIN_LINK = "/admin"  # the Review queue lives on the Admin page (cannot import its constant here)
+# the Review queue (Admin address of Fix G5 N5; cannot import its constant here)
+ADMIN_LINK = "/admin?tab=catalog&view=queue"
+CHIP_TYPE = "da-map-chip"
 
 FONT = da_styles.FONT
 LABEL_WIDTH = 90  # pixels; labels wrap here

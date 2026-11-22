@@ -483,7 +483,7 @@ def review_items(queue: dict, capability_names: list[str], disabled: bool, rf, s
         items.append(dmc.Text("From a request", size="xs", fw=600, c=da_styles.MUTED))
         items.extend(_queue_card(r, capability_names, disabled) for r in shown_rows)
     items.extend(
-        _suggestion_card(s, capability_names, disabled, s.name == open_name)
+        _suggestion_card(s, capability_names, disabled, card_key(s) == open_name)
         for s in shown_suggestions
     )
     if shown_cards:
@@ -694,6 +694,15 @@ def _ai_card(card, capability_names: list[str], disabled: bool, checked: bool = 
     )
 
 
+LINKS_KEY = "links:"
+
+
+def card_key(sug) -> str:
+    """The button key of a suggestion card. A "from code links" card gets a prefix so it never
+    shares an id with a tagger card of the same name or path (Fix G6 review)."""
+    return f"{LINKS_KEY}{sug.name}" if sug.from_links else sug.name
+
+
 def _suggestion_card(sug, capability_names: list[str], disabled: bool, dialog_open: bool):
     """S4: "New capability suggested: <name>" with its programs. Never created by itself."""
     chips = [
@@ -702,7 +711,9 @@ def _suggestion_card(sug, capability_names: list[str], disabled: bool, dialog_op
                 _chip(path, summary),
                 dmc.Button(
                     "Remove from this suggestion" if sug.from_links else "Remove",
-                    id=queue_button_id(Q_SG_REMOVE, path),
+                    id=queue_button_id(
+                        Q_SG_REMOVE, path, state=LINKS_KEY if sug.from_links else ""
+                    ),
                     size="compact-xs",
                     variant="subtle",
                     disabled=disabled,
@@ -712,7 +723,7 @@ def _suggestion_card(sug, capability_names: list[str], disabled: bool, dialog_op
         )
         for path, summary in sug.modules.items()
     ]
-    key = sug.name
+    key = card_key(sug)
     buttons = [
         dmc.Button(
             "Create and assign", id=queue_button_id(Q_SG_OPEN, key), size="xs", disabled=disabled
@@ -768,7 +779,7 @@ def _suggestion_dialog(sug):
             label=label,
             value=value,
             size="xs",
-            id={"type": QUEUE_NOTE_TYPE, "uid": f"{sug.name}|{name}"},
+            id={"type": QUEUE_NOTE_TYPE, "uid": f"{card_key(sug)}|{name}"},
         )
 
     return dmc.Alert(
@@ -781,7 +792,7 @@ def _suggestion_dialog(sug):
                 [
                     dmc.Button(
                         f"Save ({len(sug.modules)} programs)",
-                        id=queue_button_id(Q_SG_SAVE, sug.name),
+                        id=queue_button_id(Q_SG_SAVE, card_key(sug)),
                         size="xs",
                     ),
                     dmc.Button("Cancel", id=queue_button_id(Q_CANCEL), size="xs", variant="subtle"),
