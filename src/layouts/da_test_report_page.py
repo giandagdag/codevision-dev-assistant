@@ -10,6 +10,8 @@ from html import escape
 import dash_mantine_components as dmc
 from dash import dcc, html
 
+from agents.da_model_label import model_label
+
 REPORT_PREFIX = "/dev-assistant/report/"
 REPORT_SHELL_ID = "da-report-shell"
 REPORT_BODY_ID = "da-report-body"
@@ -97,7 +99,7 @@ def report_html(report: dict) -> str:
          f"{h['requirement_version']} / {h['approach_version']} / {h['test_set_version']}"),
         ("Build and round", f"{h['build_number']} / {h['round']}"),
         ("Time", h["time"]),
-        ("AI models", ", ".join(f"{k}: {v}" for k, v in h["models"].items()) or "-"),
+        ("AI models", ", ".join(f"{k}: {model_label(v)}" for k, v in h["models"].items()) or "-"),
         ("Ran", h["ran_where"]),
         ("Label", h["label"]),
         ("File fingerprints", "; ".join(f"{p} {f}" for p, f in h["fingerprints"].items()) or "-"),

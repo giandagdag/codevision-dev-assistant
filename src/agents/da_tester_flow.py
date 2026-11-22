@@ -162,7 +162,17 @@ def get_tester_view(settings, request_id: str) -> TesterView:
             who = tester.finding_actor(item.finding_id, review.review_number, actions)
             rows.append(FindingRow(finding=item, state=acted, reason=why, actor=who))
     finished = state.step in DONE_STEPS
+    open_must = [
+        r for r in rows if r.finding.severity == "must_fix" and r.state not in ("overruled",)
+    ]
+    names = [
+        f"Tester check {c.number}, {c.name}" for c in review.checks if c.state == "failed"
+    ]
+    reason = tester.reason_line(
+        label, len(open_must), names, rounds[-1].layer_b if rounds else None
+    )
     return TesterView(
+        reason=reason,
         review=review,
         label=label,
         rows=rows,

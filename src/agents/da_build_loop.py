@@ -69,6 +69,7 @@ from agents.da_load_errors import (
     load_failed_text,
     pause_text,
 )
+from agents.da_model_label import model_label
 from agents.da_refine_merge import his_lines, marker_text, plan_merge
 from agents.da_sandbox import run_tests
 from agents.da_sandbox_python import approved_not_installed, test_python
@@ -1560,7 +1561,7 @@ class _Run:
         tx.audit(
             "system",
             "tester_review_done",
-            {"round": saved.round, "review": saved.review_number, "model": saved.model}
+            {"round": saved.round, "review": saved.review_number, "model": model_label(saved.model)}
             | counts
             | {"zones": self.inp.approach.zones_touched},
         )

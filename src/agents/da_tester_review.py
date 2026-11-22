@@ -426,6 +426,26 @@ def repeated_must_fix(findings: list[Finding], earlier: list[Finding]) -> Findin
     return None
 
 
+def reason_line(
+    label: str, open_must: int, failed_checks: list[str], layer_b: LayerBResult | None
+) -> str:
+    """B3: one line for the red banner, from the result only ("" unless Not passing)."""
+    if label != LABEL_NOT_PASSING or layer_b is None:
+        return ""
+    total = len(layer_b.tests)
+    if layer_b.failed:
+        return f"{layer_b.failed} of {total} tests fail."
+    if layer_b.not_proven or not layer_b.ok:
+        return "The tests are not proven: not every test reported a result."
+    if open_must:
+        return (
+            f"All {total} tests passed, but {open_must} Must fix findings are still open: "
+            + ", ".join(failed_checks)
+            + "."
+        )
+    return ""
+
+
 def stop_text(item: Finding, record: RequestRecord) -> str:
     """B2: the line that replaces the next round. The buttons are the ones the Tests tab has."""
     ac = item.cites if item.cites.startswith("AC-") else ""

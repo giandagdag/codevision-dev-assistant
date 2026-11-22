@@ -8,6 +8,7 @@ beside them, and a line for your written answer.
 
 import dash_mantine_components as dmc
 
+from agents.da_model_label import model_label
 from pydantic_classes.da_tester_models import (
     ACCEPT_MAX_CHARS,
     ACCEPT_MIN_CHARS,
@@ -24,6 +25,7 @@ CHECKS_ID = "da-tester-checks"
 FINDINGS_ID = "da-tester-findings"
 DROPPED_ID = "da-tester-dropped"
 EARLIER_ID = "da-tester-earlier"
+REASON_ID = "da-tester-reason"
 
 REPORT_NOTE = "This report stays in the app. Nothing from it is written to your folder."
 FIX_IT_TEXT = "Fix it"
@@ -80,7 +82,7 @@ def tester_lines(view) -> list[str]:
         )
     ]
     if report.review.model:
-        lines.append(f"Tester model: {report.review.model}")
+        lines.append(f"Tester model: {model_label(report.review.model)}")
     return lines
 
 
@@ -90,12 +92,17 @@ def tester_report(report: TesterView | None, can_act: bool, can_fix: bool = Fals
     if report is None or report.review is None:
         return []
     review = report.review
+    banner = [
+        dmc.Text(report.label or "Tester review", fw=600, size="sm"),
+        dmc.Text(report.summary, size="sm"),
+    ]
+    if report.reason:  # G5 B3
+        banner.append(dmc.Text(report.reason, size="sm", id=REASON_ID))
+        if report.rows:
+            banner.append(dmc.Anchor("See the findings", href=f"#{FINDINGS_ID}", size="sm"))
     blocks: list = [
         dmc.Alert(
-            [
-                dmc.Text(report.label or "Tester review", fw=600, size="sm"),
-                dmc.Text(report.summary, size="sm"),
-            ],
+            banner,
             color=LABEL_COLOURS.get(report.label, "blue"),
             variant="light",
             id=REPORT_ID,
@@ -117,7 +124,7 @@ def tester_report(report: TesterView | None, can_act: bool, can_fix: bool = Fals
     blocks += _dropped(report)
     blocks.append(
         dmc.Text(
-            f"Reviewed by {review.model or 'the Tester'} in {review.calls} call(s).",
+            f"Reviewed by {model_label(review.model) or 'the Tester'} in {review.calls} call(s).",
             size="xs",
             c=da_styles.MUTED,
         )

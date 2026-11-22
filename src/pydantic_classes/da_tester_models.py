@@ -147,5 +147,6 @@ class TesterView(BaseModel):
     dropped: list[Finding] = Field(default_factory=list)
     earlier: list[ReviewRecord] = Field(default_factory=list)
     summary: str = ""
+    reason: str = ""  # G5 B3: why the label is Not passing, one line
     can_rerun: bool = False
     layer_c_ran: bool = False

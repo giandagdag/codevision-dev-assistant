@@ -109,6 +109,13 @@ Branch `phase-g-fix-5` from `origin/auto/phases-7-10`; PR into it (`--body-file`
    callback changes the tab on load. Needs a work check. Page opens the tab from the address; two
    browser callbacks keep address and tabs in step. The Map view has its own page, so it has no `view` key.
 10. **Part 4 B1 to B4** (G5-15 to G5-18).
+    BUILT. B1 prompt + guard (`required_by`, FYI "Required by AC-n" in the saved review). B2
+    `repeated_must_fix` + `stop_text`; the build ends Not passing with the B2 line and audit event
+    `tester_repeat_stop`; the Dispute, Change and Get help buttons are the ones the Tests tab and
+    Refine already have. B3 `reason_line` + link `#da-tester-findings`. B4 `model_label()` in
+    `da_model_label.py`: Tests tab, report page and the audit event. Admin shows model names only
+    as editable config fields, so they are left as typed. The fake provider's repeat Must fix
+    appears in round 3 (not 2), so the loop test checks the stop, not an earlier round.
 11. **B5** (G5-19): dispute in two steps.
 12. **Part 5 F1 to F4** (G5-20 to G5-22): PDF writer, layout, download.
 13. **Part 6 L1 to L4** (G5-23, G5-24): catalog look, Playwright measures, screenshots, G5-25 label scan.
