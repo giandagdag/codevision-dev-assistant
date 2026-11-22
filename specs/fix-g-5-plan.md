@@ -117,5 +117,11 @@ Branch `phase-g-fix-5` from `origin/auto/phases-7-10`; PR into it (`--body-file`
     as editable config fields, so they are left as typed. The fake provider's repeat Must fix
     appears in round 3 (not 2), so the loop test checks the stop, not an earlier round.
 11. **B5** (G5-19): dispute in two steps.
+    BUILT (11a, 11b, 11c). No new fields: the finding actions table is append-only, so Edit = a new
+    `disputed` action, Withdraw = `withdrawn`, Send = `dispute_sent` per finding plus one escalation
+    `Disputed Must fix: F-1, F-2`, senior Keep = `dispute_kept` (state `kept`). Accept dispute is the
+    old overrule (button renamed). Save/withdraw audit as `dispute_saved`/`dispute_withdrawn`;
+    `finding_disputed` is written only at Send so the health numbers stay right. Not done: a
+    Playwright check of the buttons; the full `pytest` run (targeted runs pass).
 12. **Part 5 F1 to F4** (G5-20 to G5-22): PDF writer, layout, download.
 13. **Part 6 L1 to L4** (G5-23, G5-24): catalog look, Playwright measures, screenshots, G5-25 label scan.
