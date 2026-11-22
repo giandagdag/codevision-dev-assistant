@@ -54,7 +54,6 @@ from layouts.da_inbox_page import (  # noqa: E402
     MENU_LINK_ID,
     inbox_shell,
 )
-from layouts.da_test_report_page import report_shell  # noqa: E402
 from styles import da_styles  # noqa: E402
 
 # Local only (rule R13): nobody else on the network can reach this server.
@@ -107,7 +106,6 @@ def create_app() -> Dash:
                         html.Div(layout(), id=DEV_WRAP_ID),
                         html.Div(id=ADMIN_CONTENT_ID),
                         inbox_shell(),
-                        report_shell(),
                         map_shell(),
                     ],
                     bg=da_styles.CANVAS,

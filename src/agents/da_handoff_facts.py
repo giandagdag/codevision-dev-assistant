@@ -7,7 +7,8 @@ is plain code so the definition of "hand-edited" (spec Words table) is tested wi
 import sqlite3
 
 from agents.da_build_checks import case_ids_from_method
-from agents.da_test_report import report_file_name, report_summary_line
+from agents.da_test_report import report_summary_line
+from agents.da_test_report_pdf import pdf_file_name
 from agents.da_tester_review import DROPPED_TEST_PREFIX
 from db_table_functions.db_tbl_da_approach import (
     read_approach_state,
@@ -85,7 +86,7 @@ def _with_report(conn, facts: SummaryFacts, request_id: str, build: int) -> Summ
         return facts
     line = report_summary_line(read_rounds(conn, request_id, build))
     return facts.model_copy(
-        update={"report_summary": line, "report_file": report_file_name(request_id, build)}
+        update={"report_summary": line, "report_file": pdf_file_name(request_id, build)}
     )
 
 

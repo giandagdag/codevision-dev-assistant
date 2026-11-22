@@ -75,6 +75,7 @@ from web import da_web_components as parts
 LOCATION_ID = "url"  # the page's dcc.Location; at work this is CodeVision's own (spec Q6)
 PAGE_CONTENT_ID = "da-page-content"
 REFRESH_ID = "da-refresh"
+REPORT_FILE_ID = "da-report-file"  # the dcc.Download of the Tests tab's PDF button
 STATE_ID = "da-workspace-state"
 TEXT_ID = "da-text"
 SEND_ID = "da-send"
@@ -192,6 +193,7 @@ def layout() -> list:
     return [
         dcc.Store(id=REFRESH_ID, data=0),
         dcc.Store(id=KEYS_ID),
+        dcc.Download(id=REPORT_FILE_ID),
         *workspace_hop_stores(),
         dmc.Box(id=PAGE_CONTENT_ID, style=da_styles.PAGE),
     ]

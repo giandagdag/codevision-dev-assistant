@@ -1,69 +1,38 @@
-"""Wires the test report page (Fix D1 spec E9): show it, print it, download it.
+"""The Download report (PDF) button of the Tests tab (Fix G5, F3).
 
-The report is read from saved results only (agents/da_test_report_view). A bad or unknown path
-shows a plain sentence, never a Dash error page.
+The report is read from saved results only (agents/da_test_report_view). The button id carries
+`<request id>/<build number>`; no new tab opens.
 """
 
-from dash import Input, Output, State, dcc
+from dash import ALL, Input, Output, ctx, dcc
+from dash.exceptions import PreventUpdate
 
-from agents.da_test_report import report_file_name
+from agents.da_test_report_pdf import pdf_file_name, report_pdf
 from agents.da_test_report_view import get_report
 from callbacks.screen_callbacks.da_developer_assistant_page_callbacks import get_settings
-from db_table_functions.da_db import DatabaseBusyError
-from layouts.da_test_report_page import (
-    NO_REPORT_TEXT,
-    REPORT_BODY_ID,
-    REPORT_DOWNLOAD_ID,
-    REPORT_FILE_ID,
-    REPORT_PRINT_ID,
-    REPORT_SHELL_ID,
-    parse_report_path,
-    report_document,
-    report_html,
-)
-
-LOCATION_ID = "url"
+from layouts.da_build_panel import REPORT_DOWNLOAD_TYPE
+from layouts.da_developer_assistant_page import REPORT_FILE_ID
 
 
-def report_text(settings, pathname: str | None) -> str:
-    """The html text for this path, or a sentence when there is no report."""
-    wanted = parse_report_path(pathname)
-    if wanted is None:
-        return ""
-    try:
-        report = get_report(settings, *wanted)
-    except DatabaseBusyError as error:
-        return str(error)
-    return report_html(report) if report else NO_REPORT_TEXT
+def pdf_download(settings, index: str):
+    """The dcc.Download data for one report, or None when there is no saved report."""
+    request_id, _, number = (index or "").rpartition("/")
+    if not request_id or not number.isdigit():
+        return None
+    report = get_report(settings, request_id, int(number))
+    if report is None:
+        return None
+    return dcc.send_bytes(report_pdf(report), pdf_file_name(request_id, int(number)))
 
 
 def register_da_test_report_page_callbacks(app) -> None:
     @app.callback(
-        Output(REPORT_SHELL_ID, "style"),
-        Output(REPORT_BODY_ID, "children"),
-        Input(LOCATION_ID, "pathname"),
-    )
-    def show_report(pathname):
-        if parse_report_path(pathname) is None:
-            return {"display": "none"}, ""
-        return {}, report_text(get_settings(), pathname)
-
-    @app.callback(
         Output(REPORT_FILE_ID, "data"),
-        Input(REPORT_DOWNLOAD_ID, "n_clicks"),
-        State(LOCATION_ID, "pathname"),
+        Input({"type": REPORT_DOWNLOAD_TYPE, "index": ALL}, "n_clicks"),
         prevent_initial_call=True,
     )
-    def download(_clicks, pathname):
-        wanted = parse_report_path(pathname)
-        report = get_report(get_settings(), *wanted) if wanted else None
-        if report is None:
-            return None
-        return dcc.send_string(report_document(report), report_file_name(*wanted))
-
-    app.clientside_callback(
-        "function(n){ if(n){ window.print(); } return window.dash_clientside.no_update; }",
-        Output(REPORT_SHELL_ID, "title"),  # never changes: the function only prints
-        Input(REPORT_PRINT_ID, "n_clicks"),
-        prevent_initial_call=True,
-    )
+    def download(_clicks):
+        trigger = ctx.triggered_id
+        if not isinstance(trigger, dict) or not ctx.triggered[0]["value"]:
+            raise PreventUpdate
+        return pdf_download(get_settings(), trigger["index"])

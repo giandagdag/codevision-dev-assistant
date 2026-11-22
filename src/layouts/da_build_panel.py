@@ -9,7 +9,7 @@ from dash import dcc, html
 
 from agents.da_check_words import CHECK_BOX_TITLE, CHECK_KIND
 from agents.da_load_errors import load_failed_text, reason_lines
-from layouts.da_test_report_page import NO_REPORT_TEXT, report_link
+from layouts.da_test_report_page import NO_REPORT_TEXT
 from layouts.da_tester_panel import layer_c_state, tester_lines, tester_report
 from pydantic_classes.da_build_models import (
     BuildView,
@@ -37,7 +37,7 @@ TESTS_LIST_ID = "da-tests-list"
 TESTS_CODE_ID = "da-tests-code"
 TESTS_VERSION_ID = "da-tests-version"
 REPORT_LINE_ID = "da-tests-report-line"
-REPORT_LINK_ID = "da-tests-report-link"
+REPORT_DOWNLOAD_TYPE = "da-tests-report-download"
 NO_REPORT_LINE = NO_REPORT_TEXT
 ADD_CASE_ID = "da-add-case"
 ADD_CASE_TYPE = "da-add-case-go"  # the button
@@ -429,9 +429,10 @@ def _report_block(view: BuildView):
         if not any(item.layer_b is not None for item in view.rounds):
             return None  # the tests have not run yet: nothing to report
         return dmc.Text(NO_REPORT_LINE, size="sm", c=da_styles.MUTED, id=REPORT_LINE_ID)
-    link = dcc.Link(
-        "Open report", href=report_link(view.state.request_id, view.state.build_number),
-        target="_blank", id=REPORT_LINK_ID,
+    index = f"{view.state.request_id}/{view.state.build_number}"
+    link = dmc.Button(
+        "Download report (PDF)", id={"type": REPORT_DOWNLOAD_TYPE, "index": index},
+        variant="light", size="xs",
     )  # fmt: skip
     return dmc.Group([dmc.Text(view.report_summary, size="sm", id=REPORT_LINE_ID), link], gap="sm")
 
