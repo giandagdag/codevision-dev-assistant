@@ -44,6 +44,7 @@ def _hit(hit: ModuleHit):
                         tt="none",
                     ),
                     dmc.Badge(hit.capability, variant="light", tt="none"),
+                    *[dmc.Badge(f"also {n}", variant="outline", tt="none") for n in hit.also],
                     dmc.Text("from summary" if hit.source == FROM_SUMMARY else "", size="xs",
                              c=da_styles.MUTED),  # fmt: skip
                 ],

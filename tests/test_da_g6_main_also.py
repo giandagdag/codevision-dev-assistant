@@ -30,3 +30,23 @@ def test_a_module_with_a_main_is_never_counted_unassigned():
     unassigned = [p for p in paths if capability_of(p, CATALOG) == UNASSIGNED]
 
     assert unassigned == ["zz/a.py"]
+
+
+def test_chip_shows_also_in_for_a_shared_module():
+    from agents.da_admin_modules import module_chips, modules_by_capability, share_counts
+
+    by_cap = modules_by_capability(CATALOG, [PATH])
+
+    labels, _ = module_chips([PATH], share_counts(by_cap), by_cap, "Markdown")
+
+    assert "Also in: Ingestion" in labels[0]
+
+
+def test_meaning_hit_carries_main_first_then_also():
+    from agents.da_admin_meaning import ModuleHit
+
+    main, also = capabilities_of(PATH, CATALOG)
+
+    hit = ModuleHit(PATH, (), main, "", "from code", 1.0, tuple(also))
+
+    assert (hit.capability, hit.also) == ("Markdown", ("Ingestion",))

@@ -60,12 +60,21 @@ def share_counts(by_capability: dict[str, list[str]]) -> dict[str, int]:
     return counts
 
 
-def module_chips(paths: list[str], counts: dict[str, int]) -> tuple[list[str], int]:
-    """(chip labels for the first 6, how many more). A shared path gets " ×2" (or ×3 ...)."""
-    labels = [
-        Path(p).name + (f" ×{counts[p]}" if counts.get(p, 1) > 1 else "")
-        for p in paths[:SHOWN_MODULES]
-    ]
+def module_chips(
+    paths: list[str],
+    counts: dict[str, int],
+    others: dict[str, list[str]] | None = None,
+    row: str = "",
+) -> tuple[list[str], int]:
+    """(chip labels for the first 6, how many more). A shared path gets " ×2" (or ×3 ...) and, when
+    `others` (capability -> its paths) is given, "Also in: <the other capabilities>" (fix G6 M2)."""
+
+    def label(p: str) -> str:
+        text = Path(p).name + (f" ×{counts[p]}" if counts.get(p, 1) > 1 else "")
+        also = [n for n, ps in (others or {}).items() if n != row and p in ps]
+        return text + (f" · Also in: {', '.join(also)}" if also else "")
+
+    labels = [label(p) for p in paths[:SHOWN_MODULES]]
     return labels, max(0, len(paths) - SHOWN_MODULES)
 
 

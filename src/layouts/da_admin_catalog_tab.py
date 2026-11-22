@@ -267,7 +267,7 @@ def catalog_list(capabilities, paths: list[str], search: str = "", missing_backu
             c.name, c.description, mine, search, (c.named_senior, c.backup_senior)
         ):
             continue
-        labels, more = module_chips(mine, counts)
+        labels, more = module_chips(mine, counts, by_capability, c.name)
         chips = [
             _chip(label, summaries.get(path, ""))
             for label, path in zip(labels, mine[:SHOWN_MODULES], strict=False)

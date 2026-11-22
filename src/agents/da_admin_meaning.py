@@ -38,6 +38,7 @@ class ModuleHit:
     summary: str
     source: str  # FROM_CODE or FROM_SUMMARY
     score: float
+    also: tuple[str, ...] = ()  # fix G6 M2: the other capabilities that claim it, after the main
 
 
 def capabilities_of(path: str, capabilities: list[Capability]) -> tuple[str, list[str]]:
@@ -87,17 +88,21 @@ def modules_by_meaning(
             best[path] = score
             from_summary.add(path)
     ranked = sorted(best, key=lambda p: (-best[p], p))[:MAX_MODULES]
-    return [
-        ModuleHit(
-            path,
-            tuple(symbols.get(path, ())[:MAX_SYMBOLS]),
-            capability_of(path, capabilities),
-            str(tags.get(path, {}).get("summary", "")),
-            FROM_SUMMARY if path in from_summary else FROM_CODE,
-            best[path],
+    hits = []
+    for path in ranked:
+        main, also = capabilities_of(path, capabilities)
+        hits.append(
+            ModuleHit(
+                path,
+                tuple(symbols.get(path, ())[:MAX_SYMBOLS]),
+                main,
+                str(tags.get(path, {}).get("summary", "")),
+                FROM_SUMMARY if path in from_summary else FROM_CODE,
+                best[path],
+                tuple(also),
+            )
         )
-        for path in ranked
-    ]
+    return hits
 
 
 def meaning_search(
