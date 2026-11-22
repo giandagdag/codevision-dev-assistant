@@ -56,9 +56,13 @@ def list_stopped(settings) -> list[StoppedRequest]:
         details = event.details if event else {}
         said = [m.text for m in list_messages(settings.db_path, request.request_id)
                 if m.speaker == "developer"]
-        reason = details.get("ai_reason") or ", ".join(details.get("words", []))
+        # The matched words always show, with the AI's reason beside them: Admin decides on both.
+        words = ", ".join(details.get("words", []))
+        reason = " - ".join(p for p in (details.get("ai_reason"), words and f"words: {words}") if p)
+        # The opening statement and the form answers: the whole request, not just the last part.
+        text = "\n\n".join(dict.fromkeys([said[0], said[-1]])) if said else ""
         stamp = event.timestamp if event else request.updated_at
-        rows.append(StoppedRequest(request.request_id, said[-1] if said else "", reason, stamp))
+        rows.append(StoppedRequest(request.request_id, text, reason, stamp))
     return rows
 
 

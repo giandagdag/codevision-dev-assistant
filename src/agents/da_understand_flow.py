@@ -32,7 +32,6 @@ from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import get_help, out_of_scope_understand
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_safety_check import (
-    DECISION_GO,
     DECISION_P5,
     DECISION_STOP,
     EVENT_RELEASED,

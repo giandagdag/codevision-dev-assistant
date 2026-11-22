@@ -115,7 +115,7 @@ def dispute_finding(
     with _report_turn(settings, request_id, base_revision, now) as (tx, review, actions):
         item = _finding(review, finding_id, "must_fix")
         held = tester.finding_state(item.finding_id, review.review_number, actions)[0]
-        if held in ("overruled", "sent"):
+        if held in ("overruled", "sent", "kept"):
             raise BuildError(f"{finding_id} is already {held.replace('sent', 'with a senior')}.")
         _record(tx, review, finding_id, "disputed", reason, actions)
         tx.audit("developer", "dispute_saved", {"finding": finding_id, "reason": reason})

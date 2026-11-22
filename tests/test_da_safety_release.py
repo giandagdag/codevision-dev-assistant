@@ -52,8 +52,8 @@ def test_a_stopped_request_is_listed_with_its_text_and_reason(settings, stopped)
     (row,) = list_stopped(settings)
 
     assert row.request_id == stopped
-    assert "delete all database tables" in row.text or "hate" in row.text
-    assert row.reason
+    assert "delete all database tables" in row.text and "hate" in row.text
+    assert "words:" in row.reason  # the matched words always show, even if the AI said ok
 
 
 def test_release_needs_a_note(settings, stopped):

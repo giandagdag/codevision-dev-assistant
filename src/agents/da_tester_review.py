@@ -262,7 +262,8 @@ def _line_with_quote(lines: list[str], line: int, quote: str, window: int) -> in
     return None
 
 
-_STRING_LITERAL = re.compile(r"""'([^'\\]{2,})'|"([^"\\]{2,})\"""")
+# 4 or more characters: a short word such as "id" or "admin" must not hide a real Must fix.
+_STRING_LITERAL = re.compile(r"""'([^'\\]{4,})'|"([^"\\]{4,})\"""")
 
 
 def required_by(line_text: str, record: RequestRecord) -> str:
@@ -271,7 +272,8 @@ def required_by(line_text: str, record: RequestRecord) -> str:
     for match in _STRING_LITERAL.finditer(line_text):
         literal = match.group(1) or match.group(2)
         for criterion in record.acceptance_criteria:
-            if literal in criterion.then:
+            # Whole words only: "valid" inside "invalid" does not count.
+            if re.search(rf"(?<!\w){re.escape(literal)}(?!\w)", criterion.then):
                 return criterion.id
     return ""
 

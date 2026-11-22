@@ -210,6 +210,20 @@ def test_split_findings_keeps_every_finding_with_its_reason(approach, seed_ruleb
     assert all(f.made_by == "tester" for f in result)
 
 
+def test_b1_short_words_and_parts_of_words_are_not_required_text():
+    from agents.da_tester_review import required_by
+
+    record = sample_record()
+    criterion = record.acceptance_criteria[0].model_copy(
+        update={"then": "The id sees the invalid file message"}
+    )
+    record = record.model_copy(update={"acceptance_criteria": [criterion]})
+
+    assert required_by('password = "id"', record) == ""  # too short
+    assert required_by('x = "valid"', record) == ""  # only part of "invalid"
+    assert required_by('x = "invalid"', record) == criterion.id
+
+
 def test_b1_required_text_becomes_fyi_required_by_ac(approach, seed_rulebook):
     record = sample_record()
     criterion = record.acceptance_criteria[0].model_copy(update={"then": 'It shows "Done now"'})
