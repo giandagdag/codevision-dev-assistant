@@ -51,6 +51,32 @@ def test_many_rows_make_pages_and_repeat_header():
     assert f"Page {pages} of {pages}".encode() in data
 
 
+def test_g5_21_column_positions_are_the_same_on_every_page():
+    """Read the cell rectangles (`x y w h re S`) from the drawing commands of each page."""
+    pdf = PdfReport("f")
+    pdf.table(COLS, [[f"T-{i}", "a long result " * 5] for i in range(40)])
+    pdf.to_bytes()
+    assert len(pdf.pages) > 1
+    seen = []
+    for page in pdf.pages:
+        cell = r"([\d.]+) [\d.]+ ([\d.]+) [\d.]+ re S"
+        rects = {m for line in page for m in re.findall(cell, line)}
+        assert rects
+        seen.append(rects)
+    assert all(columns == seen[0] for columns in seen)  # the same two columns on every page
+    assert len(seen[0]) == 2
+
+
+def test_g5_22_a_500_character_word_wraps_inside_its_cell():
+    pdf = PdfReport("f")
+    pdf.table(COLS, [["T-1", "x" * 500]])
+    cell = (PAGE_W - 2 * MARGIN) * 80 / 100
+    lines = [re.search(r"\((x+)\) Tj", line) for line in pdf.pages[0]]
+    runs = [m.group(1) for m in lines if m]
+    assert len(runs) > 1 and sum(map(len, runs)) == 500
+    assert all(text_width(r, "F1", 9) < cell for r in runs)
+
+
 def test_row_taller_than_page_is_split_without_losing_text():
     pdf = PdfReport("f")
     pdf.table(COLS, [["T-1", " ".join(f"w{i}" for i in range(3000))]])
