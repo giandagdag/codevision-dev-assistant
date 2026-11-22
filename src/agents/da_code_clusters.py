@@ -61,9 +61,8 @@ def _owner(target: str, modules: set[str]) -> str:
     return ""
 
 
-def clusters(graph: dict) -> list[list[str]]:
-    """Groups of 2 or more modules, each sorted; the list itself is sorted."""
-    weights = module_weights(graph)
+def _propagate(weights: dict[str, dict[str, int]]) -> list[list[str]]:
+    """Label propagation on the link weights: every linked module in some group (a loner alone)."""
     names = sorted(weights)
     label = {name: name for name in names}
     for _ in range(ROUNDS):
@@ -77,10 +76,68 @@ def clusters(graph: dict) -> list[list[str]]:
                 label[name], changed = best, True
         if not changed:
             break
-    groups: dict[str, list[str]] = defaultdict(list)
+    found: dict[str, list[str]] = defaultdict(list)
     for name in names:
-        groups[label[name]].append(name)
-    return sorted(g for g in groups.values() if len(g) > 1)
+        found[label[name]].append(name)
+    return list(found.values())
+
+
+def clusters(graph: dict) -> list[list[str]]:
+    """Groups of 2 or more modules, each sorted; the list itself is sorted."""
+    return sorted(g for g in _propagate(module_weights(graph)) if len(g) > 1)
+
+
+# --- Fix G6 S1: groups for a first catalog (no tagged-module rule, nothing is tagged) -------------
+
+MAX_GROUP = 25  # a bigger group is split once by top folder
+
+
+@dataclass(frozen=True)
+class Group:
+    programs: tuple[str, ...]  # file paths, sorted
+    folders: tuple[str, ...]  # top folders, most programs first
+    inside: int  # links between programs of this group
+    outside: int  # links from this group to other programs
+
+
+def groups(graph: dict) -> list[Group]:
+    """Groups of linked programs. A group of 1 joins the group it links to most; a program with no
+    links at all is left out (nothing to name it by). A group over 25 is split once by folder."""
+    weights = module_weights(graph)
+    path_of = {entry["module"]: path for path, entry in graph["files"].items()}
+    found = _propagate(weights)
+    home = {m: i for i, members in enumerate(found) for m in members}
+    for members in found:
+        if len(members) == 1:
+            own = home[members[0]]
+            ties = Counter({home[o]: w for o, w in weights[members[0]].items() if home[o] != own})
+            if ties:
+                best = min(ties, key=lambda i: (-ties[i], i))
+                home[members[0]] = best
+    merged: dict[int, list[str]] = defaultdict(list)
+    for module, index in sorted(home.items()):
+        merged[index].append(module)
+    pieces: list[list[str]] = []
+    for members in merged.values():
+        pieces += _split_by_folder(members, path_of) if len(members) > MAX_GROUP else [members]
+    where = {m: i for i, piece in enumerate(pieces) for m in piece}
+    out = []
+    for i, piece in enumerate(pieces):
+        inside = sum(w for m in piece for o, w in weights[m].items() if where[o] == i) // 2
+        outside = sum(w for m in piece for o, w in weights[m].items() if where[o] != i)
+        paths = tuple(sorted(path_of[m] for m in piece))
+        top = Counter(p.split("/")[0] if "/" in p else "" for p in paths)
+        folders = tuple(f for f, _ in sorted(top.items(), key=lambda kv: (-kv[1], kv[0])) if f)
+        out.append(Group(paths, folders, inside, outside))
+    return sorted(out, key=lambda g: g.programs)
+
+
+def _split_by_folder(members: list[str], path_of: dict[str, str]) -> list[list[str]]:
+    by_folder: dict[str, list[str]] = defaultdict(list)
+    for module in members:
+        path = path_of[module]
+        by_folder[path.split("/")[0] if "/" in path else ""].append(module)
+    return list(by_folder.values())
 
 
 def suggestions(graph: dict, store: dict, rejects: dict[str, str]) -> list[Suggestion]:
