@@ -196,6 +196,38 @@ def focus_panel(graph: dict | None, tags: dict, capability: str) -> dict:
     return panel
 
 
+def links_table(
+    graph: dict | None, tags: dict, also: dict[str, list[str]] | None = None,
+    capability: str = "", fewest_first: bool = False,
+) -> list[dict]:  # fmt: skip
+    """G6 C6: one row per capability pair "from calls to": calls, programs (distinct callers).
+    Strongest first (or weakest first). `capability` keeps rows with that name at either end.
+    A module's also-in capability gets a row marked `also` (no call count, it is a membership)."""
+    if _empty(graph):
+        return []
+    caps = _module_capabilities(graph, tags)
+    rows: dict[tuple[str, str], dict] = {}
+    for (a, b), count in _module_links(graph).items():
+        if caps[a] == caps[b]:
+            continue
+        row = rows.setdefault((caps[a], caps[b]), {"from": caps[a], "to": caps[b], "calls": 0,
+                                                   "programs": set(), "also": False})  # fmt: skip
+        row["calls"] += count
+        row["programs"].add(a)
+    for module, others in (also or {}).items():
+        for other in others:
+            main = caps.get(module, UNASSIGNED)
+            if main != other:
+                rows.setdefault((main, other), {"from": main, "to": other, "calls": 0,
+                                                "programs": set(), "also": True})  # fmt: skip
+                rows[(main, other)]["programs"].add(module)
+    out = [{**r, "programs": len(r["programs"])} for r in rows.values()]
+    if capability:
+        out = [r for r in out if capability in (r["from"], r["to"])]
+    sign = 1 if fewest_first else -1
+    return sorted(out, key=lambda r: (sign * r["calls"], r["from"], r["to"]))
+
+
 def capability_view(
     graph: dict | None, tags: dict, capability: str, highlight: str = ""
 ) -> MapView:

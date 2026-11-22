@@ -5,7 +5,7 @@ from dash import ALL, Input, Output, State, ctx
 
 from agents.da_admin_index import index_dir
 from agents.da_admin_tag_store import read_tags
-from agents.da_capability_map import focus_panel
+from agents.da_capability_map import focus_panel, links_table
 from agents.da_code_graph import load_graph
 from agents.da_code_impact_graph import with_catalog_tags
 from callbacks.screen_callbacks.da_developer_assistant_page_callbacks import get_settings
@@ -26,17 +26,25 @@ from layouts.da_capability_map_view import (
     MAP_OPEN_ID,
     MAP_PANEL_ID,
     MAP_PATH,
+    MAP_PICTURE_ID,
     MAP_SEARCH_ID,
     MAP_SHELL_ID,
     MAP_SHOW_UNASSIGNED_ID,
+    MAP_SORT_ID,
     MAP_STATE_ID,
+    MAP_TABLE_ID,
     MAP_TOP_ID,
     MAP_UNASSIGNED_ID,
+    MAP_VIEW_ID,
+    SORT_FEWEST,
     START_STATE,
+    VIEW_LINKS,
+    also_map,
     chip_text,
     clear_focus,
     filter_options,
     go_back,
+    links_table_view,
     open_focus,
     panel_lines,
     pick_view,
@@ -117,6 +125,11 @@ def register_da_capability_map_callbacks(app) -> None:
         Output(MAP_UNASSIGNED_ID, "children"),
         Output(MAP_CHIPS_ID, "children"),
         Output(MAP_PANEL_ID, "children"),
+        Output(MAP_PICTURE_ID, "style"),
+        Output(MAP_TABLE_ID, "style"),
+        Output(MAP_TABLE_ID, "children"),
+        Input(MAP_VIEW_ID, "value"),
+        Input(MAP_SORT_ID, "value"),
         Input(LOCATION_ID, "pathname"),
         Input(MAP_STATE_ID, "data"),
         Input(MAP_SEARCH_ID, "value"),
@@ -125,12 +138,18 @@ def register_da_capability_map_callbacks(app) -> None:
         Input(MAP_TOP_ID, "checked"),
         Input(MAP_MIN_CALLS_ID, "value"),
     )
-    def show_map(pathname, state, text, chosen, show_unassigned, top_only, min_calls):
+    def show_map(mode, sort, pathname, state, text, chosen, show_unassigned, top_only, min_calls):
         if pathname != MAP_PATH:
-            return {"display": "none"}, [], "", "", [], [], [], [], [], []
+            hidden = {"display": "none"}
+            return hidden, [], "", "", [], [], [], [], [], [], {}, hidden, []
         graph = load_graph(index_dir())
         capabilities = catalog_capabilities()
         tags = with_catalog_tags(graph, read_tags(), capabilities) if graph else {}
+        if mode == VIEW_LINKS:
+            rows = links_table(graph, tags, also_map(graph, capabilities), chosen or "",
+                               sort == SORT_FEWEST)
+            return ({}, [], "", "", [], [], filter_options(graph, tags), [], [], [],
+                    {"display": "none"}, {"padding": "16px"}, links_table_view(rows))  # fmt: skip
         state = state or START_STATE
         opts = {"show_unassigned": bool(show_unassigned), "top_only": bool(top_only),
                 "min_calls": int(min_calls or 1)}  # fmt: skip
@@ -144,4 +163,5 @@ def register_da_capability_map_callbacks(app) -> None:
         chips = [dmc.Badge(chip_text(c), variant="light", mr="xs") for c in view.chips]
         return ({}, elements, crumb, note, details, hit_buttons(graph, text or ""),
                 filter_options(graph, tags), header, chips,
-                [dmc.Text(line, size="sm") for line in panel])  # fmt: skip
+                [dmc.Text(line, size="sm") for line in panel],
+                {}, {"display": "none"}, [])  # fmt: skip

@@ -115,11 +115,21 @@ def test_module_label_is_the_short_name_and_a_click_shows_the_full_path():  # G2
     assert "File: src/agents/da_example_long_name.py" in lines
 
 
+def test_links_table_view_has_a_row_per_link_and_marks_also():  # G6-13
+    rows = [{"from": "A", "to": "B", "calls": 4, "programs": 2, "also": False},
+            {"from": "A", "to": "C", "calls": 0, "programs": 1, "also": True}]  # fmt: skip
+    table = view.links_table_view(rows).to_plotly_json()["props"]["children"]
+    body = table[1].to_plotly_json()["props"]["children"]
+    assert len(body) == 2
+    assert [c.children for c in body[1].children] == ["A", "C", 0, 1, "also"]
+
+
 def test_labels_wrap_and_the_layout_spaces_nodes_by_label_size():  # G2-4
     node_style = view.STYLESHEET[0]["style"]
     assert node_style["text-wrap"] == "wrap" and node_style["text-max-width"] == view.LABEL_WIDTH
-    children = map_shell().to_plotly_json()["props"]["children"]
-    layout = next(c for c in children if getattr(c, "id", "") == view.MAP_GRAPH_ID).layout
+    shell = map_shell().to_plotly_json()["props"]["children"]
+    picture = next(c for c in shell if getattr(c, "id", "") == view.MAP_PICTURE_ID)
+    layout = next(c for c in picture.children if getattr(c, "id", "") == view.MAP_GRAPH_ID).layout
     assert layout["nodeDimensionsIncludeLabels"] is True
     graph, tags = long_name_graph(40)
     state = {"cap": "Payments", "module": ""}

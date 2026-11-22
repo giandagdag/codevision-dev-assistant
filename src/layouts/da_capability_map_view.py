@@ -47,6 +47,13 @@ MAP_TOP_ID = "da-map-top"
 MAP_SHOW_UNASSIGNED_ID = "da-map-show-unassigned"
 MAP_CHIPS_ID = "da-map-chips"
 MAP_PANEL_ID = "da-map-panel"
+MAP_VIEW_ID = "da-map-view"
+MAP_PICTURE_ID = "da-map-picture"
+MAP_TABLE_ID = "da-map-table"
+MAP_SORT_ID = "da-map-sort"
+VIEW_MAP, VIEW_LINKS = "Map", "Links"
+SORT_MOST, SORT_FEWEST = "Most calls first", "Fewest calls first"
+LINK_HEADS = ["From", "To", "Calls", "Programs", "Also"]
 START_STATE = {"cap": "", "module": "", "focus": "", "tap": ["", 0]}
 FOUNDATION = "Shared foundation"
 DOUBLE_TAP_MS = 500  # two taps this close on one bubble count as a double click
@@ -126,15 +133,21 @@ def pick_view(
     return _short_labels(view, graph, state.get("module", ""))
 
 
-def _readable(graph, tags, state, highlight, capabilities, opts) -> MapView:
+def also_map(graph: dict | None, capabilities: list) -> dict[str, list[str]]:
+    """Module name -> the other capabilities it is also in (main one left out)."""
     from agents.da_admin_meaning import capabilities_of  # late: heavy module
 
-    foundations = frozenset(c.name for c in capabilities if c.kind == FOUNDATION)
     also = {}
     for path, entry in (graph or {}).get("files", {}).items():
         extra = capabilities_of(path, capabilities)[1]
         if extra:
             also[entry["module"]] = extra
+    return also
+
+
+def _readable(graph, tags, state, highlight, capabilities, opts) -> MapView:
+    foundations = frozenset(c.name for c in capabilities if c.kind == FOUNDATION)
+    also = also_map(graph, capabilities)
     view = readable_view(graph, tags, foundations, also, focus=state.get("focus", ""), **opts)
     if highlight:
         for node in view.nodes:
@@ -182,6 +195,17 @@ def panel_lines(name: str, panel: dict) -> list[str]:
     top = ", ".join(f"{p['module']} ({p['calls']})" for p in panel["top_programs"])
     lines.append("Top programs: " + (top or "none"))
     return lines
+
+
+def links_table_view(rows: list[dict]) -> dmc.Table:
+    """G6 C6: from, to, calls, programs; a row that is only an also-in membership says "also"."""
+    head = dmc.TableThead(dmc.TableTr([dmc.TableTh(h) for h in LINK_HEADS]))
+    body = dmc.TableTbody([
+        dmc.TableTr([dmc.TableTd(r["from"]), dmc.TableTd(r["to"]), dmc.TableTd(r["calls"]),
+                     dmc.TableTd(r["programs"]), dmc.TableTd("also" if r["also"] else "")])
+        for r in rows
+    ])  # fmt: skip
+    return dmc.Table([head, body], striped=True, withTableBorder=True)
 
 
 def chip_text(chip: dict) -> str:
@@ -280,13 +304,25 @@ def map_shell() -> html.Div:
          dmc.Button("Clear focus", id=MAP_CLEAR_ID, variant="subtle", size="xs")],
         px="md",
     )  # fmt: skip
-    return html.Div(
-        [bar, focus_bar, html.Div(id=MAP_UNASSIGNED_ID, style={"padding": "0 16px"}),
+    switch = dmc.Group(
+        [dmc.SegmentedControl(id=MAP_VIEW_ID, data=[VIEW_MAP, VIEW_LINKS], value=VIEW_MAP,
+                              size="xs"),
+         dmc.Select(id=MAP_SORT_ID, data=[SORT_MOST, SORT_FEWEST], value=SORT_MOST,
+                    allowDeselect=False, size="xs", w=180)],
+        px="md",
+    )  # fmt: skip
+    picture = html.Div(
+        [focus_bar, html.Div(id=MAP_UNASSIGNED_ID, style={"padding": "0 16px"}),
          html.Div(id=MAP_HITS_ID, style={"padding": "0 16px"}),
          dmc.Text(id=MAP_NOTE_ID, size="sm", c=da_styles.MUTED, px="md"),
          graph, html.Div(id=MAP_CHIPS_ID, style={"padding": "8px 16px"}),
          html.Div(id=MAP_PANEL_ID, style={"padding": "0 16px"}),
-         html.Div(id=MAP_DETAILS_ID, style={"padding": "16px"}),
+         html.Div(id=MAP_DETAILS_ID, style={"padding": "16px"})],
+        id=MAP_PICTURE_ID,
+    )  # fmt: skip
+    return html.Div(
+        [bar, switch, picture,
+         html.Div(id=MAP_TABLE_ID, style={"display": "none", "padding": "16px"}),
          dcc.Store(id=MAP_STATE_ID, data=START_STATE)],
         id=MAP_SHELL_ID, style={"display": "none"},
     )  # fmt: skip
