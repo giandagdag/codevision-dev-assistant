@@ -57,6 +57,11 @@ def index_dir() -> Path:
     return Path(os.environ.get("DA_CODE_INDEX_DIR") or DEFAULT_INDEX_DIR)
 
 
+def storage_line(db_path: Path) -> str:
+    """Fix G5 R9: where the index and the database live (paths only), for the start-up log."""
+    return f"Developer Assistant data: index folder {index_dir().resolve()}, database {db_path}"
+
+
 def read_health(directory: Path | None = None) -> IndexHealth:
     """Health from the piece list. Missing or unreadable files mean "not built yet"."""
     try:

@@ -22,6 +22,7 @@ from agents import da_safety_net_flow as net_flow
 from agents import da_safety_net_runner as net_runner
 from agents import da_tester_flow as tester_flow
 from agents import da_workspace_flow as workspace_flow
+from agents.da_admin_index import storage_line
 from agents.da_ai_lock import is_busy, locked_call
 from agents.da_discover_flow import (
     add_hint_and_search,
@@ -64,6 +65,7 @@ from callbacks.screen_callbacks.da_handoff_callbacks import register_da_handoff_
 from callbacks.screen_callbacks.da_refine_callbacks import register_da_refine_callbacks, run_refine
 from callbacks.screen_callbacks.da_workspace_callbacks import register_da_workspace_callbacks
 from configs.da_config import ConfigError, Settings, load_settings
+from da_logging import get_logger
 from db_table_functions.da_db import DatabaseBusyError
 from db_table_functions.db_tbl_da_discovery import DiscoveryError
 from db_table_functions.db_tbl_da_rulebook import RulebookError
@@ -876,6 +878,11 @@ def _option_at(settings: Settings, request_id: str, revision: int, index: int) -
 
 
 def register_da_developer_assistant_page_callbacks(app) -> None:
+    # Fix G5 R9: one start-up line, so a new ZIP that lost the data is easy to spot.
+    try:
+        get_logger(__name__).info(storage_line(get_settings().db_path))
+    except ConfigError:
+        pass  # the page itself shows the settings problem
     # Draws on first load too, so this one does not use prevent_initial_call.
     app.callback(
         Output(PAGE_CONTENT_ID, "children"),

@@ -37,6 +37,25 @@ chat says: "The CodeVision index needs building: run `python src\da_build_code_i
 request carries on. Setting `DA_CODE_INDEX_MAX_DISTANCE` (default 0.90) controls how close a meaning hit
 must be.
 
+## Keep the data outside the code folder (Fix G5 R9)
+
+A new ZIP of the code must not wipe the index, the tags or the run history. In your work `.env` set:
+
+- `DA_CODE_INDEX_DIR=C:\Users\<you>\CodeVisionDA\data\da_code_index` (index, tags, run history)
+- `DA_DB_PATH=C:\Users\<you>\CodeVisionDA\data\devassist.db` (requests, rulebook, audit)
+
+Both folders are outside the unzipped code. Copy them once from the old place, then every new ZIP keeps
+them. At start the log prints one line, "Developer Assistant data: index folder ..., database ...",
+paths only. If it shows a folder inside the new ZIP, the data was left behind.
+
+## Tagger checks (Fix G5 R6 to R8)
+
+- Each run row shows the Index result and the Tags result on separate lines: green when all programs are
+  tagged, amber ("95 of 101 tagged, 6 could not be read"), red when the tag step crashed.
+- Review queue, **Try the tagger on one program**: pick a program, press Try. It shows the AI reply (first
+  2,000 characters), what the reader made of it and the reason when it could not. Nothing is saved.
+- **Re-check** also tries the programs marked "could not be read" again.
+
 ## After the 20 Nov work test (Fix G4)
 
 In Admin, Capability catalog: click **Remove all starter items** (the made-up Harbour Loans capabilities

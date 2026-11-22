@@ -18,7 +18,7 @@ from agents.da_admin_rebuild import (
     source_folder,
 )
 from agents.da_admin_tag_store import read_store
-from agents.da_admin_tagger import STATE_PROPOSED, run_tagging
+from agents.da_admin_tagger import STATE_PROPOSED, STATE_UNREADABLE, run_tagging
 from agents.da_admin_tagger_job import pick_client
 from configs.da_config import Settings
 from da_logging import get_logger
@@ -28,12 +28,14 @@ logger = get_logger(__name__)
 
 
 def recheck_paths(directory: Path | None = None) -> list[str]:
-    """Open proposals with no fit and no new-capability suggestion (the `none` ones)."""
+    """Open proposals with no fit and no new-capability suggestion (the `none` ones), and the
+    programs the AI could not read (Fix G5 R8)."""
     modules = read_store(directory)["modules"]
     return sorted(
         path for path, e in modules.items()
-        if isinstance(e, dict) and e.get("state") == STATE_PROPOSED
-        and not e.get("proposed_capability") and not e.get("new_name")
+        if isinstance(e, dict) and (e.get("state") == STATE_UNREADABLE or (
+            e.get("state") == STATE_PROPOSED
+            and not e.get("proposed_capability") and not e.get("new_name")))
     )
 
 
