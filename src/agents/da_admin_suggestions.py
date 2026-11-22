@@ -64,7 +64,7 @@ def remove_from_suggestion(path: str, directory: Path | None = None) -> None:
 def create_and_assign(
     settings, name: str, description: str, named_senior: str, backup_senior: str,
     paths: list[str], admin_id: str, base_version: int | None = None,
-    directory: Path | None = None,
+    directory: Path | None = None, note: str = "",
 ) -> ResolveResult:
     """The new capability and its exact-path patterns in ONE version, then close the cards."""
     name, description = " ".join(name.split()), description.strip()
@@ -77,7 +77,7 @@ def create_and_assign(
     rows = capability_rows(active.rulebook.policy)
     rows.append({"name": name, "description": description, "named_senior": named_senior.strip(),
                  "backup_senior": backup_senior.strip(), "path_patterns": "\n".join(paths)})
-    note = f"AI suggestion: new capability {name} with {len(paths)} programs"
+    note = note or f"AI suggestion: new capability {name} with {len(paths)} programs"
     saved = save_from_form(
         settings.db_path, TAB_CAPABILITY, {"capabilities": rows},
         base_version or active.version_number, admin_id, note,
@@ -92,10 +92,10 @@ def create_and_assign(
 
 def assign_suggestion(
     settings, capability: str, paths: list[str], admin_id: str,
-    base_version: int | None = None, directory: Path | None = None,
+    base_version: int | None = None, directory: Path | None = None, note: str = "",
 ) -> ResolveResult:
     """Assign to: all kept programs go to an existing capability (one version)."""
-    note = f"AI scan: {len(paths)} programs to {capability} (new capability suggestion)"
+    note = note or f"AI scan: {len(paths)} programs to {capability} (new capability suggestion)"
     return approve_pairs(settings, [(p, capability) for p in paths], admin_id, note,
                          base_version, directory)
 

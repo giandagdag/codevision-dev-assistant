@@ -130,8 +130,17 @@ def _duration_text(span: timedelta) -> str:
 BAR_STEP_NAMES = {1: "Reading code", 2: "Linking code", 3: "Tagging programs"}
 
 
+def set_step_name(directory: Path | None, name: str, step: int) -> None:
+    """Fix G6: a job with its own step names (Suggest capabilities) says which one is running."""
+    status = read_status(directory)
+    status.update(step=step, step_name=name, done=0, total=0, updated=_stamp(None))
+    _write(directory, status)
+
+
 def step_title(status: dict) -> str:
     """Fix G5 N2: the bar's heading. A re-check is step 3 work under its own name."""
+    if status.get("mode") == "suggest":
+        return str(status.get("step_name", ""))
     if status.get("mode") == "recheck":
         return "Re-checking programs"
     return BAR_STEP_NAMES.get(int(status.get("step") or 1), "")
@@ -140,6 +149,8 @@ def step_title(status: dict) -> str:
 def progress_line(status: dict, now: datetime | None = None) -> str:
     """"Build 7. Step 1 of 3: reading the code, 340 of 1,200 pieces (28%)" plus "About 2 h left"."""
     step = int(status.get("step") or 1)
+    if status.get("mode") == "suggest":
+        return f"Step {step} of 3: {str(status.get('step_name', '')).lower()}"
     build = f"Build {status['build']}. " if status.get("build") else ""
     line = (
         f"{build}Step {step} of {TOTAL_STEPS}: {STEP_LABELS.get(step, '')}, "
