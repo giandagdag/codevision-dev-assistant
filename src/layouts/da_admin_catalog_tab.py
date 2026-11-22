@@ -24,6 +24,7 @@ from agents.da_admin_review import (
 )
 from agents.da_admin_starter import starter_at_work
 from agents.da_admin_tag_store import last_tagged, read_tags
+from agents.da_capability_suggest_job import BUTTON as SUGGEST_BUTTON
 from layouts.da_admin_card import admin_card
 from layouts.da_admin_catalog_meaning import CAP_MEANING_ID, SEARCH_PLACEHOLDER
 from layouts.da_admin_catalog_panels import modules_modal, patterns_panel
@@ -64,6 +65,7 @@ from layouts.da_admin_queue_ids import (  # noqa: F401  (other modules import th
     Q_SG_REMOVE,
     Q_SG_SAVE,
     Q_SHOW_RESOLVED,
+    Q_SUGGEST,
     QUEUE_BLOCK_ID,
     QUEUE_BUTTON_TYPE,
     QUEUE_NOTE_TYPE,
@@ -376,6 +378,13 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
         bulk = review["bulk"]
         above.append(bulk_confirm(bulk["kind"], bulk_plan(selected, ai_cards), len(selected),
                                   bulk.get("target", "")))
+    if queue.get("offer_suggest"):
+        above.append(
+            dmc.Button(
+                SUGGEST_BUTTON, id=queue_button_id(Q_SUGGEST), size="xs", variant="default",
+                disabled=disabled, mb="xs",
+            )
+        )
     if any(not c.capability for c in ai_cards):
         above.append(
             locked(
@@ -662,7 +671,7 @@ def _suggestion_card(sug, capability_names: list[str], disabled: bool, dialog_op
             [
                 _chip(path, summary),
                 dmc.Button(
-                    "Remove",
+                    "Remove from this suggestion" if sug.from_links else "Remove",
                     id=queue_button_id(Q_SG_REMOVE, path),
                     size="compact-xs",
                     variant="subtle",
@@ -680,6 +689,7 @@ def _suggestion_card(sug, capability_names: list[str], disabled: bool, dialog_op
         ),
         dmc.Select(
             data=capability_names,
+            value=sug.existing if sug.existing in capability_names else None,
             id={"type": QUEUE_PICK_TYPE, "uid": key},
             size="xs",
             w=150,
@@ -704,13 +714,14 @@ def _suggestion_card(sug, capability_names: list[str], disabled: bool, dialog_op
     parts = [
         dmc.Group(
             [
-                dmc.Badge("New capability suggested", variant="light", tt="none"),
+                dmc.Badge(sug.title, variant="light", tt="none"),
                 dmc.Text(sug.name, size="sm", fw=600),
                 dmc.Badge(sug.confidence, variant="light", tt="none"),
             ],
             gap="xs",
         ),
         dmc.Text(sug.description, size="sm"),
+        *([dmc.Text(sug.counts, size="xs", c=da_styles.MUTED)] if sug.counts else []),
         dmc.Group(chips, gap="xs"),
         html.Div(dmc.Group(buttons, gap="xs"), style={"marginTop": "8px"}),
     ]

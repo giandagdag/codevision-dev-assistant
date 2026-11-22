@@ -12,7 +12,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from agents.da_admin_index import index_dir
-from agents.da_admin_suggestions import assign_suggestion, create_and_assign
+from agents.da_admin_suggestions import Suggestion, assign_suggestion, create_and_assign
+from agents.da_admin_tag_store import read_store
 from agents.da_admin_tagger import name_key
 from agents.da_capability_suggest import NamedGroup
 
@@ -89,6 +90,19 @@ def save_suggestions(named: list[NamedGroup], directory: Path | None = None) -> 
     return len(cards)
 
 
+def group_suggestions(directory: Path | None = None) -> list[Suggestion]:
+    """The open cards in the shape the Review queue already draws."""
+    modules = read_store(directory)["modules"]
+    return [
+        Suggestion(
+            c.name, c.description, c.confidence,
+            {p: str((modules.get(p) or {}).get("summary", "")) for p in c.programs},
+            TITLE, c.counts, c.existing, True,
+        )
+        for c in read_cards(directory)
+    ]
+
+
 def _find(name: str, directory: Path | None) -> GroupCard | None:
     return next((c for c in read_cards(directory) if c.name == name), None)
 
@@ -144,18 +158,18 @@ def create_card(
 
 
 def assign_card(
-    settings, card_name: str, admin_id: str, base_version: int | None = None,
+    settings, card_name: str, capability: str, admin_id: str, base_version: int | None = None,
     directory: Path | None = None,
 ):
-    """A card named like a catalog capability: add its programs to that capability (one version)."""
+    """Assign to: the card's programs go to a catalog capability (one version)."""
     card = _find(card_name, directory)
-    if card is None or not card.existing:
+    if card is None:
         from agents.da_admin_catalog import ResolveResult
 
         return ResolveResult("refused", problems=["That suggestion is not open any more."])
     result = assign_suggestion(
-        settings, card.existing, list(card.programs), admin_id, base_version, directory,
-        f"{TITLE}: {len(card.programs)} programs to {card.existing}",
+        settings, capability, list(card.programs), admin_id, base_version, directory,
+        f"{TITLE}: {len(card.programs)} programs to {capability}",
     )
     if result.kind == "resolved":
         _close(card, directory)

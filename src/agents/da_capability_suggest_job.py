@@ -10,6 +10,7 @@ from pathlib import Path
 
 from agents import da_admin_job as job
 from agents.da_admin_index import index_dir
+from agents.da_admin_modules import module_paths, modules_by_capability
 from agents.da_admin_rebuild import ALREADY_RUNNING, _lock_path, _take_lock, running_since
 from agents.da_admin_tag_store import read_store
 from agents.da_admin_tagger_job import pick_client
@@ -53,6 +54,14 @@ def should_offer(capability_count: int, unassigned: int, programs: int) -> bool:
     return capability_count < FEW_CAPABILITIES or (
         programs > 0 and unassigned / programs > MANY_UNASSIGNED
     )
+
+
+def offer_for(policy: Policy, directory: Path | None = None) -> bool:
+    """Show the button for this catalog and index? (No programs in the index: nothing to group.)"""
+    paths = module_paths(policy.index_folder_scope, directory)
+    assigned = {p for ps in modules_by_capability(policy.capabilities, paths).values() for p in ps}
+    return bool(paths) and should_offer(len(policy.capabilities), len(paths) - len(assigned),
+                                        len(paths))  # fmt: skip
 
 
 def _summaries(out: Path) -> dict[str, str]:

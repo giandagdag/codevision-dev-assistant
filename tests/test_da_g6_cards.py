@@ -113,6 +113,23 @@ def test_a_refused_create_keeps_the_card(db_path, published_rulebook, make_setti
     assert result.kind == "refused" and len(read_cards(tmp_path)) == 1
 
 
+def test_the_card_and_the_button_are_drawn_in_the_review_queue(tmp_path):
+    from agents.da_group_cards import group_suggestions
+    from layouts.da_admin_catalog_tab import queue_block
+    from tests.test_da_admin_page import walk
+
+    save_suggestions([_group()], tmp_path)
+    queue = {"rows": [], "resolved": None, "dialog": None, "notice": [],
+             "suggestions": group_suggestions(tmp_path), "offer_suggest": True}  # fmt: skip
+
+    text = " ".join(str(getattr(n, "children", "")) for n in walk(queue_block(queue, ["Uploads"])))
+
+    for want in ("Suggested from code links", "3 programs, 4 links inside",
+                 "Remove from this suggestion", "Suggest capabilities from the code",
+                 "Create and assign"):  # fmt: skip
+        assert want in text
+
+
 def test_reject_survives_a_new_run_with_the_same_group(tmp_path):
     save_suggestions([_group()], tmp_path)
     reject_card("Docs", tmp_path)

@@ -82,6 +82,16 @@ from agents.da_admin_tag_cards import (
 )
 from agents.da_admin_tag_store import read_tags
 from agents.da_admin_watch import watch_step
+from agents.da_capability_suggest_job import offer_for, start_suggest
+from agents.da_group_cards import (
+    assign_card,
+    create_card,
+    group_suggestions,
+    remove_program,
+)
+from agents.da_group_cards import (
+    reject_card as reject_group_card,
+)
 from agents.da_safety_release import ReleaseError, keep_stopped, release
 from configs.da_config import Settings, load_settings
 from db_table_functions.db_tbl_da_rulebook import (
@@ -126,6 +136,7 @@ from layouts.da_admin_catalog_tab import (
     Q_SG_REJECT,
     Q_SG_REMOVE,
     Q_SG_SAVE,
+    Q_SUGGEST,
     review_items,
     view_options,
 )
@@ -531,8 +542,9 @@ def queue_data(
 ) -> dict:
     """What the layout needs to draw the queue block. `review` is the search, filters, sort and
     selection of the Review queue view (Fix G4 L9, L10)."""
-    waiting = suggestions()
+    waiting = [*group_suggestions(), *suggestions()]
     confirm = {"counts": high_confidence_counts(), "suggestions": len(waiting)}
+    policy = get_active_version(settings.db_path).rulebook.policy
     cards = ai_cards()
     review = dict(review or {})
     open_paths = {c.path for c in cards}
@@ -547,6 +559,7 @@ def queue_data(
         "ai_confirm": confirm if ai_confirm else None,
         "suggestions": waiting,
         "suggest_dialog": suggest_dialog,
+        "offer_suggest": offer_for(policy),
     }
 
 
@@ -555,11 +568,16 @@ def _suggest_action(
 ):
     """Create and assign, Assign to, Reject and Remove on a new-capability suggestion card (S4)."""
     admin = settings.developer_id
+    links = {s.name: s for s in group_suggestions()}  # Fix G6: "Suggested from code links" cards
     if name == Q_SG_REMOVE:  # `key` is the program's path
-        remove_from_suggestion(key)
+        owner = next((n for n, s in links.items() if key in s.modules), None)
+        if owner:
+            remove_program(owner, key)
+        else:
+            remove_from_suggestion(key)
         done = message_notice("Removed from the suggestion.", color="green")
         return _queue_tab(settings, notice=[done])
-    current = next((s for s in suggestions() if s.name == key), None)
+    current = links.get(key) or next((s for s in suggestions() if s.name == key), None)
     if current is None:
         gone = message_notice("That suggestion is not open any more.")
         return _queue_tab(settings, notice=[gone])
@@ -567,22 +585,36 @@ def _suggest_action(
     if name == Q_SG_OPEN:
         return _queue_tab(settings, suggest_dialog=key)
     if name == Q_SG_REJECT:
-        reject_suggestion(paths, admin)
+        if current.from_links:
+            reject_group_card(key)
+        else:
+            reject_suggestion(paths, admin)
         return _queue_tab(settings, notice=[message_notice("Rejected.", color="green")])
     if name == Q_SG_ASSIGN:
         target = picks.get(key) or ""
         if not target:
             return _queue_tab(settings, notice=[message_notice("Choose a capability first.")])
-        result = assign_suggestion(settings, target, paths, admin, base_version)
+        if current.from_links:
+            result = assign_card(settings, key, target, admin, base_version)
+        else:
+            result = assign_suggestion(settings, target, paths, admin, base_version)
     else:  # Q_SG_SAVE
         text = {f: notes.get(f"{key}|{f}", "") for f in ("name", "desc", "named", "backup")}
-        result = create_and_assign(
-            settings, text["name"], text["desc"], text["named"], text["backup"], paths, admin,
-            base_version,
-        )
+        if current.from_links:
+            result = create_card(
+                settings, text["name"], text["desc"], text["named"], text["backup"], admin, key,
+                base_version,
+            )
+        else:
+            result = create_and_assign(
+                settings, text["name"], text["desc"], text["named"], text["backup"], paths, admin,
+                base_version,
+            )
     if result.kind == "resolved":
         version = f" The catalog is now v{result.new_version}." if result.new_version else ""
-        return _queue_tab(settings, notice=[message_notice(f"Done.{version}", color="green")])
+        again = " Use Re-check to place the other programs." if current.from_links else ""
+        done = message_notice(f"Done.{version}{again}", color="green")
+        return _queue_tab(settings, notice=[done])
     if result.stale:
         newest = get_active_version(settings.db_path).version_number
         notice = message_notice(result.message, reload_tab=TAB_CAPABILITY, newest=newest)
@@ -710,6 +742,11 @@ def _run_queue_action(settings, action, picks, notes, base_version, review):
         return _ai_action(settings, name, uid, picks, base_version, action["cap"])
     if name in (Q_SG_OPEN, Q_SG_SAVE, Q_SG_ASSIGN, Q_SG_REJECT, Q_SG_REMOVE):
         return _suggest_action(settings, name, uid, picks, notes, base_version)
+    if name == Q_SUGGEST:
+        policy = get_active_version(settings.db_path).rulebook.policy
+        started, text = start_suggest(policy, settings, settings.developer_id)
+        notice = message_notice(text, color="green") if started else message_notice(text)
+        return _queue_tab(settings, notice=[notice])
     if name == Q_RECHECK:
         policy = get_active_version(settings.db_path).rulebook.policy
         started, text = start_recheck(policy, settings, settings.developer_id)

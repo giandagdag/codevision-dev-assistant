@@ -19,7 +19,8 @@ Q_AI_ALL, Q_AI_ALL_DO = "ai_all", "ai_all_do"  # ask first, then approve every s
 Q_SG_OPEN, Q_SG_SAVE = "sg_open", "sg_save"  # Fix G4 S4: Create and assign (dialog, then save)
 Q_SG_ASSIGN, Q_SG_REJECT, Q_SG_REMOVE = "sg_assign", "sg_reject", "sg_remove"
 Q_RECHECK = "recheck"  # S6: send the "No capability fits" programs to the AI again
-Q_SHOW_RESOLVED = "show_resolved"
+Q_SUGGEST = "suggest_catalog"  # Fix G6 S4: Suggest capabilities from the code
+Q_SHOW_RESOLVED ="show_resolved"
 Q_HIDE_RESOLVED = "hide_resolved"
 # Fix G4 L10: select several at once. The id's `state` says which bulk action.
 Q_SELECT_ALL = "select_all"

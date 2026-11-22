@@ -23,6 +23,10 @@ class Suggestion:
     description: str
     confidence: str  # the lowest of its modules
     modules: dict[str, str]  # path to its own AI summary
+    title: str = "New capability suggested"
+    counts: str = ""  # Fix G6: "12 programs, 30 links inside"
+    existing: str = ""  # Fix G6: a capability of the catalog it already matches (Assign to)
+    from_links: bool = False  # Fix G6: a "Suggested from code links" card
 
 
 def suggestions(directory: Path | None = None) -> list[Suggestion]:
