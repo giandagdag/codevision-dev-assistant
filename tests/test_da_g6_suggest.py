@@ -7,6 +7,8 @@ from agents.da_capability_suggest import (
     STEP_GROUPING,
     STEP_MERGING,
     STEP_NAMING,
+    NamedGroup,
+    cap_count,
     suggest,
 )
 from agents.da_code_graph import build_graph
@@ -74,6 +76,20 @@ def test_fifteen_groups_give_at_most_twelve_cards(tmp_path):
 
     assert len(cards) == 12
     assert sum(len(c.programs) for c in cards) == sum(n + 1 for n in folders.values()) + 1
+
+
+def test_g6_3_the_smallest_group_joins_its_most_linked_neighbour_not_the_biggest():
+    def group(name, programs):
+        return NamedGroup(name, "d", tuple(programs), "high", (), 0, 0)
+
+    big = group("Big", ["b1", "b2", "b3", "b4"])
+    near = group("Near", ["n1", "n2", "n3"])
+    tiny = group("Tiny", ["t1", "t2"])
+    weights = {"t1": {"n1": 5}, "n1": {"t1": 5}}  # Tiny talks to Near only
+
+    result = {g.name: g.programs for g in cap_count([big, near, tiny], weights, limit=2)}
+
+    assert result == {"Big": big.programs, "Near": ("n1", "n2", "n3", "t1", "t2")}
 
 
 def test_a_name_equal_to_a_catalog_capability_is_a_proposal_for_it(tmp_path):

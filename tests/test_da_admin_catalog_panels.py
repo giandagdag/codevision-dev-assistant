@@ -201,7 +201,7 @@ def test_the_pop_up_stays_open_when_nothing_is_ticked(make_settings, published_r
         settings, TAB, pat_id(TAB, "addmods"), form, "", None, {"cap": "", "picked": []}
     )
 
-    assert "Add 0 modules" in all_text(content)
+    assert "Move here: 0 modules" in all_text(content)
 
 
 def test_live_hint_and_filter_functions(make_settings, published_rulebook):

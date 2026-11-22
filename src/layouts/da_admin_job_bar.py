@@ -47,7 +47,7 @@ def job_bar(status: dict, started: datetime | None, where: str, now: datetime | 
     ]
 
 
-LOCK_NAMES = ("delta", "full", "recheck", "try", "usebuild")
+LOCK_NAMES = ("delta", "full", "recheck", "try", "usebuild", "suggest")
 
 
 def lock_id(name: str) -> str:

@@ -1562,11 +1562,12 @@ def bars_now() -> tuple[list, list]:
 
 LOCKED_BUTTONS = (
     REBUILD_BTN, REBUILD_FULL_BTN, queue_button_id(Q_RECHECK), TRY_BTN, BUILD_USE_BTN,
+    queue_button_id(Q_SUGGEST),
 )  # same order as LOCK_NAMES
 
 
 def locks_now(own: tuple) -> list:
-    """Fix G5 N3: the five job-starting buttons greyed with the job's short status as tooltip while
+    """Fix G5 N3: the job-starting buttons greyed with the job's short status as tooltip while
     a job runs. `own` is each button's own reason to be disabled (kept when the job ends)."""
     status, started = job.read_status(), running_since()
     states = [lock_state(status, started, o) for o in own]

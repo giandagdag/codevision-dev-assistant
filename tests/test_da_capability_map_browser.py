@@ -4,6 +4,7 @@ No label may overlap a bubble or another label (boxes read from cytoscape), at m
 drawn per capability, and Unassigned is not drawn. Pictures go to logs/admin-screens/g6. Skipped,
 not failed, when Playwright or its browser is missing."""
 
+import json
 import threading
 from pathlib import Path
 
@@ -23,7 +24,6 @@ SIZES = (
 )
 BUSINESS = ["ingestion", "markdown", "embedding", "reports", "limits", "expiry", "search",
             "tagging", "review", "workspace"]  # fmt: skip
-NAMES = {"embedding": "Embedding and Vector"}
 FOUNDATIONS = ["config", "classes", "database"]
 # Per capability: the box of every bubble, and of every label (the strip under its bubble).
 BOXES_JS = """() => {
@@ -42,22 +42,15 @@ BOXES_JS = """() => {
 }"""
 
 
-def title(slug: str) -> str:
-    return NAMES.get(slug, slug.capitalize())
-
-
 def make_catalog() -> list[Capability]:
-    caps = [
-        Capability(name=title(s), description="made up", named_senior="Lead",
-                   path_patterns=[f"{s}/*"])
-        for s in BUSINESS
+    """The shared 13-capability fake catalog (S7); the folder of each is its slug, same order."""
+    from agents.da_search_index import DATA_FOLDER
+
+    rows = json.loads((DATA_FOLDER / "da_fake_catalog_13.json").read_text(encoding="utf-8"))
+    return [
+        Capability(**row, named_senior="Lead", path_patterns=[f"{slug}/*"])
+        for row, slug in zip(rows["capabilities"], [*BUSINESS, *FOUNDATIONS], strict=True)
     ]
-    caps += [
-        Capability(name=title(s), description="made up", named_senior="Lead",
-                   kind="Shared foundation", path_patterns=[f"{s}/*"])
-        for s in FOUNDATIONS
-    ]  # fmt: skip
-    return caps
 
 
 def make_graph() -> dict:

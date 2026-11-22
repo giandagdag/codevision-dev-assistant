@@ -130,11 +130,12 @@ def modules_table(
     return html.Div([dmc.CheckboxGroup(table, id=MOD_PICKED_ID, value=keep), *empty])
 
 
-ALSO_ADD_LABEL = "Also add here"  # M3; the other button (add_label) is the "Move here" one
+MOVE_LABEL = "Move here"  # M3: moves the exact pattern from its old capability
+ALSO_ADD_LABEL = "Also add here"  # M3: keeps the other capability
 
 
 def add_label(count: int, target: str) -> str:
-    return f"Add {count} module{'' if count == 1 else 's'} to {target or '...'}"
+    return f"{MOVE_LABEL}: {count} module{'' if count == 1 else 's'} to {target or '...'}"
 
 
 def modules_modal(

@@ -145,19 +145,29 @@ def test_a_refused_create_keeps_the_card(db_path, published_rulebook, make_setti
 
 def test_the_card_and_the_button_are_drawn_in_the_review_queue(tmp_path):
     from agents.da_group_cards import group_suggestions
-    from layouts.da_admin_catalog_tab import queue_block
+    from layouts.da_admin_catalog_tab import queue_block, suggest_button
     from tests.test_da_admin_page import walk
 
     save_suggestions([_group()], tmp_path)
     queue = {"rows": [], "resolved": None, "dialog": None, "notice": [],
              "suggestions": group_suggestions(tmp_path), "offer_suggest": True}  # fmt: skip
 
-    text = " ".join(str(getattr(n, "children", "")) for n in walk(queue_block(queue, ["Uploads"])))
+    # the button is on the Capabilities view (greyed by other jobs), the cards in the queue
+    shown = [*suggest_button(queue), queue_block(queue, ["Uploads"])]
+    text = " ".join(str(getattr(n, "children", "")) for t in shown for n in walk(t))
 
     for want in ("Suggested from code links", "3 programs, 4 links inside",
                  "Remove from this suggestion", "Suggest capabilities from the code",
                  "Create and assign"):  # fmt: skip
         assert want in text
+
+
+def test_the_review_queue_count_includes_also_add_cards():
+    from layouts.da_admin_catalog_tab import view_options
+
+    label = view_options({"rows": [1], "also_cards": [1, 2]})[1]["label"]
+
+    assert label == "Review queue (3)"
 
 
 def test_reject_survives_a_new_run_with_the_same_group(tmp_path):

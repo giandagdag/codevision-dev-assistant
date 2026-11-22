@@ -5,6 +5,7 @@ from datetime import datetime
 from callbacks.screen_callbacks import da_admin_page_callbacks as page
 from layouts import da_admin_index_panels as panels
 from layouts.da_admin_builds_panel import builds_panel
+from layouts.da_admin_catalog_tab import suggest_button
 from layouts.da_admin_job_bar import LOCK_NAMES, lock_id, lock_state, locked
 from layouts.da_tagger_try_panel import tagger_try_panel
 from tests.test_da_admin_page import walk
@@ -33,6 +34,7 @@ def test_every_job_button_sits_in_its_own_tooltip_wrapper():
             tagger_try_panel(["src/x/a.py"]),
             builds_panel(),
             locked("recheck", panels.dmc.Button("x")),
+            *suggest_button({"offer_suggest": True}),
         ]
     )
     ids = _ids(tree)
@@ -40,16 +42,16 @@ def test_every_job_button_sits_in_its_own_tooltip_wrapper():
         assert lock_id(name) in ids
 
 
-def test_all_five_buttons_lock_together_and_free_together(tmp_path, monkeypatch):
-    own = ("",) * 5
+def test_all_six_buttons_lock_together_and_free_together(tmp_path, monkeypatch):
+    own = ("",) * 6
     monkeypatch.setattr(page, "running_since", lambda: None)
     monkeypatch.setattr(page.job, "read_status", lambda: {})
-    assert page.locks_now(own) == [False] * 5 + [""] * 5
+    assert page.locks_now(own) == [False] * 6 + [""] * 6
 
     monkeypatch.setattr(page, "running_since", lambda: datetime.now())
     monkeypatch.setattr(page.job, "read_status", lambda: RUNNING)
     out = page.locks_now(own)
-    assert out[:5] == [True] * 5 and all("Tagging programs" in t for t in out[5:])
+    assert out[:6] == [True] * 6 and all("Tagging programs" in t for t in out[6:])
 
 
 def test_n4_the_recheck_leaves_one_end_line_and_no_open_this_tab_text(tmp_path, make_settings):
@@ -90,5 +92,5 @@ def test_n4_the_recheck_leaves_one_end_line_and_no_open_this_tab_text(tmp_path, 
 def test_the_end_of_a_job_does_not_enable_a_button_the_screen_disabled(monkeypatch):
     monkeypatch.setattr(page, "running_since", lambda: None)
     monkeypatch.setattr(page.job, "read_status", lambda: {})
-    own = ("", "", "1", "", "")  # Re-check disabled because the catalog is being edited
-    assert page.locks_now(own)[:5] == [False, False, True, False, False]
+    own = ("", "", "1", "", "", "")  # Re-check disabled because the catalog is being edited
+    assert page.locks_now(own)[:6] == [False, False, True, False, False, False]
