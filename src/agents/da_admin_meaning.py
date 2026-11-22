@@ -40,12 +40,17 @@ class ModuleHit:
     score: float
 
 
+def capabilities_of(path: str, capabilities: list[Capability]) -> tuple[str, list[str]]:
+    """Fix G6 M1: (main, also). The main capability is the first match in catalog order (it owns the
+    senior, escalations and Discover's narrowing); every other match is an "also in". A path no
+    capability matches is (Unassigned, [])."""
+    found = [n for n, paths in modules_by_capability(capabilities, [path]).items() if paths]
+    return (found[0], found[1:]) if found else (UNASSIGNED, [])
+
+
 def capability_of(path: str, capabilities: list[Capability]) -> str:
-    """The first capability whose patterns match the path, else Unassigned."""
-    for name, paths in modules_by_capability(capabilities, [path]).items():
-        if paths:
-            return name
-    return UNASSIGNED
+    """The main capability: the first whose patterns match the path, else Unassigned."""
+    return capabilities_of(path, capabilities)[0]
 
 
 def summary_score(summary: str, query: str) -> float:
