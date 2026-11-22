@@ -75,6 +75,33 @@ def _run(policy, settings, started_by, started, directory, client, paths) -> Non
         _lock_path(out).unlink(missing_ok=True)
 
 
+def retry_one(
+    policy: Policy, settings: Settings, path: str, who: str, directory: Path | None = None,
+    client=None,
+) -> tuple[bool, str]:
+    """Tag one unreadable program again (R5 "Try again"). One AI call, so it runs in the click,
+    under the same job lock as every other job."""
+    started = datetime.now()
+    out = directory or index_dir()
+    if running_since(started, directory) is not None or not _take_lock(started, directory):
+        return False, ALREADY_RUNNING
+    try:
+        run_tagging(
+            [path], source_folder(policy, settings.llm_provider, settings), policy.capabilities,
+            client or pick_client(settings, policy), who,
+            [e.pattern for e in policy.index_exclusions], out, None,
+        )
+    except Exception as error:  # the old tag stays as it was
+        logger.warning("Try again failed: %s", type(error).__name__)
+        return False, "Try again failed. The program keeps its old state."
+    finally:
+        _lock_path(out).unlink(missing_ok=True)
+    entry = read_store(directory)["modules"].get(path) or {}
+    if entry.get("state") == STATE_UNREADABLE:
+        return False, "The AI still could not read this program."
+    return True, "Tagged again."
+
+
 def start_recheck(
     policy: Policy, settings: Settings, started_by: str, now: datetime | None = None,
     directory: Path | None = None, wait: bool = False, client=None,

@@ -54,7 +54,7 @@ from agents.da_admin_overview import (
     server_settings_view,
 )
 from agents.da_admin_rebuild import running_since, start_rebuild
-from agents.da_admin_recheck import start_recheck
+from agents.da_admin_recheck import retry_one, start_recheck
 from agents.da_admin_review import (
     ReviewFilter,
     bulk_plan,
@@ -119,6 +119,7 @@ from layouts.da_admin_catalog_tab import (
     Q_AI_APPROVE,
     Q_AI_ASSIGN,
     Q_AI_REJECT,
+    Q_AI_RETRY,
     Q_RECHECK,
     Q_SG_ASSIGN,
     Q_SG_OPEN,
@@ -598,6 +599,11 @@ def _ai_action(
     if name == Q_AI_REJECT:
         reject_card(path, who=settings.developer_id)
         return _queue_tab(settings, notice=[message_notice("Rejected.", color="green")])
+    if name == Q_AI_RETRY:
+        policy = get_active_version(settings.db_path).rulebook.policy
+        done, text = retry_one(policy, settings, path, settings.developer_id)
+        notice = message_notice(text, color="green") if done else message_notice(text)
+        return _queue_tab(settings, notice=[notice])
     if name == Q_AI_ALL_DO:
         result = approve_all_high(settings, settings.developer_id, base_version)
     else:
@@ -700,7 +706,7 @@ def _run_queue_action(settings, action, picks, notes, base_version, review):
     name, uid = action["action"], action["uid"]
     if name in (Q_SELECT_ALL, Q_CLEAR_FILTERS, Q_BULK_ASK, Q_BULK_DO):
         return _bulk_action(settings, name, action, picks, base_version, review)
-    if name in (Q_AI_APPROVE, Q_AI_ASSIGN, Q_AI_REJECT, Q_AI_ALL, Q_AI_ALL_DO):
+    if name in (Q_AI_APPROVE, Q_AI_ASSIGN, Q_AI_REJECT, Q_AI_RETRY, Q_AI_ALL, Q_AI_ALL_DO):
         return _ai_action(settings, name, uid, picks, base_version, action["cap"])
     if name in (Q_SG_OPEN, Q_SG_SAVE, Q_SG_ASSIGN, Q_SG_REJECT, Q_SG_REMOVE):
         return _suggest_action(settings, name, uid, picks, notes, base_version)

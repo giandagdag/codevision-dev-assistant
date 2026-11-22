@@ -47,6 +47,7 @@ from layouts.da_admin_queue_ids import (  # noqa: F401  (other modules import th
     Q_AI_APPROVE,
     Q_AI_ASSIGN,
     Q_AI_REJECT,
+    Q_AI_RETRY,
     Q_APPLY,
     Q_APPLY_PATTERN,
     Q_APPROVE,
@@ -588,6 +589,15 @@ def _ai_card(card, capability_names: list[str], disabled: bool, checked: bool = 
                 disabled=disabled,
             )
         )
+    if card.unreadable:  # R5: the reason is in the card body; Try again tags this one program
+        buttons.append(
+            dmc.Button(
+                "Try again",
+                id=queue_button_id(Q_AI_RETRY, card.path),
+                size="xs",
+                disabled=disabled,
+            )
+        )
     buttons += [
         dmc.Select(
             data=capability_names,
@@ -629,6 +639,11 @@ def _ai_card(card, capability_names: list[str], disabled: bool, checked: bool = 
                 gap="xs",
             ),
             html.Div(card.summary, title=card.summary, style=admin_styles.REVIEW_SUMMARY),
+            *(
+                [dmc.Text(card.reason, size="xs", style=da_styles.EMPTY_TEXT)]
+                if card.unreadable
+                else []
+            ),
             html.Details(
                 [
                     html.Summary("Why?", style={"fontSize": "12px", "cursor": "pointer"}),
