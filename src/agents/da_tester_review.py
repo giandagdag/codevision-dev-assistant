@@ -262,6 +262,20 @@ def _line_with_quote(lines: list[str], line: int, quote: str, window: int) -> in
     return None
 
 
+_STRING_LITERAL = re.compile(r"""'([^'\\]{2,})'|"([^"\\]{2,})\"""")
+
+
+def required_by(line_text: str, record: RequestRecord) -> str:
+    """B1: the ID of the first criterion whose expected text holds a string literal of this code
+    line ("" when none). Text a requirement asks for word for word is never a Must fix."""
+    for match in _STRING_LITERAL.finditer(line_text):
+        literal = match.group(1) or match.group(2)
+        for criterion in record.acceptance_criteria:
+            if literal in criterion.then:
+                return criterion.id
+    return ""
+
+
 def split_findings(
     items: list[ReplyFinding],
     files: dict[str, str],
@@ -277,16 +291,24 @@ def split_findings(
         cites = allowed_cites(item.check, approach, record, rules, planned)
         checked, reason = check_evidence(item, files, cites, window)
         base = checked or item
+        message = base.message.strip()[:MESSAGE_LIMIT]
+        severity = base.severity
+        if checked is not None and severity != "fyi":
+            line_text = files[base.file].splitlines()[base.line - 1]
+            ac = required_by(line_text, record)
+            if ac:  # B1 guard: the audit trail is this note in the saved review
+                severity = "fyi"
+                message = f"Required by {ac}. {message}"[:MESSAGE_LIMIT]
         result.append(
             Finding(
                 finding_id="T",
                 check=base.check,
-                severity=base.severity,
+                severity=severity,
                 file=base.file,
                 line=base.line,
                 quote=base.quote.strip(),
                 cites=base.cites,
-                message=base.message.strip()[:MESSAGE_LIMIT],
+                message=message,
                 made_by="tester",
                 kept=checked is not None,
                 reject_reason=reason,
@@ -446,6 +468,9 @@ def build_review_prompt(data: ReviewInput, only_file: str | None = None) -> str:
         "constraints": _bullets(data.charter.constraints),
         "rules": _bullets(rules),
         "record": data.record.model_dump_json(indent=2),
+        "criteria": _bullets(
+            f"{c.id}: Given {c.given}. Expect: {c.then}" for c in data.record.acceptance_criteria
+        ),
         "approach": format_approach(approach),
         "decisions": _bullets(decisions),
         "reuse": _bullets(reuse),

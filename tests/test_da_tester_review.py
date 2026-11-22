@@ -210,7 +210,30 @@ def test_split_findings_keeps_every_finding_with_its_reason(approach, seed_ruleb
     assert all(f.made_by == "tester" for f in result)
 
 
-# --- labels ---
+def test_b1_required_text_becomes_fyi_required_by_ac(approach, seed_rulebook):
+    record = sample_record()
+    criterion = record.acceptance_criteria[0].model_copy(update={"then": 'It shows "Done now"'})
+    record = record.model_copy(update={"acceptance_criteria": [criterion]})
+    code = 'def f():\n    print("Done now")\n    print("Other text")\n'
+    items = [
+        reply(line=2, quote='print("Done now")'),
+        reply(line=3, quote='print("Other text")'),
+    ]
+
+    result = review.split_findings(
+        items, {CREATE: code}, approach, record, seed_rulebook.rules, [CREATE], 2
+    )
+
+    assert [f.severity for f in result] == ["fyi", "must_fix"]
+    assert result[0].message.startswith(f"Required by {criterion.id}.")
+
+
+def test_b1_the_tester_prompt_lists_the_criteria_and_the_error_path_line(approach, seed_rulebook):
+    prompt = review.build_review_prompt(make_input(seed_rulebook))
+
+    assert "AC-1: Given" in prompt and "Expect:" in prompt
+    assert "applies only to error\npaths: raise, except, logged errors" in prompt
+
 
 
 def finding(severity, check=5, kept=True, fid="F-1"):

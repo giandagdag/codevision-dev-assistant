@@ -24,6 +24,13 @@ Constraints:
 
 {{record}}
 
+## Acceptance criteria (Given, Expect)
+
+{{criteria}}
+
+Never flag output text that a criterion requires word for word. CV-PY-001 applies only to error
+paths: raise, except, logged errors.
+
 ## The accepted approach
 
 {{approach}}
