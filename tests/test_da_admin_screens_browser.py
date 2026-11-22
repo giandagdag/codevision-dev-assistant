@@ -152,6 +152,7 @@ def test_g1_8_capability_map_pictures(make_live_page, live, tmp_path):
     page.wait_for_timeout(1000)
     page.screenshot(path=str(OUT / "map-level1.png"))
     page.evaluate(f"{cy}.nodes()[0].emit('tap')")  # cytoscape's own tap event, as a click gives
+    page.locator("#da-map-open").click()  # G6 C4: one tap focuses, Open goes down one level
     page.wait_for_function(
         "document.getElementById('da-map-crumb').innerText.includes(' > ')", timeout=15000
     )
@@ -180,6 +181,8 @@ def test_g2_4_dense_capability_picture(make_live_page, live, tmp_path):
     cy = "document.getElementById('da-map-graph')._cyreg.cy"
     page.wait_for_function(f"{cy}.nodes().length > 0", timeout=15000)
     page.evaluate(f"{cy}.getElementById('Unassigned').emit('tap')")
+    page.wait_for_function("document.getElementById('da-map-panel').innerText.length > 0")
+    page.locator("#da-map-open").click()  # G6 C4: one tap focuses, Open goes down one level
     page.wait_for_function(f"{cy}.nodes().length >= 40", timeout=15000)
     page.wait_for_timeout(1500)
     page.screenshot(path=str(OUT / "map-dense.png"))

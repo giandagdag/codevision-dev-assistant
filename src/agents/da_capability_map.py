@@ -135,7 +135,9 @@ def readable_view(
         return view
     full = view.edges
     view.unassigned = next((n["size"] for n in view.nodes if n["id"] == UNASSIGNED), 0)
-    hidden = set(foundations) | ({UNASSIGNED} if not show_unassigned else set())
+    only_unassigned = {n["id"] for n in view.nodes} == {UNASSIGNED}  # nothing else to draw
+    hide_it = not (show_unassigned or only_unassigned)
+    hidden = set(foundations) | ({UNASSIGNED} if hide_it else set())
     # hidden ends are dropped first, so a foundation or Unassigned never uses up a "top 3" slot
     strong = [e for e in full if e["weight"] >= min_calls
               and not {e["source"], e["target"]} & (hidden - {focus})]  # fmt: skip
