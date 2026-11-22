@@ -9,6 +9,7 @@ from agents.da_admin_modules import (
     SHOWN_MODULES,
     matches_search,
     module_chips,
+    module_paths,
     modules_by_capability,
     share_counts,
 )
@@ -73,6 +74,7 @@ from layouts.da_admin_review_view import bulk_bar, bulk_confirm, review_pane
 from layouts.da_admin_starter_card import starter_card
 from layouts.da_admin_tag_history_panel import tag_history_panel
 from layouts.da_capability_map_view import map_link
+from layouts.da_tagger_try_panel import tagger_try_panel
 from pydantic_classes.da_rulebook_models import RulebookVersion
 from styles import da_admin_styles as admin_styles
 from styles import da_styles
@@ -404,6 +406,7 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
                 disabled=disabled,
             )
         )
+    parts.append(tagger_try_panel(module_paths()))
     parts.append(tag_history_panel())
     waiting = len(rows) + len(ai_cards) + len(suggested)
     return admin_card("Review queue", html.Div(parts), "📥", count=waiting, id=QUEUE_BLOCK_ID)

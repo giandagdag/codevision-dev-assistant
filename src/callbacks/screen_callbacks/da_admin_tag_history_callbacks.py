@@ -10,7 +10,9 @@ from agents.da_tag_versions import (
     restore_confirm_text,
     restore_version,
 )
+from agents.da_tagger_try import try_tagger, try_text
 from callbacks.screen_callbacks.da_admin_page_callbacks import get_admin_settings
+from db_table_functions.db_tbl_da_rulebook import get_active_version
 from layouts.da_admin_tag_history_panel import (
     TAG_A,
     TAG_B,
@@ -24,6 +26,7 @@ from layouts.da_admin_tag_history_panel import (
     TAG_RESTORE_NAME,
     TAG_RESTORE_OUT,
 )
+from layouts.da_tagger_try_panel import TRY_BTN, TRY_OUT, TRY_PICK, TRY_RAW
 
 
 def restore_action(settings, value: str | None) -> str:
@@ -42,7 +45,30 @@ def compare_action(first: str | None, second: str | None) -> str:
     return compare_text(compare_versions(a, b), a, b)
 
 
+def try_action(settings, path: str | None, client=None):
+    """Try the tagger (Fix G5 R7): (one line, the raw reply, style of the raw box). Admin only."""
+    if not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    if not path:
+        return "Pick a program first.", "", {"display": "none"}
+    policy = get_active_version(settings.db_path).rulebook.policy
+    result = try_tagger(policy, settings, path, client=client)
+    return try_text(result), result.raw, {} if result.raw else {"display": "none"}
+
+
 def register_tag_history_callbacks(app) -> None:
+    @app.callback(
+        Output(TRY_OUT, "children"),
+        Output(TRY_RAW, "children"),
+        Output(TRY_RAW, "style"),
+        Input(TRY_BTN, "n_clicks"),
+        State(TRY_PICK, "value"),
+        prevent_initial_call=True,
+        running=[(Output(TRY_BTN, "disabled"), True, False)],
+    )
+    def try_one(_clicks, path):
+        return try_action(get_admin_settings(), path)
+
     @app.callback(
         Output(TAG_COMPARE_OUT, "children"),
         Input(TAG_COMPARE_BTN, "n_clicks"),
