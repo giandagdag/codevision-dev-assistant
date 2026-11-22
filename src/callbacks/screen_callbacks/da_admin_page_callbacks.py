@@ -80,6 +80,7 @@ from agents.da_admin_tag_cards import (
     reject_cards,
 )
 from agents.da_admin_tag_store import read_tags
+from agents.da_safety_release import ReleaseError, keep_stopped, release
 from configs.da_config import Settings, load_settings
 from db_table_functions.db_tbl_da_rulebook import (
     RulebookError,
@@ -145,6 +146,12 @@ from layouts.da_admin_index_panels import (
     REBUILD_STOP,
     job_panel,
     rebuild_status,
+)
+from layouts.da_admin_overview_tab import (
+    ATTENTION_SCROLL_ID,
+    STOP_ACT_TYPE,
+    STOP_NOTE_TYPE,
+    _attention_list,
 )
 from layouts.da_admin_page import (
     ACTION_CANCEL,
@@ -1008,7 +1015,35 @@ def change_window(settings: Settings, window: str):
     return health_content(settings, window)
 
 
+def stopped_action(settings: Settings, triggered: dict, notes: dict[str, str]):
+    """Fix G5: Release or Keep stopped, then the Needs attention list again (with the reason if
+    the release was refused). Admin only."""
+    if not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    rid, message = triggered["rid"], ""
+    try:
+        if triggered["action"] == "release":
+            release(settings, rid, settings.developer_id, notes.get(rid, ""))
+        else:
+            keep_stopped(settings, rid, settings.developer_id, notes.get(rid, ""))
+    except ReleaseError as error:
+        message = str(error)
+    return _attention_list(build_overview(settings).attention, message)
+
+
 def _register_overview(app) -> None:
+    @app.callback(
+        Output(ATTENTION_SCROLL_ID, "children", allow_duplicate=True),
+        Input({"type": STOP_ACT_TYPE, "action": ALL, "rid": ALL}, "n_clicks"),
+        State({"type": STOP_NOTE_TYPE, "rid": ALL}, "value"),
+        prevent_initial_call=True,
+    )
+    def on_stopped_click(_clicks, _notes):
+        if not isinstance(ctx.triggered_id, dict) or not ctx.triggered[0]["value"]:
+            raise PreventUpdate
+        notes = {s["id"]["rid"]: s.get("value") or "" for s in ctx.states_list[0]}
+        return stopped_action(get_admin_settings(), ctx.triggered_id, notes)
+
     @app.callback(
         Output(body_id(TAB_OVERVIEW), "children", allow_duplicate=True),
         Input(ADMIN_TABS_ID, "value"),
