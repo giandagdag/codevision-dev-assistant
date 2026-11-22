@@ -70,6 +70,8 @@ def _is_section(node) -> bool:
     wrapper = getattr(node, "id", None) in ("adm-rule-panel", "adm-cat-pane-caps")
     if getattr(node, "id", None) == "adm-cat-pane-queue":  # its content is the queue's own parts
         return True
+    if getattr(node, "id", None) in ("adm-job-bar-catalog", "adm-job-bar-queue"):  # Fix G5 N2
+        return True  # the job bar is empty unless a job runs
     if style in (s.CARD_STACK, s.PAIR) or wrapper:
         kids = node.children if isinstance(node.children, list) else [node.children]
         return all(_is_section(k) for k in kids)

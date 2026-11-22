@@ -89,6 +89,7 @@ from db_table_functions.db_tbl_da_rulebook import (
     get_version,
     restore_version,
 )
+from layouts.da_admin_builds_panel import BUILD_USE_BTN
 from layouts.da_admin_catalog_meaning import (
     CAP_MEANING_ID,
     HIT_TYPE,
@@ -149,7 +150,15 @@ from layouts.da_admin_index_panels import (
     job_panel,
     rebuild_status,
 )
-from layouts.da_admin_job_bar import BAR_CATALOG, BAR_QUEUE, JOB_STOP_TYPE, job_bar
+from layouts.da_admin_job_bar import (
+    BAR_CATALOG,
+    BAR_QUEUE,
+    JOB_STOP_TYPE,
+    LOCK_NAMES,
+    job_bar,
+    lock_id,
+    lock_state,
+)
 from layouts.da_admin_overview_tab import (
     ATTENTION_SCROLL_ID,
     STOP_ACT_TYPE,
@@ -258,10 +267,12 @@ from layouts.da_admin_queue_ids import (
     RQ_SOURCE_ID,
     VIEW_CAPS,
     VIEW_QUEUE,
+    queue_button_id,
 )
 from layouts.da_admin_review_view import bulk_bar, empty_list
 from layouts.da_capability_map_view import MAP_PATH
 from layouts.da_inbox_page import INBOX_PATH
+from layouts.da_tagger_try_panel import TRY_BTN
 from layouts.da_test_report_page import REPORT_PREFIX
 from styles import da_styles
 
@@ -1454,6 +1465,19 @@ def bars_now() -> tuple[list, list]:
     return job_bar(status, started, "catalog"), job_bar(status, started, "queue")
 
 
+LOCKED_BUTTONS = (
+    REBUILD_BTN, REBUILD_FULL_BTN, queue_button_id(Q_RECHECK), TRY_BTN, BUILD_USE_BTN,
+)  # same order as LOCK_NAMES
+
+
+def locks_now(own: tuple) -> list:
+    """Fix G5 N3: the five job-starting buttons greyed with the job's short status as tooltip while
+    a job runs. `own` is each button's own reason to be disabled (kept when the job ends)."""
+    status, started = job.read_status(), running_since()
+    states = [lock_state(status, started, o) for o in own]
+    return [disabled for disabled, _ in states] + [title for _, title in states]
+
+
 def stop_from_bar(settings: Settings):
     """Stop on the bar asks the job to end (checked between items); admin only."""
     if not is_admin(settings, settings.developer_id):
@@ -1497,6 +1521,17 @@ def _register_watcher(app) -> None:
     )
     def on_bars(_ticks, _data):
         return bars_now()
+
+    @app.callback(
+        *[Output(button, "disabled", allow_duplicate=True) for button in LOCKED_BUTTONS],
+        *[Output(lock_id(name), "title") for name in LOCK_NAMES],
+        Input(WATCH_ID, "n_intervals"),
+        Input(DATA_VERSION_ID, "data"),
+        *[State(lock_id(name), "data-own") for name in LOCK_NAMES],
+        prevent_initial_call=True,
+    )
+    def on_lock(_ticks, _data, *own):
+        return locks_now(own)
 
     @app.callback(
         Output(BAR_CATALOG, "children", allow_duplicate=True),

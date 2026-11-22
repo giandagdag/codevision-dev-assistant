@@ -8,7 +8,7 @@ from dash import dcc, html
 
 from agents.da_admin_index import FIXED_SKIPS, NEEDS_BUILDING, IndexHealth, run_line, tag_line
 from layouts.da_admin_builds_panel import builds_panel
-from layouts.da_admin_job_bar import job_bar
+from layouts.da_admin_job_bar import job_bar, locked
 from styles import da_admin_styles as admin_styles
 from styles import da_styles
 
@@ -129,13 +129,19 @@ def rebuild_controls(
         [
             dmc.Group(
                 [
-                    dmc.Button("Delta rebuild", id=REBUILD_BTN, disabled=running, size="xs"),
-                    dmc.Button(
-                        "Full rebuild",
-                        id=REBUILD_FULL_BTN,
-                        disabled=running,
-                        size="xs",
-                        variant="default",
+                    locked(
+                        "delta",
+                        dmc.Button("Delta rebuild", id=REBUILD_BTN, disabled=running, size="xs"),
+                    ),
+                    locked(
+                        "full",
+                        dmc.Button(
+                            "Full rebuild",
+                            id=REBUILD_FULL_BTN,
+                            disabled=running,
+                            size="xs",
+                            variant="default",
+                        ),
                     ),
                     dmc.Button(
                         "Stop",

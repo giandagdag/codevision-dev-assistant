@@ -75,6 +75,13 @@ def fail(directory: Path | None, message: str) -> None:
     _write(directory, status)
 
 
+def set_end_line(directory: Path | None, text: str) -> None:
+    """Fix G5 N4: the sentence a finished job leaves behind ("Re-check done: ...")."""
+    status = read_status(directory)
+    status["end_line"] = text
+    _write(directory, status)
+
+
 def last_heartbeat(directory: Path | None, started: datetime) -> datetime:
     """When the job last showed life. Falls back to its start when there is no status file."""
     status = read_status(directory)

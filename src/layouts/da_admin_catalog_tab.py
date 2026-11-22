@@ -36,7 +36,7 @@ from layouts.da_admin_common import (
     pat_id,
     version_pill,
 )
-from layouts.da_admin_job_bar import current_bar
+from layouts.da_admin_job_bar import current_bar, locked
 from layouts.da_admin_queue_ids import (  # noqa: F401  (other modules import these from here)
     CAT_PANE_CAPS,
     CAT_PANE_QUEUE,
@@ -374,13 +374,17 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
                                   bulk.get("target", "")))
     if any(not c.capability for c in ai_cards):
         above.append(
-            dmc.Button(
-                "Re-check the No capability fits programs against the new list",
-                id=queue_button_id(Q_RECHECK),
-                size="xs",
-                variant="default",
-                disabled=disabled,
-                mb="xs",
+            locked(
+                "recheck",
+                dmc.Button(
+                    "Re-check the No capability fits programs against the new list",
+                    id=queue_button_id(Q_RECHECK),
+                    size="xs",
+                    variant="default",
+                    disabled=disabled,
+                    mb="xs",
+                ),
+                disabled,
             )
         )
     items, shown, total = review_items(queue, capability_names, disabled, rf, selected)

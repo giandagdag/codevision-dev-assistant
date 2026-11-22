@@ -39,6 +39,22 @@ def recheck_paths(directory: Path | None = None) -> list[str]:
     )
 
 
+def end_line(paths: list[str], directory: Path | None = None) -> str:
+    """"Re-check done: 18 programs placed, 23 still with no fit, 0 could not be read." (N4)"""
+    modules = read_store(directory)["modules"]
+    entries = [e for e in (modules.get(p) for p in paths) if isinstance(e, dict)]
+    unreadable = sum(e.get("state") == STATE_UNREADABLE for e in entries)
+    placed = sum(
+        e.get("state") == STATE_PROPOSED and bool(e.get("proposed_capability") or e.get("new_name"))
+        for e in entries
+    )
+    no_fit = len(entries) - unreadable - placed
+    return (
+        f"Re-check done: {placed} programs placed, {no_fit} still with no fit, "
+        f"{unreadable} could not be read."
+    )
+
+
 def _run(policy, settings, started_by, started, directory, client, paths) -> None:
     out = directory or index_dir()
     job.begin(out, started, started_by, "recheck", "Manual")
@@ -50,6 +66,7 @@ def _run(policy, settings, started_by, started, directory, client, paths) -> Non
             lambda done, total: job.progress(out, done, total, step=3),
             stop=lambda: job.stop_requested(out),
         )
+        job.set_end_line(out, end_line(paths, out))
     except Exception as error:  # a crash must free the lock and leave the old tags as they were
         logger.warning("Re-check failed: %s", type(error).__name__)
         job.fail(out, f"Re-check failed: {error}")
@@ -74,4 +91,4 @@ def start_recheck(
     thread.start()
     if wait:
         thread.join()
-    return True, f"Re-checking {len(paths)} programs. Open this tab again when it is done."
+    return True, f"Re-checking {len(paths)} programs."
