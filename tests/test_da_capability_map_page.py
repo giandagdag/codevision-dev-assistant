@@ -140,7 +140,7 @@ def test_the_callbacks_register_on_a_dash_app():
     app = Dash(__name__, suppress_callback_exceptions=True)
     app.layout = map_shell()
     cb.register_da_capability_map_callbacks(app)
-    assert len(app.callback_map) == 2
+    assert len(app.callback_map) == 3  # state, picture, and the empty-space hook
 
 
 def test_only_the_view_file_imports_cytoscape():  # swap rule G4b

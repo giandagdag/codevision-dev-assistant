@@ -56,6 +56,17 @@ def test_a_request_about_limits_matches_the_limits_capability_and_its_modules():
     assert modules == [LIMITS]
 
 
+def test_a_module_narrows_only_for_its_main_capability_not_its_also_in():  # G6 M1
+    catalog = [
+        cap("Uploads", "File upload screens.", ["*upload*", "*limits*"]),  # main for LIMITS
+        cap("Limits", "Customer limit set-up and expiry.", ["*limits*", "*other*"]),
+    ]
+    name, modules = match_capability(record(), "", catalog, PATHS)
+
+    assert name == "Limits"
+    assert modules == [OTHER]  # LIMITS is main in Uploads, only "also in" Limits
+
+
 def test_the_search_runs_filtered_first_and_labels_and_lists_capability_hits_first():
     result = run_searches(index(), record(), "", 5, CATALOG, PATHS)
 

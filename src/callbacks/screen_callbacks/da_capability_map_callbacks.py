@@ -13,9 +13,11 @@ from db_table_functions.da_db import DatabaseBusyError
 from db_table_functions.db_tbl_da_rulebook import RulebookError, get_active_version
 from layouts.da_capability_map_view import (
     ADMIN_LINK,
+    BACKGROUND_TAP_JS,
     CHIP_TYPE,
     HIDDEN,
     MAP_BACK_ID,
+    MAP_BG_ID,
     MAP_CHIPS_ID,
     MAP_CLEAR_ID,
     MAP_CRUMB_ID,
@@ -69,7 +71,7 @@ def next_state(
         return go_back(state)
     if trigger == MAP_OPEN_ID:
         return open_focus(state)
-    if trigger == MAP_CLEAR_ID:
+    if trigger in (MAP_CLEAR_ID, MAP_BG_ID):  # the button, or a click on empty space
         return clear_focus(state)
     if trigger == MAP_GRAPH_ID:
         return tap_state(state, tapped, stamp)
@@ -105,10 +107,11 @@ def register_da_capability_map_callbacks(app) -> None:
         Input(MAP_GRAPH_ID, "tapNode"),  # has a time stamp, so a second tap on a node still fires
         Input({"type": HIT_TYPE, "name": ALL}, "n_clicks"),
         Input({"type": CHIP_TYPE, "name": ALL}, "n_clicks"),
+        Input(MAP_BG_ID, "data"),
         State(MAP_STATE_ID, "data"),
         prevent_initial_call=True,
     )
-    def move(_back, _open, _clear, tap, _hits, _chips, state):
+    def move(_back, _open, _clear, tap, _hits, _chips, _bg, state):
         tapped = (tap or {}).get("data")
         stamp = (tap or {}).get("timeStamp") or 0
         trigger = ctx.triggered_id
@@ -117,9 +120,16 @@ def register_da_capability_map_callbacks(app) -> None:
             clicks = _chips if trigger["type"] == CHIP_TYPE else _hits
             if not any(clicks):
                 return state  # the list was redrawn: not a real click
-        known = (MAP_BACK_ID, MAP_OPEN_ID, MAP_CLEAR_ID, MAP_GRAPH_ID)
+        known = (MAP_BACK_ID, MAP_OPEN_ID, MAP_CLEAR_ID, MAP_GRAPH_ID, MAP_BG_ID)
         kind = trigger if trigger in known else (trigger or {}).get("type", HIT_TYPE)
         return next_state(kind, state, tapped, picked, stamp)
+
+    # G6 C4: hook the picture once it is drawn, so a click on empty space clears the focus
+    app.clientside_callback(
+        BACKGROUND_TAP_JS,
+        Output(MAP_BG_ID, "data"),
+        Input(MAP_GRAPH_ID, "elements"),
+    )
 
     @app.callback(
         Output(MAP_SHELL_ID, "style"),

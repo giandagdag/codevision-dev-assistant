@@ -43,6 +43,24 @@ def test_focus_shows_weak_links_and_also_edge_is_dashed():
     assert ("E", "Hub") in pairs and pairs[("A", "B")] is True
 
 
+def test_also_edge_obeys_the_top_3_cut_unless_around_the_focus():  # G6-b
+    graph, tags = _star()
+    also = {"m.e": ["Hub"], "m.a": ["B"]}  # Hub already has A, B, C drawn: full; A has Hub only
+    view = cmap.readable_view(graph, tags, frozenset({"Config"}), also)
+    assert not [e for e in view.edges if e.get("also") and "Hub" in (e["source"], e["target"])]
+    around = cmap.readable_view(graph, tags, frozenset({"Config"}), also, focus="Hub")
+    assert [e for e in around.edges if e.get("also") and "Hub" in (e["source"], e["target"])]
+
+
+def test_empty_space_click_clears_the_focus_and_is_wired():
+    from callbacks.screen_callbacks.da_capability_map_callbacks import next_state
+    from layouts import da_capability_map_view as v
+
+    state = {**v.START_STATE, "focus": "Hub"}
+    assert next_state(v.MAP_BG_ID, state, None, None)["focus"] == ""
+    assert "cy.on('tap'" in v.BACKGROUND_TAP_JS and "e.target === cy" in v.BACKGROUND_TAP_JS
+
+
 def test_click_focus_keeps_neighbours_bright_and_panel_lists_links_g6_10():
     graph, tags = _star()
     view = cmap.readable_view(graph, tags, frozenset({"Config"}), focus="A")

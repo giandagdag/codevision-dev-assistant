@@ -31,6 +31,19 @@ MAP_PATH = "/dev-assistant/capability-map"
 MAP_SHELL_ID = "da-map-shell"
 MAP_GRAPH_ID = "da-map-graph"
 MAP_STATE_ID = "da-map-state"
+MAP_BG_ID = "da-map-background"  # a click on empty space writes a time stamp here (G6 C4)
+# Runs when the picture is drawn; hooks the cytoscape core once. A tap whose target is the core
+# itself (not a bubble or link) is a click on empty space.
+BACKGROUND_TAP_JS = """function(elements) {
+  const el = document.getElementById('da-map-graph');
+  const cy = el && el._cyreg && el._cyreg.cy;
+  if (cy && !cy._daBg) {
+    cy._daBg = true;
+    cy.on('tap', (e) => { if (e.target === cy)
+      window.dash_clientside.set_props('da-map-background', {data: Date.now()}); });
+  }
+  return window.dash_clientside.no_update;
+}"""
 MAP_BACK_ID = "da-map-back"
 MAP_CRUMB_ID = "da-map-crumb"
 MAP_NOTE_ID = "da-map-note"
@@ -333,6 +346,6 @@ def map_shell() -> html.Div:
     return html.Div(
         [bar, switch, picture,
          html.Div(id=MAP_TABLE_ID, style={"display": "none", "padding": "16px"}),
-         dcc.Store(id=MAP_STATE_ID, data=START_STATE)],
+         dcc.Store(id=MAP_STATE_ID, data=START_STATE), dcc.Store(id=MAP_BG_ID)],
         id=MAP_SHELL_ID, style=HIDDEN,
     )  # fmt: skip

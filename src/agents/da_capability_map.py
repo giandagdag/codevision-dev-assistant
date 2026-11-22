@@ -152,6 +152,11 @@ def readable_view(
             main = caps.get(module, UNASSIGNED)
             if main != other:
                 a, b = sorted((main, other))
+                # G6-b: a dashed link obeys the top-3 cut too, except around the focused capability
+                full_up = any(sum(x in (e["source"], e["target"]) for e in edges) >= TOP_LINKS
+                              for x in (a, b))  # fmt: skip
+                if top_only and full_up and focus not in (a, b):
+                    continue
                 edges.append({"source": a, "target": b, "weight": 1, "also": True})
     view.chips = [
         {"name": name, "used_by": len({x for e in full for x in (e["source"], e["target"])
