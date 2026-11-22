@@ -103,7 +103,11 @@ Branch `phase-g-fix-5` from `origin/auto/phases-7-10`; PR into it (`--body-file`
    (direct, Home list, Home then reopen, F5) pass on a fast server. Fix: a clientside callback puts
    "Opening..." into the page at once when the address changes. Tests: `test_da_request_header_browser.py`.
    The Inbox link is a plain address, so it is the "direct address" path. P24 can close.
-   9b N5 (tab in the address) is still to build.
+   9b N5 DONE (`da_admin_address.py`; tests `test_da_admin_address.py`, `test_da_admin_tab_address_browser.py`).
+   Plain `/admin` loaded in Playwright stayed on Overview after 4 s, so the "Project charter after
+   load" shift did not reproduce at home; the `open_tab` guard (no click, no change) is kept and no
+   callback changes the tab on load. Needs a work check. Page opens the tab from the address; two
+   browser callbacks keep address and tabs in step. The Map view has its own page, so it has no `view` key.
 10. **Part 4 B1 to B4** (G5-15 to G5-18).
 11. **B5** (G5-19): dispute in two steps.
 12. **Part 5 F1 to F4** (G5-20 to G5-22): PDF writer, layout, download.

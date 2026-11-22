@@ -89,6 +89,7 @@ from db_table_functions.db_tbl_da_rulebook import (
     get_version,
     restore_version,
 )
+from layouts.da_admin_address import ADDRESS_TO_TABS_JS, TABS_TO_ADDRESS_JS, tab_and_view
 from layouts.da_admin_builds_panel import BUILD_USE_BTN
 from layouts.da_admin_catalog_meaning import (
     CAP_MEANING_ID,
@@ -315,8 +316,9 @@ def get_admin_settings() -> Settings:
     return load_settings()
 
 
-def admin_content(settings: Settings, pathname: str | None):
-    """What the admin area holds for this path: nothing, the refusal, or the console."""
+def admin_content(settings: Settings, pathname: str | None, search: str | None = None):
+    """What the admin area holds for this path: nothing, the refusal, or the console.
+    `search` is the address text; it names the tab and view to open (Fix G5 N5)."""
     if pathname != ADMIN_PATH:
         return None
     if not is_admin(settings, settings.developer_id):
@@ -324,15 +326,20 @@ def admin_content(settings: Settings, pathname: str | None):
     active = get_active_version(settings.db_path)
     if active is None:
         return html.Div(dmc.Text(NO_RULEBOOK_MESSAGE, c=da_styles.MUTED), style=da_styles.PAGE)
+    tab, view = tab_and_view(search)
+    queue = queue_data(settings)
+    if view:
+        queue["review"] = {**(queue.get("review") or {}), "view": view}
     return admin_page(
         active,
         build_timeline(settings.db_path),
         cited_counts(settings.db_path),
-        queue_data(settings),
+        queue,
         build_overview(settings),
         health_report(settings.db_path, WINDOW_ALL),
         server_settings_view(settings),
         fires_in(settings.db_path),
+        tab=tab,
     )
 
 
@@ -970,9 +977,29 @@ def register_da_admin_page_callbacks(app) -> None:
         Output(ADMIN_CONTENT_ID, "children"),
         Output(DEV_WRAP_ID, "style"),
         Input(LOCATION_ID, "pathname"),
+        State(LOCATION_ID, "search"),
     )
-    def show_page(pathname):
-        return admin_content(get_admin_settings(), pathname), developer_page_style(pathname)
+    def show_page(pathname, search):
+        return admin_content(get_admin_settings(), pathname, search), developer_page_style(pathname)
+
+    # Fix G5 N5: the address and the tabs follow each other in the browser (no reload).
+    app.clientside_callback(
+        ADDRESS_TO_TABS_JS,
+        Output(ADMIN_TABS_ID, "value", allow_duplicate=True),
+        Output(CAT_VIEW_ID, "value", allow_duplicate=True),
+        Input(LOCATION_ID, "search"),
+        State(ADMIN_TABS_ID, "value"),
+        State(CAT_VIEW_ID, "value"),
+        prevent_initial_call=True,
+    )
+    app.clientside_callback(
+        TABS_TO_ADDRESS_JS,
+        Output(LOCATION_ID, "search", allow_duplicate=True),
+        Input(ADMIN_TABS_ID, "value"),
+        Input(CAT_VIEW_ID, "value"),
+        State(LOCATION_ID, "search"),
+        prevent_initial_call=True,
+    )
 
     for tab in EDITABLE_TABS:
         _register_tab(app, tab)

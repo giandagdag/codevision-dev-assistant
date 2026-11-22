@@ -182,9 +182,11 @@ def admin_page(
     report=None,
     server: list[tuple[str, str]] | None = None,
     fires: dict[str, int] | None = None,
+    tab: str = TAB_OVERVIEW,
 ) -> html.Div:
     """The console: 8 tabs, Overview first. A tab not built yet shows a plain "comes later" line.
-    `overview` and `report` (Phase 11c) fill the Overview tab; without them it says so."""
+    `overview` and `report` (Phase 11c) fill the Overview tab; without them it says so.
+    `tab` is the tab the address asked for (Fix G5 N5)."""
     return html.Div(
         [
             dcc.Store(id=DATA_VERSION_ID, data=START_STATE),
@@ -225,7 +227,7 @@ def admin_page(
                     ],
                 ],
                 id=ADMIN_TABS_ID,
-                value=TAB_OVERVIEW,
+                value=tab,
             ),
         ],
         style=da_styles.PAGE,
