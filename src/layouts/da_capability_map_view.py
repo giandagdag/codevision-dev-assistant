@@ -55,6 +55,11 @@ MAP_PICTURE_ID = "da-map-picture"
 MAP_TABLE_ID = "da-map-table"
 MAP_SORT_ID = "da-map-sort"
 VIEW_MAP, VIEW_LINKS = "Map", "Links"
+SHOW_UNASSIGNED = "Show unassigned programs"  # G6 map control words
+TOP_LINKS_LABEL = "Top 3 links per capability"
+MIN_CALLS_LABEL = "Show links with at least N calls"
+OPEN_LABEL = "Open"
+CLEAR_FOCUS = "Clear focus"
 SORT_MOST, SORT_FEWEST = "Most calls first", "Fewest calls first"
 LINK_HEADS = ["From", "To", "Calls", "Programs", "Also"]
 START_STATE = {"cap": "", "module": "", "focus": "", "tap": ["", 0]}
@@ -301,12 +306,12 @@ def map_shell() -> html.Div:
         p="md",
     )  # fmt: skip
     focus_bar = dmc.Group(
-        [dmc.Switch(id=MAP_SHOW_UNASSIGNED_ID, label="Show unassigned programs", checked=False),
-         dmc.Switch(id=MAP_TOP_ID, label="Top 3 links per capability", checked=True),
-         dmc.Text("Show links with at least N calls", size="sm"),
+        [dmc.Switch(id=MAP_SHOW_UNASSIGNED_ID, label=SHOW_UNASSIGNED, checked=False),
+         dmc.Switch(id=MAP_TOP_ID, label=TOP_LINKS_LABEL, checked=True),
+         dmc.Text(MIN_CALLS_LABEL, size="sm"),
          dmc.Slider(id=MAP_MIN_CALLS_ID, min=1, max=20, step=1, value=3, w=200),
-         dmc.Button("Open", id=MAP_OPEN_ID, variant="light", size="xs"),
-         dmc.Button("Clear focus", id=MAP_CLEAR_ID, variant="subtle", size="xs")],
+         dmc.Button(OPEN_LABEL, id=MAP_OPEN_ID, variant="light", size="xs"),
+         dmc.Button(CLEAR_FOCUS, id=MAP_CLEAR_ID, variant="subtle", size="xs")],
         px="md",
     )  # fmt: skip
     switch = dmc.Group(

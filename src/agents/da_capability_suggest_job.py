@@ -27,6 +27,9 @@ BUTTON = "Suggest capabilities from the code"
 FEW_CAPABILITIES = 5
 MANY_UNASSIGNED = 0.3
 NO_GRAPH = "The code links are not built yet. Run a Full rebuild first."
+FAILED_LINE = (
+    "Suggesting capabilities failed. Check the AI model on the Settings tab and run it again."
+)
 STEPS = (STEP_GROUPING, STEP_NAMING, STEP_MERGING)
 
 
@@ -90,7 +93,7 @@ def _run(policy, settings, started_by, started, directory, client) -> None:
         job.set_end_line(out, f"{len(named)} capability suggestions from code links. Review them.")
     except Exception as error:  # a crash must free the lock and keep the old cards
         logger.warning("Capability suggestion failed: %s", type(error).__name__)
-        job.fail(out, f"Suggesting capabilities failed: {type(error).__name__}")
+        job.fail(out, FAILED_LINE)  # the error class goes to the log only
     finally:
         _lock_path(out).unlink(missing_ok=True)
 
