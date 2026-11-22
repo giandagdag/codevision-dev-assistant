@@ -69,6 +69,17 @@ write down why, and the system keeps every earlier version you can compare or re
    On **Overview**, switch the health numbers between **Last 30 days** and **All time**.
 3. Write down anything that looks different from the picture in the README.
 
+## WF-9: Fix G6 (suggest a catalog, many capabilities, readable map)
+
+1. Admin, **Capability catalog**: press **Suggest capabilities from the code**. Review the cards in the
+   Review queue. **Create and assign** the good ones, **Reject** the rest, then **Re-check**.
+2. In **Browse modules** use **Also add here** on one program; its chip shows **Also in: <name>**.
+3. Mark Config, Classes and Database as **Shared foundation** (catalog edit, then Save).
+4. Open the capability map with the defaults: Unassigned is hidden (count and link at the top), at most
+   3 links per capability, foundations are chips at the bottom. Click a bubble, then **Open**.
+5. Switch to **Links**: sort by calls, filter by capability, "also" rows are marked.
+6. Write down: do the group names make sense, and is any label cut off or on top of another?
+
 ## After the tests
 
 Write the answers into the open questions list. Do not change code at work; bring the notes home.

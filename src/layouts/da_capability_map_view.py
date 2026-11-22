@@ -47,6 +47,9 @@ MAP_TOP_ID = "da-map-top"
 MAP_SHOW_UNASSIGNED_ID = "da-map-show-unassigned"
 MAP_CHIPS_ID = "da-map-chips"
 MAP_PANEL_ID = "da-map-panel"
+# Hidden but still as wide as the page: cytoscape lays the bubbles out at the size it sees when the
+# elements arrive, and a display:none box is 0 wide (the picture came out off centre, unfitted).
+HIDDEN = {"visibility": "hidden", "height": 0, "overflow": "hidden"}
 MAP_VIEW_ID = "da-map-view"
 MAP_PICTURE_ID = "da-map-picture"
 MAP_TABLE_ID = "da-map-table"
@@ -324,5 +327,5 @@ def map_shell() -> html.Div:
         [bar, switch, picture,
          html.Div(id=MAP_TABLE_ID, style={"display": "none", "padding": "16px"}),
          dcc.Store(id=MAP_STATE_ID, data=START_STATE)],
-        id=MAP_SHELL_ID, style={"display": "none"},
+        id=MAP_SHELL_ID, style=HIDDEN,
     )  # fmt: skip

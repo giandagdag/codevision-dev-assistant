@@ -179,3 +179,20 @@ def test_g5_25_catalog_look_parts_show_no_raw_names(published_rulebook):
     skip = {*paths, "agent_flows/*"}
     lines = [ln for p in parts for ln in shown_text(p).splitlines() if ln not in skip]
     assert not [ln for ln in lines if raw_names_in(ln, CODE_NAMES)]
+
+
+def test_g6_15_map_parts_show_no_raw_names():
+    """G6-15: the map page controls, the Links table, the focus panel and the foundation chips."""
+    from layouts import da_capability_map_view as mv
+
+    rows = [{"from": "Ingestion", "to": "Reports", "calls": 4, "programs": 2, "also": True}]
+    panel = {"out": [{"capability": "Reports", "calls": 4, "programs": 2}], "in": [],
+             "top_programs": [{"module": "ingest.mod", "calls": 4}]}  # fmt: skip
+    chip = {"name": "Config", "used_by": 9}
+    text = "\n".join([
+        shown_text(mv.map_shell()), shown_text(mv.links_table_view(rows)),
+        *mv.panel_lines("Ingestion", panel), mv.chip_text(chip), mv.unassigned_text(3),
+        mv.SORT_MOST, mv.SORT_FEWEST,
+    ])  # fmt: skip
+    assert not [ln for ln in text.splitlines() if raw_names_in(ln, CODE_NAMES)]
+    assert "Top 3 links per capability" in text and "Show links with at least N calls" in text

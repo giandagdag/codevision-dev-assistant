@@ -33,7 +33,7 @@ def test_link_opens_the_map_in_a_new_tab():  # G-11, G-12
 
 
 def test_page_starts_hidden_and_hides_the_developer_page_on_its_path():
-    assert map_shell().to_plotly_json()["props"]["style"] == {"display": "none"}
+    assert map_shell().to_plotly_json()["props"]["style"] == view.HIDDEN
     assert developer_page_style(MAP_PATH) == {"display": "none"}
 
 

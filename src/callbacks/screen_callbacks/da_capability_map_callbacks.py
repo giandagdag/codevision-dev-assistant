@@ -13,6 +13,7 @@ from db_table_functions.da_db import DatabaseBusyError
 from db_table_functions.db_tbl_da_rulebook import RulebookError, get_active_version
 from layouts.da_capability_map_view import (
     ADMIN_LINK,
+    HIDDEN,
     MAP_BACK_ID,
     MAP_CHIPS_ID,
     MAP_CLEAR_ID,
@@ -140,8 +141,7 @@ def register_da_capability_map_callbacks(app) -> None:
     )
     def show_map(mode, sort, pathname, state, text, chosen, show_unassigned, top_only, min_calls):
         if pathname != MAP_PATH:
-            hidden = {"display": "none"}
-            return hidden, [], "", "", [], [], [], [], [], [], {}, hidden, []
+            return HIDDEN, [], "", "", [], [], [], [], [], [], {}, {"display": "none"}, []
         graph = load_graph(index_dir())
         capabilities = catalog_capabilities()
         tags = with_catalog_tags(graph, read_tags(), capabilities) if graph else {}
