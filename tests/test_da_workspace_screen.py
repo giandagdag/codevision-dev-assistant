@@ -398,7 +398,8 @@ def test_register_attaches_the_workspace_hops():
 
     # after draw, action, card 2 (Phase 9), enter-to-send, the build poll, the form, the finding
     # buttons (Phase 7)
-    hops = app._callback_list[7:]
+    # (Fix G5 N6 put one more page-content callback at index 1, so the hops start at 8.)
+    hops = app._callback_list[8:]
 
     # 8 workspace hops, then the 3 Refine callbacks of Phase 8 step 16 (buttons, picks, add case)
     # then the card 1 switch offer answer of Phase 9 step 18a
