@@ -132,6 +132,15 @@ def groups(graph: dict) -> list[Group]:
     return sorted(out, key=lambda g: g.programs)
 
 
+def path_weights(graph: dict) -> dict[str, dict[str, int]]:
+    """Like module_weights, but keyed by file path (for links between groups of programs)."""
+    path_of = {entry["module"]: path for path, entry in graph["files"].items()}
+    return {
+        path_of[m]: {path_of[o]: w for o, w in others.items()}
+        for m, others in module_weights(graph).items()
+    }
+
+
 def _split_by_folder(members: list[str], path_of: dict[str, str]) -> list[list[str]]:
     by_folder: dict[str, list[str]] = defaultdict(list)
     for module in members:
