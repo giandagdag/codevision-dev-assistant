@@ -22,6 +22,8 @@ class MapView:
     edges: list[dict] = field(default_factory=list)  # source, target, weight
     note: str = ""  # "Showing 300 of N, narrow with search", or the empty-graph text
     details: dict = field(default_factory=dict)  # module view: functions, callers, callees...
+    unassigned: int = 0  # G6: programs hidden in Unassigned (header count)
+    chips: list[dict] = field(default_factory=list)  # G6: Shared foundations, name + used_by
 
 
 def _module_capabilities(graph: dict, tags: dict) -> dict[str, str]:
@@ -94,6 +96,70 @@ def capabilities_view(graph: dict | None, tags: dict, highlight: str = "") -> Ma
         for node in nodes.values():
             node["faded"] = node["id"] != highlight
     return _cap(sorted(nodes.values(), key=lambda n: n["id"]), edges, _degree(edges))
+
+
+DEFAULT_MIN_CALLS = 3  # G6 C2: slider "Show links with at least N calls" (1 to 20)
+TOP_LINKS = 3  # G6 C2: "Top 3 links per capability"
+
+
+def _top_links(edges: list[dict]) -> list[dict]:
+    """Strongest first; an edge is drawn only while both ends have fewer than TOP_LINKS drawn."""
+    drawn: dict[str, int] = {}
+    kept = []
+    for edge in sorted(edges, key=lambda e: (-e["weight"], e["source"], e["target"])):
+        ends = (edge["source"], edge["target"])
+        if all(drawn.get(end, 0) < TOP_LINKS for end in ends):
+            kept.append(edge)
+            for end in ends:
+                drawn[end] = drawn.get(end, 0) + 1
+    return sorted(kept, key=lambda e: (e["source"], e["target"]))
+
+
+def readable_view(
+    graph: dict | None,
+    tags: dict,
+    foundations: frozenset[str] = frozenset(),
+    also: dict[str, list[str]] | None = None,
+    show_unassigned: bool = False,
+    min_calls: int = DEFAULT_MIN_CALLS,
+    top_only: bool = True,
+    focus: str = "",
+) -> MapView:
+    """G6 C1/C2/C3: the level-1 map made readable. Unassigned is hidden (its count goes to
+    `view.unassigned`), links under `min_calls` and beyond the top 3 per capability are hidden,
+    Shared foundations leave the picture and become `view.chips` ("Config, used by 9
+    capabilities"). Around the `focus` capability every link shows. `also` maps a module name to
+    the other capabilities it is in; each becomes one dashed edge (`also: True`)."""
+    view = capabilities_view(graph, tags)
+    if _empty(graph):
+        return view
+    full = view.edges
+    view.unassigned = next((n["size"] for n in view.nodes if n["id"] == UNASSIGNED), 0)
+    hidden = set(foundations) | ({UNASSIGNED} if not show_unassigned else set())
+    # hidden ends are dropped first, so a foundation or Unassigned never uses up a "top 3" slot
+    strong = [e for e in full if e["weight"] >= min_calls
+              and not {e["source"], e["target"]} & (hidden - {focus})]  # fmt: skip
+    edges = _top_links(strong) if top_only else strong
+    if focus:
+        around = [e for e in full if focus in (e["source"], e["target"])]
+        edges = [e for e in edges if e not in around] + around
+        hidden -= {focus}
+    caps = _module_capabilities(graph, tags)
+    for module, others in (also or {}).items():
+        for other in others:
+            main = caps.get(module, UNASSIGNED)
+            if main != other:
+                a, b = sorted((main, other))
+                edges.append({"source": a, "target": b, "weight": 1, "also": True})
+    view.chips = [
+        {"name": name, "used_by": len({x for e in full for x in (e["source"], e["target"])
+                                        if name in (e["source"], e["target"]) and x != name})}
+        for name in sorted(foundations & {n["id"] for n in view.nodes} - {focus})
+    ]  # fmt: skip
+    view.nodes = [n for n in view.nodes if n["id"] not in hidden]
+    kept = {n["id"] for n in view.nodes}
+    view.edges = [e for e in edges if e["source"] in kept and e["target"] in kept]
+    return view
 
 
 def capability_view(
