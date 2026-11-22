@@ -120,6 +120,16 @@ def _duration_text(span: timedelta) -> str:
     return f"{hours} h {minutes} min" if hours else f"{minutes} min"
 
 
+BAR_STEP_NAMES = {1: "Reading code", 2: "Linking code", 3: "Tagging programs"}
+
+
+def step_title(status: dict) -> str:
+    """Fix G5 N2: the bar's heading. A re-check is step 3 work under its own name."""
+    if status.get("mode") == "recheck":
+        return "Re-checking programs"
+    return BAR_STEP_NAMES.get(int(status.get("step") or 1), "")
+
+
 def progress_line(status: dict, now: datetime | None = None) -> str:
     """"Build 7. Step 1 of 3: reading the code, 340 of 1,200 pieces (28%)" plus "About 2 h left"."""
     step = int(status.get("step") or 1)

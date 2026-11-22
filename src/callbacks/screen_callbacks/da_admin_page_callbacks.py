@@ -149,6 +149,7 @@ from layouts.da_admin_index_panels import (
     job_panel,
     rebuild_status,
 )
+from layouts.da_admin_job_bar import BAR_CATALOG, BAR_QUEUE, JOB_STOP_TYPE, job_bar
 from layouts.da_admin_overview_tab import (
     ATTENTION_SCROLL_ID,
     STOP_ACT_TYPE,
@@ -1447,6 +1448,20 @@ def watch_job(previous: dict | None):
     return (no_update if data == previous else data), interval
 
 
+def bars_now() -> tuple[list, list]:
+    """Fix G5 N2: the same bar for the catalog header and the Review queue view."""
+    status, started = job.read_status(), running_since()
+    return job_bar(status, started, "catalog"), job_bar(status, started, "queue")
+
+
+def stop_from_bar(settings: Settings):
+    """Stop on the bar asks the job to end (checked between items); admin only."""
+    if not is_admin(settings, settings.developer_id):
+        raise PreventUpdate
+    job.request_stop()
+    return bars_now()[0]
+
+
 def redraw_after_job(settings: Settings, data: dict | None, search, missing_backup, rq_values):
     """Fix G5 N1: after a job ended, redraw the lists its result changes: Overview, Capabilities,
     the Review queue and its count. The search text and filters are read back, never reset, and
@@ -1473,6 +1488,25 @@ def _register_watcher(app) -> None:
     )
     def on_watch(_ticks, previous):
         return watch_job(previous)
+
+    @app.callback(
+        Output(BAR_CATALOG, "children"),
+        Output(BAR_QUEUE, "children"),
+        Input(WATCH_ID, "n_intervals"),
+        Input(DATA_VERSION_ID, "data"),
+    )
+    def on_bars(_ticks, _data):
+        return bars_now()
+
+    @app.callback(
+        Output(BAR_CATALOG, "children", allow_duplicate=True),
+        Input({"type": JOB_STOP_TYPE, "where": ALL}, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def on_bar_stop(_clicks):
+        if not ctx.triggered or not ctx.triggered[0]["value"]:
+            raise PreventUpdate
+        return stop_from_bar(get_admin_settings())
 
     @app.callback(
         Output(body_id(TAB_OVERVIEW), "children", allow_duplicate=True),

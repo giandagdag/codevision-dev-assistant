@@ -36,6 +36,7 @@ from layouts.da_admin_common import (
     pat_id,
     version_pill,
 )
+from layouts.da_admin_job_bar import current_bar
 from layouts.da_admin_queue_ids import (  # noqa: F401  (other modules import these from here)
     CAT_PANE_CAPS,
     CAT_PANE_QUEUE,
@@ -187,15 +188,18 @@ def catalog_view(
                 mb="sm",
             ),
             html.Div(
-                html.Div(
-                    [*([starter] if starter is not None else []), catalog],
-                    style=admin_styles.CARD_STACK,
-                ),
+                [
+                    current_bar("catalog"),
+                    html.Div(
+                        [*([starter] if starter is not None else []), catalog],
+                        style=admin_styles.CARD_STACK,
+                    ),
+                ],
                 id=CAT_PANE_CAPS,
                 style=shown if view == VIEW_CAPS else hidden,
             ),
             html.Div(
-                queue_block(queue, names, disabled=editable),
+                [current_bar("queue"), queue_block(queue, names, disabled=editable)],
                 id=CAT_PANE_QUEUE,
                 style=shown if view == VIEW_QUEUE else hidden,
             ),
