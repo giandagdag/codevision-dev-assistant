@@ -25,6 +25,7 @@ from layouts.da_capability_map_view import (
     MAP_FILTER_ID,
     MAP_GRAPH_ID,
     MAP_HITS_ID,
+    MAP_HOOK_ID,
     MAP_MIN_CALLS_ID,
     MAP_NOTE_ID,
     MAP_OPEN_ID,
@@ -127,7 +128,7 @@ def register_da_capability_map_callbacks(app) -> None:
     # G6 C4: hook the picture once it is drawn, so a click on empty space clears the focus
     app.clientside_callback(
         BACKGROUND_TAP_JS,
-        Output(MAP_BG_ID, "data"),
+        Output(MAP_HOOK_ID, "data"),
         Input(MAP_GRAPH_ID, "elements"),
     )
 

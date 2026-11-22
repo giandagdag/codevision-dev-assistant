@@ -32,6 +32,9 @@ MAP_SHELL_ID = "da-map-shell"
 MAP_GRAPH_ID = "da-map-graph"
 MAP_STATE_ID = "da-map-state"
 MAP_BG_ID = "da-map-background"  # a click on empty space writes a time stamp here (G6 C4)
+# The hook below needs an output of its own: using MAP_BG_ID would close a loop (elements, hook,
+# background, state, elements) and Dash refuses circular callbacks.
+MAP_HOOK_ID = "da-map-hook"
 # Runs when the picture is drawn; hooks the cytoscape core once. A tap whose target is the core
 # itself (not a bubble or link) is a click on empty space.
 BACKGROUND_TAP_JS = """function(elements) {
@@ -346,6 +349,7 @@ def map_shell() -> html.Div:
     return html.Div(
         [bar, switch, picture,
          html.Div(id=MAP_TABLE_ID, style={"display": "none", "padding": "16px"}),
-         dcc.Store(id=MAP_STATE_ID, data=START_STATE), dcc.Store(id=MAP_BG_ID)],
+         dcc.Store(id=MAP_STATE_ID, data=START_STATE), dcc.Store(id=MAP_BG_ID),
+         dcc.Store(id=MAP_HOOK_ID)],
         id=MAP_SHELL_ID, style=HIDDEN,
     )  # fmt: skip

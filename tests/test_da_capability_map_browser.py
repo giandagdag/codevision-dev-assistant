@@ -121,6 +121,9 @@ def test_g6_14_no_label_overlaps_at_1366_and_1920(make_live_page, live):
 
 def test_click_on_empty_space_clears_the_focus(make_live_page, live):  # G6 C4, parked item G6-a
     page = make_live_page(live)
+    errors: list[str] = []  # a circular callback shows here, not as a failed click
+    page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+    page.reload()
     page.wait_for_function(
         "() => { const el = document.getElementById('da-map-graph');"
         " return el && el._cyreg && el._cyreg.cy.nodes().length >= 10; }", timeout=20000)
@@ -130,3 +133,4 @@ def test_click_on_empty_space_clears_the_focus(make_live_page, live):  # G6 C4, 
     page.wait_for_function(f"() => {cy}.nodes('.faded').length > 0", timeout=10000)
     page.evaluate(f"() => {cy}.emit('tap')")  # the target is the picture itself: empty space
     page.wait_for_function(f"() => {cy}.nodes('.faded').length === 0", timeout=10000)
+    assert errors == []
