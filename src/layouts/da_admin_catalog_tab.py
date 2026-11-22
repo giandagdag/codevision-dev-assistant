@@ -89,14 +89,16 @@ from styles import da_styles
 # --- Capability catalog and the Unassigned queue (Phase 11b) ---
 
 CATALOG_TABLE = "capabilities"
-CATALOG_COLUMNS = ("name", "description", "named_senior", "backup_senior", "path_patterns")
+CATALOG_COLUMNS = ("name", "description", "named_senior", "backup_senior", "kind", "path_patterns")
+CAPABILITY_KINDS = ("Business", "Shared foundation")
 # Fix G4 L1: fixed column widths and one input height, so every row lines up.
 CATALOG_WIDTHS = {
-    "name": "18%",
-    "description": "28%",
-    "named_senior": "14%",
-    "backup_senior": "14%",
-    "path_patterns": "14%",
+    "name": "16%",
+    "description": "24%",
+    "named_senior": "12%",
+    "backup_senior": "12%",
+    "kind": "12%",
+    "path_patterns": "12%",
     "actions": "12%",
 }
 CATALOG_INPUT_HEIGHT = "56px"  # two lines of the xs text
@@ -134,7 +136,7 @@ def catalog_view(
                     rows,
                     editable,
                     movable=True,
-                    kinds={"path_patterns": PATTERNS},
+                    kinds={"path_patterns": PATTERNS, "kind": list(CAPABILITY_KINDS)},
                     widths=CATALOG_WIDTHS,
                     input_height=CATALOG_INPUT_HEIGHT,
                     add_label="+ Add capability",

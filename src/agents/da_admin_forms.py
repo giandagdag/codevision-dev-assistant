@@ -468,6 +468,7 @@ def capability_rows(policy: Policy) -> list[dict]:
             "description": c.description,
             "named_senior": c.named_senior,
             "backup_senior": c.backup_senior,
+            "kind": c.kind,
             "path_patterns": "\n".join(c.path_patterns),
         }
         for c in policy.capabilities
@@ -504,12 +505,14 @@ def _capability_form_rows(rows: list[dict]) -> list[dict]:
             "description": str(row.get("description", "")).strip(),
             "named_senior": str(row.get("named_senior", "")).strip(),
             "backup_senior": str(row.get("backup_senior", "")).strip(),
+            "kind": str(row.get("kind") or "Business").strip(),
             "path_patterns": _clean_list(row.get("path_patterns", [])),
         }
         for row in rows
     ]
     # A completely empty row (Add row, nothing typed) is dropped; a half-filled one is an error.
-    return [row for row in cleaned if any(row.values())]
+    # (kind defaults to Business, so it does not count as typed.)
+    return [row for row in cleaned if any(v for k, v in row.items() if k != "kind")]
 
 
 def pattern_warnings(policy: Policy) -> list[str]:

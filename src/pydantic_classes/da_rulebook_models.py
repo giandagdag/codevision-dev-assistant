@@ -114,6 +114,9 @@ class Capability(_RulebookPart):
     named_senior: str = Field(min_length=1)
     # Phase 11b: who signs off when the named senior is away. Empty for versions saved before.
     backup_senior: str = ""
+    # Fix G6 C3: shared foundations (Config, Classes, Database) are drawn as chips on the map.
+    # A version saved before has no kind and reads as Business.
+    kind: Literal["Business", "Shared foundation"] = "Business"
     # Matched by plain code against the whole lower-case path (fnmatch), never by the AI.
     path_patterns: list[str] = Field(min_length=1)
 

@@ -804,6 +804,7 @@ def _new_capability(settings: Settings, uid: int):
         "description": "",
         "named_senior": "",
         "backup_senior": "",
+        "kind": "Business",
         "path_patterns": f"{folder}/*" if folder else row.path,
     }
     rows = [*capability_rows(active.rulebook.policy), new]
