@@ -6,7 +6,14 @@ Both are drawn from the server on a click and closed by the next re-draw, like t
 import dash_mantine_components as dmc
 from dash import html
 
-from agents.da_admin_modules import count_matches, is_exact, module_rows, split_patterns
+from agents.da_admin_modules import (
+    count_matches,
+    example_pattern,
+    first_matches,
+    is_exact,
+    module_rows,
+    split_patterns,
+)
 from layouts.da_admin_common import pat_id
 from pydantic_classes.da_rulebook_models import Capability
 from styles import da_styles
@@ -19,6 +26,10 @@ MOD_PICKED_ID = {"type": MOD_TYPE, "name": "picked"}
 MOD_SEARCH_ID, MOD_UNASSIGNED_ID = "adm-modf-search", "adm-modf-unassigned"
 MOD_SUMMARY_ID, MOD_ALL_ID = "adm-modf-summary", "adm-modf-all"
 MOD_TABLE_ID = "adm-modf-table"
+PATTERN_HELP = (
+    "Paths start inside the source folder. Use / between folders. "
+    "* matches anything, including sub-folders. Case does not matter."
+)
 
 
 def hint_text(pattern: str, paths: list[str]) -> str:
@@ -26,7 +37,10 @@ def hint_text(pattern: str, paths: list[str]) -> str:
     if not (pattern or "").strip():
         return ""
     n = count_matches(pattern, paths)
-    return f"matches {n} module{'' if n == 1 else 's'}"
+    if n == 0:
+        return "Matches nothing yet. Use Save anyway to keep it."
+    shown = ", ".join(first_matches(pattern, paths))
+    return f"matches {n} module{'' if n == 1 else 's'}: {shown}" + (" ..." if n > 5 else "")
 
 
 def patterns_panel(tab: str, index: int, name: str, patterns_text: str, paths: list[str]):
@@ -46,6 +60,7 @@ def patterns_panel(tab: str, index: int, name: str, patterns_text: str, paths: l
                 ),
             ],
             gap="xs",
+            wrap="nowrap",
             mb=4,
         )
         for p in split_patterns(patterns_text)
@@ -55,7 +70,8 @@ def patterns_panel(tab: str, index: int, name: str, patterns_text: str, paths: l
         dmc.TextInput(
             id=NEW_PATTERN_ID,
             label="Add pattern",
-            placeholder="src/agents/*limits*",
+            placeholder=example_pattern(paths),
+            description=PATTERN_HELP,
             size="xs",
             mt="sm",
         ),
@@ -66,6 +82,9 @@ def patterns_panel(tab: str, index: int, name: str, patterns_text: str, paths: l
                     "Add pattern", id=pat_id(tab, "add", index), size="xs", variant="default"
                 ),
                 dmc.Button("Save", id=pat_id(tab, "save", index), size="xs"),
+                dmc.Button(
+                    "Save anyway", id=pat_id(tab, "force", index), size="xs", variant="default"
+                ),
                 dmc.Button("Close", id=pat_id(tab, "close", index), size="xs", variant="subtle"),
             ],
             mt="sm",
@@ -164,5 +183,5 @@ def modules_modal(
         ],
         opened=True,
         size="70%",
-        title="Add modules",
+        title="Browse modules",
     )

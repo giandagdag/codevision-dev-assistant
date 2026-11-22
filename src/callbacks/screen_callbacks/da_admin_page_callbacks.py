@@ -42,6 +42,7 @@ from agents.da_admin_meaning import meaning_search
 from agents.da_admin_metrics import WINDOW_ALL, WINDOW_LABELS, health_report
 from agents.da_admin_modules import (
     add_modules_to_form,
+    count_matches,
     edit_patterns,
     module_paths,
     module_rows,
@@ -490,12 +491,18 @@ def _pattern_action(settings, tab, action, form, note, base_version, active, inp
     elif name == "remove":
         form = edit_patterns(form, index, remove=action["pat"])
         panel = {"kind": "patterns", "index": index}
-    elif name == "add":
-        form = edit_patterns(form, index, add=typed)
-        panel = {"kind": "patterns", "index": index}
-    elif name == "save":
+    elif name in ("add", "save", "force"):
+        # A pattern that matches nothing is kept only through Save anyway (Fix G5 L3).
+        paths = module_paths(base.rulebook.policy.index_folder_scope)
+        if typed and name != "force" and count_matches(typed, paths) == 0:
+            return _content(
+                settings, tab, base, editable=True, draft=form,
+                panel={"kind": "patterns", "index": index},
+            ), True
         form = edit_patterns(form, index, add=typed)  # text typed but not yet added counts too
-        return _save(settings, tab, form, note, base_version, active)
+        if name != "add":
+            return _save(settings, tab, form, note, base_version, active)
+        panel = {"kind": "patterns", "index": index}
     elif name == "addmods":
         target, picked = inputs.get("cap") or "", inputs.get("picked") or []
         if target and picked:

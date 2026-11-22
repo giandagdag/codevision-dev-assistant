@@ -8,6 +8,7 @@ from datetime import datetime
 
 import dash_mantine_components as dmc
 from dash import html
+from dash_iconify import DashIconify
 
 from styles import da_admin_styles as admin_styles
 from styles import da_styles
@@ -198,6 +199,7 @@ def list_table(
     widths: dict[str, str] | None = None,
     input_height: str = "",
     marker: str = "",
+    add_label: str = "Add row",
 ):
     """A table drawn from column names. Read mode is plain text; edit mode adds Add row and Remove.
 
@@ -223,7 +225,8 @@ def list_table(
     body = dmc.TableTbody(
         [
             _table_row(
-                tab, table_id, columns, i, row, editable, kinds, static, movable, input_height
+                tab, table_id, columns, i, row, editable, kinds, static, movable, input_height,
+                len(rows),
             )
             for i, row in enumerate(rows)
         ]
@@ -236,7 +239,7 @@ def list_table(
     if editable:
         parts.append(
             dmc.Button(
-                "Add row",
+                add_label,
                 id={"type": "adm-add", "tab": tab, "table": table_id, "index": 0},
                 variant="default",
                 size="xs",
@@ -278,7 +281,8 @@ def pat_id(tab: str, action: str, index: int = 0, pat: str = "") -> dict:
 
 
 def _table_row(
-    tab, table_id, columns, index, row, editable, kinds, static, movable=False, input_height=""
+    tab, table_id, columns, index, row, editable, kinds, static, movable=False, input_height="",
+    total=0,
 ):
     cells = []
     same = {"styles": {"input": {"height": input_height, "minHeight": input_height}}}
@@ -328,27 +332,35 @@ def _table_row(
                     dmc.TableTd(dmc.Text(shown, size="sm", style={"whiteSpace": "pre-wrap"}))
                 )
     if editable:
-        buttons = [
-            dmc.Button(
-                "Remove",
-                id={"type": "adm-remove", "tab": tab, "table": table_id, "index": index},
-                variant="subtle",
-                color="red",
-                size="xs",
-            )
-        ]
-        if movable:
-            for label, step in (("Move up", -1), ("Move down", 1)):
-                move_id = {
-                    "type": MOVE_TYPE,
-                    "tab": tab,
-                    "table": table_id,
-                    "index": index,
-                    "step": step,
-                }
-                buttons.append(dmc.Button(label, id=move_id, variant="default", size="xs"))
-        cells.append(dmc.TableTd(dmc.Group(buttons, gap="xs") if movable else buttons[0]))
+        remove = dmc.Button(
+            "Remove",
+            id={"type": "adm-remove", "tab": tab, "table": table_id, "index": index},
+            variant="subtle",
+            color="red",
+            size="xs",
+        )
+        actions = _actions(tab, table_id, index, total, remove) if movable else remove
+        cells.append(dmc.TableTd(actions))
     return dmc.TableTr(cells)
+
+
+def _actions(tab, table_id, index, total, remove):
+    """One line, never wrapped: up and down icon buttons (the ends disabled), then Remove."""
+    arrows = []
+    for label, icon, step, off in (
+        ("Move up", "tabler:arrow-up", -1, index == 0),
+        ("Move down", "tabler:arrow-down", 1, index >= total - 1),
+    ):
+        move_id = {"type": MOVE_TYPE, "tab": tab, "table": table_id, "index": index, "step": step}
+        button = dmc.ActionIcon(
+            DashIconify(icon=icon, width=16),
+            id=move_id,
+            variant="default",
+            disabled=off,
+            **{"aria-label": label},
+        )
+        arrows.append(dmc.Tooltip(button, label=label))
+    return dmc.Group([*arrows, remove], gap=4, wrap="nowrap")
 
 
 def _cell_text(value) -> str:

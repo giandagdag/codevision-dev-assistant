@@ -2,6 +2,7 @@
 
 import dash_mantine_components as dmc
 from dash import html
+from dash_iconify import DashIconify
 
 from agents.da_admin_forms import capability_rows
 from agents.da_admin_index import read_health
@@ -87,11 +88,11 @@ CATALOG_COLUMNS = ("name", "description", "named_senior", "backup_senior", "path
 # Fix G4 L1: fixed column widths and one input height, so every row lines up.
 CATALOG_WIDTHS = {
     "name": "18%",
-    "description": "30%",
+    "description": "28%",
     "named_senior": "14%",
     "backup_senior": "14%",
     "path_patterns": "14%",
-    "actions": "10%",
+    "actions": "12%",
 }
 CATALOG_INPUT_HEIGHT = "56px"  # two lines of the xs text
 SG_FIELDS = ("name", "desc", "named", "backup")  # dialog inputs: the id's uid is "<name>|<field>"
@@ -131,10 +132,12 @@ def catalog_view(
                     kinds={"path_patterns": PATTERNS},
                     widths=CATALOG_WIDTHS,
                     input_height=CATALOG_INPUT_HEIGHT,
+                    add_label="+ Add capability",
                 ),
                 dmc.Button(
-                    "Add modules",
+                    "Browse modules...",
                     id=pat_id(TAB_CAPABILITY, "openmods"),
+                    leftSection=DashIconify(icon="tabler:list", width=16),
                     variant="default",
                     size="xs",
                     mt="xs",

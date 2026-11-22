@@ -124,4 +124,8 @@ Branch `phase-g-fix-5` from `origin/auto/phases-7-10`; PR into it (`--body-file`
     `finding_disputed` is written only at Send so the health numbers stay right. Not done: a
     Playwright check of the buttons; the full `pytest` run (targeted runs pass).
 12. **Part 5 F1 to F4** (G5-20 to G5-22): PDF writer, layout, download.
+13a. BUILT (L1, L2, L3; tests in `test_da_admin_catalog_panels.py`). "Browse modules..." button and pop-up
+    title, "+ Add capability", arrow icon buttons with tooltips (ends disabled), Remove red, one nowrap
+    group; pattern box placeholder from the index, help line, hint with first 5 paths, zero match
+    refused until "Save anyway". 13b (L4 Playwright measures, screenshots, G5-25 label scan) is next.
 13. **Part 6 L1 to L4** (G5-23, G5-24): catalog look, Playwright measures, screenshots, G5-25 label scan.
