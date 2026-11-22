@@ -91,6 +91,12 @@ Branch `phase-g-fix-5` from `origin/auto/phases-7-10`; PR into it (`--body-file`
    BUILT (7a, 7b, 7c). `.env.example` was not edited (the safety hook blocks that file name); the
    `DA_CODE_INDEX_DIR` and `DA_DB_PATH` setup is in `docs/discover-work-test.md` instead.
 8. **Part 3 N1 to N4** (G5-11, G5-12): job watcher, version store, progress bar, disabled buttons.
+   BUILT (8a, 8b, 8c). `da_admin_watch.py` (store `admin-data-version` = {n, running}; n goes up when
+   a job ends), `da_admin_job_bar.py` (one bar, Stop, `locked()` wrapper with tooltip), N4 end line in
+   the job status file. The Review queue "Try the tagger" panel is now a closed `Details` block: it
+   pushed the G4 browser test (8 cards at 1920 x 1080) to 7 cards. Not done: the full `pytest` run did
+   not finish in the time limit (it ran over 45 min); targeted runs (admin, g4, g5, index: 626 passed
+   plus browser tests) pass.
 9. **N5, N6** (G5-13, G5-14): tab address, request page header per entry path.
 10. **Part 4 B1 to B4** (G5-15 to G5-18).
 11. **B5** (G5-19): dispute in two steps.
