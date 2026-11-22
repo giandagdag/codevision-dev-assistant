@@ -188,8 +188,14 @@ def _tag_step(policy, settings, started_by, summary, out, tag_client, extra, pro
         )
     except Exception as error:  # a tagging crash must not hide the saved index
         logger.warning("Tagging failed: %s", type(error).__name__)
+        extra["tag_error"] = f"{TAGS_NOT_SAVED} ({type(error).__name__})"  # R6: red row
         return f" {TAGS_NOT_SAVED}"
     extra["tagged"] = result.scanned - len(result.skipped) if result.saved else 0
+    if result.saved:
+        extra.update(tag_total=result.scanned, unreadable=len(result.skipped),
+                     tag_reasons=result.reasons)
+    elif not result.message.startswith("Stopped"):
+        extra["tag_error"] = result.message or TAGS_NOT_SAVED
     if result.saved:
         # Fix G5 R5: the run is always saved; programs that could not be read are counted in words.
         return f" {result.message}" if result.skipped else f" Tagged {result.scanned} programs."

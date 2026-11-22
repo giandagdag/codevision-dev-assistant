@@ -6,7 +6,7 @@ from datetime import datetime
 import dash_mantine_components as dmc
 from dash import dcc, html
 
-from agents.da_admin_index import FIXED_SKIPS, NEEDS_BUILDING, IndexHealth, run_line
+from agents.da_admin_index import FIXED_SKIPS, NEEDS_BUILDING, IndexHealth, run_line, tag_line
 from agents.da_admin_job import percent, progress_line
 from layouts.da_admin_builds_panel import builds_panel
 from styles import da_admin_styles as admin_styles
@@ -56,7 +56,10 @@ def rebuild_status(started: datetime | None, runs: list[dict]) -> str:
     """The line next to the buttons: running since, else the newest refresh."""
     if started is not None:
         return f"Rebuilding… started {started:%H:%M}"
-    return run_line(runs[0]) if runs else ""
+    if not runs:
+        return ""
+    tags = tag_line(runs[0])
+    return f"{run_line(runs[0])} · {tags[0]}" if tags else run_line(runs[0])
 
 
 def _span_text(seconds: int) -> str:
@@ -224,6 +227,8 @@ def recent_refreshes(runs: list[dict]):
             dmc.Text(run_line(run), size="sm"),
             dmc.Text(run_detail(run), size="xs", c="dimmed"),
         ]
+        if tags := tag_line(run):  # Fix G5 R6: its own line, coloured by result
+            lines.insert(1, dmc.Text(tags[0], size="sm", c=tags[1]))
         # Path and symbol only, never the code text.
         if run.get("skipped"):
             lines.append(dmc.Text("Skipped: " + "; ".join(run["skipped"]), size="xs", c="dimmed"))

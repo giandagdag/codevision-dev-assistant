@@ -113,6 +113,19 @@ def recent_runs(directory: Path | None = None) -> list[dict]:
         return []
 
 
+def tag_line(run: dict) -> tuple[str, str] | None:
+    """Fix G5 R6: the Tags result of a run as (text, colour), or None when the run has no tag step.
+    Green: all tagged. Amber: some could not be read. Red: the step failed."""
+    if run.get("tag_error"):
+        return f"Tags: {run['tag_error']}", "red"
+    if "tag_total" not in run:
+        return None
+    total, bad = int(run["tag_total"]), int(run.get("unreadable", 0))
+    if not bad:
+        return f"Tags: all {total} programs tagged", "green"
+    return f"Tags: {total - bad} of {total} tagged, {bad} could not be read", "orange"
+
+
 def run_line(run: dict) -> str:
     """One run in plain words: done with the count, skipped pieces, or not saved."""
     when = str(run.get("started_at", ""))[:16].replace("T", " ")
