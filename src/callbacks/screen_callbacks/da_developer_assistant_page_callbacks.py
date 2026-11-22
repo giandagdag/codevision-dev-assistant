@@ -890,6 +890,15 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
         Input(REFRESH_ID, "data"),
     )(show_page)
 
+    # Fix G5 N6: the old page (Home and its subtitle) stayed on screen while a slow server built the
+    # request page. The browser clears it at once when the address changes; show_page then fills it.
+    app.clientside_callback(
+        "function(search) { return 'Opening...'; }",
+        Output(PAGE_CONTENT_ID, "children", allow_duplicate=True),
+        Input(LOCATION_ID, "search"),
+        prevent_initial_call=True,
+    )
+
     # running= is the busy mode: while the engine waits for the interpreter, Send shows a
     # spinner and the text box and Skip cannot be used a second time.
     app.callback(

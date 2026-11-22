@@ -98,6 +98,12 @@ Branch `phase-g-fix-5` from `origin/auto/phases-7-10`; PR into it (`--body-file`
    not finish in the time limit (it ran over 45 min); targeted runs (admin, g4, g5, index: 626 passed
    plus browser tests) pass.
 9. **N5, N6** (G5-13, G5-14): tab address, request page header per entry path.
+   9a N6 DONE. Reproduced in Playwright (slow server): it is neither F10 lead 1 nor 2. The old page
+   (Home, with its subtitle) stays on screen until the slow `show_page` answers. The four entry paths
+   (direct, Home list, Home then reopen, F5) pass on a fast server. Fix: a clientside callback puts
+   "Opening..." into the page at once when the address changes. Tests: `test_da_request_header_browser.py`.
+   The Inbox link is a plain address, so it is the "direct address" path. P24 can close.
+   9b N5 (tab in the address) is still to build.
 10. **Part 4 B1 to B4** (G5-15 to G5-18).
 11. **B5** (G5-19): dispute in two steps.
 12. **Part 5 F1 to F4** (G5-20 to G5-22): PDF writer, layout, download.
