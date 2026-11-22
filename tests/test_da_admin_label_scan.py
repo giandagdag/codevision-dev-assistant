@@ -160,3 +160,22 @@ def test_g4_new_screen_parts_show_no_raw_names(published_rulebook):
     ]
     lines = [ln for p in parts for ln in shown_text(p).splitlines() if ln != path]
     assert not [ln for ln in lines if raw_names_in(ln, CODE_NAMES)]
+
+
+def test_g5_25_catalog_look_parts_show_no_raw_names(published_rulebook):
+    """G5-25: the catalog edit view (Browse modules button, arrows, tooltips) and both panels."""
+    from layouts.da_admin_catalog_panels import modules_modal, patterns_panel
+    from layouts.da_admin_catalog_tab import catalog_view
+
+    caps = published_rulebook.rulebook.policy.capabilities
+    paths = ["agent_flows/da_scan.py"]
+    parts = [
+        catalog_view(published_rulebook, editable=True, modules=paths),
+        patterns_panel("capability", 0, caps[0].name, "agent_flows/*", paths),
+        patterns_panel("capability", 0, caps[0].name, "nothing/*", paths),
+        modules_modal("capability", caps, paths, {}, ""),
+    ]
+    # Paths and the example pattern (a real folder from the index, G5 L3) are the thing itself.
+    skip = {*paths, "agent_flows/*"}
+    lines = [ln for p in parts for ln in shown_text(p).splitlines() if ln not in skip]
+    assert not [ln for ln in lines if raw_names_in(ln, CODE_NAMES)]

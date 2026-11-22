@@ -46,10 +46,11 @@ def hint_text(pattern: str, paths: list[str]) -> str:
 def patterns_panel(tab: str, index: int, name: str, patterns_text: str, paths: list[str]):
     """Side panel for one capability: a row per pattern, then the Add pattern field and Save."""
     rows = [
-        dmc.Group(
+        # A grid, not a flowing group: Remove sits at the same left in every row (G5 L2, L4).
+        html.Div(
             [
                 dmc.Badge("Exact file" if is_exact(p) else "Pattern", variant="light", tt="none"),
-                dmc.Code(p),
+                dmc.Code(p, style={"overflowWrap": "anywhere"}),
                 dmc.Text(f"{count_matches(p, paths)} modules", size="xs", c=da_styles.MUTED),
                 dmc.Button(
                     "Remove",
@@ -59,9 +60,10 @@ def patterns_panel(tab: str, index: int, name: str, patterns_text: str, paths: l
                     size="compact-xs",
                 ),
             ],
-            gap="xs",
-            wrap="nowrap",
-            mb=4,
+            style={
+                "display": "grid", "gridTemplateColumns": "90px 1fr 90px 80px",
+                "gap": "8px", "alignItems": "center", "marginBottom": "4px",
+            },
         )
         for p in split_patterns(patterns_text)
     ]

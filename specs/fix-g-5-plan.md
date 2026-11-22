@@ -128,4 +128,9 @@ Branch `phase-g-fix-5` from `origin/auto/phases-7-10`; PR into it (`--body-file`
     title, "+ Add capability", arrow icon buttons with tooltips (ends disabled), Remove red, one nowrap
     group; pattern box placeholder from the index, help line, hint with first 5 paths, zero match
     refused until "Save anyway". 13b (L4 Playwright measures, screenshots, G5-25 label scan) is next.
+13b. BUILT (L4, G5-25). `test_da_admin_catalog_look_browser.py` measures the catalog action column, the
+    patterns panel and Browse modules at 1366, 1536, 1920 px and saves pictures in
+    `logs/admin-screens/g5`. The patterns panel rows are now a grid so Remove lines up (they
+    flowed before). Label scan test added. The impeccable skill is not installed here: its layout
+    critique was not run (say so in the PR body).
 13. **Part 6 L1 to L4** (G5-23, G5-24): catalog look, Playwright measures, screenshots, G5-25 label scan.
