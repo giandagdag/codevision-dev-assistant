@@ -1,0 +1,18 @@
+{
+ "about": "Made-up 13-capability catalog for the capability map checks (Fix G6 S7). Not real UOB data.",
+ "capabilities": [
+  {"name": "Ingestion", "description": "Takes files in and checks them", "kind": "Business"},
+  {"name": "Markdown", "description": "Creates markdown documents", "kind": "Business"},
+  {"name": "Embedding and Vector", "description": "Turns text into vectors and searches them", "kind": "Business"},
+  {"name": "Reports", "description": "Builds monthly reports", "kind": "Business"},
+  {"name": "Limits", "description": "Credit limit checks", "kind": "Business"},
+  {"name": "Expiry", "description": "Expiry dates and warnings", "kind": "Business"},
+  {"name": "Search", "description": "Finds programs and answers", "kind": "Business"},
+  {"name": "Tagging", "description": "Labels programs with a capability", "kind": "Business"},
+  {"name": "Review", "description": "Early review feedback", "kind": "Business"},
+  {"name": "Workspace", "description": "The developer's laptop folder", "kind": "Business"},
+  {"name": "Config", "description": "Settings used by everything", "kind": "Shared foundation"},
+  {"name": "Classes", "description": "Shared data classes", "kind": "Shared foundation"},
+  {"name": "Database", "description": "Shared database helpers", "kind": "Shared foundation"}
+ ]
+}

@@ -57,6 +57,36 @@ def test_g6_1_the_job_saves_cards_and_creates_nothing(
     assert "3 capability suggestions" in job.read_status(tmp_path)["end_line"]
 
 
+def test_g6_1_s7_the_fake_programs_give_three_cards_and_the_loner_joins_ingest(
+    db_path, published_rulebook, make_settings, tmp_path
+):
+    from agents.da_search_index import DATA_FOLDER
+
+    root = DATA_FOLDER / "da_fake_groups"
+    paths = sorted(p.relative_to(root).as_posix() for p in root.rglob("*.py"))
+    save_graph(build_graph(root, paths).graph, tmp_path)
+
+    start_suggest(_policy(db_path), make_settings(), ADMIN, directory=tmp_path, wait=True)
+
+    cards = {c.name: c.programs for c in read_cards(tmp_path)}
+    assert len(paths) == 13 and sorted(cards) == ["Ingest", "Reports", "Vectors"]
+    assert "misc/one_off_tool.py" in cards["Ingest"] and len(cards["Ingest"]) == 5
+    assert len(cards["Reports"]) == len(cards["Vectors"]) == 4
+    assert len(list_versions(db_path)) == 1
+
+
+def test_s7_the_fake_catalog_has_13_capabilities_and_3_shared_foundations():
+    from agents.da_search_index import DATA_FOLDER
+
+    caps = json.loads((DATA_FOLDER / "da_fake_catalog_13.json").read_text(encoding="utf-8"))
+    names = [c["name"] for c in caps["capabilities"]]
+
+    assert len(names) == 13 and "Embedding and Vector" in names
+    assert [c["name"] for c in caps["capabilities"] if c["kind"] == "Shared foundation"] == [
+        "Config", "Classes", "Database",
+    ]
+
+
 def test_g6_5_the_bar_names_the_step_and_the_lock_is_freed(tmp_path):
     job.begin(tmp_path, __import__("datetime").datetime.now(), ADMIN, "suggest", "Manual")
     job.set_step_name(tmp_path, "Naming groups", 2)
