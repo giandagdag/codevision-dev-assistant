@@ -43,6 +43,31 @@ def test_focus_shows_weak_links_and_also_edge_is_dashed():
     assert ("E", "Hub") in pairs and pairs[("A", "B")] is True
 
 
+def test_click_focus_keeps_neighbours_bright_and_panel_lists_links_g6_10():
+    graph, tags = _star()
+    view = cmap.readable_view(graph, tags, frozenset({"Config"}), focus="A")
+    faded = {n["id"]: n["faded"] for n in view.nodes}
+    assert faded == {"A": False, "Hub": False, "B": True, "C": True, "D": True, "E": True}
+    assert [(e["source"], e["target"]) for e in view.edges if e["focused"]] == [("A", "Hub")]
+    panel = cmap.focus_panel(graph, tags, "Hub")
+    assert {"capability": "A", "calls": 5, "programs": 1} in panel["out"]
+    assert panel["top_programs"][0] == {"module": "m.hub", "calls": 21}
+    assert len(panel["top_programs"]) <= 5
+
+
+def test_one_tap_focuses_two_quick_taps_or_open_move_in_and_clear_resets():
+    from layouts import da_capability_map_view as v
+
+    node = {"id": "Hub", "kind": "capability"}
+    one = v.tap_state(v.START_STATE, node, 1000)
+    assert one["focus"] == "Hub" and one["cap"] == ""
+    assert v.tap_state(one, node, 1900)["focus"] == "Hub"  # too slow: still a single tap
+    assert v.tap_state(one, node, 1300)["cap"] == "Hub"  # double click moves in
+    assert v.open_focus(one)["cap"] == "Hub"
+    assert v.clear_focus(one)["focus"] == ""
+    assert "Calls: " in "\n".join(v.panel_lines("Hub", cmap.focus_panel(*_star(), "Hub")))
+
+
 def test_show_unassigned_and_low_slider_bring_them_back():
     graph, tags = _star()
     view = cmap.readable_view(graph, tags, show_unassigned=True, min_calls=1, top_only=False)

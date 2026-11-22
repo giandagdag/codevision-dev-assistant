@@ -117,7 +117,8 @@ def test_module_label_is_the_short_name_and_a_click_shows_the_full_path():  # G2
 def test_labels_wrap_and_the_layout_spaces_nodes_by_label_size():  # G2-4
     node_style = view.STYLESHEET[0]["style"]
     assert node_style["text-wrap"] == "wrap" and node_style["text-max-width"] == view.LABEL_WIDTH
-    layout = map_shell().to_plotly_json()["props"]["children"][3].layout
+    children = map_shell().to_plotly_json()["props"]["children"]
+    layout = next(c for c in children if getattr(c, "id", "") == view.MAP_GRAPH_ID).layout
     assert layout["nodeDimensionsIncludeLabels"] is True
     graph, tags = long_name_graph(40)
     state = {"cap": "Payments", "module": ""}

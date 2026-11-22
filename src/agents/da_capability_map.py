@@ -159,7 +159,41 @@ def readable_view(
     view.nodes = [n for n in view.nodes if n["id"] not in hidden]
     kept = {n["id"] for n in view.nodes}
     view.edges = [e for e in edges if e["source"] in kept and e["target"] in kept]
+    for edge in view.edges:  # G6 C4: arrows only on the links of the focused capability
+        edge["focused"] = bool(focus) and focus in (edge["source"], edge["target"])
+    if focus:  # the focus and its direct neighbours stay bright
+        ends = [(e["source"], e["target"]) for e in view.edges if e["focused"]]
+        bright = {focus} | {x for pair in ends for x in pair}
+        for node in view.nodes:
+            node["faded"] = node["id"] not in bright
     return view
+
+
+def focus_panel(graph: dict | None, tags: dict, capability: str) -> dict:
+    """G6 C4 side panel: links out and in (other capability, calls, programs) and the top 5 programs
+    that make the calls. Plain data; the page words it."""
+    panel = {"out": [], "in": [], "top_programs": []}
+    if _empty(graph):
+        return panel
+    caps = _module_capabilities(graph, tags)
+    sides: dict[str, dict[str, dict]] = {"out": {}, "in": {}}
+    by_program: dict[str, int] = {}
+    for (a, b), count in _module_links(graph).items():
+        if (caps[a] == capability) == (caps[b] == capability):
+            continue
+        side, other, caller = ("out", caps[b], a) if caps[a] == capability else ("in", caps[a], a)
+        row = sides[side].setdefault(other, {"capability": other, "calls": 0, "programs": set()})
+        row["calls"] += count
+        row["programs"].add(caller)
+        by_program[caller] = by_program.get(caller, 0) + count
+    for side, rows in sides.items():
+        panel[side] = sorted(
+            ({**r, "programs": len(r["programs"])} for r in rows.values()),
+            key=lambda r: (-r["calls"], r["capability"]),
+        )
+    top = sorted(by_program.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
+    panel["top_programs"] = [{"module": m, "calls": c} for m, c in top]
+    return panel
 
 
 def capability_view(
