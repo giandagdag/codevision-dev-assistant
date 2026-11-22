@@ -38,6 +38,10 @@ MANY_UNREADABLE = "Many programs could not be read: check the AI model."
 NEW ="new"  # the AI suggests a capability that is not in the list (Fix G4, S1)
 NEW_NAME_MIN, NEW_NAME_MAX, NEW_DESCRIPTION_MAX = 2, 40, 120
 MODULE_LINE = "Module: "
+# Fix G6 S6: an empty catalog tells the AI to suggest a new area for each program.
+NO_CAPABILITIES = (
+    "No capabilities exist yet. Suggest a new one for this program; use a short business area name."
+)
 STOPPED = "Stopped: the new tags were dropped, the new index stays."
 
 STATE_PROPOSED, STATE_APPROVED, STATE_REJECTED, STATE_MATCHED = (
@@ -73,7 +77,7 @@ def build_prompt(path: str, text: str, capabilities: list[Capability]) -> str:
     lines = text.splitlines()
     cut = len(lines) > MAX_CODE_LINES
     note = f" (first {MAX_CODE_LINES} of {len(lines)} lines)" if cut else ""
-    names = "\n".join(f"- {c.name}: {c.description}" for c in capabilities)
+    names = "\n".join(f"- {c.name}: {c.description}" for c in capabilities) or NO_CAPABILITIES
     return PROMPT_FILE.read_text(encoding="utf-8").format(
         path=path, capabilities=names, cut_note=note, code="\n".join(lines[:MAX_CODE_LINES])
     )
