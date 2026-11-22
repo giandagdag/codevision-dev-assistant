@@ -42,6 +42,7 @@ from agents.da_admin_meaning import meaning_search
 from agents.da_admin_metrics import WINDOW_ALL, WINDOW_LABELS, health_report
 from agents.da_admin_modules import (
     add_modules_to_form,
+    also_add_modules_to_form,
     count_matches,
     edit_patterns,
     module_paths,
@@ -515,10 +516,11 @@ def _pattern_action(settings, tab, action, form, note, base_version, active, inp
         if name != "add":
             return _save(settings, tab, form, note, base_version, active)
         panel = {"kind": "patterns", "index": index}
-    elif name == "addmods":
+    elif name in ("addmods", "alsomods"):
         target, picked = inputs.get("cap") or "", inputs.get("picked") or []
         if target and picked:
-            form = add_modules_to_form(form, target, picked)
+            add = add_modules_to_form if name == "addmods" else also_add_modules_to_form
+            form = add(form, target, picked)
         else:
             panel = {"kind": "modules"}  # nothing to add yet: keep the pop-up open
     return _content(settings, tab, base, editable=True, draft=form, panel=panel), True

@@ -130,6 +130,9 @@ def modules_table(
     return html.Div([dmc.CheckboxGroup(table, id=MOD_PICKED_ID, value=keep), *empty])
 
 
+ALSO_ADD_LABEL = "Also add here (keep the other capability)"
+
+
 def add_label(count: int, target: str) -> str:
     return f"Add {count} module{'' if count == 1 else 's'} to {target or '...'}"
 
@@ -178,6 +181,9 @@ def modules_modal(
             dmc.Group(
                 [
                     dmc.Button(add_label(0, target), id=pat_id(tab, "addmods"), size="xs"),
+                    dmc.Button(
+                        ALSO_ADD_LABEL, id=pat_id(tab, "alsomods"), size="xs", variant="default"
+                    ),
                     dmc.Button("Close", id=pat_id(tab, "close"), size="xs", variant="subtle"),
                 ],
                 mt="sm",

@@ -132,6 +132,15 @@ def add_modules_to_form(form: dict, capability: str, paths: list[str]) -> dict:
     return form
 
 
+def also_add_modules_to_form(form: dict, capability: str, paths: list[str]) -> dict:
+    """Fix G6 M3 "Also add here": exact patterns on `capability`; other capabilities keep theirs."""
+    for row in form.get("capabilities", []):
+        if row.get("name") == capability:
+            lines = split_patterns(row.get("path_patterns", ""))
+            row["path_patterns"] = "\n".join(lines + [p for p in paths if p not in lines])
+    return form
+
+
 def module_rows(
     capabilities: list[Capability],
     paths: list[str],
