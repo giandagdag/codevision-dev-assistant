@@ -329,6 +329,8 @@ def finding_state(finding_id: str, review_number: int, actions: list[FindingActi
                 "accepted": "accepted",
                 "reopened": "open",
                 "disputed": "disputed",
+                "dispute_sent": "sent",
+                "withdrawn": "open",  # G5 B5: a saved dispute taken back before it was sent
                 "overruled": "overruled",
             }[action.action]
             reason = action.reason

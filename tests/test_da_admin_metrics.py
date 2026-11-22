@@ -289,6 +289,7 @@ def test_a_dispute_is_counted_under_dispute_and_a_get_help_next_to_it_under_get_
     tester_flow.dispute_finding(
         settings, disputed_id, build_flow.get_revision(settings, disputed_id), must, "It is fine"
     )
+    tester_flow.send_disputes(settings, disputed_id, build_flow.get_revision(settings, disputed_id))
 
     report = health_report(db_path, WINDOW_ALL)  # Phase 10: a dispute opens a row of its own
     assert report.escalations.value == 1

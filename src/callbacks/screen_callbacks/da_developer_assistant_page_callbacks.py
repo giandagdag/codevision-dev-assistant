@@ -737,7 +737,9 @@ def _perform_finding_action(settings: Settings, index: str, reasons: dict, state
     action, _, finding_id = index.partition(":")
     request_id, revision = state.get("request_id"), state.get("revision")
     try:
-        if not state.get("build") or action not in ("accept", "reopen", "dispute", "fixit"):
+        if not state.get("build") or action not in (
+            "accept", "reopen", "dispute", "withdraw", "send", "fixit",
+        ):  # fmt: skip
             raise PreventUpdate
         reason = reasons.get(finding_id) or ""
         if action == "fixit":
@@ -749,6 +751,10 @@ def _perform_finding_action(settings: Settings, index: str, reasons: dict, state
             tester_flow.accept_finding(settings, request_id, revision, finding_id, reason)
         elif action == "reopen":
             tester_flow.reopen_finding(settings, request_id, revision, finding_id)
+        elif action == "send":
+            tester_flow.send_disputes(settings, request_id, revision)
+        elif action == "withdraw":
+            tester_flow.withdraw_dispute(settings, request_id, revision, finding_id)
         else:
             tester_flow.dispute_finding(settings, request_id, revision, finding_id, reason)
     except SHOWN_ERRORS as error:

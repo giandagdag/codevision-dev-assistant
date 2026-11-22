@@ -29,6 +29,7 @@ REASON_ID = "da-tester-reason"
 
 REPORT_NOTE = "This report stays in the app. Nothing from it is written to your folder."
 FIX_IT_TEXT = "Fix it"
+SEND_ALL = "all"  # button id `send:all`: one button for every saved dispute
 LABEL_COLOURS = {
     "Ready for your review": "green",
     "Ready with warnings": "yellow",
@@ -119,6 +120,7 @@ def tester_report(report: TesterView | None, can_act: bool, can_fix: bool = Fals
     blocks.append(_checks_table(report))
     if report.rows:
         blocks.append(_findings_table(report.rows, can_act, can_fix))
+        blocks += _send_disputes(report.rows, can_act)
     for warning in review.zone_warnings:
         blocks.append(dmc.Text(warning, size="sm", c="orange"))
     blocks += _dropped(report)
@@ -163,6 +165,25 @@ def _findings_table(rows: list[FindingRow], can_act: bool, can_fix: bool) -> dmc
     return dmc.Table([head, dmc.TableTbody(body)], id=FINDINGS_ID, withTableBorder=True)
 
 
+def _send_disputes(rows: list[FindingRow], can_act: bool) -> list:
+    """G5 B5: one button for all saved disputes, with the count of Must fix not disputed."""
+    musts = [r for r in rows if r.finding.severity == "must_fix"]
+    saved = sum(1 for r in musts if r.state == "disputed")
+    if not saved:
+        return []
+    others = sum(1 for r in musts if r.state == "open")
+    noun = "dispute" if saved == 1 else "disputes"
+    return [
+        dmc.Group(
+            [
+                _button(f"send:{SEND_ALL}", f"Send {saved} {noun} to my senior", can_act),
+                dmc.Text(f"{others} Must fix not disputed", size="xs", c=da_styles.MUTED),
+            ],
+            gap="sm",
+        )
+    ]
+
+
 def _finding_row(row: FindingRow, can_act: bool, can_fix: bool) -> dmc.TableTr:
     item = row.finding
     where = f"{item.file}:{item.line}" if item.file else "-"
@@ -193,8 +214,17 @@ def _actions(row: FindingRow, can_act: bool, can_fix: bool):
         who = row.actor.removeprefix("senior:") or "a senior"
         return dmc.Text(f"Overruled by {who}: {row.reason}", size="xs")
     if item.severity == "must_fix":
-        if row.state == "disputed":
-            return dmc.Text(f"Disputed: {row.reason}", size="xs")
+        if row.state == "sent":
+            return dmc.Text(f"Disputed, with your senior: {row.reason}", size="xs")
+        if row.state == "disputed":  # G5 B5: saved, not sent yet
+            return dmc.Stack(
+                [
+                    dmc.Text(f"Disputed, not sent yet: {row.reason}", size="xs"),
+                    _with_reason(item.finding_id, "dispute", "Edit", can_act, row.reason),
+                    _button(f"withdraw:{item.finding_id}", "Withdraw", can_act, variant="default"),
+                ],
+                gap=4,
+            )
         return _with_reason(item.finding_id, "dispute", "Dispute", can_act)
     if row.state == "accepted":
         return dmc.Stack(
@@ -213,11 +243,14 @@ def _actions(row: FindingRow, can_act: bool, can_fix: bool):
     )
 
 
-def _with_reason(finding_id: str, action: str, label: str, can_act: bool) -> dmc.Stack:
+def _with_reason(
+    finding_id: str, action: str, label: str, can_act: bool, value: str = ""
+) -> dmc.Stack:
     return dmc.Stack(
         [
             dmc.Textarea(
                 id={"type": FINDING_REASON_TYPE, "index": finding_id},
+                value=value,
                 placeholder=f"Reason ({ACCEPT_MIN_CHARS} to {ACCEPT_MAX_CHARS} characters)",
                 autosize=True,
                 minRows=1,

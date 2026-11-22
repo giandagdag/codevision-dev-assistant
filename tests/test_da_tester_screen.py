@@ -229,7 +229,9 @@ def test_a_short_reason_shows_the_plain_message_and_redraws_nothing(settings, re
     assert refresh is cb.no_update and "10 to 300 characters" in message
 
 
-def test_the_dispute_button_hands_the_request_to_a_senior(settings, request_id, monkeypatch):
+def test_the_dispute_button_saves_and_the_send_button_hands_it_to_a_senior(
+    settings, request_id, monkeypatch
+):
     built(settings, request_id, monkeypatch, "review_must_fix_always")
     row = next(
         r
@@ -241,6 +243,9 @@ def test_the_dispute_button_hands_the_request_to_a_senior(settings, request_id, 
     cb.perform_finding_action(
         settings, f"dispute:{fid}", {fid: REASON}, state_of(settings, request_id), 0
     )
+    assert request_status(settings, request_id) == "NOT_PASSING"
+
+    cb.perform_finding_action(settings, "send:all", {}, state_of(settings, request_id), 0)
 
     assert request_status(settings, request_id) == "ESCALATION_REQUIRED"
 
