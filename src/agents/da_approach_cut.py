@@ -23,8 +23,11 @@ from pydantic_classes.da_approach_text import (
 def _cut_field(holder: dict, key: str, limit: int, store: dict, store_key: str) -> None:
     """Cut holder[key] when it is a string over `limit`; keep the uncut text in `store`."""
     value = holder.get(key)
-    if isinstance(value, str) and len(value.strip()) > limit:
-        store[store_key] = value.strip()[:FULL_TEXT_LIMIT]
+    if not isinstance(value, str):
+        return
+    value = holder[key] = value.strip()  # outer spaces never count toward the limit
+    if len(value) > limit:
+        store[store_key] = value[:FULL_TEXT_LIMIT]
         holder[key] = cut_text(value, limit)
 
 

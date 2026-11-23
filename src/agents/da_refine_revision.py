@@ -167,8 +167,8 @@ def start_revision_approach(
         if not result.ok:
             details = {"problems": result.problems[:5], "lane": "requirement"}
             tx.audit("system", "approach_failed", details)
-            failed = _failure_text(result, "plan the changed request")
-            tx.say("assistant", f"{failed} Press Try again.")
+            failed = _failure_text(result, "plan the changed request", "Press Try again.")
+            tx.say("assistant", failed)
             return save_refine_state(conn, tx.state, base_revision, now)
         approach_state = snap.state
         if approach_state.revision != approach_revision:

@@ -85,8 +85,10 @@ def start_approach_change(
         if not result.ok:
             details = {"problems": result.problems[:5], "lane": "approach"}
             tx.audit("system", "approach_failed", details)
-            failed = _failure_text(result, "apply your change")
-            tx.say("assistant", f"{failed} Nothing was saved. Press Try again.")
+            failed = _failure_text(
+                result, "apply your change", "Nothing was saved. Press Try again."
+            )
+            tx.say("assistant", failed)
             return save_refine_state(conn, tx.state, base_revision, now)
         if result.reply.changes_criteria:
             tx.audit("system", "approach_refused_criterion", {"refine": state.refine_number})

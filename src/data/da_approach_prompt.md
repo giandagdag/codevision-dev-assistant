@@ -49,7 +49,7 @@ Reply with JSON only: no other text before or after it. Use this shape:
             "purpose": "<up to 200 characters>", "reuses": [1]}],
  "needs_people": [{"path": "<a protected file>", "reason": "<up to 200 characters>"}],
  "reuse_decisions": [{"hit_id": 1, "decision": "reuse", "reason": "<up to 200 characters>"}],
- "design_choices": [{"question": "<up to 200 characters>", "impact": "<what changes with the answer>",
+ "design_choices": [{"question": "<up to 200 characters>", "impact": "<up to 200 characters: what changes>",
                      "options": [{"label": "<up to 60 characters>",
                                   "detail": "<up to 300 characters>"}, {"label": "...", "detail": "..."}]}],
  "libraries": ["<top-level library names the new code will import>"]}

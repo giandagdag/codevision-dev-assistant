@@ -42,7 +42,7 @@ from agents.da_approach_checks import (
     limit_reason_problem,
     scope_problem_paths,
 )
-from agents.da_approach_reasons import kept_problems
+from agents.da_approach_reasons import REJECTED_FOOTER, kept_problems
 from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import get_help, out_of_scope_approach
@@ -635,8 +635,11 @@ def _answer_choice(
             if _scope_refusal_to_senior(settings, snap, result, base_revision, now):
                 return
             raise ApproachError(
-                _failure_text(result, "settle the plan from your answers")
-                + " Nothing was saved, so choose again to retry."
+                _failure_text(
+                    result,
+                    "settle the plan from your answers",
+                    "Nothing was saved, so choose again to retry.",
+                )
             )
         settled = (result, pinned)
 
@@ -740,7 +743,7 @@ def _change(
         if _scope_refusal_to_senior(settings, snap, result, base_revision, now):
             return
         raise ApproachError(
-            _failure_text(result, "apply your change") + " Nothing was saved. Please try again."
+            _failure_text(result, "apply your change", "Nothing was saved. Please try again.")
         )
     from_tests = snap.state.change_from_tests
     with _turn(settings.db_path, request_id, base_revision, now) as turn:
@@ -1168,8 +1171,13 @@ def _say(
     add_message(conn, request_id, speaker, text, now)
 
 
-def _failure_text(result: ApproachResult, what: str) -> str:
-    return _failure_text_plain(result.message, what)
+def _failure_text(result: ApproachResult, what: str, closing: str = "") -> str:
+    """The failure line. A caller with its own last sentence passes it as `closing`, so the
+    standard "Press Try again" footer is not said twice."""
+    message = result.message
+    if closing:
+        message = message.removesuffix(REJECTED_FOOTER).rstrip()
+    return _failure_text_plain(message, what) + (f" {closing}" if closing else "")
 
 
 def _failure_text_plain(message: str, what: str) -> str:
@@ -1191,17 +1199,19 @@ def _proposal_text(version: ApproachVersion) -> str:
 
 
 def _ask_text(choice) -> str:
-    return (
-        f"Design choice: {choice.question}\n{choice.impact}\n"
-        "Choose below, or type your own answer."
-    )
+    # The chat has no hover, so a cut question or impact shows its full text here (G7, L3).
+    question = choice.full_text.get("question", choice.question)
+    impact = choice.full_text.get("impact", choice.impact)
+    return f"Design choice: {question}\n{impact}\nChoose below, or type your own answer."
 
 
 def _detail_for(pending, text: str) -> str | None:
     """The full option text for a label or detail (pressed or typed); None = not an option."""
-    for label, detail in zip(pending.button_labels(), pending.options, strict=True):
+    for number, (label, detail) in enumerate(
+        zip(pending.button_labels(), pending.options, strict=True), start=1
+    ):
         if text in (label, detail):
-            return detail
+            return pending.full_text.get(f"option_{number}", detail)
     return None
 
 
