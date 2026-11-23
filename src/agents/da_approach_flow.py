@@ -295,12 +295,12 @@ def choose_design_option(
     pending = snap.state.pending_choices[0]
     if option == HELP_DECIDING_OPTION:
         _ask_for_help(settings, snap, pending.question, base_revision, now)
-    elif option in pending.options:
-        _answer_choice(settings, snap, option, False, base_revision, generator, now)
+    elif (detail := _detail_for(pending, option)) is not None:
+        _answer_choice(settings, snap, detail, False, base_revision, generator, now)
     else:
         raise ApproachError(
             f"'{option}' is not one of the choices. Choose one of: "
-            f"{', '.join([*pending.options, HELP_DECIDING_OPTION])}."
+            f"{', '.join([*pending.button_labels(), HELP_DECIDING_OPTION])}."
         )
     return get_approach_view(settings, request_id)
 
@@ -329,8 +329,11 @@ def submit_text(
         if typed == HELP_DECIDING_OPTION:
             _ask_for_help(settings, snap, pending.question, base_revision, now)
         else:
-            custom = typed not in pending.options
-            _answer_choice(settings, snap, typed, custom, base_revision, generator, now)
+            detail = _detail_for(pending, typed)
+            _answer_choice(
+                settings, snap, typed if detail is None else detail, detail is None,
+                base_revision, generator, now,
+            )
     elif step == "review":
         # Typing + Send is "Change something" (Phase 6 fixes). At most 3 changes (rule G9).
         if snap.state.change_count >= MAX_CHANGES:
@@ -1193,6 +1196,14 @@ def _ask_text(choice) -> str:
     )
 
 
+def _detail_for(pending, text: str) -> str | None:
+    """The full option text for a label or detail (pressed or typed); None = not an option."""
+    for label, detail in zip(pending.button_labels(), pending.options, strict=True):
+        if text in (label, detail):
+            return detail
+    return None
+
+
 def _screen_for(
     step: str,
     state: ApproachState | None,
@@ -1216,7 +1227,7 @@ def _screen_for(
         pending = state.pending_choices[0] if state and state.pending_choices else None
         if pending is None:
             return [], "", ""
-        buttons = [(CHOOSE_KEY, option) for option in pending.options]
+        buttons = [(CHOOSE_KEY, label) for label in pending.button_labels()]
         return [*buttons, (DECIDE_HELP_KEY, HELP_DECIDING_OPTION)], prompt, ""
     if step == "review":
         return (
