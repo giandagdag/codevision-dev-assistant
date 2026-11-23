@@ -48,6 +48,8 @@ def test_also_edge_obeys_the_top_3_cut_unless_around_the_focus():  # G6-b
     also = {"m.e": ["Hub"], "m.a": ["B"]}  # Hub already has A, B, C drawn: full; A has Hub only
     view = cmap.readable_view(graph, tags, frozenset({"Config"}), also)
     assert not [e for e in view.edges if e.get("also") and "Hub" in (e["source"], e["target"])]
+    free = cmap.readable_view(graph, tags, frozenset({"Config"}), {"m.a": ["B"], "m.b": ["A"]})
+    assert [(e["source"], e["target"]) for e in free.edges if e.get("also")] == [("A", "B")]  # one
     around = cmap.readable_view(graph, tags, frozenset({"Config"}), also, focus="Hub")
     assert [e for e in around.edges if e.get("also") and "Hub" in (e["source"], e["target"])]
 

@@ -150,8 +150,11 @@ def readable_view(
     for module, others in (also or {}).items():
         for other in others:
             main = caps.get(module, UNASSIGNED)
-            if main != other:
-                a, b = sorted((main, other))
+            a, b = sorted((main, other))
+            # one dashed link per pair (many modules share a pair), none to a hidden end
+            if main != other and not {a, b} & hidden and not any(
+                e.get("also") and (e["source"], e["target"]) == (a, b) for e in edges
+            ):
                 # G6-b: a dashed link obeys the top-3 cut too, except around the focused capability
                 full_up = any(sum(x in (e["source"], e["target"]) for e in edges) >= TOP_LINKS
                               for x in (a, b))  # fmt: skip
