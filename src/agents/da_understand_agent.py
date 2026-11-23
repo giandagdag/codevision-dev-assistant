@@ -13,6 +13,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from agents.da_llm_client import LLMClient, LLMReply, get_llm_client
+from agents.da_problem_kinds import problem_kinds
 from agents.da_rejected_reply_log import write_rejected_reply
 from agents.da_understand_checks import (
     build_candidate,
@@ -157,7 +158,7 @@ def interpret(
                 model=llm_reply.model,
                 attempts=attempt,
             )
-        logger.warning("Interpreter reply %s was not usable: %d problems", attempt, len(problems))
+        logger.warning("Interpreter reply %s was not usable: %s", attempt, problem_kinds(problems))
         write_rejected_reply(
             record.request_id,
             attempt,

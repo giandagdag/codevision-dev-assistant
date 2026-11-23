@@ -218,7 +218,8 @@ def _library_problems(reply: ApproachReply, policy: Policy) -> list[str]:
         f"Library '{name}' is not in the Python standard library or on the approved list "
         f"({', '.join(policy.approved_libraries)})."
         for name in reply.libraries
-        if library_name(name) not in allowed
+        # The top-level part decides: xml.etree.ElementTree is the standard library's xml.
+        if library_name(name).split(".")[0] not in allowed
     ]
 
 

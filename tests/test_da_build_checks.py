@@ -281,6 +281,8 @@ def test_a3_protected_files_are_refused_even_when_planned(policy):
     [
         ("import json", True),
         ("from pathlib import Path", True),
+        ("import xml.etree.ElementTree as ET", True),  # G7 S2: dotted standard library
+        ("import os.path", True),
         ("import pandas as pd", True),
         ("import dash_mantine_components as dmc", True),
         ("from agents.helpers import go", True),

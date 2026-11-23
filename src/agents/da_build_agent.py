@@ -36,6 +36,7 @@ from agents.da_llm_client import (
     LLMReply,
     get_llm_client,
 )
+from agents.da_problem_kinds import problem_kinds
 from agents.da_rejected_reply_log import write_rejected_reply
 from agents.da_understand_checks import describe_validation_error
 from configs.da_config import Settings
@@ -489,7 +490,7 @@ def _ask(
         if value is not None and not problems:
             return AIResult(value, provider, model, attempt)
         logger.warning(
-            "Build call %s reply %d was not usable: %d problems", step, attempt, len(problems)
+            "Build call %s reply %d was not usable: %s", step, attempt, problem_kinds(problems)
         )
         write_rejected_reply(
             context.record.request_id, attempt, provider, model, problems, reply.text, step=step

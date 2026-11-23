@@ -24,6 +24,7 @@ from agents.da_approach_checks import (
 )
 from agents.da_guidance import guidance_block
 from agents.da_llm_client import LLMClient, LLMClientError, LLMReply, get_llm_client
+from agents.da_problem_kinds import problem_kinds
 from agents.da_rejected_reply_log import write_rejected_reply
 from agents.da_understand_agent import strip_think_block
 from agents.da_understand_checks import describe_validation_error
@@ -336,7 +337,7 @@ def generate_approach(client: LLMClient, call: str, context: ApproachContext) ->
         reply, problems = parse_reply(llm_reply.text, context, call, answered)
         if reply is not None and not problems:
             return ApproachResult(normalise_reply_paths(reply), provider, model, attempt)
-        logger.warning("Approach reply %s was not usable: %d problems", attempt, len(problems))
+        logger.warning("Approach reply %s was not usable: %s", attempt, problem_kinds(problems))
         write_rejected_reply(
             context.record.request_id,
             attempt,

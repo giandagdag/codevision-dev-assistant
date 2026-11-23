@@ -66,4 +66,5 @@ Rules:
   for each hit it cites: reuse, extend or ignore, with a reason.
 - A design choice is a real either-or question only the developer can answer, with 2 or 3 options.
   Never recommend an option. Do not ask a question that was already answered.
-- libraries: standard library names, or names from the approved list only.
+- libraries: standard library names, or names from the approved list only. List libraries by their
+  top-level import name (for example xml, not xml.etree.ElementTree).

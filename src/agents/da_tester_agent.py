@@ -17,6 +17,7 @@ from pydantic import ValidationError
 from agents.da_approach_agent import MAX_ATTEMPTS, NOT_JSON, fill_template, load_json, retry_note
 from agents.da_approach_checks import find_test_case_problems, find_test_plan_problems
 from agents.da_llm_client import LLMClient, LLMClientError, LLMReply, get_llm_client
+from agents.da_problem_kinds import problem_kinds
 from agents.da_rejected_reply_log import write_rejected_reply
 from agents.da_understand_checks import describe_validation_error
 from configs.da_config import Settings
@@ -244,7 +245,7 @@ def _shape_problems(error: ValidationError) -> list[str]:
 
 
 def _log_rejected(request_id: str, attempt: int, llm_reply: LLMReply, problems: list[str]) -> None:
-    logger.warning("Tester reply %s was not usable: %d problems", attempt, len(problems))
+    logger.warning("Tester reply %s was not usable: %s", attempt, problem_kinds(problems))
     write_rejected_reply(
         request_id,
         attempt,
