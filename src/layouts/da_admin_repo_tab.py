@@ -152,6 +152,7 @@ def repo_view(
                     index_pill(health, datetime.now()),
                     rebuild_controls(started, runs, ask_rebuild, job.read_status()),
                     dmc.Text("Index health", fw=600, size="sm"),
+                    *_not_used_alert(server),
                     health_tiles(health),
                     dmc.Text("Recent refreshes", fw=600, size="sm"),
                     recent_refreshes(runs),
@@ -161,6 +162,20 @@ def repo_view(
         )
     ]
     return card_grid(main, side)  # spec 4: cards on the left, the index job on the right
+
+
+NOT_USED_LINE = (
+    "Discover is not using this index. Set the search provider to codevision in the "
+    "server settings and restart."
+)
+
+
+def _not_used_alert(server: list[tuple[str, str]] | None) -> list:
+    """G7 D3: one amber line when the server's search provider is not the CodeVision index."""
+    provider = dict(server or []).get("DA_SEARCH_PROVIDER")
+    if provider is None or provider == "codevision":
+        return []
+    return [dmc.Alert(NOT_USED_LINE, color="yellow", variant="light", id="adm-index-not-used")]
 
 
 def _repo_list(table: str, policy: Policy, editable: bool, draft: dict | None):
