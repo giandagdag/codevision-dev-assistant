@@ -164,6 +164,16 @@ new (the map is drawn with it).
    accepts), Full rebuild (the run row shows the Tags line), Re-check (progress bar, no F5), F5 on
    the catalog tab, Download report (PDF).
 
+## After the Fix G7 merge (Approach)
+
+1. Retest a request whose plan was refused: the message now says why (up to 3 problems, the rest on
+   the Approach tab) and only says "not reachable" when the AI really did not answer.
+2. A plan that uses `xml.etree.ElementTree` (dotted standard library name) must pass.
+3. Long option text is cut at a word; hover or focus an option to see the full text. Old saved
+   Approach rows still open.
+4. Admin, Index health: an amber line shows when Discover is not using the CodeVision index.
+5. Not built yet (waits for Gian): "Search again" from a confirmed request (D1, D2).
+
 ## Clean up
 
 `rmdir /s /q C:\Dev\practice`
