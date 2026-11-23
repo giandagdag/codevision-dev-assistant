@@ -273,6 +273,8 @@ class ApproachView(BaseModel):
     failed_first_call: bool
     # G7: every problem the checks found in the last failed plan (from the audit), for the tab.
     failed_problems: list[str] = Field(default_factory=list)
+    # G7: button label -> the full option text, shown on hover and keyboard focus.
+    option_hints: dict[str, str] = Field(default_factory=dict)
     revision: int
     demo_mode: bool
     # Phase 9: the accepted safety-net tests, shown read-only in the test plan ("Accepted in the

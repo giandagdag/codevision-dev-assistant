@@ -22,7 +22,7 @@ from agents.da_approach_checks import (
     normalise_reply_paths,
     question_key,
 )
-from agents.da_approach_cut import cut_reply
+from agents.da_approach_cut import cut_reply, was_cut
 from agents.da_approach_reasons import plain_shape_problems, rejected_message
 from agents.da_guidance import guidance_block
 from agents.da_llm_client import LLMClient, LLMClientError, LLMReply, get_llm_client
@@ -355,7 +355,7 @@ def generate_approach(client: LLMClient, call: str, context: ApproachContext) ->
             llm_reply.text,
             step="approach",
         )
-        sent = prompt + retry_note(problems)
+        sent = prompt + retry_note(problems, reply is not None and was_cut(reply))
     return ApproachResult(
         None, provider, model, MAX_ATTEMPTS, problems, rejected_message(problems), "rejected"
     )
@@ -393,10 +393,11 @@ def load_json(text: str):
     return NOT_JSON
 
 
-def retry_note(problems: list[str]) -> str:
+def retry_note(problems: list[str], was_cut_text: bool = False) -> str:
     listed = "\n".join(f"- {problem}" for problem in problems)
+    shorter = "Keep option labels under 60 characters.\n" if was_cut_text else ""
     return (
-        f"\n\nYour previous reply was not accepted, for these reasons:\n{listed}\n"
+        f"\n\nYour previous reply was not accepted, for these reasons:\n{listed}\n{shorter}"
         "Reply again with JSON only, fixing these problems."
     )
 

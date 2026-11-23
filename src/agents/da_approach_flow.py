@@ -599,6 +599,7 @@ def get_approach_view(settings: Settings, request_id: str) -> ApproachView:
         file_limit=file_limit,
         failed_first_call=failed,
         failed_problems=failed_problems,
+        option_hints=_option_hints(state) if step == "choices" else {},
         revision=revision,
         demo_mode=settings.llm_provider == "fake",
         safety_net_cases=net.net.cases if net else [],
@@ -1202,6 +1203,19 @@ def _detail_for(pending, text: str) -> str | None:
         if text in (label, detail):
             return detail
     return None
+
+
+def _option_hints(state: ApproachState | None) -> dict[str, str]:
+    """Button label -> the uncut option text (the cut one when nothing was cut)."""
+    if state is None or not state.pending_choices:
+        return {}
+    pending = state.pending_choices[0]
+    return {
+        label: pending.full_text.get(f"option_{number}", detail)
+        for number, (label, detail) in enumerate(
+            zip(pending.button_labels(), pending.options, strict=True), start=1
+        )
+    }
 
 
 def _screen_for(

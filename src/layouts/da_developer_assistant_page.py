@@ -850,7 +850,8 @@ def _approach_composer(
         return controls
     note = (view.note if view else "") or APPROACH_NOTES.get(view.step if view else "", "")
     problems = view.failed_problems if view else []
-    return dmc.Box([_approach_bar(buttons, note, problems), controls])
+    hints = view.option_hints if view else {}
+    return dmc.Box([_approach_bar(buttons, note, problems, hints), controls])
 
 
 def _hidden_reconnect(workspace: WorkspaceView | None):
@@ -1063,12 +1064,29 @@ def approach_button_kind(key: str) -> str:
     return parts.NORMAL
 
 
+def _with_hint(button, hint: str):
+    """G7: the full option text on hover and on keyboard focus (plain text, never HTML)."""
+    if not hint:
+        return button
+    return dmc.Tooltip(
+        button, label=hint, multiline=True, w=360, withinPortal=True,
+        events={"hover": True, "focus": True, "touch": True},
+    )
+
+
 def _approach_bar(
-    buttons: list[tuple[str, str]], note: str, problems: list[str] | None = None
+    buttons: list[tuple[str, str]],
+    note: str,
+    problems: list[str] | None = None,
+    hints: dict[str, str] | None = None,
 ) -> dmc.Box:
+    hints = hints or {}
     shown = [
-        parts.choice_button(
-            label, {"type": CHOICE_TYPE, "index": number}, approach_button_kind(key)
+        _with_hint(
+            parts.choice_button(
+                label, {"type": CHOICE_TYPE, "index": number}, approach_button_kind(key)
+            ),
+            hints.get(label, ""),
         )
         for number, (key, label) in enumerate(buttons)
     ]

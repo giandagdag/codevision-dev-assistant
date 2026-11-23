@@ -99,6 +99,19 @@ def test_g7_4_button_shows_the_label_and_the_decision_keeps_the_full_detail(sett
     assert LONG_OPTION in texts(view, "developer")
 
 
+def test_g7_hover_hint_holds_the_full_option_text_and_the_bar_wraps_it_in_a_tooltip(
+    settings, request_id
+):
+    from layouts.da_developer_assistant_page import _approach_bar
+
+    view = proposed(settings, request_id, long_option)
+    label = view.buttons[0][1]
+    assert view.option_hints[label] == LONG_OPTION
+
+    bar = _approach_bar(view.buttons, "", None, view.option_hints)
+    assert "Tooltip" in str(bar) and LONG_OPTION in str(bar)
+
+
 def test_a_typed_answer_equal_to_a_button_counts_as_the_button(settings, request_id):
     view = proposed(settings, request_id)
 

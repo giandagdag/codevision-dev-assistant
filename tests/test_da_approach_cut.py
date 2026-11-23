@@ -102,6 +102,13 @@ def test_the_ai_cannot_set_the_apps_own_fields():
     assert cut["design_choices"][0]["labels"] == ["a", "b"]
 
 
+def test_g7_l5_retry_note_asks_for_short_labels_only_after_a_cut():
+    from agents.da_approach_agent import retry_note
+
+    assert "under 60 characters" in retry_note(["p"], True)
+    assert "under 60 characters" not in retry_note(["p"])
+
+
 def test_g7_8_four_design_choices_are_still_refused():
     four = [design_choice(question=f"Question {n}?") for n in range(4)]
 

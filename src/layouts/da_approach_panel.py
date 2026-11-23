@@ -31,6 +31,16 @@ ACTION_LABELS = {"create": "New", "modify": "Change"}
 FOUND_IN_WORKSPACE = "Checked: found in your workspace"
 
 
+def _full_on_hover(component, full: str):
+    """G7: a line the app cut shows its whole text on hover and keyboard focus (plain text)."""
+    if not full:
+        return component
+    return dmc.Tooltip(
+        component, label=full, multiline=True, w=360, withinPortal=True,
+        events={"hover": True, "focus": True, "touch": True},
+    )
+
+
 def workspace_note(path: str, check: CheckResult | None) -> str:
     """What the workspace check says about a file the plan changes (spec section 9), or "" if no
     check has run (or the folder itself was wrong, so nothing can be said about a file)."""
@@ -89,7 +99,7 @@ def _file_plan(view: ApproachView, approach: ApproachVersion, check: CheckResult
     plan = approach.plan
     hit_names = {hit.hit_id: hit.symbol or hit.source_path for hit in _hits(view.discovery)}
     rows = []
-    for item in plan.files:
+    for number, item in enumerate(plan.files):  # the cut keys purposes by 0-based position
         notes = []
         if item.reuses:
             notes.append("Reuses " + ", ".join(hit_names.get(n, f"hit {n}") for n in item.reuses))
@@ -109,7 +119,12 @@ def _file_plan(view: ApproachView, approach: ApproachVersion, check: CheckResult
                             styles=ID_BADGE_STYLES,
                         )
                     ),
-                    dmc.TableTd(dmc.Text(item.purpose, size="xs")),
+                    dmc.TableTd(
+                        _full_on_hover(
+                            dmc.Text(item.purpose, size="xs"),
+                            plan.full_text.get(f"purpose_{number}", ""),
+                        )
+                    ),
                     dmc.TableTd(dmc.Text("; ".join(notes), size="xs", c=da_styles.MUTED)),
                 ]
             )
@@ -123,7 +138,9 @@ def _file_plan(view: ApproachView, approach: ApproachVersion, check: CheckResult
     noun = "code file" if count == 1 else "code files"
     return dmc.Box(
         [
-            dmc.Text(plan.summary, size="sm", mb=6),
+            _full_on_hover(
+                dmc.Text(plan.summary, size="sm", mb=6), plan.full_text.get("summary", "")
+            ),
             dmc.Table([head, dmc.TableTbody(rows)]),
             dmc.Text(
                 f"{count} {noun}, limit {view.file_limit}",
