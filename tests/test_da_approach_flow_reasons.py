@@ -97,7 +97,7 @@ def test_kept_problems_are_capped_in_number_and_length():
 def test_r3_shape_errors_use_plain_words_with_no_field_path():
     data = good_plan(
         design_choices=[
-            {"question": "Q?", "impact": "I", "options": ["a", "b" * 150]},
+            {"question": "Q?", "impact": "I", "options": ["a", "b" * 400]},
         ]
     )
     with pytest.raises(ValidationError) as caught:

@@ -29,6 +29,12 @@ _PARTS = {
     "libraries": "library",
 }
 _FIELDS = {
+    "design_choices": "the list of design questions",
+    "options": "the list of options",
+    "files": "the list of files",
+    "libraries": "the list of libraries",
+    "needs_people": "the list of person-needed items",
+    "reuse_decisions": "the list of reuse decisions",
     "summary": "the summary",
     "purpose": "the purpose",
     "reason": "the reason",
@@ -58,6 +64,8 @@ def _plain_where(loc: Sequence) -> str:
 
 def _plain_message(message: str) -> str:
     lower = message.lower()
+    if "item" in lower and "at most" in lower:
+        return "has too many entries"
     if "at most" in lower or "too long" in lower:
         return "is too long"
     if "required" in lower or "at least" in lower:

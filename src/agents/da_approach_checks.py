@@ -265,14 +265,16 @@ def _code_problems(reply: ApproachReply) -> list[str]:
 
 
 def _reply_texts(reply: ApproachReply) -> list[str]:
-    texts = [reply.summary, *reply.libraries]
+    # The uncut text counts too: code must not hide in the part that was cut off (G7).
+    texts = [reply.summary, *reply.libraries, *reply.full_text.values()]
     for item in reply.files:
         texts += [item.path, item.purpose]
     for item in reply.needs_people:
         texts += [item.path, item.reason]
     texts += [item.reason for item in reply.reuse_decisions]
     for choice in reply.design_choices:
-        texts += [choice.question, choice.impact, *choice.options]
+        texts += [choice.question, choice.impact, *choice.options, *choice.labels]
+        texts += list(choice.full_text.values())
     return texts
 
 

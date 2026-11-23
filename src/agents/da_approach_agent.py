@@ -22,6 +22,7 @@ from agents.da_approach_checks import (
     normalise_reply_paths,
     question_key,
 )
+from agents.da_approach_cut import cut_reply
 from agents.da_approach_reasons import plain_shape_problems, rejected_message
 from agents.da_guidance import guidance_block
 from agents.da_llm_client import LLMClient, LLMClientError, LLMReply, get_llm_client
@@ -298,7 +299,9 @@ def format_policy(policy: Policy, not_installed: frozenset[str] = frozenset()) -
 def _previous_section(previous: ApproachVersion | None) -> str:
     if previous is None:
         return "Earlier plan: (none)"
-    return "Earlier plan (JSON):\n" + previous.plan.model_dump_json(indent=2)
+    # The app's own fields (full_text, labels) are not for the AI.
+    skip = {"full_text": True, "design_choices": {"__all__": {"full_text", "labels"}}}
+    return "Earlier plan (JSON):\n" + previous.plan.model_dump_json(indent=2, exclude=skip)
 
 
 def _decisions_section(decisions: list[ApproachDecision]) -> str:
@@ -366,7 +369,8 @@ def parse_reply(
     if data is NOT_JSON:
         return None, ["The reply was not valid JSON. Reply with JSON only."]
     try:
-        reply = ApproachReply.model_validate(data)
+        # G7: over-long text is cut, never refused. The cut text is kept for the tooltip.
+        reply = ApproachReply.model_validate(cut_reply(data))
     except ValidationError as error:
         return None, plain_shape_problems(error)
     return reply, find_approach_problems(
