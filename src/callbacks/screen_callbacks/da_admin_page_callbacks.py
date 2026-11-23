@@ -42,6 +42,7 @@ from agents.da_admin_meaning import meaning_search
 from agents.da_admin_metrics import WINDOW_ALL, WINDOW_LABELS, health_report
 from agents.da_admin_modules import (
     add_modules_to_form,
+    also_add_modules_to_form,
     count_matches,
     edit_patterns,
     module_paths,
@@ -73,15 +74,28 @@ from agents.da_admin_suggestions import (
 )
 from agents.da_admin_tag_cards import (
     ai_cards,
+    also_cards,
     approve_all_high,
+    approve_also,
     approve_card,
     approve_pairs,
     high_confidence_counts,
+    reject_also,
     reject_card,
     reject_cards,
 )
 from agents.da_admin_tag_store import read_tags
 from agents.da_admin_watch import watch_step
+from agents.da_capability_suggest_job import offer_for, start_suggest
+from agents.da_group_cards import (
+    assign_card,
+    create_card,
+    group_suggestions,
+    remove_program,
+)
+from agents.da_group_cards import (
+    reject_card as reject_group_card,
+)
 from agents.da_safety_release import ReleaseError, keep_stopped, release
 from configs.da_config import Settings, load_settings
 from db_table_functions.db_tbl_da_rulebook import (
@@ -114,18 +128,22 @@ from layouts.da_admin_catalog_panels import (
     modules_table,
 )
 from layouts.da_admin_catalog_tab import (
+    LINKS_KEY,
     Q_AI_ALL,
     Q_AI_ALL_DO,
     Q_AI_APPROVE,
     Q_AI_ASSIGN,
     Q_AI_REJECT,
     Q_AI_RETRY,
+    Q_ALSO_ADD,
+    Q_ALSO_REJECT,
     Q_RECHECK,
     Q_SG_ASSIGN,
     Q_SG_OPEN,
     Q_SG_REJECT,
     Q_SG_REMOVE,
     Q_SG_SAVE,
+    Q_SUGGEST,
     review_items,
     view_options,
 )
@@ -504,10 +522,11 @@ def _pattern_action(settings, tab, action, form, note, base_version, active, inp
         if name != "add":
             return _save(settings, tab, form, note, base_version, active)
         panel = {"kind": "patterns", "index": index}
-    elif name == "addmods":
+    elif name in ("addmods", "alsomods"):
         target, picked = inputs.get("cap") or "", inputs.get("picked") or []
         if target and picked:
-            form = add_modules_to_form(form, target, picked)
+            add = add_modules_to_form if name == "addmods" else also_add_modules_to_form
+            form = add(form, target, picked)
         else:
             panel = {"kind": "modules"}  # nothing to add yet: keep the pop-up open
     return _content(settings, tab, base, editable=True, draft=form, panel=panel), True
@@ -531,8 +550,9 @@ def queue_data(
 ) -> dict:
     """What the layout needs to draw the queue block. `review` is the search, filters, sort and
     selection of the Review queue view (Fix G4 L9, L10)."""
-    waiting = suggestions()
+    waiting = [*group_suggestions(), *suggestions()]
     confirm = {"counts": high_confidence_counts(), "suggestions": len(waiting)}
+    policy = get_active_version(settings.db_path).rulebook.policy
     cards = ai_cards()
     review = dict(review or {})
     open_paths = {c.path for c in cards}
@@ -544,22 +564,34 @@ def queue_data(
         "notice": notice or [],
         "review": review,
         "ai_cards": cards,
+        "also_cards": also_cards(),
         "ai_confirm": confirm if ai_confirm else None,
         "suggestions": waiting,
         "suggest_dialog": suggest_dialog,
+        "offer_suggest": offer_for(policy),
     }
 
 
 def _suggest_action(
-    settings: Settings, name: str, key: str, picks: dict, notes: dict, base_version: int | None
+    settings: Settings, name: str, key: str, picks: dict, notes: dict, base_version: int | None,
+    state: str = "",
 ):
     """Create and assign, Assign to, Reject and Remove on a new-capability suggestion card (S4)."""
     admin = settings.developer_id
-    if name == Q_SG_REMOVE:  # `key` is the program's path
-        remove_from_suggestion(key)
+    links = {s.name: s for s in group_suggestions()}  # Fix G6: "Suggested from code links" cards
+    if name == Q_SG_REMOVE:  # `key` is the program's path; state says which kind of card
+        owner = next((n for n, s in links.items() if key in s.modules), None)
+        if state == LINKS_KEY and owner:
+            remove_program(owner, key)
+        else:
+            remove_from_suggestion(key)
         done = message_notice("Removed from the suggestion.", color="green")
         return _queue_tab(settings, notice=[done])
-    current = next((s for s in suggestions() if s.name == key), None)
+    # a "links:" key is a code-links card; any other key is a tagger card (same names can occur)
+    if key.startswith(LINKS_KEY):
+        current = links.get(key.removeprefix(LINKS_KEY))
+    else:
+        current = next((s for s in suggestions() if s.name == key), None)
     if current is None:
         gone = message_notice("That suggestion is not open any more.")
         return _queue_tab(settings, notice=[gone])
@@ -567,22 +599,36 @@ def _suggest_action(
     if name == Q_SG_OPEN:
         return _queue_tab(settings, suggest_dialog=key)
     if name == Q_SG_REJECT:
-        reject_suggestion(paths, admin)
+        if current.from_links:
+            reject_group_card(current.name)
+        else:
+            reject_suggestion(paths, admin)
         return _queue_tab(settings, notice=[message_notice("Rejected.", color="green")])
     if name == Q_SG_ASSIGN:
         target = picks.get(key) or ""
         if not target:
             return _queue_tab(settings, notice=[message_notice("Choose a capability first.")])
-        result = assign_suggestion(settings, target, paths, admin, base_version)
+        if current.from_links:
+            result = assign_card(settings, current.name, target, admin, base_version)
+        else:
+            result = assign_suggestion(settings, target, paths, admin, base_version)
     else:  # Q_SG_SAVE
         text = {f: notes.get(f"{key}|{f}", "") for f in ("name", "desc", "named", "backup")}
-        result = create_and_assign(
-            settings, text["name"], text["desc"], text["named"], text["backup"], paths, admin,
-            base_version,
-        )
+        if current.from_links:
+            result = create_card(
+                settings, text["name"], text["desc"], text["named"], text["backup"], admin,
+                current.name, base_version,
+            )
+        else:
+            result = create_and_assign(
+                settings, text["name"], text["desc"], text["named"], text["backup"], paths, admin,
+                base_version,
+            )
     if result.kind == "resolved":
         version = f" The catalog is now v{result.new_version}." if result.new_version else ""
-        return _queue_tab(settings, notice=[message_notice(f"Done.{version}", color="green")])
+        again = " Use Re-check to place the other programs." if current.from_links else ""
+        done = message_notice(f"Done.{version}{again}", color="green")
+        return _queue_tab(settings, notice=[done])
     if result.stale:
         newest = get_active_version(settings.db_path).version_number
         notice = message_notice(result.message, reload_tab=TAB_CAPABILITY, newest=newest)
@@ -708,8 +754,19 @@ def _run_queue_action(settings, action, picks, notes, base_version, review):
         return _bulk_action(settings, name, action, picks, base_version, review)
     if name in (Q_AI_APPROVE, Q_AI_ASSIGN, Q_AI_REJECT, Q_AI_RETRY, Q_AI_ALL, Q_AI_ALL_DO):
         return _ai_action(settings, name, uid, picks, base_version, action["cap"])
+    if name == Q_ALSO_REJECT:
+        reject_also(uid)
+        return _queue_tab(settings, notice=[message_notice("Rejected.", color="green")])
+    if name == Q_ALSO_ADD:
+        result = approve_also(settings, uid, action["cap"], settings.developer_id, base_version)
+        return _ai_result(settings, result)
     if name in (Q_SG_OPEN, Q_SG_SAVE, Q_SG_ASSIGN, Q_SG_REJECT, Q_SG_REMOVE):
-        return _suggest_action(settings, name, uid, picks, notes, base_version)
+        return _suggest_action(settings, name, uid, picks, notes, base_version, action["state"])
+    if name == Q_SUGGEST:
+        policy = get_active_version(settings.db_path).rulebook.policy
+        started, text = start_suggest(policy, settings, settings.developer_id)
+        notice = message_notice(text, color="green") if started else message_notice(text)
+        return _queue_tab(settings, notice=[notice])
     if name == Q_RECHECK:
         policy = get_active_version(settings.db_path).rulebook.policy
         started, text = start_recheck(policy, settings, settings.developer_id)
@@ -753,6 +810,7 @@ def _new_capability(settings: Settings, uid: int):
         "description": "",
         "named_senior": "",
         "backup_senior": "",
+        "kind": "Business",
         "path_patterns": f"{folder}/*" if folder else row.path,
     }
     rows = [*capability_rows(active.rulebook.policy), new]
@@ -1504,11 +1562,12 @@ def bars_now() -> tuple[list, list]:
 
 LOCKED_BUTTONS = (
     REBUILD_BTN, REBUILD_FULL_BTN, queue_button_id(Q_RECHECK), TRY_BTN, BUILD_USE_BTN,
+    queue_button_id(Q_SUGGEST),
 )  # same order as LOCK_NAMES
 
 
 def locks_now(own: tuple) -> list:
-    """Fix G5 N3: the five job-starting buttons greyed with the job's short status as tooltip while
+    """Fix G5 N3: the job-starting buttons greyed with the job's short status as tooltip while
     a job runs. `own` is each button's own reason to be disabled (kept when the job ends)."""
     status, started = job.read_status(), running_since()
     states = [lock_state(status, started, o) for o in own]

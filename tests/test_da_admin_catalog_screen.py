@@ -95,7 +95,9 @@ def test_catalog_table_left_and_queue_cards_right(make_settings, published_ruleb
     assert len(cards) == 2 and "src/x/zzz.py" in all_text(cards[0]) + all_text(cards[1])
     # Confirm, Move to..., New capability and Reject per card (8), Show resolved, Select all
     # shown and Clear filters
+    # (the Fix G6 Suggest button lives in the Capabilities pane now)
     assert len(q_buttons(right)) == 11
+    assert "Suggest capabilities from the code" in all_text(left)
     assert "Reject" in all_text(right) and "New capability" in all_text(right)
 
 

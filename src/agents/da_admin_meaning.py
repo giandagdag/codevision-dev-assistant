@@ -38,14 +38,20 @@ class ModuleHit:
     summary: str
     source: str  # FROM_CODE or FROM_SUMMARY
     score: float
+    also: tuple[str, ...] = ()  # fix G6 M2: the other capabilities that claim it, after the main
+
+
+def capabilities_of(path: str, capabilities: list[Capability]) -> tuple[str, list[str]]:
+    """Fix G6 M1: (main, also). The main capability is the first match in catalog order (it owns the
+    senior, escalations and Discover's narrowing); every other match is an "also in". A path no
+    capability matches is (Unassigned, [])."""
+    found = [n for n, paths in modules_by_capability(capabilities, [path]).items() if paths]
+    return (found[0], found[1:]) if found else (UNASSIGNED, [])
 
 
 def capability_of(path: str, capabilities: list[Capability]) -> str:
-    """The first capability whose patterns match the path, else Unassigned."""
-    for name, paths in modules_by_capability(capabilities, [path]).items():
-        if paths:
-            return name
-    return UNASSIGNED
+    """The main capability: the first whose patterns match the path, else Unassigned."""
+    return capabilities_of(path, capabilities)[0]
 
 
 def summary_score(summary: str, query: str) -> float:
@@ -82,17 +88,21 @@ def modules_by_meaning(
             best[path] = score
             from_summary.add(path)
     ranked = sorted(best, key=lambda p: (-best[p], p))[:MAX_MODULES]
-    return [
-        ModuleHit(
-            path,
-            tuple(symbols.get(path, ())[:MAX_SYMBOLS]),
-            capability_of(path, capabilities),
-            str(tags.get(path, {}).get("summary", "")),
-            FROM_SUMMARY if path in from_summary else FROM_CODE,
-            best[path],
+    hits = []
+    for path in ranked:
+        main, also = capabilities_of(path, capabilities)
+        hits.append(
+            ModuleHit(
+                path,
+                tuple(symbols.get(path, ())[:MAX_SYMBOLS]),
+                main,
+                str(tags.get(path, {}).get("summary", "")),
+                FROM_SUMMARY if path in from_summary else FROM_CODE,
+                best[path],
+                tuple(also),
+            )
         )
-        for path in ranked
-    ]
+    return hits
 
 
 def meaning_search(

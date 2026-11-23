@@ -157,6 +157,19 @@ def test_9_8_candidate_shows_capability_and_senior_or_stays_empty(seed_rulebook)
     assert with_catalog(unknown, caps).capability == ""
 
 
+def test_g6_m5_senior_comes_from_the_main_capability_only(seed_rulebook):
+    # A module in two capabilities: the first is main; "also" never adds a second senior.
+    first, second = seed_rulebook.policy.capabilities[:2]
+    both = [
+        first.model_copy(update={"path_patterns": ["*shared_x*"]}),
+        second.model_copy(update={"path_patterns": ["*shared_x*"]}),
+    ]
+    shown = with_catalog(name_candidates("shared_x", [hit("src/shared_x.py", "f")], 5)[0], both)
+
+    assert shown.capability == first.name
+    assert shown.named_senior == first.named_senior
+
+
 # --- 9-10: round cap ---
 
 

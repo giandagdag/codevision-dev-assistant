@@ -21,7 +21,8 @@ def job_bar(status: dict, started: datetime | None, where: str, now: datetime | 
         end = status.get("end_line")
         return [dmc.Text(end, size="sm", mb=8)] if end and where != "index" else []
     stop = []
-    if where != "index":
+    # the suggest job saves nothing until its end and does not read Stop, so it gets no button
+    if where != "index" and status.get("mode") != "suggest":
         stop = [
             dmc.Button(
                 "Stop", id={"type": JOB_STOP_TYPE, "where": where}, size="compact-xs",
@@ -46,7 +47,7 @@ def job_bar(status: dict, started: datetime | None, where: str, now: datetime | 
     ]
 
 
-LOCK_NAMES = ("delta", "full", "recheck", "try", "usebuild")
+LOCK_NAMES = ("delta", "full", "recheck", "try", "usebuild", "suggest")
 
 
 def lock_id(name: str) -> str:

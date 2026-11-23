@@ -91,12 +91,24 @@ def run_searches(
             dropped += count
     if capability:
         found = [
-            hit.model_copy(update={"capability": capability}) if hit.source_path in modules else hit
+            hit.model_copy(update={"capability": _label(hit.source_path, capability, capabilities)})
+            if hit.source_path in modules
+            else hit
             for hit in found
         ]
     return SearchRound(
         queries=queries, hits=merge_hits(found), dropped=dropped, capability=capability
     )
+
+
+def _label(path: str, matched: str, capabilities: list[Capability] | None) -> str:
+    """Fix G6 M2: "Main (also: Other)" when a program sits in several capabilities, main first."""
+    from agents.da_admin_meaning import capabilities_of  # late: heavy module
+
+    main, also = capabilities_of(path, capabilities or [])
+    if matched not in [main, *also] or not also:
+        return matched
+    return f"{main} (also: {', '.join(also)})"
 
 
 def _stem(word: str) -> str:
@@ -120,7 +132,11 @@ def match_capability(
     request_words = _words(text)
     spaced = " ".join(re.findall(r"[a-z0-9]+", text.lower()))
     best_name, best_modules, best_points = "", [], 0
-    by_capability = modules_by_capability(capabilities, paths)
+    from agents.da_admin_meaning import capability_of  # late: heavy module
+
+    # Fix G6 M1: a module narrows the search for its main capability only; "also in" does not count.
+    by_capability = {n: [p for p in ps if capability_of(p, capabilities) == n]
+                     for n, ps in modules_by_capability(capabilities, paths).items()}  # fmt: skip
     for c in capabilities:
         points = 3 * len(_words(c.name) & request_words)
         points += len({w for w in _words(c.description) if len(w) >= 5} & request_words)

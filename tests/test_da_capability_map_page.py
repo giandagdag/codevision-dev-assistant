@@ -33,7 +33,7 @@ def test_link_opens_the_map_in_a_new_tab():  # G-11, G-12
 
 
 def test_page_starts_hidden_and_hides_the_developer_page_on_its_path():
-    assert map_shell().to_plotly_json()["props"]["style"] == {"display": "none"}
+    assert map_shell().to_plotly_json()["props"]["style"] == view.HIDDEN
     assert developer_page_style(MAP_PATH) == {"display": "none"}
 
 
@@ -89,7 +89,8 @@ def test_no_server_path_no_outside_script_and_brand_colors():  # G-15
     page = json.dumps([elements, map_shell().to_plotly_json()], default=str)
     assert "http" not in page and ":\\" not in page and "/Users/" not in page
     colors = {s["style"].get("background-color") for s in view.STYLESHEET} - {None}
-    assert colors <= {da_styles.BLUE, da_styles.NAVY, da_styles.MUTED}
+    # G6 C5: bubble colours come from the palette in styles/ through data(color)
+    assert colors <= {da_styles.BLUE, da_styles.NAVY, da_styles.MUTED, "data(color)"}
     assert view.STYLESHEET[0]["style"]["color"] == da_styles.INK
 
 
@@ -114,10 +115,21 @@ def test_module_label_is_the_short_name_and_a_click_shows_the_full_path():  # G2
     assert "File: src/agents/da_example_long_name.py" in lines
 
 
+def test_links_table_view_has_a_row_per_link_and_marks_also():  # G6-13
+    rows = [{"from": "A", "to": "B", "calls": 4, "programs": 2, "also": False},
+            {"from": "A", "to": "C", "calls": 0, "programs": 1, "also": True}]  # fmt: skip
+    table = view.links_table_view(rows).to_plotly_json()["props"]["children"]
+    body = table[1].to_plotly_json()["props"]["children"]
+    assert len(body) == 2
+    assert [c.children for c in body[1].children] == ["A", "C", 0, 1, "also"]
+
+
 def test_labels_wrap_and_the_layout_spaces_nodes_by_label_size():  # G2-4
     node_style = view.STYLESHEET[0]["style"]
     assert node_style["text-wrap"] == "wrap" and node_style["text-max-width"] == view.LABEL_WIDTH
-    layout = map_shell().to_plotly_json()["props"]["children"][3].layout
+    shell = map_shell().to_plotly_json()["props"]["children"]
+    picture = next(c for c in shell if getattr(c, "id", "") == view.MAP_PICTURE_ID)
+    layout = next(c for c in picture.children if getattr(c, "id", "") == view.MAP_GRAPH_ID).layout
     assert layout["nodeDimensionsIncludeLabels"] is True
     graph, tags = long_name_graph(40)
     state = {"cap": "Payments", "module": ""}
@@ -128,7 +140,7 @@ def test_the_callbacks_register_on_a_dash_app():
     app = Dash(__name__, suppress_callback_exceptions=True)
     app.layout = map_shell()
     cb.register_da_capability_map_callbacks(app)
-    assert len(app.callback_map) == 2
+    assert len(app.callback_map) == 3  # state, picture, and the empty-space hook
 
 
 def test_only_the_view_file_imports_cytoscape():  # swap rule G4b

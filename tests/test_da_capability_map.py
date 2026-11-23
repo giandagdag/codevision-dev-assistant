@@ -165,3 +165,28 @@ def test_map_data_does_not_import_cytoscape():  # G-16
         if line.startswith(("import ", "from "))
     ]
     assert not any("cytoscape" in line for line in imports)
+
+
+def _two_calls():
+    graph, tags = small()
+    graph["files"]["agents/misc.py"]["edges"] = [["imports", "agents.misc", "agents.pay"]]
+    return graph, tags
+
+
+def test_links_table_rows_sort_and_filter():  # G6-13
+    graph, tags = _two_calls()
+    rows = cmap.links_table(graph, tags)
+    pairs = [(r["from"], r["to"], r["calls"], r["programs"]) for r in rows]
+    assert ("Compliance", "Payments", 1, 1) in pairs and ("Unassigned", "Payments", 1, 1) in pairs
+    assert [r["calls"] for r in rows] == sorted((r["calls"] for r in rows), reverse=True)
+    only = cmap.links_table(graph, tags, capability="Unassigned")
+    assert [(r["from"], r["to"]) for r in only] == [("Unassigned", "Payments")]
+    assert cmap.links_table(graph, tags, fewest_first=True)[0]["calls"] == 1
+    assert cmap.links_table(None, tags) == []
+
+
+def test_links_table_marks_also_in():
+    graph, tags = small()
+    rows = cmap.links_table(graph, tags, {"agents.pay": ["Compliance"]})
+    mark = [r for r in rows if r["also"]]
+    assert [(r["from"], r["to"], r["calls"]) for r in mark] == [("Payments", "Compliance", 0)]

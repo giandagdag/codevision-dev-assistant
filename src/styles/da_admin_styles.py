@@ -3,7 +3,21 @@
 Admin screens take every colour from here. NAVY and BLUE are the same values as da_styles.py.
 """
 
+from zlib import crc32
+
 from styles.da_styles import BLUE, NAVY
+
+# G6 C5: one colour per capability on the map. Mid-dark so black or white text reads on them.
+CAPABILITY_PALETTE = [
+    "#1F6FE0", "#157F3B", "#9A5B00", "#5B4BC4", "#B42318", "#0E7C86",
+    "#A23B72", "#5C6B1F", "#C2571A", "#3D5A80", "#7A4E9E", "#2E7D6B",
+]  # fmt: skip
+
+
+def capability_colour(name: str) -> str:
+    """Stable by name (crc32, not hash(): that changes every run)."""
+    return CAPABILITY_PALETTE[crc32(name.encode("utf-8")) % len(CAPABILITY_PALETTE)]
+
 
 GREEN = "#157F3B"
 GREEN_LIGHT = "#E6F4EA"

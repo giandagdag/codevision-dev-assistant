@@ -168,6 +168,30 @@ def test_add_modules_adds_three_exact_patterns_in_one_version(make_settings, pub
     assert len(list_versions(settings.db_path)) == before + 1
 
 
+def test_g6_7_also_add_here_keeps_the_other_capability(make_settings, published_rulebook):
+    from agents.da_admin_modules import also_add_modules_to_form
+
+    form = {"capabilities": [
+        {"name": "Markdown", "path_patterns": "a/x.py"},
+        {"name": "Ingestion", "path_patterns": "b/*.py"},
+    ]}  # fmt: skip
+
+    also_add_modules_to_form(form, "Ingestion", ["a/x.py"])
+
+    assert form["capabilities"][0]["path_patterns"] == "a/x.py"
+    assert form["capabilities"][1]["path_patterns"] == "b/*.py\na/x.py"
+
+
+def test_the_pop_up_has_both_move_and_also_add_buttons(make_settings, published_rulebook):
+    settings = make_settings(admin_ids=(ADMIN,), developer_id=ADMIN)
+    version = get_active_version(settings.db_path)
+    form = {"capabilities": capability_rows(version.rulebook.policy)}
+
+    opened, _ = run_action(settings, TAB, pat_id(TAB, "openmods"), form, "", None, {})
+
+    assert "Also add here" in all_text(opened)
+
+
 def test_the_pop_up_stays_open_when_nothing_is_ticked(make_settings, published_rulebook):
     settings = make_settings(admin_ids=(ADMIN,), developer_id=ADMIN)
     version = get_active_version(settings.db_path)
@@ -177,7 +201,7 @@ def test_the_pop_up_stays_open_when_nothing_is_ticked(make_settings, published_r
         settings, TAB, pat_id(TAB, "addmods"), form, "", None, {"cap": "", "picked": []}
     )
 
-    assert "Add 0 modules" in all_text(content)
+    assert "Move here: 0 modules" in all_text(content)
 
 
 def test_live_hint_and_filter_functions(make_settings, published_rulebook):

@@ -24,6 +24,7 @@ from agents.da_admin_review import (
 )
 from agents.da_admin_starter import starter_at_work
 from agents.da_admin_tag_store import last_tagged, read_tags
+from agents.da_capability_suggest_job import BUTTON as SUGGEST_BUTTON
 from layouts.da_admin_card import admin_card
 from layouts.da_admin_catalog_meaning import CAP_MEANING_ID, SEARCH_PLACEHOLDER
 from layouts.da_admin_catalog_panels import modules_modal, patterns_panel
@@ -48,6 +49,8 @@ from layouts.da_admin_queue_ids import (  # noqa: F401  (other modules import th
     Q_AI_ASSIGN,
     Q_AI_REJECT,
     Q_AI_RETRY,
+    Q_ALSO_ADD,
+    Q_ALSO_REJECT,
     Q_APPLY,
     Q_APPLY_PATTERN,
     Q_APPROVE,
@@ -64,6 +67,7 @@ from layouts.da_admin_queue_ids import (  # noqa: F401  (other modules import th
     Q_SG_REMOVE,
     Q_SG_SAVE,
     Q_SHOW_RESOLVED,
+    Q_SUGGEST,
     QUEUE_BLOCK_ID,
     QUEUE_BUTTON_TYPE,
     QUEUE_NOTE_TYPE,
@@ -85,19 +89,26 @@ from styles import da_styles
 # --- Capability catalog and the Unassigned queue (Phase 11b) ---
 
 CATALOG_TABLE = "capabilities"
-CATALOG_COLUMNS = ("name", "description", "named_senior", "backup_senior", "path_patterns")
+CATALOG_COLUMNS = ("name", "description", "named_senior", "backup_senior", "kind", "path_patterns")
+CAPABILITY_KINDS = ("Business", "Shared foundation")
 # Fix G4 L1: fixed column widths and one input height, so every row lines up.
 CATALOG_WIDTHS = {
-    "name": "18%",
-    "description": "28%",
-    "named_senior": "14%",
-    "backup_senior": "14%",
-    "path_patterns": "14%",
+    "name": "16%",
+    "description": "24%",
+    "named_senior": "12%",
+    "backup_senior": "12%",
+    "kind": "12%",
+    "path_patterns": "12%",
     "actions": "12%",
 }
 CATALOG_INPUT_HEIGHT = "56px"  # two lines of the xs text
 SG_FIELDS = ("name", "desc", "named", "backup")  # dialog inputs: the id's uid is "<name>|<field>"
 NO_CAPABILITIES = "No capabilities yet. Add one, or run an index build and let the AI suggest them."
+REJECT = "Reject"  # Fix G6 words: constants so labels live in one place
+ALSO_ADD = "Add"
+ALSO_TITLE = "Also add {path} to {capability}?"
+REMOVE_FROM_SUGGESTION = "Remove from this suggestion"
+CREATE_AND_ASSIGN = "Create and assign"
 CATALOG_HINT = (
     "First match wins: a file goes to the first capability in this list whose pattern matches. "
     "Use Move up and Move down to change the order."
@@ -130,7 +141,7 @@ def catalog_view(
                     rows,
                     editable,
                     movable=True,
-                    kinds={"path_patterns": PATTERNS},
+                    kinds={"path_patterns": PATTERNS, "kind": list(CAPABILITY_KINDS)},
                     widths=CATALOG_WIDTHS,
                     input_height=CATALOG_INPUT_HEIGHT,
                     add_label="+ Add capability",
@@ -194,6 +205,7 @@ def catalog_view(
             html.Div(
                 [
                     current_bar("catalog"),
+                    *suggest_button(queue, editable),
                     html.Div(
                         [*([starter] if starter is not None else []), catalog],
                         style=admin_styles.CARD_STACK,
@@ -211,9 +223,22 @@ def catalog_view(
     )
 
 
+def suggest_button(queue: dict, disabled: bool = False) -> list:
+    """Fix G6 S4: the Suggest button on the Capabilities view; other jobs grey it."""
+    if not queue.get("offer_suggest"):
+        return []
+    button = dmc.Button(
+        SUGGEST_BUTTON, id=queue_button_id(Q_SUGGEST), size="xs", variant="default",
+        disabled=disabled, mb="xs",
+    )
+    return [locked("suggest", button, disabled)]
+
+
 def view_options(queue: dict) -> list[dict]:
     """The two view buttons; the queue one carries the open count (the job watcher redraws it)."""
-    open_cards = sum(len(queue.get(k, ())) for k in ("rows", "ai_cards", "suggestions"))
+    open_cards = sum(
+        len(queue.get(k, ())) for k in ("rows", "ai_cards", "suggestions", "also_cards")
+    )
     return [
         {"value": VIEW_CAPS, "label": "Capabilities"},
         {"value": VIEW_QUEUE, "label": f"Review queue ({open_cards})"},
@@ -265,7 +290,7 @@ def catalog_list(capabilities, paths: list[str], search: str = "", missing_backu
             c.name, c.description, mine, search, (c.named_senior, c.backup_senior)
         ):
             continue
-        labels, more = module_chips(mine, counts)
+        labels, more = module_chips(mine, counts, by_capability, c.name)
         chips = [
             _chip(label, summaries.get(path, ""))
             for label, path in zip(labels, mine[:SHOWN_MODULES], strict=False)
@@ -376,6 +401,7 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
         bulk = review["bulk"]
         above.append(bulk_confirm(bulk["kind"], bulk_plan(selected, ai_cards), len(selected),
                                   bulk.get("target", "")))
+    above.extend(_also_cards(queue.get("also_cards", []), disabled))
     if any(not c.capability for c in ai_cards):
         above.append(
             locked(
@@ -423,8 +449,33 @@ def queue_block(queue: dict | None, capability_names: list[str], disabled: bool 
         )
     parts.append(tagger_try_panel(module_paths()))
     parts.append(tag_history_panel())
-    waiting = len(rows) + len(ai_cards) + len(suggested)
+    waiting = len(rows) + len(ai_cards) + len(suggested) + len(queue.get("also_cards", []))
     return admin_card("Review queue", html.Div(parts), "📥", count=waiting, id=QUEUE_BLOCK_ID)
+
+
+def also_title(card) -> str:
+    return ALSO_TITLE.format(path=card.path, capability=card.capability)
+
+
+def _also_cards(cards, disabled: bool) -> list:
+    """Fix G6 M4: one small card per program the AI thinks belongs in a second capability."""
+    return [
+        dmc.Paper(
+            dmc.Group(
+                [
+                    dmc.Text(also_title(c), size="sm", fw=600),
+                    dmc.Text(c.summary, size="xs", c=da_styles.MUTED),
+                    dmc.Button(ALSO_ADD, id=queue_button_id(Q_ALSO_ADD, c.path, c.capability),
+                               size="compact-xs", disabled=disabled),
+                    dmc.Button(REJECT, id=queue_button_id(Q_ALSO_REJECT, c.path),
+                               size="compact-xs", variant="default", disabled=disabled),
+                ],
+                gap="xs",
+            ),
+            withBorder=True, p="xs", mb="xs",
+        )
+        for c in cards
+    ]
 
 
 def review_items(queue: dict, capability_names: list[str], disabled: bool, rf, selected: list):
@@ -444,7 +495,7 @@ def review_items(queue: dict, capability_names: list[str], disabled: bool, rf, s
         items.append(dmc.Text("From a request", size="xs", fw=600, c=da_styles.MUTED))
         items.extend(_queue_card(r, capability_names, disabled) for r in shown_rows)
     items.extend(
-        _suggestion_card(s, capability_names, disabled, s.name == open_name)
+        _suggestion_card(s, capability_names, disabled, card_key(s) == open_name)
         for s in shown_suggestions
     )
     if shown_cards:
@@ -655,6 +706,15 @@ def _ai_card(card, capability_names: list[str], disabled: bool, checked: bool = 
     )
 
 
+LINKS_KEY = "links:"
+
+
+def card_key(sug) -> str:
+    """The button key of a suggestion card. A "from code links" card gets a prefix so it never
+    shares an id with a tagger card of the same name or path (Fix G6 review)."""
+    return f"{LINKS_KEY}{sug.name}" if sug.from_links else sug.name
+
+
 def _suggestion_card(sug, capability_names: list[str], disabled: bool, dialog_open: bool):
     """S4: "New capability suggested: <name>" with its programs. Never created by itself."""
     chips = [
@@ -662,8 +722,10 @@ def _suggestion_card(sug, capability_names: list[str], disabled: bool, dialog_op
             [
                 _chip(path, summary),
                 dmc.Button(
-                    "Remove",
-                    id=queue_button_id(Q_SG_REMOVE, path),
+                    REMOVE_FROM_SUGGESTION if sug.from_links else "Remove",
+                    id=queue_button_id(
+                        Q_SG_REMOVE, path, state=LINKS_KEY if sug.from_links else ""
+                    ),
                     size="compact-xs",
                     variant="subtle",
                     disabled=disabled,
@@ -673,13 +735,14 @@ def _suggestion_card(sug, capability_names: list[str], disabled: bool, dialog_op
         )
         for path, summary in sug.modules.items()
     ]
-    key = sug.name
+    key = card_key(sug)
     buttons = [
         dmc.Button(
-            "Create and assign", id=queue_button_id(Q_SG_OPEN, key), size="xs", disabled=disabled
+            CREATE_AND_ASSIGN, id=queue_button_id(Q_SG_OPEN, key), size="xs", disabled=disabled
         ),
         dmc.Select(
             data=capability_names,
+            value=sug.existing if sug.existing in capability_names else None,
             id={"type": QUEUE_PICK_TYPE, "uid": key},
             size="xs",
             w=150,
@@ -693,7 +756,7 @@ def _suggestion_card(sug, capability_names: list[str], disabled: bool, dialog_op
             disabled=disabled,
         ),
         dmc.Button(
-            "Reject",
+            REJECT,
             id=queue_button_id(Q_SG_REJECT, key),
             size="xs",
             variant="default",
@@ -704,13 +767,14 @@ def _suggestion_card(sug, capability_names: list[str], disabled: bool, dialog_op
     parts = [
         dmc.Group(
             [
-                dmc.Badge("New capability suggested", variant="light", tt="none"),
+                dmc.Badge(sug.title, variant="light", tt="none"),
                 dmc.Text(sug.name, size="sm", fw=600),
                 dmc.Badge(sug.confidence, variant="light", tt="none"),
             ],
             gap="xs",
         ),
         dmc.Text(sug.description, size="sm"),
+        *([dmc.Text(sug.counts, size="xs", c=da_styles.MUTED)] if sug.counts else []),
         dmc.Group(chips, gap="xs"),
         html.Div(dmc.Group(buttons, gap="xs"), style={"marginTop": "8px"}),
     ]
@@ -727,7 +791,7 @@ def _suggestion_dialog(sug):
             label=label,
             value=value,
             size="xs",
-            id={"type": QUEUE_NOTE_TYPE, "uid": f"{sug.name}|{name}"},
+            id={"type": QUEUE_NOTE_TYPE, "uid": f"{card_key(sug)}|{name}"},
         )
 
     return dmc.Alert(
@@ -740,7 +804,7 @@ def _suggestion_dialog(sug):
                 [
                     dmc.Button(
                         f"Save ({len(sug.modules)} programs)",
-                        id=queue_button_id(Q_SG_SAVE, sug.name),
+                        id=queue_button_id(Q_SG_SAVE, card_key(sug)),
                         size="xs",
                     ),
                     dmc.Button("Cancel", id=queue_button_id(Q_CANCEL), size="xs", variant="subtle"),

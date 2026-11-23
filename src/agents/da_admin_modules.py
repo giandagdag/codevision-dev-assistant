@@ -60,12 +60,21 @@ def share_counts(by_capability: dict[str, list[str]]) -> dict[str, int]:
     return counts
 
 
-def module_chips(paths: list[str], counts: dict[str, int]) -> tuple[list[str], int]:
-    """(chip labels for the first 6, how many more). A shared path gets " ×2" (or ×3 ...)."""
-    labels = [
-        Path(p).name + (f" ×{counts[p]}" if counts.get(p, 1) > 1 else "")
-        for p in paths[:SHOWN_MODULES]
-    ]
+def module_chips(
+    paths: list[str],
+    counts: dict[str, int],
+    others: dict[str, list[str]] | None = None,
+    row: str = "",
+) -> tuple[list[str], int]:
+    """(chip labels for the first 6, how many more). A shared path gets " ×2" (or ×3 ...) and, when
+    `others` (capability -> its paths) is given, "Also in: <the other capabilities>" (fix G6 M2)."""
+
+    def label(p: str) -> str:
+        text = Path(p).name + (f" ×{counts[p]}" if counts.get(p, 1) > 1 else "")
+        also = [n for n, ps in (others or {}).items() if n != row and p in ps]
+        return text + (f" · Also in: {', '.join(also)}" if also else "")
+
+    labels = [label(p) for p in paths[:SHOWN_MODULES]]
     return labels, max(0, len(paths) - SHOWN_MODULES)
 
 
@@ -120,6 +129,15 @@ def add_modules_to_form(form: dict, capability: str, paths: list[str]) -> dict:
         else:
             lines = [p for p in lines if p not in paths]
         row["path_patterns"] = "\n".join(lines)
+    return form
+
+
+def also_add_modules_to_form(form: dict, capability: str, paths: list[str]) -> dict:
+    """Fix G6 M3 "Also add here": exact patterns on `capability`; other capabilities keep theirs."""
+    for row in form.get("capabilities", []):
+        if row.get("name") == capability:
+            lines = split_patterns(row.get("path_patterns", ""))
+            row["path_patterns"] = "\n".join(lines + [p for p in paths if p not in lines])
     return form
 
 

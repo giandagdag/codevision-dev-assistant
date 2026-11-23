@@ -19,3 +19,5 @@ Reply with exactly this JSON shape:
 Use "new" only when the program clearly belongs to an area that no listed capability covers. Then add
 two more fields: "new_name" (2 to 40 characters, plain words, no path, no person's name) and
 "new_description" (max 120 characters, what the area covers). Otherwise leave them out.
+Add an optional "also" field (one more exact name from the list above) only when the program clearly
+serves a second capability too. Otherwise leave it out.
