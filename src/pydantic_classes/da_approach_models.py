@@ -256,6 +256,8 @@ class ApproachView(BaseModel):
     # The soft limit of code files from the pinned rulebook (decision D-C).
     file_limit: int
     failed_first_call: bool
+    # G7: every problem the checks found in the last failed plan (from the audit), for the tab.
+    failed_problems: list[str] = Field(default_factory=list)
     revision: int
     demo_mode: bool
     # Phase 9: the accepted safety-net tests, shown read-only in the test plan ("Accepted in the

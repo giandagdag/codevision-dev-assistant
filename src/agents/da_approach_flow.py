@@ -42,6 +42,7 @@ from agents.da_approach_checks import (
     limit_reason_problem,
     scope_problem_paths,
 )
+from agents.da_approach_reasons import kept_problems
 from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import get_help, out_of_scope_approach
@@ -66,6 +67,7 @@ from db_table_functions.db_tbl_da_approach import (
     confirmed_round_record_version,
     ensure_approach_tables,
     first_call_failed,
+    first_call_problems,
     highest_test_number,
     insert_approach_version,
     insert_test_plan,
@@ -253,7 +255,7 @@ def start_approach(
             _say(conn, request_id, "assistant", _failure_text(result, "make a plan"), now)
             insert_audit_event(
                 conn, request_id, "system", "approach_failed",
-                {"provider": result.provider, "problems": result.problems[:5]}, now,
+                {"provider": result.provider, "problems": kept_problems(result.problems)}, now,
             )
         return get_approach_view(settings, request_id)
 
@@ -562,6 +564,7 @@ def get_approach_view(settings: Settings, request_id: str) -> ApproachView:
         messages = read_messages(conn, request_id)
         discovery = read_latest_result(conn, request_id)
         failed = first_call_failed(conn, request_id)
+        failed_problems = first_call_problems(conn, request_id) if failed else []
         checks = (
             _gate(conn, request, state)
             if state
@@ -592,6 +595,7 @@ def get_approach_view(settings: Settings, request_id: str) -> ApproachView:
         tests_folder=folder_for_tests(request_id),
         file_limit=file_limit,
         failed_first_call=failed,
+        failed_problems=failed_problems,
         revision=revision,
         demo_mode=settings.llm_provider == "fake",
         safety_net_cases=net.net.cases if net else [],

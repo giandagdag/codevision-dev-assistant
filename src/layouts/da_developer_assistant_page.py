@@ -849,7 +849,8 @@ def _approach_composer(
     if not buttons:
         return controls
     note = (view.note if view else "") or APPROACH_NOTES.get(view.step if view else "", "")
-    return dmc.Box([_approach_bar(buttons, note), controls])
+    problems = view.failed_problems if view else []
+    return dmc.Box([_approach_bar(buttons, note, problems), controls])
 
 
 def _hidden_reconnect(workspace: WorkspaceView | None):
@@ -1062,7 +1063,9 @@ def approach_button_kind(key: str) -> str:
     return parts.NORMAL
 
 
-def _approach_bar(buttons: list[tuple[str, str]], note: str) -> dmc.Box:
+def _approach_bar(
+    buttons: list[tuple[str, str]], note: str, problems: list[str] | None = None
+) -> dmc.Box:
     shown = [
         parts.choice_button(
             label, {"type": CHOICE_TYPE, "index": number}, approach_button_kind(key)
@@ -1072,6 +1075,10 @@ def _approach_bar(buttons: list[tuple[str, str]], note: str) -> dmc.Box:
     return dmc.Box(
         [
             dmc.Group([_lock(), dmc.Text(note, size="xs", fw=600)]),
+            *[
+                dmc.Text(problem, size="xs", c="red", className="da-failed-problem")
+                for problem in problems or []
+            ],
             dmc.Group(shown, mt="xs", mb="xs"),
         ],
         style=da_styles.CHOICES_BAR,
