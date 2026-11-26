@@ -229,6 +229,20 @@ def allowed_cites(
     return set()
 
 
+def cite_notes(
+    approach: ApproachVersion, record: RequestRecord, rules: list[Rule]
+) -> dict[str, str]:
+    """Fix G9 F3: the plain meaning of every cite a finding may show (tooltip text)."""
+    notes = {rule.rule_id: f"{rule.rule_id}: {rule.title}" for rule in rules}
+    for n, item in enumerate(approach.decisions, 1):
+        notes[f"DD-{n}"] = f"Design decision {n}: {item.question} → {item.choice}"
+    for n, item in enumerate(approach.plan.reuse_decisions, 1):
+        notes[f"RU-{n}"] = f"Reuse decision {n}: {item.decision}: {item.reason}"
+    for line in record.exceptions:
+        notes[line.split(":", 1)[0]] = line
+    return notes
+
+
 def check_evidence(
     item: ReplyFinding, files: dict[str, str], cites: set[str], window: int
 ) -> tuple[ReplyFinding | None, str]:

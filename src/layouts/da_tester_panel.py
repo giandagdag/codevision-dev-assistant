@@ -7,6 +7,7 @@ beside them, and a line for your written answer.
 """
 
 import dash_mantine_components as dmc
+from dash import html
 
 from agents.da_model_label import model_label
 from pydantic_classes.da_tester_models import (
@@ -43,6 +44,9 @@ CHECK_STATE_TEXT = {
     "warning": "Warning",
     "not_run": "Not run",
 }
+# G9 F3: the name a finding's check shows (check 4 is "Matches the agreement").
+FINDING_CHECK_NAMES = {4: "Matches the agreement", 5: "Nothing extra", 6: "Follows the rulebook"}
+CITE_STYLE = {"textDecoration": "underline dotted", "cursor": "help"}
 ID_STYLE = {"whiteSpace": "nowrap"}  # F7: F-12 never breaks across two lines
 WHERE_STYLE = {"overflowWrap": "anywhere"}  # F7: a long path wraps instead of widening the table
 CHECK_STATE_COLOUR = {"passed": "green", "failed": "red", "warning": "yellow", "not_run": "gray"}
@@ -119,7 +123,7 @@ def tester_report(report: TesterView | None, can_act: bool, can_fix: bool = Fals
         )
     blocks.append(_checks_table(report))
     if report.rows:
-        blocks.append(_findings_table(report.rows, can_act, can_fix))
+        blocks.append(_findings_table(report.rows, can_act, can_fix, report.cite_notes))
         blocks += _send_disputes(report.rows, can_act)
     for warning in review.zone_warnings:
         blocks.append(dmc.Text(warning, size="sm", c="orange"))
@@ -158,10 +162,12 @@ def _checks_table(report: TesterView) -> dmc.Table:
     return dmc.Table([head, dmc.TableTbody(body)], id=CHECKS_ID, withTableBorder=True)
 
 
-def _findings_table(rows: list[FindingRow], can_act: bool, can_fix: bool) -> dmc.Table:
+def _findings_table(
+    rows: list[FindingRow], can_act: bool, can_fix: bool, notes: dict[str, str]
+) -> dmc.Table:
     heads = ("ID", "Severity", "Where", "Message", "Action")
     head = dmc.TableThead(dmc.TableTr([dmc.TableTh(t) for t in heads]))
-    body = [_finding_row(row, can_act, can_fix) for row in rows]
+    body = [_finding_row(row, can_act, can_fix, notes) for row in rows]
     return dmc.Table([head, dmc.TableTbody(body)], id=FINDINGS_ID, withTableBorder=True)
 
 
@@ -184,15 +190,47 @@ def _send_disputes(rows: list[FindingRow], can_act: bool) -> list:
     ]
 
 
-def _finding_row(row: FindingRow, can_act: bool, can_fix: bool) -> dmc.TableTr:
+def check_label(number: int) -> str:
+    """G9 F3: "Check 4 · Matches the agreement" (the number alone when the check is unknown)."""
+    name = FINDING_CHECK_NAMES.get(number)
+    return f"Check {number} · {name}" if name else f"Check {number}"
+
+
+def cite_tooltip(cite: str, notes: dict[str, str]) -> str:
+    """G9 F3: the plain meaning of a cite, "" when there is none (PLAN:, AC-n, unknown)."""
+    return notes.get(cite, "")
+
+
+def _cite(cite: str, notes: dict[str, str]):
+    """The cite text; with a meaning it can be focused with the keyboard and shows a tooltip."""
+    text = cite or "-"
+    meaning = cite_tooltip(cite, notes)
+    if not meaning:
+        return dmc.Text(text, size="xs", span=True)
+    return dmc.Tooltip(
+        html.Span(text, tabIndex=0, style=CITE_STYLE),
+        label=meaning,
+        events={"hover": True, "focus": True, "touch": False},
+        multiline=True,
+        w=320,
+    )
+
+
+def _finding_row(
+    row: FindingRow, can_act: bool, can_fix: bool, notes: dict[str, str] | None = None
+) -> dmc.TableTr:
     item = row.finding
     where = f"{item.file}:{item.line}" if item.file else "-"
-    # F7: the check number and the cited rule sit under the message as one dimmed line.
-    detail = f"Check {item.check} · Cites: {item.cites or '-'}"
+    # F7: the check and the cited rule sit under the message as one dimmed line.
+    detail = dmc.Text(
+        [f"{check_label(item.check)} · Cites: ", _cite(item.cites, notes or {})],
+        size="xs",
+        c=da_styles.MUTED,
+    )
     message = [dmc.Text(item.message, size="xs")]
     if item.quote:
         message.append(dmc.Text(item.quote, size="xs", ff="monospace", c=da_styles.MUTED))
-    message.append(dmc.Text(detail, size="xs", c=da_styles.MUTED))
+    message.append(detail)
     # G5 B5: a Must fix whose dispute the senior accepted shows as FYI
     shown = "fyi" if item.severity == "must_fix" and row.state == "overruled" else item.severity
     return dmc.TableTr(

@@ -18,6 +18,7 @@ from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import dispute as dispute_trigger
 from db_table_functions.da_db import open_db
+from db_table_functions.db_tbl_da_approach import read_approach_versions
 from db_table_functions.db_tbl_da_build import (
     BuildError,
     ensure_build_tables,
@@ -25,13 +26,15 @@ from db_table_functions.db_tbl_da_build import (
     read_build_state,
     read_rounds,
 )
-from db_table_functions.db_tbl_da_requests import read_request
+from db_table_functions.db_tbl_da_requests import get_rulebook_for_request, read_request
+from db_table_functions.db_tbl_da_rulebook import RulebookError
 from db_table_functions.db_tbl_da_tester import (
     count_unable_reviews,
     insert_action,
     read_actions,
     read_reviews,
 )
+from db_table_functions.db_tbl_da_understand import read_confirmed_record
 from pydantic_classes.da_build_models import (
     LABEL_NOT_PASSING,
     LABEL_READY,
@@ -172,6 +175,11 @@ def rerun_review(
 
 def get_tester_view(settings, request_id: str) -> TesterView:
     """Everything the Tests tab needs about the Tester's report, read with no lock."""
+    # The rulebook is read before the read transaction (see da_build_loop._load).
+    try:
+        rules = get_rulebook_for_request(settings.db_path, request_id).rulebook.rules
+    except RulebookError:  # no such request, or an old one: the view still draws, without meanings
+        rules = []
     with open_db(settings.db_path) as conn:
         ensure_build_tables(conn)
         conn.execute("BEGIN")
@@ -180,6 +188,7 @@ def get_tester_view(settings, request_id: str) -> TesterView:
         if state is None or state.build_number == 0 or request is None:
             return TesterView()
         number = state.build_number
+        notes = _cite_notes(conn, request, state, rules)
         reviews = read_reviews(conn, request_id, number)
         actions = read_actions(conn, request_id, number)
         rounds = read_rounds(conn, request_id, number)
@@ -219,7 +228,18 @@ def get_tester_view(settings, request_id: str) -> TesterView:
         and review.result == "unable"
         and unable_total > 0,
         layer_c_ran=ran,
+        cite_notes=notes,
     )
+
+
+def _cite_notes(conn, request, state, rules) -> dict[str, str]:
+    """G9 F3: what each cite on the Tests tab means. Empty when the saved pieces are missing."""
+    record = read_confirmed_record(conn, request.request_id, request.version)
+    versions = {v.approach_version: v for v in read_approach_versions(conn, request.request_id)}
+    approach = versions.get(state.approach_version)
+    if record is None or approach is None:
+        return {}
+    return tester.cite_notes(approach, record, rules)
 
 
 def get_build_view(settings, request_id: str) -> BuildView:
