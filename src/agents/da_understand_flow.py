@@ -31,6 +31,7 @@ from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import get_help, out_of_scope_understand
 from agents.da_llm_client import LLMClient, LLMClientError
+from agents.da_rule_conflicts import rulebook_text
 from agents.da_safety_check import (
     DECISION_P5,
     DECISION_STOP,
@@ -728,6 +729,7 @@ def _interpret(
             # Told what is already decided or waiting, so only NEW questions come back (U5).
             decided=[decision.question for decision in session.record.decisions],
             queued=[pending.question for pending in session.pending_decisions],
+            rules_text=rulebook_text(pinned.rulebook),
         )
     except (ConfigError, LLMClientError) as error:
         # Shown in the chat as a plain message: e.g. onprem "not configured yet".

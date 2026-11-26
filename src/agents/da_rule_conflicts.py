@@ -37,6 +37,30 @@ class RuleConflict:
         )
 
 
+LIST_CUT = 12  # long lists are cut with a count note, like the tagger
+
+
+def rulebook_text(rulebook: Rulebook) -> str:
+    """The whole rulebook as plain lines for a prompt (U1). Never holds a senior's name."""
+    charter, policy = rulebook.charter, rulebook.policy
+    judgement = [r for r in rulebook.rules if r.kind == "judgement"]
+    sections = {
+        "Constraints": charter.constraints,
+        "Architecture principles": charter.architecture_principles,
+        "Judgement rules": [f"{r.rule_id} {r.title}: {r.why}" for r in judgement],
+        "Approved libraries": policy.approved_libraries,
+        "Blocked imports": policy.build_blocked_imports,
+        "Flag-for-review zones": [f"{z.name}: {z.description}" for z in policy.flag_review_zones],
+    }
+    lines = []
+    for title, items in sections.items():
+        lines.append(f"{title}:")
+        lines += [f"- {item}" for item in items[:LIST_CUT]] or ["- (none)"]
+        if len(items) > LIST_CUT:
+            lines.append(f"- (and {len(items) - LIST_CUT} more not shown)")
+    return "\n".join(lines)
+
+
 def texts_of(record: RequestRecord) -> dict[str, str]:
     """The places a conflict can point at: SUMMARY, each AC-n and each DD-n."""
     places = {

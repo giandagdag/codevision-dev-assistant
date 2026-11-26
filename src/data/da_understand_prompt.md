@@ -14,6 +14,11 @@ Out of scope:
 Glossary:
 {{glossary}}
 
+{{rules}}
+
+Do not write a criterion that breaks one of these rules. If the developer asks for something that
+does, still write what they asked, and the app will point out the conflict.
+
 ## The request record so far (JSON)
 
 {{record}}
