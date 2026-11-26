@@ -47,7 +47,7 @@ Stop, push the work so far to the phase branch, and tell Gian what you need when
   you did not see.
 
 ## Current phase
-Fix G8 (the real index must load, snippet length): in build: spec `specs/fix-g-8.md`, plan `specs/fix-g-8-plan.md`, branch `phase-g-fix-8`, PR into `auto/phases-7-10`. Fix G7 (PR #116), G6 and G5 are merged. Fix G4 (merged), Fix G3 (PR #110), Fix G2 (PR #109), Fix G1 (PR #106), Upgrade G (PR #105) and Fix NP are merged. Phase 11 fix 3 (admin polish, one index job, work embedder): PR #98, spec `specs/phase-11-fix-3.md`. Fix batches C, D1 and B2 are merged there. Phase 11 (with fixes 1 and 2) and fix batch B1 are merged. Phase 11 (a to c) is built; "Review my code" (called 10b in the spec) comes later.
+Fix G9 (the requirement is the referee and follows the rulebook): in build: spec `specs/fix-g-9.md`, plan `specs/fix-g-9-plan.md`, branch `phase-g-fix-9`, PR into `auto/phases-7-10`. Fix G8 (PR #117), G7 (PR #116), G6 and G5 are merged. Fix G4 (merged), Fix G3 (PR #110), Fix G2 (PR #109), Fix G1 (PR #106), Upgrade G (PR #105) and Fix NP are merged. Phase 11 fix 3 (admin polish, one index job, work embedder): PR #98, spec `specs/phase-11-fix-3.md`. Fix batches C, D1 and B2 are merged there. Phase 11 (with fixes 1 and 2) and fix batch B1 are merged. Phase 11 (a to c) is built; "Review my code" (called 10b in the spec) comes later.
 (Phases 0 to 6 and Phase A are merged into `main`; Phases 7 to 9 and Phase A fixes 1 to 4 are in `auto/phases-7-10`; their specs stay in `specs/`.)
 
 Phases 4 onwards were redesigned on 31 Oct 2026 (LLM writes 100% of the code, built-in testing,
