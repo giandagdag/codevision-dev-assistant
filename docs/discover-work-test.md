@@ -37,6 +37,10 @@ chat says: "The CodeVision index needs building: run `python src\da_build_code_i
 request carries on. Setting `DA_CODE_INDEX_MAX_DISTANCE` (default 0.90) controls how close a meaning hit
 must be.
 
+If Discovery says "The search index file could not be read", send us the message text and the piece
+number (Fix G8). A piece may hold up to 2,000 characters; "Piece 212 has a snippet that is too long"
+means the builder wrote more than that. The AI still sees at most 500 characters per hit.
+
 ## Keep the data outside the code folder (Fix G5 R9)
 
 A new ZIP of the code must not wipe the index, the tags or the run history. In your work `.env` set:

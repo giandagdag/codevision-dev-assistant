@@ -264,7 +264,8 @@ def test_too_long_snippet_error_names_piece_length_limit_and_never_the_text(tmp_
 
 
 def _hit_of(tmp_path, snippet):
-    path = _write(tmp_path, [_piece(0, symbol="f", line_start=7, language="python", snippet=snippet)])
+    piece = _piece(0, symbol="f", line_start=7, language="python", snippet=snippet)
+    path = _write(tmp_path, [piece])
     index = FakeSearchIndex.from_file(path)
     return index, index.search("alpha", "exact", SearchFilters(languages=["python"]), 5)
 

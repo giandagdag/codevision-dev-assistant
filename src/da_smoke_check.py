@@ -305,8 +305,11 @@ def _run_code_index_step(folder: Path) -> None:
 
     source, out = folder / "index_source", folder / "index_out"
     source.mkdir()
+    # The last function is about 1,800 characters: the loader must accept pieces over 500 (fix G8).
+    long_body = "".join(f"    step_{n} = {n} * 2  # made-up filler line\n" for n in range(40))
     (source / "loans.py").write_text(
-        "def validate_excel_upload():\n    return 1\n\ndef compute_rate():\n    return 2\n",
+        "def validate_excel_upload():\n    return 1\n\ndef compute_rate():\n    return 2\n\n"
+        f"def long_example():\n{long_body}    return 3\n",
         encoding="utf-8",
     )
     summary = build_index(source, out, FakeEmbedder(), say=lambda _text: None)
