@@ -36,6 +36,7 @@ from agents.da_impact import summary_line
 from agents.da_index_builds import current_build
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_search_index import (
+    INDEX_NEEDS_BUILDING_MESSAGE,
     IndexFormatError,
     IndexNotBuiltError,
     SearchIndex,
@@ -121,7 +122,7 @@ NO_INDEX_PROVIDER = "none"  # saved as the round's search provider: nothing was 
 _OUTCOME_STATUSES = (STATUS_SIMILAR_FOUND, STATUS_NO_MATCH)
 _STARTABLE = (STATUS_CONFIRMED, STATUS_SEARCHING)
 # Fix G7: the two sentences a round without an index leaves in its limitations.
-_NO_INDEX_MARKS = ("No CodeVision index is connected", "needs building")
+_NO_INDEX_LINES = (NO_INDEX_MESSAGE, INDEX_NEEDS_BUILDING_MESSAGE)
 INDEX_NOW_AVAILABLE_LINE = (
     "The CodeVision index is available now. Search again to look for code to reuse."
 )
@@ -280,7 +281,7 @@ def search_again_offered(conn, settings: Settings, request: Request, latest) -> 
     From DISCOVERY_CONFIRMED only while no plan was saved (a plan would be thrown away)."""
     if latest is None or settings.search_provider != "codevision" or current_build() is None:
         return False
-    if not any(mark in line for line in latest.limitations for mark in _NO_INDEX_MARKS):
+    if not any(line in _NO_INDEX_LINES for line in latest.limitations):
         return False
     if request.status == STATUS_DISCOVERY_CONFIRMED:
         return read_approach_revision(conn, request.request_id) == 0
@@ -397,7 +398,7 @@ def _impact_details(impact: ImpactResult) -> dict:
 
 def _round_statuses(hint: str, again: bool = False) -> tuple[str, ...]:
     if again:  # Fix G7: a round started by the "index is available now" offer
-        return (*_STARTABLE, STATUS_DISCOVERY_CONFIRMED, *_OUTCOME_STATUSES)
+        return (STATUS_DISCOVERY_CONFIRMED, *_OUTCOME_STATUSES)
     return _OUTCOME_STATUSES if hint else _STARTABLE
 
 

@@ -12,7 +12,7 @@ from agents.da_search_index import FakeSearchIndex
 from db_table_functions.da_db import open_db
 from db_table_functions.db_tbl_da_approach import ensure_approach_tables, save_approach_state
 from db_table_functions.db_tbl_da_discovery import get_results
-from layouts.da_developer_assistant_page import discover_buttons
+from layouts.da_developer_assistant_page import _discovery_panel, discover_buttons
 from pydantic_classes.da_approach_models import ApproachState
 from tests.da_discover_play import confirmed_id, set_status
 
@@ -45,6 +45,16 @@ def test_g7_9_amber_line_button_and_a_new_round_that_uses_the_index(after_no_ind
     assert again.result.round == 2 and again.result.hits
     assert len(get_results(settings.db_path, request_id)) == 2  # the old round stays
     assert not again.search_again_offered
+
+
+def test_g7_9_the_amber_line_is_drawn_only_when_offered(after_no_index, monkeypatch):
+    settings, request_id = after_no_index
+    view = flow.get_discovery_view(settings, request_id)
+    assert "da-index-now-banner" in str(_discovery_panel(view))
+
+    monkeypatch.setattr(flow, "current_build", lambda *a: None)
+    view = flow.get_discovery_view(settings, request_id)
+    assert "da-index-now-banner" not in str(_discovery_panel(view))
 
 
 def test_g7_9_from_discovery_confirmed_it_goes_back_to_searching(after_no_index):
