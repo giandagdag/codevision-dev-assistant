@@ -198,7 +198,7 @@ class FakeSearchIndex:
             version=self._data.build_id,
             kind=piece.kind,
             language=piece.language,
-            snippet=piece.snippet,
+            snippet=_cut_for_hit(piece.snippet),
             score=round(min(score, 1.0), 3),
             mode=mode,
             deprecated=piece.deprecated,
@@ -336,6 +336,15 @@ def search_safely(
     if dropped:
         logger.info("Search safety filter dropped %d hit(s).", dropped)
     return hits, dropped
+
+
+def _cut_for_hit(text: str) -> str:
+    """Shorten a stored snippet to the hit limit at a word boundary, ending with "…"."""
+    if len(text) <= HIT_SNIPPET_LIMIT:
+        return text
+    head = text[: HIT_SNIPPET_LIMIT - 1]
+    # No space at all (one long string): hard cut.
+    return head.rsplit(None, 1)[0].rstrip() + "…" if len(head.split()) > 1 else head + "…"
 
 
 def _allowed_by_flags(piece: IndexPiece, filters: SearchFilters) -> bool:

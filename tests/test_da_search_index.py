@@ -263,6 +263,35 @@ def test_too_long_snippet_error_names_piece_length_limit_and_never_the_text(tmp_
     assert caught.value.__cause__ is None and caught.value.__context__ is None
 
 
+def _hit_of(tmp_path, snippet):
+    path = _write(tmp_path, [_piece(0, symbol="f", line_start=7, language="python", snippet=snippet)])
+    index = FakeSearchIndex.from_file(path)
+    return index, index.search("alpha", "exact", SearchFilters(languages=["python"]), 5)
+
+
+def test_hit_snippet_is_cut_at_a_word_to_500_with_an_ellipsis_and_the_piece_keeps_its_text(
+    tmp_path,
+):
+    text = "alpha " + "word " * 390  # about 1,950 characters
+    index, hits = _hit_of(tmp_path, text)
+
+    assert len(hits[0].snippet) <= 500 and hits[0].snippet.endswith("word…")
+    assert (hits[0].symbol, hits[0].line_start) == ("f", 7)
+    assert index._data.pieces[0].snippet == text  # Enhance and the tagger still see everything
+
+
+def test_hit_snippet_with_no_spaces_is_cut_hard(tmp_path):
+    _, hits = _hit_of(tmp_path, "x" * 1800 + " alpha")
+
+    assert len(hits[0].snippet) == 500 and hits[0].snippet.endswith("…")
+
+
+def test_short_snippet_is_unchanged_in_the_hit(tmp_path):
+    _, hits = _hit_of(tmp_path, "alpha " + "y" * 74)  # 80 characters
+
+    assert hits[0].snippet == "alpha " + "y" * 74
+
+
 def test_other_shape_problems_still_refuse_the_whole_file(tmp_path):
     with pytest.raises(IndexFormatError, match="could not be read.*2000 characters"):
         load_index_file(_write(tmp_path, [_piece(0, kind="nonsense")]))
