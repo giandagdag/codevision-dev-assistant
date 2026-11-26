@@ -48,6 +48,18 @@ def test_click_updates_the_address_and_reload_keeps_it(make_live_page, base):
     assert selected(page) == "Project charter"
 
 
+def test_g9_18_admin_tab_clicks_never_show_the_developer_assistant_page(make_live_page, base):
+    page = make_live_page(base)
+    for name in ("Project charter", "Build and test", "Overview"):
+        page.get_by_role("tab", name=name, exact=True).click()
+        page.wait_for_timeout(700)
+        assert not page.locator("#da-page-content").is_visible()
+        assert "Opening..." not in page.locator("body").inner_text()
+    page.reload()
+    page.get_by_role("tab", name="Overview", exact=True).wait_for(timeout=15000)
+    assert not page.locator("#da-page-content").is_visible()
+
+
 def test_shared_link_and_back(make_live_page, base):
     page = make_live_page(f"{base}?tab=repository")
     page.get_by_role("tab", name="Repository and index", exact=True).wait_for(timeout=15000)

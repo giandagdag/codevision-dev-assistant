@@ -7,6 +7,7 @@ CodeVision defines its callback functions inside the register function. Ours are
 the file and only attached inside it, so tests can call them directly.
 """
 
+import json
 from functools import lru_cache
 from urllib.parse import parse_qs
 
@@ -76,8 +77,10 @@ from db_table_functions.db_tbl_da_understand import (
     StaleRevisionError,
     UnderstandError,
 )
+from layouts.da_admin_page import ADMIN_PATH
 from layouts.da_build_panel import POLL_ID, POLL_MS
 from layouts.da_busy_text import BUSY_JS
+from layouts.da_capability_map_view import MAP_PATH
 from layouts.da_developer_assistant_page import (
     BUSY_ID,
     CHOICE_TYPE,
@@ -138,6 +141,7 @@ from layouts.da_enhance_panel import (
     scope_picker,
     test_plan_net_section,
 )
+from layouts.da_inbox_page import INBOX_PATH
 from layouts.da_lock_buttons import lock_buttons
 from layouts.da_tester_panel import (
     FINDING_ACT_TYPE,
@@ -214,6 +218,19 @@ PAGE_BUSY = (
     {**da_styles.PAGE, "pointerEvents": "none", "opacity": 0.75},
     da_styles.PAGE,
 )
+
+# Pages that own the address while they show (the Developer Assistant stays built but hidden).
+OTHER_PAGES = (ADMIN_PATH, INBOX_PATH, MAP_PATH)
+
+# G9 S5: "Opening..." only when the Developer Assistant page is the one showing.
+OPENING_JS = f"""
+function(search, pathname) {{
+    if ({json.dumps(list(OTHER_PAGES))}.indexOf(pathname) >= 0) {{
+        return window.dash_clientside.no_update;
+    }}
+    return 'Opening...';
+}}
+"""
 
 # G9 S2: See the findings scrolls the findings table into view on every press.
 SCROLL_TO_FINDINGS_JS = f"""
@@ -383,13 +400,15 @@ def perform_scope_save(settings: Settings, chosen, state, refresh):
     return (refresh or 0) + 1, ""
 
 
-def show_page(search: str | None, refresh: int | None):
+def show_page(search: str | None, refresh: int | None, pathname: str | None = None):
     """Draw Home, the blank workspace, or one request, from the URL.
 
     The conversation lives in the database, so a page reload draws exactly the same thing.
     While an escalation is open (and the chat lock is on) the composer becomes the waiting line
-    (Phase 10, spec section 11).
+    (Phase 10, spec section 11). G9 S6: while Admin, Inbox or the map shows, the address is theirs.
     """
+    if pathname in OTHER_PAGES:
+        raise PreventUpdate
     page = _draw_page(search, refresh)
     params = parse_qs((search or "").lstrip("?"))
     if params.get("request"):
@@ -933,18 +952,22 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
     except ConfigError:
         pass  # the page itself shows the settings problem
     # Draws on first load too, so this one does not use prevent_initial_call.
+    # G9 S5: the pathname is an input too, so a menu change always redraws the request page.
     app.callback(
         Output(PAGE_CONTENT_ID, "children"),
         Input(LOCATION_ID, "search"),
         Input(REFRESH_ID, "data"),
+        Input(LOCATION_ID, "pathname"),
     )(show_page)
 
     # Fix G5 N6: the old page (Home and its subtitle) stayed on screen while a slow server built the
     # request page. The browser clears it at once when the address changes; show_page then fills it.
+    # G9 S5: only while the Developer Assistant page is the one showing.
     app.clientside_callback(
-        "function(search) { return 'Opening...'; }",
+        OPENING_JS,
         Output(PAGE_CONTENT_ID, "children", allow_duplicate=True),
         Input(LOCATION_ID, "search"),
+        Input(LOCATION_ID, "pathname"),
         prevent_initial_call=True,
     )
 
