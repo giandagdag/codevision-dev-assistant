@@ -38,6 +38,7 @@ from agents.da_llm_client import (
 )
 from agents.da_problem_kinds import problem_kinds
 from agents.da_rejected_reply_log import write_rejected_reply
+from agents.da_required_results import required_results_block
 from agents.da_understand_checks import describe_validation_error
 from agents.da_understand_rules import exception_prompt_lines
 from configs.da_config import Settings
@@ -431,6 +432,7 @@ def build_code_prompt(
     return (
         fill_template(CODE_PROMPT, values)
         + exception_prompt_lines(context.record)
+        + required_results_block(context.record)
         + golden_block(context.golden_examples, path, current_text)
         + ui_block(context.brand_constants, context.ui_rules, path, current_text)
         + guidance_block(senior_guidance)
