@@ -462,8 +462,12 @@ def write_contract(
     return _ask(client, prompt, check, context, "build_contract")
 
 
-def write_tests(client: LLMClient, context: BuildContext, contract: Contract) -> AIResult:
+def write_tests(
+    client: LLMClient, context: BuildContext, contract: Contract, extra: str = ""
+) -> AIResult:
+    """`extra`: the plain reason a first try failed the expectation check (Fix G9 T3)."""
     prompt = build_tests_prompt(context, contract)
+    prompt += f"\n## Fix this\n\n{extra}\n" if extra else ""
 
     def check(text: str):
         code = clean_code_reply(text)

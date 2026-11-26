@@ -70,7 +70,7 @@
      "items": [
       {"name": "format_expiry", "kind": "function", "args": ["day", "month", "year"], "summary": "existing"},
       {"name": "days_left", "kind": "function", "args": ["expiry_day", "today_day"], "summary": "existing"},
-      {"name": "ExpiryReport", "kind": "class", "args": [], "summary": "existing; build_line says expires today when no days are left"}
+      {"name": "ExpiryReport", "kind": "class", "args": [], "summary": "existing; build_line says expires today when no days are left, for example ACME: expires today, otherwise ACME: 5 days left"}
      ]
     }
    ]

@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from agents import da_build_agent as agent
+from agents import da_test_expectations as expectations
 from agents import da_tester_review as tester
 from agents import da_tester_review_agent as tester_agent
 from agents.da_approach_checks import normalise_path
@@ -522,8 +523,33 @@ class _Run:
         line = self._line("Tester writes the tests from your test plan", "running")
         result = agent.write_tests(self.client("tester"), self.context, contract)
         self._raise_for(result, UNABLE_MESSAGE)
+        code = self._expectations_backed(result.value, contract, line)
         path = f"tests/{self.test_id}/test_{self.test_id}.py"
-        self._save_frozen("test", path, result.value, "tester", line)
+        self._save_frozen("test", path, code, "tester", line)
+
+    def _expectations_backed(self, code: str, contract: Contract, line: int) -> str:
+        """Fix G9 T3: expected text must come from the requirement; one retry, then drop it."""
+        ctx = self.context
+        wanted = expectations.requirement_text(
+            ctx.record, [f"{d.question} {d.choice}" for d in ctx.approach.decisions], contract
+        )
+        bad = expectations.invented_by_method(code, wanted)
+        if not bad:
+            return code
+        again = agent.write_tests(
+            self.client("tester"), ctx, contract, expectations.reason_for_writer(bad)
+        )
+        self._raise_for(again, UNABLE_MESSAGE)
+        bad = expectations.invented_by_method(again.value, wanted)
+        if not bad:
+            return again.value
+        with self._turn() as tx:
+            note = expectations.NOT_COVERED_NOTE
+            tx.audit("system", "test_case_dropped", {"cases": sorted(bad), "note": note})
+        kept = expectations.drop_methods(again.value, set(bad))
+        if not kept:  # nothing left that the requirement backs: the same stop as a bad reply
+            raise _Paused("unable", UNABLE_MESSAGE)
+        return kept
 
     def _raise_for(self, result: agent.AIResult, unable_text: str) -> None:
         if result.ok:
