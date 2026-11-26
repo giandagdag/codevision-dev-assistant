@@ -76,6 +76,55 @@ def reason_for_writer(bad: dict[str, list[str]]) -> str:
     )
 
 
+def same_failures(older, newer) -> dict[str, str]:
+    """Fix G9 T4: test method -> actual message, for each test that failed with the very same
+    message in both runs (a different actual value is progress, not a stuck test)."""
+    if older is None or newer is None:
+        return {}
+    before = {t.name.rsplit(".", 1)[-1]: t for t in older.tests if t.result in ("fail", "error")}
+    stuck = {}
+    for item in newer.tests:
+        name = item.name.rsplit(".", 1)[-1]
+        if item.result in ("fail", "error") and item.message and name in before:
+            if before[name].message == item.message:
+                stuck[name] = item.message
+    return stuck
+
+
+def expected_of(code: str, names: set[str]) -> dict[str, list[str]]:
+    """Method -> every expected string it holds (for the audit and the repair note)."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return {}
+    return {
+        node.name: expected_strings(node)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name in names
+    }
+
+
+def criterion_of(text: str, record: RequestRecord) -> str:
+    """The criterion that holds this expected text, or ''."""
+    for item in record.acceptance_criteria:
+        if _plain(text) in _plain(f"{item.given} {item.when} {item.then}"):
+            return item.id
+    return ""
+
+
+def repair_note(code: str, names: set[str], record: RequestRecord) -> str:
+    """The requirement backs the test: tell the Generator the exact expected value."""
+    lines = []
+    for method, texts in expected_of(code, names).items():
+        for text in [t for t in texts if _is_message(t)] or [""]:
+            where = criterion_of(text, record) if text else ""
+            what = f"{where} says the result must be exactly '{text}'" if where else (
+                f"The requirement backs {method}"
+            )
+            lines.append(f"- {what}. Change the code, not the test.")
+    return "\n".join(lines)
+
+
 def drop_methods(code: str, names: set[str]) -> str:
     """The test file without these methods (whole lines, decorators included)."""
     tree = ast.parse(code)

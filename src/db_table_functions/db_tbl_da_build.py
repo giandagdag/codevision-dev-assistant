@@ -113,6 +113,7 @@ CREATE TABLE IF NOT EXISTS da_build_rounds (
     files_to_fix   TEXT NOT NULL DEFAULT '[]',
     code_tests     TEXT,
     dropped_code_tests TEXT NOT NULL DEFAULT '[]',
+    referee_only   INTEGER NOT NULL DEFAULT 0,
     created_at     TEXT NOT NULL,
     PRIMARY KEY (request_id, build_number, round)
 );
@@ -180,6 +181,10 @@ def _add_code_test_columns(conn: sqlite3.Connection) -> None:
     if "dropped_code_tests" not in columns:
         conn.execute(
             "ALTER TABLE da_build_rounds ADD COLUMN dropped_code_tests TEXT NOT NULL DEFAULT '[]'"
+        )
+    if "referee_only" not in columns:  # Fix G9 T4: old rows read as a normal round
+        conn.execute(
+            "ALTER TABLE da_build_rounds ADD COLUMN referee_only INTEGER NOT NULL DEFAULT 0"
         )
 
 
@@ -387,8 +392,8 @@ def read_frozen_files(
 def insert_round(conn: sqlite3.Connection, item: RoundRecord, now: datetime) -> None:
     conn.execute(
         "INSERT INTO da_build_rounds (request_id, build_number, round, layer_a, layer_b,"
-        " failure_report, timed_out, files_to_fix, code_tests, dropped_code_tests, created_at)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " failure_report, timed_out, files_to_fix, code_tests, dropped_code_tests,"
+        " referee_only, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             item.request_id,
             item.build_number,
@@ -400,6 +405,7 @@ def insert_round(conn: sqlite3.Connection, item: RoundRecord, now: datetime) -> 
             json.dumps(item.files_to_fix),
             item.code_tests.model_dump_json() if item.code_tests else None,
             json.dumps(item.dropped_code_tests),
+            1 if item.referee_only else 0,
             to_db_time(now),
         ),
     )
@@ -498,6 +504,7 @@ def _to_round(row: sqlite3.Row) -> RoundRecord:
             LayerBResult.model_validate_json(row["code_tests"]) if row["code_tests"] else None
         ),
         dropped_code_tests=json.loads(row["dropped_code_tests"]),
+        referee_only=bool(row["referee_only"]),
         created_at=datetime.fromisoformat(row["created_at"]),
     )
 

@@ -312,6 +312,8 @@ class RoundRecord(_Shape):
     code_tests: LayerBResult | None = None
     # Fix D1: code tests dropped as a wrong test, each "C-3: reason". Filled in step 3c.
     dropped_code_tests: list[str] = Field(default_factory=list)
+    # Fix G9 T4: a Layer B re-run after the referee rewrote a test. It uses no round of the budget.
+    referee_only: bool = False
     created_at: AwareDatetime | None = None
 
 

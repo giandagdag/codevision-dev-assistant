@@ -605,10 +605,82 @@ class _Run:
             if is_system_pause(last.layer_b if last is not None else None):
                 self._retry_unproven(last, contract, tests)  # Run again: no round is used
                 continue
+            _, unbacked = self._stuck(tests)
+            if unbacked and not any(item.referee_only for item in done):
+                tests = self._referee_rewrite(unbacked, contract, tests)
+                layer_b = self._layer_b(tests)
+                self._record_round(
+                    len(done) + 1, last.layer_a, layer_b, contract, tests, referee_only=True
+                )
+                continue
             used = _rounds_used(done)
             if used >= limit:
                 return self._finish_failed(used)
             self._one_round(len(done) + 1, contract, tests)
+
+    def _stuck(self, tests: str) -> tuple[dict[str, str], dict[str, list[str]]]:
+        """Fix G9 T4: tests that failed the same way (same actual value) in the last two counted
+        rounds, and those of them whose expected text the requirement does not back. Only the
+        requirement tests are looked at, never the Phase 9 safety-net tests."""
+        counted = [r for r in self.inp.rounds if not _is_free_row(r)]
+        if len(counted) < 2 or counted[-1] is not self.inp.rounds[-1]:
+            return {}, {}
+        stuck = expectations.same_failures(counted[-2].layer_b, counted[-1].layer_b)
+        ours = find_test_methods(_parse(self.inp.frozen["test"].text))
+        stuck = {name: text for name, text in stuck.items() if name in ours}
+        ctx = self.context
+        wanted = expectations.requirement_text(
+            ctx.record, [f"{d.question} {d.choice}" for d in ctx.approach.decisions],
+            Contract.model_validate_json(self.inp.frozen["contract"].text),
+        )
+        bad = expectations.invented_by_method(tests, wanted)
+        return stuck, {name: texts for name, texts in bad.items() if name in stuck}
+
+    def _referee_rewrite(
+        self, unbacked: dict[str, list[str]], contract: Contract, tests: str
+    ) -> str:
+        """The test writer rewrites once; the new test set is saved as the next version."""
+        self._alive()
+        result = agent.write_tests(
+            self.client("tester"), self.context, contract, expectations.reason_for_writer(unbacked)
+        )
+        self._raise_for(result, UNABLE_MESSAGE)
+        code = self._expectations_backed(result.value, contract, 0)
+        net = self.inp.net
+        text, net_methods, expected = (
+            frozen_set_with_net(code, net.net) if net is not None else (code, [], [])
+        )
+        names = set(unbacked)
+        with self._turn() as tx:
+            insert_test_set(
+                tx.conn,
+                TestSet(
+                    request_id=self.request_id,
+                    test_set_version=next_test_set_version(tx.conn, self.request_id),
+                    approach_version=tx.state.approach_version,
+                    text=text,
+                    fingerprint=fingerprint(text),
+                    net_methods=net_methods,
+                    expected_to_change_methods=expected,
+                ),
+                tx.now,
+            )
+            tx.audit(
+                "system",
+                "test_rewritten_by_referee",
+                {
+                    "old": expectations.expected_of(tests, names),
+                    "new": expectations.expected_of(code, names),
+                },
+            )
+        self.inp.test_set_text = text
+        return text
+
+    def _referee_note(self, tests: str) -> str:
+        """T4, backed: the requirement stands, so the code must change (no question asked)."""
+        stuck, unbacked = self._stuck(tests)
+        backed = {name for name in stuck if name not in unbacked}
+        return expectations.repair_note(tests, backed, self.inp.record) if backed else ""
 
     def _retry_unproven(self, last: RoundRecord, contract: Contract, tests: str) -> None:
         """Run only Layer B again on the saved code, as a new row (rounds are append-only, so the
@@ -651,6 +723,7 @@ class _Run:
             to_write, failures = self._finding_input()
         else:
             to_write, failures = self._fix_input(number)
+            failures = (failures + "\n" + self._referee_note(tests)).strip() if failures else ""
         with self._turn() as tx:
             tx.set(step="b_running", current_round=len(self.inp.rounds))
             # Not proven rows hold a row number but no budget, so show the budget count.
@@ -978,6 +1051,7 @@ class _Run:
         code_tests: LayerBResult | None = None,
         dropped_code_tests: list[str] | None = None,
         layer_a_line: int | None = None,
+        referee_only: bool = False,
     ) -> bool:
         passed = layer_a.ok and layer_b is not None and layer_b.ok
         # F3: tests that never reported are the Developer Assistant's problem. Show the rows,
@@ -1000,6 +1074,7 @@ class _Run:
             files_to_fix=fix,
             code_tests=code_tests,
             dropped_code_tests=dropped_code_tests or [],
+            referee_only=referee_only,
         )
         limit = self.inp.policy.build_max_rounds
         with self._turn() as tx:
@@ -1045,7 +1120,7 @@ class _Run:
             if not passed and not unproven:
                 tx.audit("system", "round_failed", {"round": number, "files_to_fix": fix})
                 counted = _rounds_used(self.inp.rounds) + 1  # this round is not appended yet
-                if counted < limit and not self.check:
+                if counted < limit and not self.check and not referee_only:
                     tx.set(step="b_round_failed", current_round=number)
                     tx.say(
                         "assistant",
@@ -1719,7 +1794,12 @@ def _last_line(lines: list[ProgressLine], prefix: str) -> int | None:
 
 def _rounds_used(rounds: list[RoundRecord]) -> int:
     """Rounds against the budget. A Not proven row is the app's problem, so it is not counted."""
-    return sum(1 for item in rounds if not is_system_pause(item.layer_b))
+    return sum(1 for item in rounds if not _is_free_row(item))
+
+
+def _is_free_row(item: RoundRecord) -> bool:
+    """Not proven rows and referee re-runs use no round of the budget."""
+    return item.referee_only or is_system_pause(item.layer_b)
 
 
 def _round_passed(record: RoundRecord) -> bool:
