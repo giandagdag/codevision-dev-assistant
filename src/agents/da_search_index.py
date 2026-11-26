@@ -145,7 +145,7 @@ def load_index_file(path: Path = FAKE_INDEX_FILE) -> IndexData:
         raise IndexFormatError(
             f"The search index file could not be read ({type(error).__name__}). "
             f"Check that it has build_id and a list of pieces, and that no snippet is longer "
-            f"than {PIECE_TEXT_LIMIT} characters."
+            f"than {PIECE_TEXT_LIMIT:,} characters."
         ) from error
     for position, piece in enumerate(pieces):
         if piece.piece_no != position:

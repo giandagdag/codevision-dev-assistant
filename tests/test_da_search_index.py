@@ -294,5 +294,5 @@ def test_short_snippet_is_unchanged_in_the_hit(tmp_path):
 
 
 def test_other_shape_problems_still_refuse_the_whole_file(tmp_path):
-    with pytest.raises(IndexFormatError, match="could not be read.*2000 characters"):
+    with pytest.raises(IndexFormatError, match="could not be read.*2,000 characters"):
         load_index_file(_write(tmp_path, [_piece(0, kind="nonsense")]))
