@@ -297,6 +297,18 @@ def allowed_by(cites: str, line_text: str, message: str, record: RequestRecord) 
     return ""
 
 
+_SAYS_COMPLIES = re.compile(
+    r"\b(complies|comply|complying|meets|follows|satisfies|in line with)\b", re.IGNORECASE
+)
+_SAYS_PROBLEM = re.compile(r"\b(but|however|does not|doesn't|do not|don't)\b", re.IGNORECASE)
+COMPLIES_REASON = "Not a problem: the finding says the code complies"
+
+
+def says_complies(message: str) -> bool:
+    """Fix G9 F1: the message praises the code and names no problem."""
+    return bool(_SAYS_COMPLIES.search(message)) and not _SAYS_PROBLEM.search(message)
+
+
 def split_findings(
     items: list[ReplyFinding],
     files: dict[str, str],
@@ -311,6 +323,8 @@ def split_findings(
     for item in items:
         cites = allowed_cites(item.check, approach, record, rules, planned)
         checked, reason = check_evidence(item, files, cites, window)
+        if checked is not None and says_complies(checked.message):
+            checked, reason = None, COMPLIES_REASON
         base = checked or item
         message = base.message.strip()[:MESSAGE_LIMIT]
         severity = base.severity

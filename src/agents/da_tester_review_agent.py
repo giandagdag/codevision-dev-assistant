@@ -178,7 +178,7 @@ def scripted_review_reply(prompt: str, switches: frozenset[str] | None = None) -
     reuse = (_RU.findall(prompt) or [f"PLAN:{path}"])[0]
     findings = [
         _finding(blocks, path, 6, "should_fix", rule, "A judgement rule is not fully kept here."),
-        _finding(blocks, other, 4, "fyi", reuse, "This follows the reuse decision."),
+        _finding(blocks, other, 4, "fyi", reuse, "Reuse is applied, but a comment would help."),
         {
             "check": 5,
             "severity": "must_fix",
