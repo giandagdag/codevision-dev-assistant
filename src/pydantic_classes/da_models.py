@@ -74,7 +74,8 @@ ALLOWED_MOVES: dict[str, tuple[str, ...]] = {
     STATUS_SIMILAR_FOUND: (STATUS_DISCOVERY_CONFIRMED, STATUS_SEARCHING, STATUS_ESCALATION),
     STATUS_NO_MATCH: (STATUS_DISCOVERY_CONFIRMED, STATUS_SEARCHING, STATUS_ESCALATION),
     # Phase 9: Get help during the safety net (steps s_*) leaves from DISCOVERY_CONFIRMED.
-    STATUS_DISCOVERY_CONFIRMED: (STATUS_APPROACH_PROPOSED, STATUS_ESCALATION),
+    # Fix G7 D1: "Search again" when the index came after Discovery and no plan exists yet.
+    STATUS_DISCOVERY_CONFIRMED: (STATUS_APPROACH_PROPOSED, STATUS_SEARCHING, STATUS_ESCALATION),
     STATUS_APPROACH_PROPOSED: (STATUS_READY_TO_BUILD, STATUS_ESCALATION),
     # Phase 5 (Workspace): "Change the approach" and "Get help" from a blocked workspace check.
     # Phase 6 (Build): Build starts a build. The escalation inbox comes in Phase 10.

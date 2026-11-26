@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 from agents.da_discover_checks import describe_shape_problems, find_discovery_problems
 from agents.da_llm_client import LLMClient, LLMClientError, LLMReply, get_llm_client
+from agents.da_problem_kinds import problem_kinds
 from agents.da_rejected_reply_log import write_rejected_reply
 from agents.da_understand_agent import strip_think_block
 from configs.da_config import Settings
@@ -141,7 +142,7 @@ def summarise_hits(
             return DiscoverSummary(
                 reply.findings, reply.limitations, "ai", provider, model, attempt
             )
-        logger.warning("Discover reply %s was not usable: %d problems", attempt, len(problems))
+        logger.warning("Discover reply %s was not usable: %s", attempt, problem_kinds(problems))
         write_rejected_reply(
             record.request_id, attempt, provider, model, problems, llm_reply.text, step="discover"
         )

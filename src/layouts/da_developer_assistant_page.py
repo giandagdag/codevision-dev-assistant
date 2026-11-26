@@ -16,6 +16,7 @@ from agents.da_discover_flow import (
     FAKE_INDEX_NOTICE,
     HINT_OPTION,
     HINT_QUESTION,
+    INDEX_NOW_AVAILABLE_LINE,
     outcome_status,
 )
 from agents.da_handoff_screen import FOLLOW_UP_KEY, READY_KEY, HandoffBox
@@ -849,7 +850,9 @@ def _approach_composer(
     if not buttons:
         return controls
     note = (view.note if view else "") or APPROACH_NOTES.get(view.step if view else "", "")
-    return dmc.Box([_approach_bar(buttons, note), controls])
+    problems = view.failed_problems if view else []
+    hints = view.option_hints if view else {}
+    return dmc.Box([_approach_bar(buttons, note, problems, hints), controls])
 
 
 def _hidden_reconnect(workspace: WorkspaceView | None):
@@ -1062,16 +1065,39 @@ def approach_button_kind(key: str) -> str:
     return parts.NORMAL
 
 
-def _approach_bar(buttons: list[tuple[str, str]], note: str) -> dmc.Box:
+def _with_hint(button, hint: str):
+    """G7: the full option text on hover and on keyboard focus (plain text, never HTML)."""
+    if not hint:
+        return button
+    return dmc.Tooltip(
+        button, label=hint, multiline=True, w=360, withinPortal=True,
+        events={"hover": True, "focus": True, "touch": True},
+    )
+
+
+def _approach_bar(
+    buttons: list[tuple[str, str]],
+    note: str,
+    problems: list[str] | None = None,
+    hints: dict[str, str] | None = None,
+) -> dmc.Box:
+    hints = hints or {}
     shown = [
-        parts.choice_button(
-            label, {"type": CHOICE_TYPE, "index": number}, approach_button_kind(key)
+        _with_hint(
+            parts.choice_button(
+                label, {"type": CHOICE_TYPE, "index": number}, approach_button_kind(key)
+            ),
+            hints.get(label, ""),
         )
         for number, (key, label) in enumerate(buttons)
     ]
     return dmc.Box(
         [
             dmc.Group([_lock(), dmc.Text(note, size="xs", fw=600)]),
+            *[
+                dmc.Text(problem, size="xs", c="red", className="da-failed-problem")
+                for problem in problems or []
+            ],
             dmc.Group(shown, mt="xs", mb="xs"),
         ],
         style=da_styles.CHOICES_BAR,
@@ -1102,6 +1128,12 @@ def _discovery_panel(view: DiscoveryView) -> list:
             )
         )
         return parts_list
+    if view.search_again_offered:  # Fix G7 D2
+        parts_list.append(
+            dmc.Alert(
+                INDEX_NOW_AVAILABLE_LINE, color="orange", variant="light", id="da-index-now-banner"
+            )
+        )
     if result.search_provider == "fake":
         parts_list.append(
             dmc.Alert(FAKE_INDEX_NOTICE, color="violet", variant="light", id="da-fake-index-banner")
@@ -1145,7 +1177,9 @@ def discover_buttons(view: DiscoveryView) -> list[tuple[str, str]]:
         return [(START_KEY, label)]
     if status in (STATUS_SIMILAR_FOUND, STATUS_NO_MATCH):
         keys = {CONFIRM_OPTION: CONFIRM_KEY, ESCALATE_OPTION: ESCALATE_KEY}
-        return [(keys[option], option) for option in view.choices if option in keys]
+        found = [(keys[option], option) for option in view.choices if option in keys]
+        # Fix G7 D1: the index came after this round, so a new round may find reuse.
+        return [*found, (START_KEY, SEARCH_AGAIN_OPTION)] if view.search_again_offered else found
     return []
 
 

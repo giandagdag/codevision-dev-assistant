@@ -164,6 +164,24 @@ new (the map is drawn with it).
    accepts), Full rebuild (the run row shows the Tags line), Re-check (progress bar, no F5), F5 on
    the catalog tab, Download report (PDF).
 
+## After the Fix G7 merge (Approach)
+
+0. Use a new work folder for this ZIP. Do not carry over the 21 Nov hand edits (`OPTION_LIMIT = 300`,
+   `.split(".")[0]`, `MAX_SKIPPED_SHARE`): this fix replaces them. Copy `src\data\da_code_index\`
+   and `logs\` from the old folder, or set `DA_CODE_INDEX_DIR`, so the index and history stay.
+
+1. Retest a request whose plan was refused: the message now says why (up to 3 problems, the rest on
+   the Approach tab) and only says "not reachable" when the AI really did not answer.
+2. A plan that uses `xml.etree.ElementTree` (dotted standard library name) must pass.
+3. Long option text is cut at a word; hover or focus an option to see the full text. Old saved
+   Approach rows still open.
+4. Admin, Index health: an amber line shows when Discover is not using the CodeVision index.
+5. Build the CodeVision index after a request already ran Discover without one (for example
+   CVDA-2026-0005). The Discovery tab shows an amber line, and a "Search again" button sits at the
+   bottom of the screen (the Approach buttons, once the findings are confirmed). A confirmed request whose plan failed, with
+   no plan saved, shows the same button on the Approach tab. It runs a new round (old rounds stay)
+   and does not count against the round cap.
+
 ## Clean up
 
 `rmdir /s /q C:\Dev\practice`

@@ -8,6 +8,7 @@ from typing import Annotated, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
+from pydantic_classes.da_approach_text import make_label, unique_labels
 from pydantic_classes.da_discovery_models import DiscoveryResult
 from pydantic_classes.da_enhance_models import SafetyCase
 from pydantic_classes.da_models import REQUEST_ID_PATTERN, Request
@@ -20,7 +21,7 @@ from pydantic_classes.da_request_record_models import (
 SUMMARY_LIMIT = 300
 PATH_LIMIT = 200
 TEXT_LIMIT = 200
-OPTION_LIMIT = 100
+OPTION_LIMIT = 300  # G7: the full option text; its button label is at most 60 (da_approach_text)
 LIBRARY_LIMIT = 50
 FILE_COUNT_LIMIT = 12
 NEEDS_PEOPLE_LIMIT = 5
@@ -95,10 +96,21 @@ class DesignChoice(_Shape):
     question: str = Field(min_length=1, max_length=TEXT_LIMIT)
     # What changes depending on the answer.
     impact: str = Field(min_length=1, max_length=TEXT_LIMIT)
-    # No recommended option: the developer decides (the same principle as rule R3 in Understand).
+    # The full text of each option (G7: this is what is saved as the developer's choice). No
+    # recommended option: the developer decides (the same principle as rule R3 in Understand).
     options: list[Annotated[str, Field(min_length=1, max_length=OPTION_LIMIT)]] = Field(
         min_length=2, max_length=3
     )
+    # G7: the short button text of each option, in the same order. Empty in plans saved before G7.
+    labels: list[str] = Field(default_factory=list, max_length=3)
+    # G7: the uncut text of a field that was cut (question, impact, option_N), for the tooltip.
+    full_text: dict[str, str] = Field(default_factory=dict)
+
+    def button_labels(self) -> list[str]:
+        """What the buttons say. Old plans have no labels: they are made from the options."""
+        if len(self.labels) == len(self.options):
+            return self.labels
+        return unique_labels([make_label(option) for option in self.options])
 
 
 class ApproachReply(_Shape):
@@ -118,6 +130,9 @@ class ApproachReply(_Shape):
     # Phase 8 approach lane: true when the asked change would need an acceptance criterion changed.
     # The app then refuses the reply and points to the requirement lane.
     changes_criteria: bool = False
+    # G7: the uncut text of a field that was cut (summary, purpose_N), for the tooltip. Set by the
+    # app, never by the AI.
+    full_text: dict[str, str] = Field(default_factory=dict)
 
 
 class ApproachDecision(_Shape):
@@ -256,6 +271,10 @@ class ApproachView(BaseModel):
     # The soft limit of code files from the pinned rulebook (decision D-C).
     file_limit: int
     failed_first_call: bool
+    # G7: every problem the checks found in the last failed plan (from the audit), for the tab.
+    failed_problems: list[str] = Field(default_factory=list)
+    # G7: button label -> the full option text, shown on hover and keyboard focus.
+    option_hints: dict[str, str] = Field(default_factory=dict)
     revision: int
     demo_mode: bool
     # Phase 9: the accepted safety-net tests, shown read-only in the test plan ("Accepted in the

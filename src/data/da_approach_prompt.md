@@ -49,8 +49,9 @@ Reply with JSON only: no other text before or after it. Use this shape:
             "purpose": "<up to 200 characters>", "reuses": [1]}],
  "needs_people": [{"path": "<a protected file>", "reason": "<up to 200 characters>"}],
  "reuse_decisions": [{"hit_id": 1, "decision": "reuse", "reason": "<up to 200 characters>"}],
- "design_choices": [{"question": "<up to 200 characters>", "impact": "<what changes with the answer>",
-                     "options": ["<option A>", "<option B>"]}],
+ "design_choices": [{"question": "<up to 200 characters>", "impact": "<up to 200 characters: what changes>",
+                     "options": [{"label": "<up to 60 characters>",
+                                  "detail": "<up to 300 characters>"}, {"label": "...", "detail": "..."}]}],
  "libraries": ["<top-level library names the new code will import>"]}
 
 Rules:
@@ -65,5 +66,7 @@ Rules:
 - Every existing_capability and similar_implementation finding needs exactly one reuse decision
   for each hit it cites: reuse, extend or ignore, with a reason.
 - A design choice is a real either-or question only the developer can answer, with 2 or 3 options.
-  Never recommend an option. Do not ask a question that was already answered.
-- libraries: standard library names, or names from the approved list only.
+  Never recommend an option. Do not ask a question that was already answered. An option label is
+  the short button text (under 60 characters); the detail says what it means.
+- libraries: standard library names, or names from the approved list only. List libraries by their
+  top-level import name (for example xml, not xml.etree.ElementTree).

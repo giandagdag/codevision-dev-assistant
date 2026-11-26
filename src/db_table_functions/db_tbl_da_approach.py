@@ -273,6 +273,16 @@ def first_call_failed(conn: sqlite3.Connection, request_id: str) -> bool:
     return row is not None and row["event_type"] == "approach_failed"
 
 
+def first_call_problems(conn: sqlite3.Connection, request_id: str) -> list[str]:
+    """The problems saved with the latest approach_failed event (check sentences only)."""
+    row = conn.execute(
+        "SELECT details FROM da_audit_events WHERE request_id = ?"
+        " AND event_type = 'approach_failed' ORDER BY event_id DESC LIMIT 1",
+        (request_id,),
+    ).fetchone()
+    return list(json.loads(row["details"]).get("problems", [])) if row else []
+
+
 def confirmed_discovery_round(conn: sqlite3.Connection, request_id: str) -> int:
     """The round the developer confirmed in Discover, or 0 if none (gate check 2)."""
     row = conn.execute(

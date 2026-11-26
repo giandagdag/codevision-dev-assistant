@@ -66,6 +66,18 @@ def test_runs_keep_the_last_ten_and_never_store_code_text(tmp_path):
     assert "⚠️ 1 piece skipped" in run_line(runs[1])
 
 
+def test_g7_10_index_health_says_discover_is_not_using_the_index(
+    tmp_path, monkeypatch, published_rulebook
+):
+    monkeypatch.setenv("DA_CODE_INDEX_DIR", str(tmp_path))
+
+    fake = all_text(repo_view(published_rulebook, [("DA_SEARCH_PROVIDER", "fake")]))
+    real = all_text(repo_view(published_rulebook, [("DA_SEARCH_PROVIDER", "codevision")]))
+
+    assert "Discover is not using this index" in fake
+    assert "Discover is not using this index" not in real
+
+
 def test_repo_view_shows_connection_refresh_and_fixed_skips(
     tmp_path, monkeypatch, published_rulebook
 ):

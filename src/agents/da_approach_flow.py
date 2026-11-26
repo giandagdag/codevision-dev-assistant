@@ -42,6 +42,8 @@ from agents.da_approach_checks import (
     limit_reason_problem,
     scope_problem_paths,
 )
+from agents.da_approach_reasons import REJECTED_FOOTER, kept_problems
+from agents.da_discover_flow import INDEX_NOW_AVAILABLE_LINE, search_again_offered
 from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import get_help, out_of_scope_approach
@@ -66,6 +68,7 @@ from db_table_functions.db_tbl_da_approach import (
     confirmed_round_record_version,
     ensure_approach_tables,
     first_call_failed,
+    first_call_problems,
     highest_test_number,
     insert_approach_version,
     insert_test_plan,
@@ -126,6 +129,8 @@ APPROACH_DIVIDER = "🧭 Approach"
 # Button labels (the screen shows these; the keys below say which action each stands for).
 PROCEED_OPTION = "Proceed to Approach"
 TRY_AGAIN_OPTION = "Try again"
+SEARCH_AGAIN_OPTION = "Search again"
+SEARCH_AGAIN_KEY = "search_again"
 ACCEPT_APPROACH_OPTION = "Accept approach"
 CHANGE_OPTION = "Change something"
 HELP_BUTTON = "Get help"
@@ -253,7 +258,7 @@ def start_approach(
             _say(conn, request_id, "assistant", _failure_text(result, "make a plan"), now)
             insert_audit_event(
                 conn, request_id, "system", "approach_failed",
-                {"provider": result.provider, "problems": result.problems[:5]}, now,
+                {"provider": result.provider, "problems": kept_problems(result.problems)}, now,
             )
         return get_approach_view(settings, request_id)
 
@@ -293,12 +298,12 @@ def choose_design_option(
     pending = snap.state.pending_choices[0]
     if option == HELP_DECIDING_OPTION:
         _ask_for_help(settings, snap, pending.question, base_revision, now)
-    elif option in pending.options:
-        _answer_choice(settings, snap, option, False, base_revision, generator, now)
+    elif (detail := _detail_for(pending, option)) is not None:
+        _answer_choice(settings, snap, detail, False, base_revision, generator, now)
     else:
         raise ApproachError(
             f"'{option}' is not one of the choices. Choose one of: "
-            f"{', '.join([*pending.options, HELP_DECIDING_OPTION])}."
+            f"{', '.join([*pending.button_labels(), HELP_DECIDING_OPTION])}."
         )
     return get_approach_view(settings, request_id)
 
@@ -327,8 +332,11 @@ def submit_text(
         if typed == HELP_DECIDING_OPTION:
             _ask_for_help(settings, snap, pending.question, base_revision, now)
         else:
-            custom = typed not in pending.options
-            _answer_choice(settings, snap, typed, custom, base_revision, generator, now)
+            detail = _detail_for(pending, typed)
+            _answer_choice(
+                settings, snap, typed if detail is None else detail, detail is None,
+                base_revision, generator, now,
+            )
     elif step == "review":
         # Typing + Send is "Change something" (Phase 6 fixes). At most 3 changes (rule G9).
         if snap.state.change_count >= MAX_CHANGES:
@@ -562,6 +570,12 @@ def get_approach_view(settings: Settings, request_id: str) -> ApproachView:
         messages = read_messages(conn, request_id)
         discovery = read_latest_result(conn, request_id)
         failed = first_call_failed(conn, request_id)
+        failed_problems = first_call_problems(conn, request_id) if failed else []
+        again = (
+            state is None
+            and request.status == STATUS_DISCOVERY_CONFIRMED
+            and search_again_offered(conn, settings, request, discovery)
+        )
         checks = (
             _gate(conn, request, state)
             if state
@@ -571,6 +585,9 @@ def get_approach_view(settings: Settings, request_id: str) -> ApproachView:
     file_limit = _policy(settings, request_id).max_files
     step: ApproachStep = state.step if state else "start"
     buttons, prompt, note = _screen_for(step, state, failed, approach, _developer_cases(plan))
+    if again:  # Fix G7 D1: the index came after Discovery, so a new search may find reuse
+        buttons = [*buttons, (SEARCH_AGAIN_KEY, SEARCH_AGAIN_OPTION)]
+        note = f"{note}. {INDEX_NOW_AVAILABLE_LINE}" if note else INDEX_NOW_AVAILABLE_LINE
     return ApproachView(
         request=request,
         record=record,
@@ -592,6 +609,8 @@ def get_approach_view(settings: Settings, request_id: str) -> ApproachView:
         tests_folder=folder_for_tests(request_id),
         file_limit=file_limit,
         failed_first_call=failed,
+        failed_problems=failed_problems,
+        option_hints=_option_hints(state) if step == "choices" else {},
         revision=revision,
         demo_mode=settings.llm_provider == "fake",
         safety_net_cases=net.net.cases if net else [],
@@ -627,8 +646,11 @@ def _answer_choice(
             if _scope_refusal_to_senior(settings, snap, result, base_revision, now):
                 return
             raise ApproachError(
-                _failure_text(result, "settle the plan from your answers")
-                + " Nothing was saved, so choose again to retry."
+                _failure_text(
+                    result,
+                    "settle the plan from your answers",
+                    "Nothing was saved, so choose again to retry.",
+                )
             )
         settled = (result, pinned)
 
@@ -732,7 +754,7 @@ def _change(
         if _scope_refusal_to_senior(settings, snap, result, base_revision, now):
             return
         raise ApproachError(
-            _failure_text(result, "apply your change") + " Nothing was saved. Please try again."
+            _failure_text(result, "apply your change", "Nothing was saved. Please try again.")
         )
     from_tests = snap.state.change_from_tests
     with _turn(settings.db_path, request_id, base_revision, now) as turn:
@@ -1160,8 +1182,13 @@ def _say(
     add_message(conn, request_id, speaker, text, now)
 
 
-def _failure_text(result: ApproachResult, what: str) -> str:
-    return _failure_text_plain(result.message, what)
+def _failure_text(result: ApproachResult, what: str, closing: str = "") -> str:
+    """The failure line. A caller with its own last sentence passes it as `closing`, so the
+    standard "Press Try again" footer is not said twice."""
+    message = result.message
+    if closing:
+        message = message.removesuffix(REJECTED_FOOTER).rstrip()
+    return _failure_text_plain(message, what) + (f" {closing}" if closing else "")
 
 
 def _failure_text_plain(message: str, what: str) -> str:
@@ -1183,10 +1210,33 @@ def _proposal_text(version: ApproachVersion) -> str:
 
 
 def _ask_text(choice) -> str:
-    return (
-        f"Design choice: {choice.question}\n{choice.impact}\n"
-        "Choose below, or type your own answer."
-    )
+    # The chat has no hover, so a cut question or impact shows its full text here (G7, L3).
+    question = choice.full_text.get("question", choice.question)
+    impact = choice.full_text.get("impact", choice.impact)
+    return f"Design choice: {question}\n{impact}\nChoose below, or type your own answer."
+
+
+def _detail_for(pending, text: str) -> str | None:
+    """The full option text for a label or detail (pressed or typed); None = not an option."""
+    for number, (label, detail) in enumerate(
+        zip(pending.button_labels(), pending.options, strict=True), start=1
+    ):
+        if text in (label, detail):
+            return pending.full_text.get(f"option_{number}", detail)
+    return None
+
+
+def _option_hints(state: ApproachState | None) -> dict[str, str]:
+    """Button label -> the uncut option text (the cut one when nothing was cut)."""
+    if state is None or not state.pending_choices:
+        return {}
+    pending = state.pending_choices[0]
+    return {
+        label: pending.full_text.get(f"option_{number}", detail)
+        for number, (label, detail) in enumerate(
+            zip(pending.button_labels(), pending.options, strict=True), start=1
+        )
+    }
 
 
 def _screen_for(
@@ -1212,7 +1262,7 @@ def _screen_for(
         pending = state.pending_choices[0] if state and state.pending_choices else None
         if pending is None:
             return [], "", ""
-        buttons = [(CHOOSE_KEY, option) for option in pending.options]
+        buttons = [(CHOOSE_KEY, label) for label in pending.button_labels()]
         return [*buttons, (DECIDE_HELP_KEY, HELP_DECIDING_OPTION)], prompt, ""
     if step == "review":
         return (

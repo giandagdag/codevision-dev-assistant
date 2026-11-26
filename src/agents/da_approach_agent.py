@@ -22,11 +22,13 @@ from agents.da_approach_checks import (
     normalise_reply_paths,
     question_key,
 )
+from agents.da_approach_cut import cut_reply, was_cut
+from agents.da_approach_reasons import plain_shape_problems, rejected_message
 from agents.da_guidance import guidance_block
 from agents.da_llm_client import LLMClient, LLMClientError, LLMReply, get_llm_client
+from agents.da_problem_kinds import problem_kinds
 from agents.da_rejected_reply_log import write_rejected_reply
 from agents.da_understand_agent import strip_think_block
-from agents.da_understand_checks import describe_validation_error
 from configs.da_config import Settings
 from da_logging import get_logger
 from pydantic_classes.da_approach_models import ApproachDecision, ApproachReply, ApproachVersion
@@ -105,6 +107,9 @@ class ApproachResult:
     problems: list[str] = field(default_factory=list)
     # Plain words for the developer when the call failed.
     message: str = ""
+    # G7 R1: "unreachable" (the call failed) or "rejected" (the AI answered, the checks refused
+    # it). Empty when the plan is fine or the failure came before any call.
+    kind: str = ""
 
     @property
     def ok(self) -> bool:
@@ -294,7 +299,9 @@ def format_policy(policy: Policy, not_installed: frozenset[str] = frozenset()) -
 def _previous_section(previous: ApproachVersion | None) -> str:
     if previous is None:
         return "Earlier plan: (none)"
-    return "Earlier plan (JSON):\n" + previous.plan.model_dump_json(indent=2)
+    # The app's own fields (full_text, labels) are not for the AI.
+    skip = {"full_text": True, "design_choices": {"__all__": {"full_text", "labels"}}}
+    return "Earlier plan (JSON):\n" + previous.plan.model_dump_json(indent=2, exclude=skip)
 
 
 def _decisions_section(decisions: list[ApproachDecision]) -> str:
@@ -331,12 +338,14 @@ def generate_approach(client: LLMClient, call: str, context: ApproachContext) ->
             llm_reply = client.complete(sent)
         except LLMClientError as error:
             logger.warning("Approach could not reach the AI (%s).", error)
-            return ApproachResult(None, provider, model, attempt, [str(error)], str(error))
+            return ApproachResult(
+                None, provider, model, attempt, [str(error)], str(error), "unreachable"
+            )
         provider, model = llm_reply.provider, llm_reply.model
         reply, problems = parse_reply(llm_reply.text, context, call, answered)
         if reply is not None and not problems:
             return ApproachResult(normalise_reply_paths(reply), provider, model, attempt)
-        logger.warning("Approach reply %s was not usable: %d problems", attempt, len(problems))
+        logger.warning("Approach reply %s was not usable: %s", attempt, problem_kinds(problems))
         write_rejected_reply(
             context.record.request_id,
             attempt,
@@ -346,8 +355,10 @@ def generate_approach(client: LLMClient, call: str, context: ApproachContext) ->
             llm_reply.text,
             step="approach",
         )
-        sent = prompt + retry_note(problems)
-    return ApproachResult(None, provider, model, MAX_ATTEMPTS, problems)
+        sent = prompt + retry_note(problems, reply is not None and was_cut(reply))
+    return ApproachResult(
+        None, provider, model, MAX_ATTEMPTS, problems, rejected_message(problems), "rejected"
+    )
 
 
 def parse_reply(
@@ -358,11 +369,10 @@ def parse_reply(
     if data is NOT_JSON:
         return None, ["The reply was not valid JSON. Reply with JSON only."]
     try:
-        reply = ApproachReply.model_validate(data)
+        # G7: over-long text is cut, never refused. The cut text is kept for the tooltip.
+        reply = ApproachReply.model_validate(cut_reply(data))
     except ValidationError as error:
-        return None, [
-            f"The reply has the wrong shape: {line}" for line in describe_validation_error(error)
-        ]
+        return None, plain_shape_problems(error)
     return reply, find_approach_problems(
         reply, context.policy, context.discovery, answered, call, context.record.targets
     )
@@ -383,10 +393,11 @@ def load_json(text: str):
     return NOT_JSON
 
 
-def retry_note(problems: list[str]) -> str:
+def retry_note(problems: list[str], was_cut_text: bool = False) -> str:
     listed = "\n".join(f"- {problem}" for problem in problems)
+    shorter = "Keep option labels under 60 characters.\n" if was_cut_text else ""
     return (
-        f"\n\nYour previous reply was not accepted, for these reasons:\n{listed}\n"
+        f"\n\nYour previous reply was not accepted, for these reasons:\n{listed}\n{shorter}"
         "Reply again with JSON only, fixing these problems."
     )
 

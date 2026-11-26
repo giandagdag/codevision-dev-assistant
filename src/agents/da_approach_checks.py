@@ -218,7 +218,8 @@ def _library_problems(reply: ApproachReply, policy: Policy) -> list[str]:
         f"Library '{name}' is not in the Python standard library or on the approved list "
         f"({', '.join(policy.approved_libraries)})."
         for name in reply.libraries
-        if library_name(name) not in allowed
+        # The top-level part decides: xml.etree.ElementTree is the standard library's xml.
+        if library_name(name).split(".")[0] not in allowed
     ]
 
 
@@ -234,14 +235,13 @@ def _design_choice_problems(
             f"There are {len(choices)} design choices. The limit is {policy.max_design_choices}."
         )
     seen: set[str] = set()
-    for choice in choices:
+    for number, choice in enumerate(choices, 1):
         key = question_key(choice.question)
+        # Named by number: the AI's own words are never echoed to the screen (G7, R2).
         if key in seen:
-            problems.append(f'The design question "{choice.question}" is asked twice.')
+            problems.append(f"Design question {number} is asked twice.")
         elif key in answered:
-            problems.append(
-                f'The design question "{choice.question}" was already answered. Do not ask again.'
-            )
+            problems.append(f"Design question {number} was already answered. Do not ask again.")
         seen.add(key)
     return problems
 
@@ -257,21 +257,23 @@ def _code_problems(reply: ApproachReply) -> list[str]:
         code = find_code(text)
         if code is not None:
             problems.append(
-                f'The reply contains code: "{code[:60]}". Describe the change in plain words '
+                "The reply contains code. Describe the change in plain words "
                 "only, and do not start a line with def, class, import or from ... import."
             )
     return problems
 
 
 def _reply_texts(reply: ApproachReply) -> list[str]:
-    texts = [reply.summary, *reply.libraries]
+    # The uncut text counts too: code must not hide in the part that was cut off (G7).
+    texts = [reply.summary, *reply.libraries, *reply.full_text.values()]
     for item in reply.files:
         texts += [item.path, item.purpose]
     for item in reply.needs_people:
         texts += [item.path, item.reason]
     texts += [item.reason for item in reply.reuse_decisions]
     for choice in reply.design_choices:
-        texts += [choice.question, choice.impact, *choice.options]
+        texts += [choice.question, choice.impact, *choice.options, *choice.labels]
+        texts += list(choice.full_text.values())
     return texts
 
 
