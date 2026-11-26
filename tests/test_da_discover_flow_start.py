@@ -211,7 +211,8 @@ def test_g8_real_index_with_a_long_function_starts_discovery_and_hits_stay_short
     body = "".join(f"    total_{n} = len('{words}') + {n}\n" for n in range(19))
     source = tmp_path / "src"
     source.mkdir()
-    (source / "big.py").write_text(f"def check_excel_upload():\n{body}    return 1\n", encoding="utf-8")
+    code = f"def check_excel_upload():\n{body}    return 1\n"
+    (source / "big.py").write_text(code, encoding="utf-8")
     out = tmp_path / "idx"
     build_index(source, out, FakeEmbedder(), say=lambda _text: None)
     monkeypatch.setenv("DA_CODE_INDEX_DIR", str(out))
