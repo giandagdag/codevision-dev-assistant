@@ -816,6 +816,10 @@ def _approach_action(settings: Settings, trigger, request_id: str, revision: int
     key, label = buttons[index]
     actions = {
         approach_flow.START_KEY: approach_flow.start_approach,
+        # Fix G7 D1: a new Discover round; it uses the Discover revision, not the Approach one.
+        approach_flow.SEARCH_AGAIN_KEY: lambda s, r, v: start_discovery(
+            s, r, get_discovery_view(s, r).revision
+        ),
         approach_flow.DECIDE_HELP_KEY: lambda s, r, v: approach_flow.choose_design_option(
             s, r, label, v
         ),

@@ -46,6 +46,7 @@ from agents.da_search_index import (
 from configs.da_config import ConfigError, Settings
 from da_logging import get_logger
 from db_table_functions.da_db import begin_write, open_db
+from db_table_functions.db_tbl_da_approach import ensure_approach_tables, read_approach_revision
 from db_table_functions.db_tbl_da_audit import ensure_audit_table, insert_audit_event
 from db_table_functions.db_tbl_da_discovery import (
     DiscoveryError,
@@ -119,6 +120,11 @@ NO_INDEX_PROVIDER = "none"  # saved as the round's search provider: nothing was 
 
 _OUTCOME_STATUSES = (STATUS_SIMILAR_FOUND, STATUS_NO_MATCH)
 _STARTABLE = (STATUS_CONFIRMED, STATUS_SEARCHING)
+# Fix G7: the two sentences a round without an index leaves in its limitations.
+_NO_INDEX_MARKS = ("No CodeVision index is connected", "needs building")
+INDEX_NOW_AVAILABLE_LINE = (
+    "The CodeVision index is available now. Search again to look for code to reuse."
+)
 
 
 # --- the outcome rule (the app decides, never the AI: rules R1, R2) ---
@@ -237,6 +243,7 @@ def get_discovery_view(settings: Settings, request_id: str) -> DiscoveryView:
     round and the chat always match each other."""
     with open_db(settings.db_path) as conn:
         ensure_discovery_tables(conn)
+        ensure_approach_tables(conn)
         conn.execute("BEGIN")
         request = _require_request(conn, request_id)
         record = read_confirmed_record(conn, request_id, request.version)
@@ -247,6 +254,7 @@ def get_discovery_view(settings: Settings, request_id: str) -> DiscoveryView:
         rounds = count_rounds(conn, request_id)
         revision = read_discovery_revision(conn, request_id)
         open_item = read_escalation_open_item(conn, request_id)
+        offered = search_again_offered(conn, settings, request, latest)
     can_hint = request.status in _OUTCOME_STATUSES and rounds < settings.discovery_max_rounds
     return DiscoveryView(
         request=request,
@@ -263,7 +271,20 @@ def get_discovery_view(settings: Settings, request_id: str) -> DiscoveryView:
         open_item=open_item,
         revision=revision,
         demo_mode=settings.llm_provider == "fake",
+        search_again_offered=offered,
     )
+
+
+def search_again_offered(conn, settings: Settings, request: Request, latest) -> bool:
+    """Fix G7 D1/D2: the last round ran without an index and an index is available now.
+    From DISCOVERY_CONFIRMED only while no plan was saved (a plan would be thrown away)."""
+    if latest is None or settings.search_provider != "codevision" or current_build() is None:
+        return False
+    if not any(mark in line for line in latest.limitations for mark in _NO_INDEX_MARKS):
+        return False
+    if request.status == STATUS_DISCOVERY_CONFIRMED:
+        return read_approach_revision(conn, request.request_id) == 0
+    return request.status in _OUTCOME_STATUSES
 
 
 # --- one round ---
@@ -279,7 +300,7 @@ def _run_round(
     now: datetime | None,
 ) -> DiscoveryView:
     now = now or datetime.now(UTC)
-    request, record, rounds = _read_for_round(settings, request_id, base_revision, hint)
+    request, record, rounds, again = _read_for_round(settings, request_id, base_revision, hint)
     # Search and the AI call run with no database lock held.
     round_number = rounds + 1
     searched, no_index_text, notes = SearchRound(queries=[], hits=[], dropped=0), "", []
@@ -318,7 +339,7 @@ def _run_round(
     )
     with _write_transaction(settings.db_path) as conn:
         current = _require_open_request(conn, request_id)
-        _require_status(current, _round_statuses(hint), "searched")
+        _require_status(current, _round_statuses(hint, again), "searched")
         bump_discovery_revision(conn, request_id, base_revision, now)
         first_round = current.status == STATUS_CONFIRMED
         if first_round:
@@ -374,31 +395,40 @@ def _impact_details(impact: ImpactResult) -> dict:
     }
 
 
-def _round_statuses(hint: str) -> tuple[str, ...]:
+def _round_statuses(hint: str, again: bool = False) -> tuple[str, ...]:
+    if again:  # Fix G7: a round started by the "index is available now" offer
+        return (*_STARTABLE, STATUS_DISCOVERY_CONFIRMED, *_OUTCOME_STATUSES)
     return _OUTCOME_STATUSES if hint else _STARTABLE
 
 
 def _read_for_round(
     settings: Settings, request_id: str, base_revision: int, hint: str
-) -> tuple[Request, RequestRecord, int]:
-    """Checks before any search: status, stale window, round cap. Nothing is written."""
+) -> tuple[Request, RequestRecord, int, bool]:
+    """Checks before any search: status, stale window, round cap. Nothing is written.
+    The last value is True for a Search-again round (Fix G7): it never counts against the cap."""
     with open_db(settings.db_path) as conn:
         ensure_discovery_tables(conn)
+        ensure_approach_tables(conn)
         conn.execute("BEGIN")
         request = _require_open_request(conn, request_id)
-        _require_status(request, _round_statuses(hint), "searched")
+        again = (
+            not hint
+            and request.status not in _STARTABLE
+            and search_again_offered(conn, settings, request, read_latest_result(conn, request_id))
+        )
+        _require_status(request, _round_statuses(hint, again), "searched")
         if read_discovery_revision(conn, request_id) != base_revision:
             raise StaleRevisionError(STALE_MESSAGE)
         rounds = count_rounds(conn, request_id)
         record = read_confirmed_record(conn, request_id, request.version)
     if record is None:
         raise DiscoveryError("This request is not confirmed yet, so Discover cannot start.")
-    if rounds >= settings.discovery_max_rounds:
+    if rounds >= settings.discovery_max_rounds and not again:
         raise DiscoveryError(
             f"The limit of {settings.discovery_max_rounds} search rounds is reached. "
             "You can confirm the findings or escalate."
         )
-    return request, record, rounds
+    return request, record, rounds, again
 
 
 def _search(

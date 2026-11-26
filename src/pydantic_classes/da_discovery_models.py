@@ -137,3 +137,5 @@ class DiscoveryView(BaseModel):
     open_item: str
     revision: int
     demo_mode: bool
+    # Fix G7 D1/D2: the last round ran with no index, and one is available now.
+    search_again_offered: bool = False

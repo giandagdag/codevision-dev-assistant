@@ -43,6 +43,7 @@ from agents.da_approach_checks import (
     scope_problem_paths,
 )
 from agents.da_approach_reasons import REJECTED_FOOTER, kept_problems
+from agents.da_discover_flow import INDEX_NOW_AVAILABLE_LINE, search_again_offered
 from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import get_help, out_of_scope_approach
@@ -128,6 +129,8 @@ APPROACH_DIVIDER = "🧭 Approach"
 # Button labels (the screen shows these; the keys below say which action each stands for).
 PROCEED_OPTION = "Proceed to Approach"
 TRY_AGAIN_OPTION = "Try again"
+SEARCH_AGAIN_OPTION = "Search again"
+SEARCH_AGAIN_KEY = "search_again"
 ACCEPT_APPROACH_OPTION = "Accept approach"
 CHANGE_OPTION = "Change something"
 HELP_BUTTON = "Get help"
@@ -568,6 +571,11 @@ def get_approach_view(settings: Settings, request_id: str) -> ApproachView:
         discovery = read_latest_result(conn, request_id)
         failed = first_call_failed(conn, request_id)
         failed_problems = first_call_problems(conn, request_id) if failed else []
+        again = (
+            state is None
+            and request.status == STATUS_DISCOVERY_CONFIRMED
+            and search_again_offered(conn, settings, request, discovery)
+        )
         checks = (
             _gate(conn, request, state)
             if state
@@ -577,6 +585,9 @@ def get_approach_view(settings: Settings, request_id: str) -> ApproachView:
     file_limit = _policy(settings, request_id).max_files
     step: ApproachStep = state.step if state else "start"
     buttons, prompt, note = _screen_for(step, state, failed, approach, _developer_cases(plan))
+    if again:  # Fix G7 D1: the index came after Discovery, so a new search may find reuse
+        buttons = [*buttons, (SEARCH_AGAIN_KEY, SEARCH_AGAIN_OPTION)]
+        note = f"{note}. {INDEX_NOW_AVAILABLE_LINE}" if note else INDEX_NOW_AVAILABLE_LINE
     return ApproachView(
         request=request,
         record=record,
