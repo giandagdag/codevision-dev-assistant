@@ -98,6 +98,9 @@ from layouts.da_developer_assistant_page import (
     START_KEY,
     STATE_ID,
     SWITCH_ID,
+    TAB_KEY_ID,
+    TAB_MEMORY_ID,
+    TABS_ID,
     TEXT_ID,
     add_pill_note,
     approach_buttons,
@@ -136,7 +139,12 @@ from layouts.da_enhance_panel import (
     test_plan_net_section,
 )
 from layouts.da_lock_buttons import lock_buttons
-from layouts.da_tester_panel import FINDING_ACT_TYPE, FINDING_REASON_TYPE
+from layouts.da_tester_panel import (
+    FINDING_ACT_TYPE,
+    FINDING_REASON_TYPE,
+    FINDINGS_ID,
+    SEE_FINDINGS_ID,
+)
 from pydantic_classes.da_models import (
     STATUS_APPROACH_PROPOSED,
     STATUS_BUILDING,
@@ -206,6 +214,32 @@ PAGE_BUSY = (
     {**da_styles.PAGE, "pointerEvents": "none", "opacity": 0.75},
     da_styles.PAGE,
 )
+
+# G9 S2: See the findings scrolls the findings table into view on every press.
+SCROLL_TO_FINDINGS_JS = f"""
+function(clicks) {{
+    var table = document.getElementById('{FINDINGS_ID}');
+    if (clicks && table) {{ table.scrollIntoView({{behavior: 'smooth', block: 'start'}}); }}
+    return window.dash_clientside.no_update;
+}}
+"""
+
+# G9 S4: after a redraw the user's tab stays open when the step is the same as when he chose it
+# (same key); a new step clears the memory so the server's choice wins.
+RESTORE_TAB_JS = """
+function(children, key, memory) {
+    if (memory && memory.key === key) { return [memory.tab, window.dash_clientside.no_update]; }
+    if (memory) { return [window.dash_clientside.no_update, null]; }
+    return [window.dash_clientside.no_update, window.dash_clientside.no_update];
+}
+"""
+
+# The user pressed a tab: remember it with the key of this draw.
+REMEMBER_TAB_JS = """
+function(tab, key) {
+    return tab ? {key: key, tab: tab} : window.dash_clientside.no_update;
+}
+"""
 
 # Enter sends, Shift+Enter makes a new line. Dash cannot tell them apart in Python, so this small
 # browser script (a Dash clientside callback) does the one thing a function key does on a 5250
@@ -974,6 +1008,29 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
         ],
         prevent_initial_call=True,
     )(handle_form)
+
+    app.clientside_callback(
+        SCROLL_TO_FINDINGS_JS,
+        Output(KEYS_ID, "data", allow_duplicate=True),
+        Input(SEE_FINDINGS_ID, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    app.clientside_callback(
+        RESTORE_TAB_JS,
+        Output(TABS_ID, "value", allow_duplicate=True),
+        Output(TAB_MEMORY_ID, "data", allow_duplicate=True),
+        Input(PAGE_CONTENT_ID, "children"),
+        State(TAB_KEY_ID, "data"),
+        State(TAB_MEMORY_ID, "data"),
+        prevent_initial_call=True,
+    )
+    app.clientside_callback(
+        REMEMBER_TAB_JS,
+        Output(TAB_MEMORY_ID, "data"),
+        Input(TABS_ID, "value"),
+        State(TAB_KEY_ID, "data"),
+        prevent_initial_call=True,
+    )
 
     # Phase 7: Accept, Reopen and Dispute on the Tests tab. Pattern ids exist only on that tab.
     app.callback(

@@ -27,6 +27,8 @@ FINDINGS_ID = "da-tester-findings"
 DROPPED_ID = "da-tester-dropped"
 EARLIER_ID = "da-tester-earlier"
 REASON_ID = "da-tester-reason"
+SEE_FINDINGS_ID = "da-tester-see-findings"  # G9 S2: a button, so every press scrolls
+SEE_FINDINGS_TEXT = "See the findings"
 
 REPORT_NOTE = "This report stays in the app. Nothing from it is written to your folder."
 FIX_IT_TEXT = "Fix it"
@@ -104,7 +106,11 @@ def tester_report(report: TesterView | None, can_act: bool, can_fix: bool = Fals
     if report.reason:  # G5 B3
         banner.append(dmc.Text(report.reason, size="sm", id=REASON_ID))
         if report.rows:
-            banner.append(dmc.Anchor("See the findings", href=f"#{FINDINGS_ID}", size="sm"))
+            banner.append(
+                dmc.Button(
+                    SEE_FINDINGS_TEXT, id=SEE_FINDINGS_ID, variant="subtle", size="compact-sm"
+                )
+            )
     blocks: list = [
         dmc.Alert(
             banner,

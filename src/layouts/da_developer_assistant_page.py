@@ -97,6 +97,9 @@ REFINE_MAIN_KEYS = (
 )
 REFINE_CANCEL_KEYS = ("cancel", "restore_cancel")  # drawn as plain grey outline, apart (B2 S2)
 KEYS_ID = "da-keys-ready"  # target of the Enter-to-send script; holds nothing
+TABS_ID = "da-panel-tabs"  # G9 S4: the right-panel tabs
+TAB_KEY_ID = "da-tab-key"  # the step + tab the server chose for this draw
+TAB_MEMORY_ID = "da-tab-memory"  # the tab the user opened, with the key it was opened under
 BUSY_ID = "da-busy"  # the "searching" line, shown only while a Discover action runs
 # The 4-box form (Phase 6 fixes). Pattern ids, so the page can have none of them (all other
 # screens) and one callback still reads all five boxes in order.
@@ -201,6 +204,7 @@ def layout() -> list:
     return [
         dcc.Store(id=REFRESH_ID, data=0),
         dcc.Store(id=KEYS_ID),
+        dcc.Store(id=TAB_MEMORY_ID),
         dcc.Download(id=REPORT_FILE_ID),
         *workspace_hop_stores(),
         dmc.Box(id=PAGE_CONTENT_ID, style=da_styles.PAGE),
@@ -518,20 +522,25 @@ def _workspace(
             panels.append(_tab_panel(net, NET_TAB_VALUE))
         if audit:
             panels.append(_tab_panel(audit, "audit"))
+        chosen = open_tab or ("approach" if approach else "discovery")
         tabs = dmc.Tabs(
             [tab_list, *panels],
-            value=open_tab or ("approach" if approach else "discovery"),
+            value=chosen,
+            id=TABS_ID,
             style={**da_styles.COLUMN, "flex": 1},
         )
         side_children = [tabs]
     else:
+        chosen = "summary"
         side_children = [
-            dmc.Tabs(tab_list, value="summary"),
+            dmc.Tabs(tab_list, value="summary", id=TABS_ID),
             dmc.Box(panel, style=da_styles.PANEL_BODY),
         ]
     side = dmc.Paper(side_children, withBorder=True, radius="md", style=da_styles.COLUMN)
     return [
         dcc.Store(id=STATE_ID, data=state),
+        # G9 S4: step + tab the server chose; the same key on a redraw keeps the user's tab.
+        dcc.Store(id=TAB_KEY_ID, data=f"{request_id}|{step}|{chosen}"),
         *(stores or []),
         *([poll] if poll is not None else []),
         parts.stepper(step),
