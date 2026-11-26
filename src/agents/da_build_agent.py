@@ -366,7 +366,29 @@ def build_tests_prompt(context: BuildContext, contract: Contract) -> str:
         "cases": format_cases(context.cases),
         "contract": format_contract_lines(contract),
     }
-    return fill_template(TESTS_PROMPT, values)
+    return fill_template(TESTS_PROMPT, values) + criteria_for_cases(context)
+
+
+def criteria_for_cases(context: BuildContext) -> str:
+    """Each case's criterion word for word, plus the RX-n lines (Fix G9 T1): the only source
+    of exact values and message text."""
+    wanted = {case.criterion_id for case in context.cases}
+    lines = [
+        f"- {item.id} ({item.kind}): given {item.given}; when {item.when}; then {item.then}"
+        for item in context.record.acceptance_criteria
+        if item.id in wanted
+    ]
+    lines += [
+        f"- DD-{number}: {item.question} -> {item.choice}"
+        for number, item in enumerate(context.approach.decisions, 1)
+    ]
+    return (
+        "\n## The requirement, word for word\n\n"
+        + _bullets_raw(lines)
+        + "\n\nCopy exact values and message text from these lines. Never invent message text, "
+        "numbers or names that are not written here.\n"
+        + exception_prompt_lines(context.record)
+    )
 
 
 def build_code_prompt(
