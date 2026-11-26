@@ -9,12 +9,12 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
-from agents.da_search_index import looks_secret
+from agents.da_search_index import PIECE_TEXT_LIMIT, looks_secret
 from da_logging import get_logger
 
 logger = get_logger(__name__)
 
-SNIPPET_LIMIT = 2000
+SNIPPET_LIMIT = PIECE_TEXT_LIMIT  # one number, kept in the loader so the two can never differ
 MODULE_SYMBOL = "<module>"
 SKIPPED_FOLDERS = frozenset({".venv", "__pycache__"})
 

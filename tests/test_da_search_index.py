@@ -243,9 +243,56 @@ def test_codevision_provider_without_index_files_says_to_build(tmp_path, monkeyp
         get_search_index(settings).search("x", "exact", FILTERS, 5)
 
 
-def test_index_with_a_snippet_over_500_characters_is_refused_with_a_plain_message(tmp_path):
-    path = _write(tmp_path, [_piece(0, snippet="x" * 501)])
+def test_snippet_limit_for_stored_pieces_is_2000(tmp_path):
+    assert load_index_file(_write(tmp_path, [_piece(0, snippet="x" * 501)]))
+    assert load_index_file(_write(tmp_path, [_piece(0, snippet="x" * 2000)]))
+    with pytest.raises(IndexFormatError, match="Piece 0 has a snippet that is too long"):
+        load_index_file(_write(tmp_path, [_piece(0, snippet="x" * 2001)]))
 
-    with pytest.raises(IndexFormatError, match="could not be read.*500 characters"):
+
+def test_too_long_snippet_error_names_piece_length_limit_and_never_the_text(tmp_path):
+    secret = "SECRETBODY" * 235  # 2,350 characters
+    path = _write(tmp_path, [_piece(0), _piece(1, snippet=secret)])
+
+    with pytest.raises(IndexFormatError) as caught:
         load_index_file(path)
-    assert load_index_file(_write(tmp_path, [_piece(0, snippet="x" * 500)]))
+
+    message = str(caught.value)
+    assert "Piece 1" in message and "2,350" in message and "2,000" in message
+    assert "SECRETBODY" not in message
+    assert caught.value.__cause__ is None and caught.value.__context__ is None
+
+
+def _hit_of(tmp_path, snippet):
+    piece = _piece(0, symbol="f", line_start=7, language="python", snippet=snippet)
+    path = _write(tmp_path, [piece])
+    index = FakeSearchIndex.from_file(path)
+    return index, index.search("alpha", "exact", SearchFilters(languages=["python"]), 5)
+
+
+def test_hit_snippet_is_cut_at_a_word_to_500_with_an_ellipsis_and_the_piece_keeps_its_text(
+    tmp_path,
+):
+    text = "alpha " + "word " * 390  # about 1,950 characters
+    index, hits = _hit_of(tmp_path, text)
+
+    assert len(hits[0].snippet) <= 500 and hits[0].snippet.endswith("word…")
+    assert (hits[0].symbol, hits[0].line_start) == ("f", 7)
+    assert index._data.pieces[0].snippet == text  # Enhance and the tagger still see everything
+
+
+def test_hit_snippet_with_no_spaces_is_cut_hard(tmp_path):
+    _, hits = _hit_of(tmp_path, "x" * 1800 + " alpha")
+
+    assert len(hits[0].snippet) == 500 and hits[0].snippet.endswith("…")
+
+
+def test_short_snippet_is_unchanged_in_the_hit(tmp_path):
+    _, hits = _hit_of(tmp_path, "alpha " + "y" * 74)  # 80 characters
+
+    assert hits[0].snippet == "alpha " + "y" * 74
+
+
+def test_other_shape_problems_still_refuse_the_whole_file(tmp_path):
+    with pytest.raises(IndexFormatError, match="could not be read.*2,000 characters"):
+        load_index_file(_write(tmp_path, [_piece(0, kind="nonsense")]))
