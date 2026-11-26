@@ -9,6 +9,7 @@ from typing import Annotated, Literal
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from pydantic_classes.da_models import REQUEST_ID_PATTERN, Request
+from pydantic_classes.da_rule_conflict_models import RuleConflict
 
 TITLE_LIMIT = 80
 TEXT_LIMIT = 1000
@@ -246,6 +247,11 @@ class UnderstandSession(_Shape):
     # The interpreter's hint, shown with the next question.
     next_hint: str = ""
     last_changed_fields: list[str] = Field(default_factory=list)
+    # Fix G9 U5: the last rule check. rule_check_for says which text it read (a fingerprint), so a
+    # check is never trusted after the text changed. Old sessions read as "not run".
+    rule_conflicts: list[RuleConflict] = Field(default_factory=list)
+    rule_check_state: Literal["not_run", "ok", "failed"] = "not_run"
+    rule_check_for: str = ""
     # Stored in its own column; goes up by 1 with every save (stale-save protection, rule R7).
     revision: int = Field(default=1, ge=1)
 

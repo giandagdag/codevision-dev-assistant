@@ -11,16 +11,17 @@ from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_rejected_reply_log import write_rejected_reply
 from agents.da_reply_reader import read_json_object
 from agents.da_rule_conflicts import (
-    RuleConflict,
     keep_real_conflicts,
     plain_conflicts,
     rulebook_text,
     texts_of,
+    titled,
 )
 from agents.da_understand_agent import get_understand_client
 from configs.da_config import ConfigError, Settings
 from da_logging import get_logger
 from pydantic_classes.da_request_record_models import RequestRecord
+from pydantic_classes.da_rule_conflict_models import RuleConflict
 from pydantic_classes.da_rulebook_models import Rulebook
 
 logger = get_logger(__name__)
@@ -79,7 +80,7 @@ def run_rule_check(
         return RuleCheckResult(ran=False)
     from_ai = [_conflict(item) for item in asked if isinstance(item, dict)]
     found = keep_real_conflicts([c for c in from_ai if c], record, rulebook)
-    return RuleCheckResult(ran=True, conflicts=_merge(plain, found))
+    return RuleCheckResult(ran=True, conflicts=titled(_merge(plain, found), rulebook))
 
 
 def _conflict(item: dict) -> RuleConflict | None:

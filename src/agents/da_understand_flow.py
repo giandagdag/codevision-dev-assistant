@@ -19,6 +19,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from agents import da_understand_rules as rules
 from agents.da_destructive import pending_for
 from agents.da_enhance_checks import (
     available_symbols,
@@ -31,7 +32,8 @@ from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
 from agents.da_escalation_triggers import get_help, out_of_scope_understand
 from agents.da_llm_client import LLMClient, LLMClientError
-from agents.da_rule_conflicts import rulebook_text
+from agents.da_rule_check_agent import RuleCheckResult, run_rule_check
+from agents.da_rule_conflicts import record_fingerprint, rulebook_text
 from agents.da_safety_check import (
     DECISION_P5,
     DECISION_STOP,
@@ -620,7 +622,15 @@ def choose_option(
         return _decide(settings, request_id, option, False, base_revision, now, client)
     if session.step == "senior" and option == ASSUME_OPTION:
         return _assume(settings, session, base_revision, now, client)
+    if session.step == "correction" and option in rules.buttons(session):
+        return _rule_button(settings, session, option, base_revision, now, client)
+    # Fix G9 U2: Proceed reads the record against the rulebook first (AI call, no lock held).
+    checked = None
+    if session.step == "checkpoint" and option == PROCEED_OPTION:
+        checked = _check_rules(settings, session, client)
     with _turn(settings.db_path, request_id, base_revision, now) as turn:
+        if checked is not None:
+            _store_rule_check(turn, *checked)
         if turn.session.step == "checkpoint":
             _choose_checkpoint(turn, option)
         elif turn.session.step == "senior":
@@ -881,6 +891,60 @@ def _ask_decision(turn: _Turn) -> None:
     )
 
 
+def _check_rules(
+    settings: Settings, session: UnderstandSession, client: LLMClient | None
+) -> tuple[RuleCheckResult, str]:
+    """One rule check of the record as it is now, and the fingerprint of the text it read."""
+    rulebook = get_rulebook_for_request(settings.db_path, session.request_id).rulebook
+    result = run_rule_check(settings, session.record, rulebook, client)
+    return result, record_fingerprint(session.record)
+
+
+def _store_rule_check(turn: _Turn, result: RuleCheckResult, fingerprint: str) -> None:
+    session = turn.session
+    session.rule_conflicts = result.conflicts
+    session.rule_check_state = "ok" if result.ran else "failed"
+    session.rule_check_for = fingerprint
+    # Counts only: never the AI's words (they stay in the rejected-reply log).
+    turn.audit(
+        "system", "rule_check", {"ran": result.ran, "conflicts": len(result.conflicts)}
+    )
+
+
+def _rule_button(
+    settings: Settings,
+    session: UnderstandSession,
+    option: str,
+    base_revision: int,
+    now: datetime,
+    client: LLMClient | None,
+) -> UnderstandView:
+    """A rule-conflict button at the correction step (U5): use the wording, change it yourself,
+    or try the check again. Wording and Try again run the check again, then the gate."""
+    request_id = session.request_id
+    record, field, checked = session.record, "", None
+    conflict = rules.conflict_for(session, option, rules.USE_WORDING_PREFIX)
+    if conflict is not None:
+        try:
+            record, field = rules.with_wording(session.record, conflict)
+        except ValueError as error:
+            raise UnderstandError(str(error)) from error
+    if conflict is not None or option == rules.TRY_AGAIN_OPTION:
+        checked = _check_rules(settings, session.model_copy(update={"record": record}), client)
+    with _turn(settings.db_path, request_id, base_revision, now) as turn:
+        turn.say("developer", option)
+        if conflict is not None:
+            turn.session.record = record
+            turn.session.last_changed_fields = [field]
+            turn.audit("developer", "rule_wording_used", {"rule": conflict.rule})
+        if checked is None:  # Change it myself: the box is already open
+            turn.say("assistant", rules.CHANGE_MYSELF_MESSAGE)
+        else:
+            _store_rule_check(turn, *checked)
+            _run_gate(turn)
+    return get_understand_view(settings, request_id)
+
+
 def _run_gate(turn: _Turn, announce: bool = True) -> bool:
     """Run the confirmation gate. Pass: the checkpoint. Fail: list every problem and ask what
     should change. Returns True if it passed.
@@ -890,6 +954,7 @@ def _run_gate(turn: _Turn, announce: bool = True) -> bool:
     """
     session = turn.session
     problems = confirmation_gate_problems(session.record, len(session.pending_decisions))
+    problems += rules.gate_lines(session)
     if problems:
         session.step = "correction"
         turn.move_to(STATUS_CLARIFICATION)
@@ -1468,8 +1533,9 @@ def edit_assumption(
 
 
 def _choices_for(session: UnderstandSession) -> list[str]:
-    if session.step == "correction" and _no_negative_offered(session.record):
-        return [NO_NEGATIVE_OPTION]
+    if session.step == "correction":
+        no_negative = [NO_NEGATIVE_OPTION] if _no_negative_offered(session.record) else []
+        return [*rules.buttons(session), *no_negative]
     if session.step == "decision":
         return _decision_choices(session.pending_decisions[0])
     if session.step == "checkpoint":

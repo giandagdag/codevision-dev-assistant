@@ -4,17 +4,17 @@ The same shape serves the plain checks here and the AI rule check (next step): t
 conflicts that cite a real rule and a real place in the record.
 """
 
+import hashlib
 import re
-from dataclasses import dataclass
 
 from agents.da_approach_checks import library_name
 from da_logging import get_logger
 from pydantic_classes.da_request_record_models import RequestRecord
+from pydantic_classes.da_rule_conflict_models import RuleConflict
 from pydantic_classes.da_rulebook_models import Rulebook
 
 logger = get_logger(__name__)
 
-TEXT_MAX = 200
 SUMMARY = "SUMMARY"
 
 # "import requests", "the requests library", "package foo": a library named on purpose.
@@ -22,19 +22,6 @@ SUMMARY = "SUMMARY"
 _LIBRARY_AFTER = re.compile(r"\bimport\s+([A-Za-z_][\w.-]*)", re.I)
 _LIBRARY_BEFORE = re.compile(r"\b([A-Za-z_][\w-]*)\s+(?:library|package|module)\b", re.I)
 _FILLER = frozenset({"the", "a", "an", "this", "that", "new", "python", "standard", "of"})
-
-
-@dataclass(frozen=True)
-class RuleConflict:
-    criterion: str  # "AC-2", "SUMMARY" or "DD-1"
-    rule: str  # rule ID, CHARTER:out_of_scope:n, LIB:name or ZONE:name
-    why: str
-    fix: str
-
-    def cut(self) -> RuleConflict:
-        return RuleConflict(
-            self.criterion, self.rule, self.why[:TEXT_MAX], self.fix[:TEXT_MAX]
-        )
 
 
 LIST_CUT = 12  # long lists are cut with a count note, like the tagger
@@ -116,6 +103,21 @@ def plain_conflicts(record: RequestRecord, rulebook: Rulebook) -> list[RuleConfl
                     )
                 )
     return [conflict.cut() for conflict in found]
+
+
+def record_fingerprint(record: RequestRecord) -> str:
+    """Changes whenever a checked text changes, so an old check is never trusted for new text."""
+    joined = "\x00".join(f"{k}\x01{v}" for k, v in texts_of(record).items())
+    return hashlib.sha1(joined.encode("utf-8")).hexdigest()
+
+
+def titled(conflicts: list[RuleConflict], rulebook: Rulebook) -> list[RuleConflict]:
+    """Add the rule's title (for a rule ID) so the chat line can name the rule in words."""
+    titles = {rule.rule_id: rule.title for rule in rulebook.rules}
+    return [
+        RuleConflict(c.criterion, c.rule, c.why, c.fix, titles.get(c.rule, c.title))
+        for c in conflicts
+    ]
 
 
 def keep_real_conflicts(
