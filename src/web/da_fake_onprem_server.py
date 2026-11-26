@@ -49,6 +49,7 @@ from agents.da_refine_agent import (  # noqa: E402
     REPRO_MARKER,
     REVISION_MARKER,
 )
+from agents.da_rule_check_agent import MARKER as RULE_CHECK_MARKER  # noqa: E402
 from agents.da_tester_agent import (  # noqa: E402
     CASE_MARKER,
     CASE_STEP,
@@ -161,6 +162,10 @@ def reply_text(prompt: str, mode: str) -> str:
     build = _build_reply(prompt, mode)
     if build is not None:
         return build
+    if prompt.startswith(RULE_CHECK_MARKER):
+        # Fix G9: always readable, even in bad-json mode (a bad rule check blocks Confirm by design,
+        # and the bad-json tests are about the interpreter's retry).
+        return ScriptedUnderstandClient("rule_check").complete(prompt).text
     approach = _approach_reply(prompt, mode)
     if approach is not None:
         # bad-json is bad on every try here, as in Discover, so the failure paths can be seen.

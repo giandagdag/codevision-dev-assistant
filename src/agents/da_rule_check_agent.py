@@ -28,7 +28,8 @@ logger = get_logger(__name__)
 
 PROMPT_FILE = Path(__file__).resolve().parents[1] / "data" / "da_rule_check_prompt.md"
 STEP = "rule_check"  # the fake script step
-COULD_NOT_RUN = "The rule check could not run: Try again"
+MARKER = "You are the rule check of a developer assistant"  # the prompt's first words
+COULD_NOT_RUN ="The rule check could not run: Try again"
 CONFLICT_KEYS = ("criterion", "rule", "why", "fix")
 
 
