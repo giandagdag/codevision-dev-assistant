@@ -243,9 +243,26 @@ def test_codevision_provider_without_index_files_says_to_build(tmp_path, monkeyp
         get_search_index(settings).search("x", "exact", FILTERS, 5)
 
 
-def test_index_with_a_snippet_over_500_characters_is_refused_with_a_plain_message(tmp_path):
-    path = _write(tmp_path, [_piece(0, snippet="x" * 501)])
+def test_snippet_limit_for_stored_pieces_is_2000(tmp_path):
+    assert load_index_file(_write(tmp_path, [_piece(0, snippet="x" * 501)]))
+    assert load_index_file(_write(tmp_path, [_piece(0, snippet="x" * 2000)]))
+    with pytest.raises(IndexFormatError, match="Piece 0 has a snippet that is too long"):
+        load_index_file(_write(tmp_path, [_piece(0, snippet="x" * 2001)]))
 
-    with pytest.raises(IndexFormatError, match="could not be read.*500 characters"):
+
+def test_too_long_snippet_error_names_piece_length_limit_and_never_the_text(tmp_path):
+    secret = "SECRETBODY" * 235  # 2,350 characters
+    path = _write(tmp_path, [_piece(0), _piece(1, snippet=secret)])
+
+    with pytest.raises(IndexFormatError) as caught:
         load_index_file(path)
-    assert load_index_file(_write(tmp_path, [_piece(0, snippet="x" * 500)]))
+
+    message = str(caught.value)
+    assert "Piece 1" in message and "2,350" in message and "2,000" in message
+    assert "SECRETBODY" not in message
+    assert caught.value.__cause__ is None and caught.value.__context__ is None
+
+
+def test_other_shape_problems_still_refuse_the_whole_file(tmp_path):
+    with pytest.raises(IndexFormatError, match="could not be read.*2000 characters"):
+        load_index_file(_write(tmp_path, [_piece(0, kind="nonsense")]))

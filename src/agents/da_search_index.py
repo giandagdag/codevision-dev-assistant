@@ -25,7 +25,9 @@ from agents.da_code_index import (
 from configs.da_config import Settings
 from da_logging import get_logger
 from pydantic_classes.da_discovery_models import (
-    SNIPPET_LIMIT,
+    SNIPPET_LIMIT as HIT_SNIPPET_LIMIT,  # what the AI sees (500); not the stored piece limit
+)
+from pydantic_classes.da_discovery_models import (
     HitKind,
     SearchFilters,
     SearchHit,
@@ -43,6 +45,7 @@ INDEX_NEEDS_BUILDING_MESSAGE = (
 MEANING_UNAVAILABLE_NOTE = (
     "The meaning search was not available, so only the exact search was used."
 )
+PIECE_TEXT_LIMIT = 2000  # longest snippet the index builder (da_code_splitter) stores per piece
 DEFAULT_MAX_DISTANCE = 0.90  # same limit as CodeVision's own search
 
 # Standards, documents and settings are not tied to one programming language (planning decision 6).
@@ -99,8 +102,8 @@ class IndexPiece(BaseModel):
     restricted: bool = False
     tags: list[str] = Field(default_factory=list)
     file_hash: str = ""  # fix 11-3: lets a Delta rebuild see which files changed; search ignores it
-    # Same limit as SearchHit.snippet: a longer one is refused when the file is loaded, never cut.
-    snippet: str = Field(default="", max_length=SNIPPET_LIMIT)
+    # Storage limit: what the index builder may write. A hit is cut shorter in `_to_hit`.
+    snippet: str = Field(default="", max_length=PIECE_TEXT_LIMIT)
 
 
 @dataclass(frozen=True)
@@ -108,6 +111,24 @@ class IndexData:
     build_id: str
     built_at: str
     pieces: tuple[IndexPiece, ...]
+
+
+def _read_piece(item: object, position: int) -> IndexPiece:
+    """Validate one piece. A too-long snippet gets its own plain message (G8 S3)."""
+    try:
+        return IndexPiece.model_validate(item)
+    except ValidationError as error:
+        too_long = isinstance(item, dict) and any(
+            e["loc"] == ("snippet",) and e["type"] == "string_too_long" for e in error.errors()
+        )
+        if not too_long:
+            raise
+    # Raised outside the `except`, so the pydantic error (its text holds the snippet) is not
+    # attached. Only the position and the length are named, never the text.
+    raise IndexFormatError(
+        f"Piece {position} has a snippet that is too long: {len(item['snippet']):,} "
+        f"characters, the limit is {PIECE_TEXT_LIMIT:,}."
+    )
 
 
 def load_index_file(path: Path = FAKE_INDEX_FILE) -> IndexData:
@@ -118,13 +139,13 @@ def load_index_file(path: Path = FAKE_INDEX_FILE) -> IndexData:
     """
     try:
         raw = json.loads(Path(path).read_text(encoding="utf-8"))
-        pieces = tuple(IndexPiece.model_validate(item) for item in raw["pieces"])
+        pieces = tuple(_read_piece(item, position) for position, item in enumerate(raw["pieces"]))
         build_id, built_at = str(raw["build_id"]), str(raw.get("built_at", ""))
     except (OSError, ValueError, KeyError, TypeError, ValidationError) as error:
         raise IndexFormatError(
             f"The search index file could not be read ({type(error).__name__}). "
             f"Check that it has build_id and a list of pieces, and that no snippet is longer "
-            f"than {SNIPPET_LIMIT} characters."
+            f"than {PIECE_TEXT_LIMIT} characters."
         ) from error
     for position, piece in enumerate(pieces):
         if piece.piece_no != position:
