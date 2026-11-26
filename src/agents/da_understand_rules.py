@@ -38,9 +38,18 @@ NO_WORDING_MESSAGE = "This conflict has no suggested wording. Please change it y
 def open_conflicts(session: UnderstandSession) -> list[RuleConflict]:
     """The conflicts that still count: only when the check read the text as it is now."""
     if session.rule_check_state == "ok" and _current(session):
-        allowed = excepted_pairs(session.record)
-        return [c for c in session.rule_conflicts if (c.criterion, c.rule) not in allowed]
+        return without_excepted(session.record, session.rule_conflicts)
     return []
+
+
+def without_excepted(record: RequestRecord, conflicts: list[RuleConflict]) -> list[RuleConflict]:
+    """Leave out the conflicts a senior allowed (RX-n)."""
+    allowed = excepted_pairs(record)
+    return [c for c in conflicts if (c.criterion, c.rule) not in allowed]
+
+
+def conflict_lines(conflicts: list[RuleConflict]) -> list[str]:
+    return [_conflict_line(number, c) for number, c in enumerate(conflicts, 1)]
 
 
 def exception_ids(record: RequestRecord) -> dict[tuple[str, str], str]:
@@ -72,7 +81,7 @@ def check_failed(session: UnderstandSession) -> bool:
 
 def gate_lines(session: UnderstandSession) -> list[str]:
     """The lines that stop Confirm, in plain words, one per open conflict (U5)."""
-    lines = [_conflict_line(number, c) for number, c in enumerate(open_conflicts(session), 1)]
+    lines = conflict_lines(open_conflicts(session))
     if check_failed(session):
         lines.append(COULD_NOT_RUN)
     return lines

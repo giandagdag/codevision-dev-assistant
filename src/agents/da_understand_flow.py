@@ -181,7 +181,8 @@ SENIOR_MESSAGE = "This change has many open decisions. Please get help from a se
 # B2 S7c: the two buttons at the decision limit. (The checkpoint has its own "Proceed".)
 NO_NEGATIVE_OPTION = "No negative scenario applies"  # B2 S8
 EDIT_ASSUMPTION_PREFIX = "Edit assumption "  # B2 P34, then the number
-EXCEPTION_OFF_MESSAGE = "Exception requests are not routed to a senior at the moment."
+OLDER_REQUEST_NOTE = "Rule check: not run (older request)"
+EXCEPTION_OFF_MESSAGE ="Exception requests are not routed to a senior at the moment."
 EDIT_ASSUMPTION_NEEDS_TEXT = (
     "Type the new sentence in the box (one line, up to 300 characters), "
     "then press the Edit assumption button."
@@ -685,6 +686,8 @@ def get_understand_view(settings: Settings, request_id: str) -> UnderstandView:
         record = session.record
         if session.step == "done":
             record = read_confirmed_record(conn, request_id, request.version) or record
+        older = session.step == "done" and not _rule_check_ran(conn, request_id)
+        note = OLDER_REQUEST_NOTE if older else ""
     return UnderstandView(
         request=request,
         record=record,
@@ -703,7 +706,20 @@ def get_understand_view(settings: Settings, request_id: str) -> UnderstandView:
         text_prompt=CHECKPOINT_PROMPT if session.step == "checkpoint" else "",
         revision=session.revision,
         demo_mode=settings.llm_provider == "fake",
+        rule_check_note=note,
     )
+
+
+def _rule_check_ran(conn: sqlite3.Connection, request_id: str) -> bool:
+    """The audit trail holds a `rule_check` line once the check ran (Understand or v2+)."""
+    try:
+        found = conn.execute(
+            "SELECT 1 FROM da_audit_events WHERE request_id = ? AND event_type = 'rule_check'",
+            (request_id,),
+        ).fetchone()
+    except sqlite3.OperationalError:  # no audit table yet: nothing ever ran
+        return False
+    return found is not None
 
 
 def list_my_requests(settings: Settings, developer_id: str | None = None) -> list[Request]:

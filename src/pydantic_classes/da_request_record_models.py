@@ -283,3 +283,6 @@ class UnderstandView(BaseModel):
     text_prompt: str = ""
     revision: int
     demo_mode: bool
+    # Fix G9 U9: "Rule check: not run (older request)" for a request confirmed before the check
+    # existed. "" when the check ran or the request is not confirmed yet.
+    rule_check_note: str = ""

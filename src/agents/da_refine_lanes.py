@@ -34,7 +34,9 @@ from agents.da_refine_checks import (
     diff_records,
     refine_cap_reached,
 )
+from agents.da_rule_check_agent import COULD_NOT_RUN, run_rule_check
 from agents.da_understand_checks import developer_message_problem
+from agents.da_understand_rules import conflict_lines, without_excepted
 from configs.da_config import ConfigError
 from db_table_functions.da_db import begin_write, open_db
 from db_table_functions.db_tbl_da_approach import (
@@ -389,11 +391,38 @@ def checkpoint_text(diff: RecordDiff) -> str:
     return "\n".join(lines)
 
 
+def _rule_problems(
+    settings, request_id: str, base_revision: int, client: LLMClient | None
+) -> list[str]:
+    """Fix G9 U8: the Understand rule check on the proposed version, before it is confirmed.
+    One AI call, no lock held. Empty when the record follows the rulebook."""
+    with open_db(settings.db_path) as conn:
+        ensure_build_tables(conn)
+        state = _load_state(conn, request_id, base_revision)
+        _require_step(state, STEP_REQ_CHECKPOINT)
+    record = state.pending_record
+    if record is None:
+        return []  # the "no proposed change" message is raised below
+    rulebook = get_rulebook_for_request(settings.db_path, request_id).rulebook
+    result = run_rule_check(settings, record, rulebook, client)
+    if not result.ran:
+        return [COULD_NOT_RUN]
+    return conflict_lines(without_excepted(record, result.conflicts))
+
+
 def confirm_revision(
-    settings, request_id: str, base_revision: int, now: datetime | None = None
+    settings,
+    request_id: str,
+    base_revision: int,
+    now: datetime | None = None,
+    client: LLMClient | None = None,
 ) -> RefineState:
     """Confirm v2: save the next record version (same CVDA number) and hand over to Discover."""
     now = now or datetime.now(UTC)
+    problems = _rule_problems(settings, request_id, base_revision, client)
+    if problems:
+        listed = "\n".join(f"- {line}" for line in problems)
+        raise RefineError(f"Before you can confirm, these items need attention:\n{listed}")
     with _write(settings.db_path) as conn:
         request = _require_request(conn, request_id)
         state = _load_state(conn, request_id, base_revision)
@@ -406,6 +435,7 @@ def confirm_revision(
         insert_confirmed_record(conn, record, request.developer_id, now)
         tx = RefineTx(conn, request, state, now)
         tx.say("developer", CONFIRM_V2_LABEL)
+        tx.audit("system", "rule_check", {"ran": True, "conflicts": 0, "version": record.version})
         tx.audit(
             "developer",
             "record_revised",

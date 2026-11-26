@@ -1543,6 +1543,11 @@ def _summary_panel(view: UnderstandView | None) -> list:
                 )
             ],
         ),
+        *(
+            [dmc.Text(view.rule_check_note, size="xs", c=da_styles.MUTED, id="da-rule-check-note")]
+            if view and view.rule_check_note
+            else []
+        ),
     ]
 
 
