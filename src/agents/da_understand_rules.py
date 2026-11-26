@@ -24,7 +24,11 @@ EXCEPTION_NEEDS_REASON = (
     "then press Ask for an exception."
 )
 TRY_AGAIN_OPTION = "Try again"
-_RX_LINE = re.compile(r"^RX-\d+: (.+?) allowed for (.+?), approved by ")
+_RX_LINE = re.compile(r"^(RX-\d+): (.+?) allowed for (.+?), approved by ")
+EXCEPTION_PROMPT_HEAD = (
+    "A senior allowed these exceptions to the rulebook. They beat the rule they name, "
+    "for that criterion only:\n"
+)
 CHANGE_MYSELF_MESSAGE = (
     "Type the new wording in the box and press Send. The rule check runs again when you confirm."
 )
@@ -39,10 +43,21 @@ def open_conflicts(session: UnderstandSession) -> list[RuleConflict]:
     return []
 
 
-def excepted_pairs(record: RequestRecord) -> set[tuple[str, str]]:
-    """(criterion, rule) pairs a senior allowed: read from the record's RX-n lines."""
+def exception_ids(record: RequestRecord) -> dict[tuple[str, str], str]:
+    """(criterion, rule) -> "RX-n" for every exception a senior allowed (RX-n lines)."""
     found = (_RX_LINE.match(line) for line in record.exceptions)
-    return {(m.group(2), m.group(1)) for m in found if m}
+    return {(m.group(3), m.group(2)): m.group(1) for m in found if m}
+
+
+def excepted_pairs(record: RequestRecord) -> set[tuple[str, str]]:
+    return set(exception_ids(record))
+
+
+def exception_prompt_lines(record: RequestRecord) -> str:
+    """The RX-n lines for the Approach, Build and Tester prompts ("" when there are none)."""
+    if not record.exceptions:
+        return ""
+    return EXCEPTION_PROMPT_HEAD + "\n".join(f"- {line}" for line in record.exceptions) + "\n"
 
 
 def exception_line(record: RequestRecord, rule: str, criterion: str, who: str, why: str) -> str:

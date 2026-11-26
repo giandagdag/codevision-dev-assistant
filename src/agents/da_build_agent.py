@@ -39,6 +39,7 @@ from agents.da_llm_client import (
 from agents.da_problem_kinds import problem_kinds
 from agents.da_rejected_reply_log import write_rejected_reply
 from agents.da_understand_checks import describe_validation_error
+from agents.da_understand_rules import exception_prompt_lines
 from configs.da_config import Settings
 from da_logging import get_logger
 from pydantic_classes.da_approach_models import ApproachVersion, TestCase
@@ -355,7 +356,7 @@ def build_contract_prompt(context: BuildContext, current_texts: dict[str, str]) 
         "approach": format_approach(context.approach),
         "current_files": "\n\n".join(current) or "(none: every file is new)",
     }
-    return fill_template(CONTRACT_PROMPT, values)
+    return fill_template(CONTRACT_PROMPT, values) + exception_prompt_lines(context.record)
 
 
 def build_tests_prompt(context: BuildContext, contract: Contract) -> str:
@@ -407,6 +408,7 @@ def build_code_prompt(
     }
     return (
         fill_template(CODE_PROMPT, values)
+        + exception_prompt_lines(context.record)
         + golden_block(context.golden_examples, path, current_text)
         + ui_block(context.brand_constants, context.ui_rules, path, current_text)
         + guidance_block(senior_guidance)
