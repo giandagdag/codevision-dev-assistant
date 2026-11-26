@@ -31,6 +31,7 @@ SPEC_TABLE = {
     ("NO_RELIABLE_MATCH", "ESCALATION_REQUIRED"),
     # Phase 4, Approach (spec section 2).
     ("DISCOVERY_CONFIRMED", "APPROACH_PROPOSED"),
+    ("DISCOVERY_CONFIRMED", "SEARCHING"),  # Fix G7 D1: Search again, no plan saved yet
     ("APPROACH_PROPOSED", "READY_TO_BUILD"),
     ("APPROACH_PROPOSED", "ESCALATION_REQUIRED"),
     # Phase 5, Workspace (spec section 2).
@@ -178,7 +179,9 @@ def test_7_tester_review_moves():
 
 
 def test_approach_moves():
-    assert ALLOWED_MOVES["DISCOVERY_CONFIRMED"] == ("APPROACH_PROPOSED", "ESCALATION_REQUIRED")
+    assert ALLOWED_MOVES["DISCOVERY_CONFIRMED"] == (
+        "APPROACH_PROPOSED", "SEARCHING", "ESCALATION_REQUIRED"
+    )
     assert ALLOWED_MOVES["APPROACH_PROPOSED"] == ("READY_TO_BUILD", "ESCALATION_REQUIRED")
 
 

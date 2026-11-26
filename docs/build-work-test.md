@@ -172,7 +172,10 @@ new (the map is drawn with it).
 3. Long option text is cut at a word; hover or focus an option to see the full text. Old saved
    Approach rows still open.
 4. Admin, Index health: an amber line shows when Discover is not using the CodeVision index.
-5. Not built yet (waits for Gian): "Search again" from a confirmed request (D1, D2).
+5. Build the CodeVision index after a request already ran Discover without one. The Discovery tab
+   shows an amber line and a "Search again" button. A confirmed request whose plan failed, with
+   no plan saved, shows the same button on the Approach tab. It runs a new round (old rounds stay)
+   and does not count against the round cap.
 
 ## Clean up
 

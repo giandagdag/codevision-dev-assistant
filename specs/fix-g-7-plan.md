@@ -69,7 +69,12 @@ Commit subjects "G7 step N". Runs of at most 3 steps; push after each step.
 6. **Finish:** docs (`docs/build-work-test.md` work notes), full pytest, ruff, smoke check,
    screenshots, code review (max 3 rounds), PR into `auto/phases-7-10`.
 
-## Open question for Gian (step 5, D1 only; steps 0 to 4 do not depend on it)
+## Step 5 built (D1, D2 too)
+Gian approved the proposal below. The Search-again round is allowed from DISCOVERY_CONFIRMED (no
+approach state saved) and from the two outcome statuses; it skips the cap check, so it is not
+counted against the cap when it starts (it still adds to the saved round count).
+
+## Open question for Gian (answered: proposal approved)
 
 Gian's case is a request in DISCOVERY_CONFIRMED whose Approach failed. A new Discover round from
 there hits three locks in the code: (a) the status table has no DISCOVERY_CONFIRMED to SEARCHING
