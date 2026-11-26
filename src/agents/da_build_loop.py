@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from agents import da_build_agent as agent
+from agents import da_required_results as required
 from agents import da_test_expectations as expectations
 from agents import da_tester_review as tester
 from agents import da_tester_review_agent as tester_agent
@@ -736,12 +737,45 @@ class _Run:
             generated[path] = text
             problems += found
         layer_a = self._layer_a(generated, contract, problems)
+        if layer_a.ok:  # Fix G9 B3: a required result is checked before Layer B and the Tester
+            wrong = self._required_problems()
+            layer_a = LayerAResult(problems=wrong) if wrong else layer_a
         if not layer_a.ok:
             return self._record_round(number, layer_a, None, contract, tests)
         layer_b = self._layer_b(tests)
         # Fix D1 (D1-4): code tests only once the requirement tests pass.
         code_tests, dropped = self._code_tests(contract) if layer_b.ok else (None, [])
         return self._record_round(number, layer_a, layer_b, contract, tests, code_tests, dropped)
+
+    def _required_problems(self) -> list[LayerAProblem]:
+        """Each required `function(literals) -> value` pair is run once in the sandbox. A
+        mismatch is a repair note naming the criterion, the expected and the actual."""
+        code = {path: item.text for path, item in self.inp.code.items()}
+        text, found = required.check_file(required.required_results(self.inp.record), code)
+        if not found:
+            return []
+        policy = self.inp.policy
+        ran = run_tests(
+            self.reference,
+            code,
+            f"{self.test_id}_req",
+            text,
+            exclude=policy.build_sandbox_exclude,
+            timeout_seconds=policy.build_test_timeout_seconds,
+            settings=self.settings,
+        )
+        # A sandbox that could not start is Layer B's to report, not a code problem.
+        return [
+            LayerAProblem(
+                code="R1",
+                path=found[name][1],
+                text=required.mismatch_text(*found[name], item.message),
+            )
+            for item in (ran.tests if ran.ran else [])
+            if item.result in ("fail", "error")
+            for name in [item.name.rsplit(".", 1)[-1]]
+            if name in found
+        ]
 
     def _judge(self, code: dict[str, str], text: str, ran: LayerBResult) -> list[str]:
         """Fix D1 (E5): the Tester says, per failing C-test, code bug or wrong test. Returns the

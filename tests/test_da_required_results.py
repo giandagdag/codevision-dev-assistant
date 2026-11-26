@@ -3,6 +3,8 @@
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from agents import da_build_agent as agent
 from agents import da_required_results as rr
 from pydantic_classes.da_build_models import Contract
@@ -49,6 +51,35 @@ def test_a_vague_criterion_gives_no_pair_and_arguments_must_be_literals():
     names = criterion(4, "check(user_name) is called", "it returns 'OK'")
 
     assert rr.required_results(record_of(vague, names)) == []
+
+
+@pytest.mark.usefixtures("published_rulebook")
+def test_g9_12_code_that_raises_instead_of_returning_is_caught_before_the_tester(
+    make_settings, monkeypatch
+):
+    """The fake read_sheets raises ValueError for {}; the criterion says it returns 'NO SHEETS'."""
+    from agents import da_build_flow as flow
+    from agents import da_build_loop as loop
+    from db_table_functions.da_db import open_db
+    from db_table_functions.db_tbl_da_tester import read_reviews
+    from tests.da_build_play import ready_with_workspace, rounds_of
+
+    pair = rr.RequiredResult("AC-2", "function", "read_sheets", ({},), True, "NO SHEETS")
+    monkeypatch.setattr(rr, "required_results", lambda record: [pair])
+    settings = make_settings()
+    request_id = ready_with_workspace(settings)[0]
+    flow.start_build(settings, request_id, flow.get_revision(settings, request_id))
+
+    loop.run_build(settings, request_id)
+
+    first = rounds_of(settings, request_id)[0]
+    [problem] = first.layer_a.problems
+    assert problem.code == "R1" and problem.path.endswith("excel_processor.py")
+    assert "AC-2 requires read_sheets({}) to return 'NO SHEETS'" in problem.text
+    assert "raised ValueError" in problem.text
+    assert first.layer_b is None  # Layer B was not run, and the Tester never saw the round
+    with open_db(settings.db_path) as conn:
+        assert read_reviews(conn, request_id, first.build_number) == []
 
 
 def test_the_builder_prompt_holds_the_pairs_and_the_never_raise_rule(seed_rulebook):

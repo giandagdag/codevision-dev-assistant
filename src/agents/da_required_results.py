@@ -107,6 +107,54 @@ def required_results(record: RequestRecord) -> list[RequiredResult]:
     return found
 
 
+def _defining_path(name: str, code: dict[str, str]) -> str:
+    """The code file that has `name` as a top-level function ('' when none or unreadable)."""
+    for path, text in code.items():
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            continue
+        if any(isinstance(n, ast.FunctionDef) and n.name == name for n in tree.body):
+            return path
+    return ""
+
+
+def check_file(
+    pairs: list[RequiredResult], code: dict[str, str]
+) -> tuple[str, dict[str, tuple[RequiredResult, str]]]:
+    """Fix G9 B3: a small unittest file that runs each function pair once, and a map of test
+    method -> (pair, code path). A failure message says what the function really did. CLI pairs
+    are not run (parked-items)."""
+    methods, found = [], {}
+    for number, pair in enumerate(pairs):
+        path = _defining_path(pair.name, code) if pair.kind == "function" and pair.has_value else ""
+        if not path:
+            continue
+        module = path.removeprefix("src/").removesuffix(".py").replace("/", ".")
+        name = f"test_r{number}"
+        found[name] = (pair, path)
+        methods.append(
+            f"    def {name}(self):\n"
+            "        try:\n"
+            f"            from {module} import {pair.name}\n"
+            f"            got = {pair.name}(*{pair.args!r})\n"
+            "        except Exception as error:\n"
+            '            self.fail("raised " + type(error).__name__ + ": " + str(error))\n'
+            f"        if got != {pair.value!r}:\n"
+            '            self.fail("returned " + repr(got))\n'
+        )
+    text = "import unittest\n\n\nclass RequiredResults(unittest.TestCase):\n" + "\n".join(methods)
+    return (text if found else ""), found
+
+
+def mismatch_text(pair: RequiredResult, path: str, actual: str) -> str:
+    """The repair note for one pair: criterion, expected, actual."""
+    return (
+        f"{pair.criterion_id} requires {pair.given} to return {pair.value!r}, "
+        f"but it {actual}. Return the required value; do not raise."
+    )
+
+
 def required_results_block(record: RequestRecord) -> str:
     """The Builder prompt part: the pairs (when there are any) and the never-raise rule."""
     lines = [item.line() for item in required_results(record)]
