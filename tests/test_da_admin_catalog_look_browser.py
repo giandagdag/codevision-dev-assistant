@@ -48,6 +48,23 @@ def open_edit_view(page, size):
     return body
 
 
+def test_g9_19_the_missing_backup_chip_is_at_the_right_end_not_next_to_the_search(
+    make_live_page, live  # noqa: F811
+):
+    for size in SIZES[::2]:  # 1366 and 1920 px
+        page = make_live_page(live)
+        page.set_viewport_size(size)
+        page.get_by_role("tab", name="Capability catalog", exact=True).click()
+        chip = page.get_by_text("Show: Missing backup", exact=True)
+        chip.wait_for(timeout=10000)
+        page.wait_for_timeout(300)
+        search = page.locator("#adm-cat-search").bounding_box()
+        mark = chip.bounding_box()
+        card = page.locator(f"#adm-body-{TAB_CAPABILITY}").bounding_box()
+        assert mark["x"] > search["x"] + search["width"] + 100  # a clear gap after the search box
+        assert mark["x"] + mark["width"] >= card["x"] + card["width"] - 60  # near the right edge
+
+
 def test_g5_23_catalog_rows_panel_and_browse_modules_line_up(make_live_page, live):  # noqa: F811
     folder = OUT / "g5"
     folder.mkdir(parents=True, exist_ok=True)
