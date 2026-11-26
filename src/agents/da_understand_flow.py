@@ -30,7 +30,7 @@ from agents.da_enhance_checks import (
 from agents.da_enhance_flow import baseline_texts, maybe_offer_switch
 from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
-from agents.da_escalation_triggers import get_help, out_of_scope_understand
+from agents.da_escalation_triggers import get_help, out_of_scope_understand, rule_exception
 from agents.da_llm_client import LLMClient, LLMClientError
 from agents.da_rule_check_agent import RuleCheckResult, run_rule_check
 from agents.da_rule_conflicts import record_fingerprint, rulebook_text
@@ -61,6 +61,7 @@ from db_table_functions.db_tbl_da_audit import (
     insert_audit_event,
     list_audit_events,
 )
+from db_table_functions.db_tbl_da_escalation import read_open_escalation, update_escalation
 from db_table_functions.db_tbl_da_handoff import refuse_if_locked
 from db_table_functions.db_tbl_da_requests import (
     get_rulebook_for_request,
@@ -84,6 +85,7 @@ from db_table_functions.db_tbl_da_understand import (
     read_session,
     save_session,
 )
+from pydantic_classes.da_escalation_models import ExceptionAsk
 from pydantic_classes.da_models import (
     ALLOWED_MOVES,
     STATUS_CLARIFICATION,
@@ -179,6 +181,7 @@ SENIOR_MESSAGE = "This change has many open decisions. Please get help from a se
 # B2 S7c: the two buttons at the decision limit. (The checkpoint has its own "Proceed".)
 NO_NEGATIVE_OPTION = "No negative scenario applies"  # B2 S8
 EDIT_ASSUMPTION_PREFIX = "Edit assumption "  # B2 P34, then the number
+EXCEPTION_OFF_MESSAGE = "Exception requests are not routed to a senior at the moment."
 EDIT_ASSUMPTION_NEEDS_TEXT = (
     "Type the new sentence in the box (one line, up to 300 characters), "
     "then press the Edit assumption button."
@@ -622,6 +625,8 @@ def choose_option(
         return _decide(settings, request_id, option, False, base_revision, now, client)
     if session.step == "senior" and option == ASSUME_OPTION:
         return _assume(settings, session, base_revision, now, client)
+    if option.startswith(rules.ASK_EXCEPTION_PREFIX):  # the reason lives in the box
+        raise UnderstandError(rules.EXCEPTION_NEEDS_REASON)
     if session.step == "correction" and option in rules.buttons(session):
         return _rule_button(settings, session, option, base_revision, now, client)
     # Fix G9 U2: Proceed reads the record against the rulebook first (AI call, no lock held).
@@ -1481,6 +1486,49 @@ def set_no_negative_reason(
         session.last_changed_fields = ["no_negative_reason"]
         turn.audit("developer", "no_negative_reason_set", {"reason": text})
         _run_gate(turn)
+    return get_understand_view(settings, request_id)
+
+
+def ask_for_exception(
+    settings: Settings,
+    request_id: str,
+    option: str,
+    reason: str,
+    base_revision: int,
+    now: datetime | None = None,
+) -> UnderstandView:
+    """Fix G9 U6: ask the capability's senior to allow one conflict (the box holds the reason).
+    One Inbox item; the request waits at Understand. A second ask joins the open item."""
+    now = now or datetime.now(UTC)
+    with _turn(settings.db_path, request_id, base_revision, now) as turn:
+        session = turn.session
+        if session.step != "correction":
+            raise UnderstandError(_wrong_step_message(session))
+        conflict = rules.conflict_for(session, option, rules.ASK_EXCEPTION_PREFIX)
+        if conflict is None:
+            raise UnderstandError(_not_a_choice_message(option, _choices_for(session)))
+        text = " ".join((reason or "").split())
+        if len(text) < rules.EXCEPTION_MIN_CHARS:
+            raise UnderstandError(rules.EXCEPTION_NEEDS_REASON)
+        text = _accept_developer_text(text)[:500]
+        line = f"{conflict.criterion} may break {conflict.rule}: {text}"
+        decision = rule_exception(request_triggers(turn.conn, request_id), line)
+        turn.say("developer", f"{option}: {text}")
+        result = open_escalation(turn.conn, request_id, decision, turn.now, line)
+        if result.opened or result.reason_added:
+            row = read_open_escalation(turn.conn, request_id)
+            ask = ExceptionAsk(criterion=conflict.criterion, rule=conflict.rule, reason=text)
+            asks = [*row.exception_asks, ask]
+            update_escalation(
+                turn.conn, row.model_copy(update={"exception_asks": asks}), row.revision, turn.now
+            )
+            details = {"rule": conflict.rule, "for": conflict.criterion}
+            turn.audit("developer", "rule_exception_asked", details)
+        if result.opened:
+            turn.move_to(STATUS_ESCALATION)
+            turn.say("assistant", "A senior developer will look at your exception request.")
+        elif decision.switched_off:
+            turn.say("assistant", EXCEPTION_OFF_MESSAGE)
     return get_understand_view(settings, request_id)
 
 

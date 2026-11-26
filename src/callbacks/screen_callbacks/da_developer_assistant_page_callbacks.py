@@ -47,6 +47,7 @@ from agents.da_understand_flow import (
     FORM_OPTIONAL_BOX,
     NO_NEGATIVE_OPTION,
     FormError,
+    ask_for_exception,
     choose_option,
     create_understand_request,
     edit_assumption,
@@ -61,6 +62,7 @@ from agents.da_understand_flow import (
 from agents.da_understand_flow import (
     PROCEED_OPTION as UNDERSTAND_PROCEED,
 )
+from agents.da_understand_rules import ASK_EXCEPTION_PREFIX
 from callbacks.screen_callbacks.da_handoff_callbacks import register_da_handoff_callbacks
 from callbacks.screen_callbacks.da_refine_callbacks import register_da_refine_callbacks, run_refine
 from callbacks.screen_callbacks.da_workspace_callbacks import register_da_workspace_callbacks
@@ -574,6 +576,9 @@ def _perform_action(settings: Settings, trigger, text, state, refresh):
                 return (refresh or 0) + 1, no_update, ""
             if option.startswith(EDIT_ASSUMPTION_PREFIX):  # B2 P34: the box holds the new sentence
                 edit_assumption(settings, request_id, option, text or "", revision)
+                return (refresh or 0) + 1, no_update, ""
+            if option.startswith(ASK_EXCEPTION_PREFIX):  # G9 U6: the box holds the reason
+                ask_for_exception(settings, request_id, option, text or "", revision)
                 return (refresh or 0) + 1, no_update, ""
             view = choose_option(settings, request_id, option, revision)
             if view.request.status == STATUS_CONFIRMED:

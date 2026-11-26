@@ -35,6 +35,7 @@ TRIGGER_WORDS = {
     "dispute": "Dispute",
     "tester_unable_twice": "Tester unable twice",
     "get_help": "Get help",
+    "rule_exception": "Rule exception",
 }
 
 

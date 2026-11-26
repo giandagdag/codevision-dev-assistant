@@ -16,6 +16,7 @@ OUT_OF_SCOPE = "out_of_scope"
 DISPUTE = "dispute"
 TESTER_UNABLE_TWICE = "tester_unable_twice"
 GET_HELP = "get_help"
+RULE_EXCEPTION = "rule_exception"  # Fix G9 U6
 
 DISPUTE_OFF_MESSAGE = "Disputes are not routed to a senior at the moment. Get help instead."
 GET_HELP_OFF_MESSAGE = (
@@ -108,6 +109,13 @@ def tester_unable_twice(
 # 5. Any Get help button.
 def get_help(triggers: list[EscalationTrigger], stage: str, step: str) -> TriggerDecision:
     return _decide(triggers, GET_HELP, f"Escalated in {stage}: {step}")
+
+
+# 6. Ask for an exception (Fix G9 U6). No switch in the rulebook counts as ON: never silently off.
+def rule_exception(triggers: list[EscalationTrigger], reason: str) -> TriggerDecision:
+    if any(item.name == RULE_EXCEPTION and not item.on for item in triggers):
+        return TriggerDecision(trigger=RULE_EXCEPTION, switched_off=True, reason=reason)
+    return TriggerDecision(trigger=RULE_EXCEPTION, fire=True, reason=reason)
 
 
 def add_reason(row: EscalationRow, trigger: str, reason: str) -> EscalationRow:

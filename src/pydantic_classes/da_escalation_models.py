@@ -10,7 +10,9 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from pydantic_classes.da_models import REQUEST_ID_PATTERN
 
-TriggerName = Literal["cap_hit_twice", "out_of_scope", "dispute", "tester_unable_twice", "get_help"]
+TriggerName = Literal[
+    "cap_hit_twice", "out_of_scope", "dispute", "tester_unable_twice", "get_help", "rule_exception"
+]
 Outcome = Literal["open", "returned", "abandoned"]
 
 UNASSIGNED = "Unassigned"
@@ -29,6 +31,14 @@ class Guidance(_Shape):
     used_in: str = ""
 
 
+class ExceptionAsk(_Shape):
+    """Fix G9 U6: one "Ask for an exception" waiting for the senior (Approve or Reject)."""
+
+    criterion: str = Field(max_length=200)  # AC-n, DD-n or SUMMARY
+    rule: str = Field(max_length=200)
+    reason: str = Field(max_length=500)
+
+
 class EscalationRow(_Shape):
     """One escalation of one request. `revision` is its own number for the stale check."""
 
@@ -44,6 +54,7 @@ class EscalationRow(_Shape):
     backup_label: str = ""
     taken_over_by: str = ""
     guidance: list[Guidance] = Field(default_factory=list)
+    exception_asks: list[ExceptionAsk] = Field(default_factory=list)  # Fix G9 U6
     outcome: Outcome = "open"
     close_note: str = ""
     closed_by: str = ""

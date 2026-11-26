@@ -175,6 +175,9 @@ class RequestRecord(_Shape):
     # Fix G5 P5: the safety check found destructive data work. Set by the app only; it adds the
     # "Destructive data change" review zone to the plan (a senior becomes a required reviewer).
     destructive: bool = False
+    # Fix G9 U6: "RX-n: <rule> allowed for <criterion>, approved by <senior>, <reason>". Written by
+    # the app when a senior approves an exception; old records read as none.
+    exceptions: list[str] = Field(default_factory=list)
 
 
 class Ambiguity(_Shape):
