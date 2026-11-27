@@ -123,5 +123,13 @@ def test_the_same_actual_value_twice_is_stuck_and_a_new_value_is_progress():
     assert expectations.same_failures(None, newer) == {}
 
 
+def test_f7_the_round_counter_skips_a_referee_row():
+    from types import SimpleNamespace as Row
+
+    rows = [Row(round=n, referee_only=n == 3, layer_b=None) for n in (1, 2, 3, 4)]
+
+    assert [loop._budget_round(rows, n) for n in (1, 2, 3, 4)] == [1, 2, 2, 3]
+
+
 def test_an_old_round_record_reads_as_a_normal_round():
     assert RoundRecord.model_fields["referee_only"].default is False

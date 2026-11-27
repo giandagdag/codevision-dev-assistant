@@ -228,6 +228,9 @@ Commit subjects "G9 finish step N" (N = the F number). Runs of at most 3 steps. 
   missing item when the record is destructive; G5 gate files untouched).
 - **F7** First find the cause (`_rounds_used` already skips `referee_only` rows, so look for the
   counter that is still wrong). Test: round counter unchanged after a referee-only round.
+  DONE. Cause: `_rounds_used` was right, but `current_round` (the screen and the chat "Round N")
+  was set from the row number (`len(rounds)` / `number`), which counts referee and Not proven rows.
+  New `_budget_round` in `da_build_loop.py`; the audit keeps the row number.
 - **F8** Browser tests from the `tests/test_da_poll_browser.py` set-up: G9-15, G9-16, Inbox Approve and
   Reject (G9-3), the F1 buttons. Round-2 FYI fixes: the missing space after `=` (found at
   `COULD_NOT_RUN =` in da_rule_check_agent.py), and the stale check result.

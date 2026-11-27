@@ -730,9 +730,10 @@ class _Run:
             to_write, failures = self._fix_input(number)
             failures = (failures + "\n" + self._referee_note(tests)).strip() if failures else ""
         with self._turn() as tx:
-            tx.set(step="b_running", current_round=len(self.inp.rounds))
-            # Not proven rows hold a row number but no budget, so show the budget count.
-            used_now = _rounds_used(self.inp.rounds) + 1
+            # Free rows (Not proven, referee) hold a row number but no budget: show the budget.
+            used_before = _rounds_used(self.inp.rounds)
+            tx.set(step="b_running", current_round=used_before)
+            used_now = used_before + 1
             self._note(tx, f"Round {used_now} of {limit}", "done")
         generated: dict[str, str] = {}
         problems: list[LayerAProblem] = []
@@ -1159,7 +1160,7 @@ class _Run:
                 tx.audit("system", "round_failed", {"round": number, "files_to_fix": fix})
                 counted = _rounds_used(self.inp.rounds) + 1  # this round is not appended yet
                 if counted < limit and not self.check and not referee_only:
-                    tx.set(step="b_round_failed", current_round=number)
+                    tx.set(step="b_round_failed", current_round=counted)
                     tx.say(
                         "assistant",
                         _round_failed_text(counted, layer_a, layer_b, len(self.inp.cases), fix),
@@ -1453,7 +1454,7 @@ class _Run:
         with self._turn() as tx:
             if tx.request.status == STATUS_BUILDING:
                 tx.move_to(STATUS_TESTER_REVIEW)
-            tx.set(step="b_tester_review", current_round=number)
+            tx.set(step="b_tester_review", current_round=_budget_round(self.inp.rounds, number))
             tx.audit("system", "tester_review_started", {"round": number})
             tx.say("assistant", "Tests pass. The independent Tester is now reviewing the code.")
             return self._note(
@@ -1672,13 +1673,14 @@ class _Run:
         planned = [_clean(item.path) for item in self.inp.planned]
         fix = tester.files_to_fix(findings, planned)
         tx.move_to(STATUS_BUILDING)
-        tx.set(step="b_round_failed", current_round=number)
+        shown = _budget_round(self.inp.rounds, number)
+        tx.set(step="b_round_failed", current_round=shown)
         names = ", ".join(path.rsplit("/", 1)[-1] for path in fix)
         count = len(tester.must_fix_items(findings))
         tx.audit("system", "round_failed", {"round": number, "files_to_fix": fix, "by": "tester"})
         tx.say(
             "assistant",
-            f"Round {number}: the Tester found {count} Must fix. "
+            f"Round {shown}: the Tester found {count} Must fix. "
             + (f"Fixing only {names}." if len(fix) == 1 else f"Fixing only these files: {names}."),
         )
 
@@ -1833,6 +1835,12 @@ def _last_line(lines: list[ProgressLine], prefix: str) -> int | None:
 def _rounds_used(rounds: list[RoundRecord]) -> int:
     """Rounds against the budget. A Not proven row is the app's problem, so it is not counted."""
     return sum(1 for item in rounds if not _is_free_row(item))
+
+
+def _budget_round(rounds: list[RoundRecord], number: int) -> int:
+    """The round as the developer counts it: row `number` without the free rows before it (G9 F7).
+    The row number goes in the audit; the screen and the chat show this one."""
+    return _rounds_used([item for item in rounds if item.round <= number])
 
 
 def _is_free_row(item: RoundRecord) -> bool:
