@@ -12,7 +12,10 @@ from pydantic_classes.da_request_record_models import RequestRecord
 
 NOT_COVERED_NOTE = "Not covered: the test could not be written from the requirement"
 _MIN_LENGTH = 4
-_ASSERTS = {"assertEqual": 1, "assertIn": 0, "assertIs": 1}  # position of the expected side
+# Positions that may hold an expected literal. assertEqual takes both sides: the writer may put
+# the literal first. Single words (no space) are not checked on purpose: "ValueError", "OK" and
+# file names are too often plain code, not requirement text.
+_ASSERTS = {"assertEqual": (0, 1), "assertIn": (0,), "assertIs": (1,)}
 
 
 def _plain(text: str) -> str:
@@ -41,8 +44,8 @@ def expected_strings(method: ast.FunctionDef) -> list[str]:
         name = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", "")
         if name == "evidence" and len(node.args) >= 4:
             found.append(_literal(node.args[3]))
-        elif name in _ASSERTS and len(node.args) > _ASSERTS[name]:
-            found.append(_literal(node.args[_ASSERTS[name]]))
+        elif name in _ASSERTS:
+            found += [_literal(node.args[i]) for i in _ASSERTS[name] if i < len(node.args)]
     return [text for text in found if text]
 
 
@@ -123,6 +126,33 @@ def repair_note(code: str, names: set[str], record: RequestRecord) -> str:
             )
             lines.append(f"- {what}. Change the code, not the test.")
     return "\n".join(lines)
+
+
+def replace_methods(code: str, new_code: str, names: set[str]) -> str:
+    """`code` with only the named test methods swapped for the same-named ones in `new_code`.
+    Every other method stays as it is, so the frozen rule is bent for the stuck tests only. A
+    name the new code lacks is dropped from the result."""
+    new_lines = new_code.splitlines()
+    parts: dict[str, list[str]] = {}
+    for node in ast.walk(ast.parse(new_code)):
+        if isinstance(node, ast.FunctionDef) and node.name in names:
+            first = min([node.lineno] + [d.lineno for d in node.decorator_list])
+            parts[node.name] = new_lines[first - 1 : node.end_lineno]
+    lines = code.splitlines()
+    out: list[str] = []
+    skip_to = 0
+    spans = {}
+    for node in ast.walk(ast.parse(code)):
+        if isinstance(node, ast.FunctionDef) and node.name in names:
+            first = min([node.lineno] + [d.lineno for d in node.decorator_list])
+            spans[first] = (node.end_lineno, node.name)
+    for number, line in enumerate(lines, 1):
+        if number in spans:
+            skip_to, name = spans[number]
+            out += parts.get(name, [])
+        if number > skip_to:
+            out.append(line)
+    return "\n".join(out) + "\n"
 
 
 def drop_methods(code: str, names: set[str]) -> str:

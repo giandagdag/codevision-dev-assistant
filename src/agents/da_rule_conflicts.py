@@ -6,6 +6,7 @@ conflicts that cite a real rule and a real place in the record.
 
 import hashlib
 import re
+import sys
 
 from agents.da_approach_checks import library_name
 from da_logging import get_logger
@@ -20,7 +21,9 @@ SUMMARY = "SUMMARY"
 # "import requests", "the requests library", "package foo": a library named on purpose.
 # Only "import X" names what follows; "library and ..." would catch ordinary words.
 _LIBRARY_AFTER = re.compile(r"\bimport\s+([A-Za-z_][\w.-]*)", re.I)
-_LIBRARY_BEFORE = re.compile(r"\b([A-Za-z_][\w-]*)\s+(?:library|package|module)\b", re.I)
+_LIBRARY_BEFORE = re.compile(r"\b([A-Za-z_][\w-]*)\s+(?:library|package)\b", re.I)
+_MODULE_BEFORE = re.compile(r"\b([A-Za-z_][\w-]*)\s+module\b", re.I)
+_STDLIB = frozenset(name.lower() for name in sys.stdlib_module_names)
 _FILLER = frozenset({"the", "a", "an", "this", "that", "new", "python", "standard", "of"})
 
 
@@ -70,26 +73,21 @@ def plain_conflicts(record: RequestRecord, rulebook: Rulebook) -> list[RuleConfl
     approved = {library_name(name) for name in policy.approved_libraries}
     out_of_scope = [_bag(item) for item in rulebook.charter.out_of_scope]
     for place, text in texts_of(record).items():
-        words = {library_name(w) for w in re.findall(r"[A-Za-z_][\w-]*", text)}
-        for name in sorted(blocked & words):
-            found.append(
-                RuleConflict(
-                    place,
-                    f"LIB:{name}",
-                    f"'{name}' is a blocked import.",
-                    f"Describe the need without {name}.",
+        named = _named_libraries(text)
+        # Only a clearly named library counts ("import X", "the X library"): bank wording such as
+        # "the HTTP report page" must not block Confirm. The advice goes in "why"; "fix" stays
+        # empty so "Use the suggested wording" never pastes advice over the criterion.
+        for name in sorted(blocked & _named_libraries(text, with_module=True)):
+            why = f"'{name}' is a blocked import. Describe the need without it."
+            found.append(RuleConflict(place, f"LIB:{name}", why, ""))
+        for name in sorted(named - blocked):
+            top = name.split(".")[0]
+            if top not in approved and top not in _STDLIB:
+                why = (
+                    f"'{name}' is not on the approved library list. "
+                    "Use only approved libraries or the standard library."
                 )
-            )
-        for name in _named_libraries(text) - blocked:
-            if name.split(".")[0] not in approved:
-                found.append(
-                    RuleConflict(
-                        place,
-                        f"LIB:{name}",
-                        f"'{name}' is not on the approved library list.",
-                        "Use only approved libraries or the standard library.",
-                    )
-                )
+                found.append(RuleConflict(place, f"LIB:{name}", why, ""))
         bag = _bag(text)
         for number, item in enumerate(out_of_scope, 1):
             if item and item <= bag:
@@ -98,8 +96,8 @@ def plain_conflicts(record: RequestRecord, rulebook: Rulebook) -> list[RuleConfl
                         place,
                         f"CHARTER:out_of_scope:{number}",
                         "The text covers an out-of-scope item: "
-                        f"{rulebook.charter.out_of_scope[number - 1]}.",
-                        "Remove the out-of-scope part from the request.",
+                        f"{rulebook.charter.out_of_scope[number - 1]}. Remove that part.",
+                        "",
                     )
                 )
     return [conflict.cut() for conflict in found]
@@ -156,9 +154,13 @@ def _rule_exists(rule: str, rulebook: Rulebook) -> bool:
     return False
 
 
-def _named_libraries(text: str) -> set[str]:
+def _named_libraries(text: str, with_module: bool = False) -> set[str]:
+    """Names after "import" or before "library"/"package". "X module" counts only for the blocked
+    list: it is often the bank's own module ("the report module"), so it cannot be unapproved."""
     names = {library_name(m) for m in _LIBRARY_AFTER.findall(text)}
     names |= {library_name(m) for m in _LIBRARY_BEFORE.findall(text)}
+    if with_module:
+        names |= {library_name(m) for m in _MODULE_BEFORE.findall(text)}
     return {name for name in names if name not in _FILLER}
 
 

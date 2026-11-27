@@ -87,6 +87,30 @@ def test_g9_11_a_backed_test_sends_the_code_back_with_the_expected_value(
     assert "Change the code, not the test." in factory.code_calls()[-1]
 
 
+def test_g9_7_an_unbacked_case_is_asked_again_then_dropped_and_shown_as_fyi(
+    settings, request_id, monkeypatch
+):
+    """Review round 2: the writer keeps inventing text for one test: one retry, then it is dropped."""
+    from db_table_functions.da_db import open_db
+    from db_table_functions.db_tbl_da_build import read_progress
+
+    asked = []
+
+    def check(code, wanted):
+        names = _methods(code)
+        asked.append(len(names))
+        return {names[0]: ["Error message"]} if len(names) > 1 or len(asked) < 3 else {}
+
+    monkeypatch.setattr(expectations, "invented_by_method", check)
+
+    _build(settings, request_id, monkeypatch, RecordingFactory())
+
+    assert "test_case_dropped" in event_types(settings, request_id)
+    with open_db(settings.db_path) as conn:
+        lines = [p.text for p in read_progress(conn, request_id, 1)]
+    assert any(text.startswith("FYI. Not covered") for text in lines)
+
+
 def _run(*results):
     return LayerBResult(tests=[TestOutcome(name=n, result=r, message=m) for n, r, m in results])
 

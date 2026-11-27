@@ -47,6 +47,19 @@ def test_approved_library_and_plain_text_pass(rulebook):
     assert plain_conflicts(record, rulebook) == []
 
 
+def test_everyday_bank_wording_is_not_a_library(rulebook):
+    """Review round 2: 'requests', 'http', 'csv module', 'report module' in prose are not libraries."""
+    text = "A user requests the HTTP report page; the report module reads it with the csv module"
+
+    assert plain_conflicts(_record(then=text), rulebook) == []
+
+
+def test_plain_conflicts_carry_no_wording_to_paste(rulebook):
+    record = _record(then="The result is sent with the subprocess module to a shell")
+
+    assert [c.fix for c in plain_conflicts(record, rulebook)] == [""]
+
+
 def test_out_of_scope_matches_ignoring_case_and_word_order(rulebook):
     record = _record(then="Access control, login and PASSWORDS are all changed")
 

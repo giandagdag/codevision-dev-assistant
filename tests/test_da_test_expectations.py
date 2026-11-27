@@ -48,3 +48,19 @@ def test_dropping_every_method_gives_no_file():
 
 def test_a_backed_file_has_nothing_invented():
     assert ex.invented_by_method(TEST_FILE, WANTED + " error message") == {}
+
+
+def test_assert_equal_checks_the_literal_on_either_side():
+    code = "class T:\n    def test_x(self):\n        self.assertEqual('Error message', out)\n"
+
+    assert ex.invented_by_method(code, "nothing") == {"test_x": ["Error message"]}
+
+
+def test_replace_methods_swaps_only_the_named_ones():
+    old = "class T:\n    def test_a(self):\n        x = 1\n\n    def test_b(self):\n        y = 2\n"
+    new = "class T:\n    def test_a(self):\n        x = 9\n\n    def test_b(self):\n        y = 8\n"
+
+    merged = ex.replace_methods(old, new, {"test_a"})
+
+    assert "x = 9" in merged and "y = 2" in merged and "x = 1" not in merged
+    ast.parse(merged)

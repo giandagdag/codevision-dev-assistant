@@ -122,6 +122,28 @@ def test_reject_returns_the_request_with_the_conflict_still_open(settings):
     assert f"{ASK_EXCEPTION_PREFIX}1" in after.choices
 
 
+def test_the_inbox_shows_approve_and_reject_and_the_action_runs(make_settings):
+    """Review round 2: the senior can say yes or no on the Inbox screen, not only in code."""
+    from agents.da_inbox import get_inbox_row
+    from callbacks.screen_callbacks.da_inbox_page_callbacks import run_senior_action
+    from layouts.da_inbox_page import MODE_APPROVE, action_bar
+
+    settings = make_settings(senior_ids=("ann",), developer_id="ann")
+    view, criterion = _at_conflict(settings)
+    _ask(settings, view)
+    raw = _rows(settings, view.request.request_id)[0]
+    inbox_row = get_inbox_row(settings, raw.escalation_id)
+    assert "Approve exception" in str(action_bar(inbox_row, False))
+    target = {"escalation_id": raw.escalation_id, "revision": raw.revision,
+              "request_id": view.request.request_id}  # fmt: skip
+
+    line = run_senior_action(settings, MODE_APPROVE, target, "ann", "Fine for this screen")
+
+    assert line == f"Exception approved on {view.request.request_id}"
+    session = get_session(settings.db_path, view.request.request_id)
+    assert (criterion, "CV-PY-001") in excepted_pairs(session.record)
+
+
 def test_a_note_is_required(settings):
     view, _ = _at_conflict(settings)
     _ask(settings, view)

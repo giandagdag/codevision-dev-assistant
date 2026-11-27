@@ -57,6 +57,7 @@ class InboxRow:
     senior_label: str
     backup_label: str
     outcome: str
+    has_exception_ask: bool = False  # Fix G9 U6: Approve / Reject exception buttons show
 
 
 def matches_me(row: EscalationRow, user_id: str) -> bool:
@@ -147,7 +148,7 @@ def _to_inbox_row(conn, row: EscalationRow) -> InboxRow:
         opened_at=row.opened_at, from_status=row.from_status,
         open_item=row.open_item, taken_over_by=row.taken_over_by,
         senior_label=row.senior_label, backup_label=row.backup_label,
-        outcome=row.outcome,
+        outcome=row.outcome, has_exception_ask=bool(row.exception_asks),
     )  # fmt: skip
 
 

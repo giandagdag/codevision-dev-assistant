@@ -547,6 +547,8 @@ class _Run:
         with self._turn() as tx:
             note = expectations.NOT_COVERED_NOTE
             tx.audit("system", "test_case_dropped", {"cases": sorted(bad), "note": note})
+            # T3/G9-7: the developer sees it on the checklist too (FYI, never blocks)
+            self._note(tx, f"FYI. {note}: {', '.join(sorted(bad))}", "done")
         kept = expectations.drop_methods(again.value, set(bad))
         if not kept:  # nothing left that the requirement backs: the same stop as a bad reply
             raise _Paused("unable", UNABLE_MESSAGE)
@@ -647,22 +649,22 @@ class _Run:
         )
         self._raise_for(result, UNABLE_MESSAGE)
         code = self._expectations_backed(result.value, contract, 0)
-        net = self.inp.net
-        text, net_methods, expected = (
-            frozen_set_with_net(code, net.net) if net is not None else (code, [], [])
-        )
         names = set(unbacked)
+        # Only the stuck methods change; every other test (net, repro, added cases) stays as it is.
+        text = expectations.replace_methods(tests, code, names)
         with self._turn() as tx:
+            current = read_latest_test_set(tx.conn, self.request_id, tx.state.approach_version)
             insert_test_set(
                 tx.conn,
                 TestSet(
                     request_id=self.request_id,
                     test_set_version=next_test_set_version(tx.conn, self.request_id),
                     approach_version=tx.state.approach_version,
+                    added_case_ids=current.added_case_ids if current else [],
                     text=text,
                     fingerprint=fingerprint(text),
-                    net_methods=net_methods,
-                    expected_to_change_methods=expected,
+                    net_methods=current.net_methods if current else [],
+                    expected_to_change_methods=current.expected_to_change_methods if current else [],
                 ),
                 tx.now,
             )

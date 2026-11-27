@@ -90,12 +90,10 @@ def gate_lines(session: UnderstandSession) -> list[str]:
 def buttons(session: UnderstandSession) -> list[str]:
     """Per conflict: use the suggested wording, or change it yourself. Try again after a failure."""
     out: list[str] = []
-    for number in range(1, len(open_conflicts(session)) + 1):
-        out += [
-            f"{USE_WORDING_PREFIX}{number}",
-            f"{CHANGE_MYSELF_PREFIX}{number}",
-            f"{ASK_EXCEPTION_PREFIX}{number}",
-        ]
+    for number, conflict in enumerate(open_conflicts(session), 1):
+        if conflict.fix.strip():  # a plain conflict has only advice, nothing to paste
+            out.append(f"{USE_WORDING_PREFIX}{number}")
+        out += [f"{CHANGE_MYSELF_PREFIX}{number}", f"{ASK_EXCEPTION_PREFIX}{number}"]
     if check_failed(session):
         out.append(TRY_AGAIN_OPTION)
     return out
@@ -139,7 +137,6 @@ def _current(session: UnderstandSession) -> bool:
 
 def _conflict_line(number: int, conflict: RuleConflict) -> str:
     title = f" ({conflict.title})" if conflict.title else ""
-    return (
-        f"{number}. {conflict.criterion} conflicts with rule {conflict.rule}{title}: "
-        f"{conflict.why.rstrip('. ')}. Suggested wording: {conflict.fix}"
-    )
+    line = f"{number}. {conflict.criterion} conflicts with rule {conflict.rule}{title}: "
+    line += conflict.why.rstrip(". ") + "."
+    return f"{line} Suggested wording: {conflict.fix}" if conflict.fix.strip() else line

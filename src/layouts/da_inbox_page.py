@@ -53,6 +53,12 @@ MODE_TITLES = {
     MODE_GUIDANCE: "Send guidance to the developer",
     MODE_CLOSE: "Close this escalation",
 }
+MODE_APPROVE, MODE_REJECT = "approve_exception", "reject_exception"  # Fix G9 U6
+EXCEPTION_ACTIONS = ((MODE_APPROVE, "Approve exception"), (MODE_REJECT, "Reject exception"))
+MODE_TITLES |= {
+    MODE_APPROVE: "Approve the rule exception (the note is kept in the record)",
+    MODE_REJECT: "Reject the rule exception (the conflict stays open)",
+}
 OUTCOME_RETURN, OUTCOME_ABANDON = "returned", "abandoned"
 OUTCOME_MORE = "more_decisions"  # B2 S7f: return and allow more decision rounds
 OUTCOME_CHOICES = [
@@ -235,7 +241,7 @@ def action_bar(row: InboxRow, closed: bool) -> dmc.Paper:
                 radius="xl",
                 size="sm",
             )
-            for key, label in ACTIONS
+            for key, label in (*(EXCEPTION_ACTIONS if row.has_exception_ask else ()), *ACTIONS)
         ]
     )
     return dmc.Paper(

@@ -29,6 +29,7 @@ from agents.da_inbox import (
 )
 from agents.da_refine_actions import get_refine_bar
 from agents.da_refine_screen import get_history, get_refine_build_panel, get_tagged_build
+from agents.da_rule_exception_actions import approve_exception, reject_exception
 from agents.da_senior_access import NOT_SENIOR_MESSAGE, is_senior
 from agents.da_senior_reopen import reopen_decisions
 from agents.da_understand_flow import get_understand_view
@@ -65,10 +66,12 @@ from layouts.da_inbox_page import (
     INBOX_TARGET_ID,
     INBOX_TEXT_ID,
     MENU_LINK_ID,
+    MODE_APPROVE,
     MODE_CLOSE,
     MODE_GUIDANCE,
     MODE_KEEP,
     MODE_OVERRULE,
+    MODE_REJECT,
     MODE_TAKE_OVER,
     MODE_TITLES,
     OUTCOME_ABANDON,
@@ -234,6 +237,11 @@ def run_senior_action(
             raise senior.SeniorActionError("Pick the finding to keep.")
         senior.keep_finding(settings, escalation_id, revision, user, finding, text or "")
         return f"Kept {finding} on {request_id}"
+    if mode in (MODE_APPROVE, MODE_REJECT):
+        decide = approve_exception if mode == MODE_APPROVE else reject_exception
+        decide(settings, escalation_id, revision, user, text or "")
+        verdict = "approved" if mode == MODE_APPROVE else "rejected"
+        return f"Exception {verdict} on {request_id}"
     if mode == MODE_GUIDANCE:
         senior.send_guidance(settings, escalation_id, revision, user, text or "")
         return f"Guidance sent to {request_id}"
