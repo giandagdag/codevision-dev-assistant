@@ -261,9 +261,20 @@ function(children, key, memory) {
 }
 """
 
-# The user pressed a tab: remember it with the key of this draw.
+# The user pressed a tab: remember it with the key of this draw. A redraw makes new Tabs that
+# announce the server's tab too; only a value that follows a real click on a tab is remembered.
 REMEMBER_TAB_JS = """
 function(tab, key) {
+    if (!window.daTabListener) {
+        window.daTabListener = true;
+        document.addEventListener('click', function (event) {
+            if (event.target.closest && event.target.closest('[role=tab]')) {
+                window.daTabClicked = true;
+            }
+        }, true);
+    }
+    if (!window.daTabClicked) { return window.dash_clientside.no_update; }
+    window.daTabClicked = false;  // one click is remembered once
     return tab ? {key: key, tab: tab} : window.dash_clientside.no_update;
 }
 """

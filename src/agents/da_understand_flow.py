@@ -183,7 +183,7 @@ SENIOR_MESSAGE = "This change has many open decisions. Please get help from a se
 NO_NEGATIVE_OPTION = "No negative scenario applies"  # B2 S8
 EDIT_ASSUMPTION_PREFIX = "Edit assumption "  # B2 P34, then the number
 OLDER_REQUEST_NOTE = "Rule check: not run (older request)"
-EXCEPTION_OFF_MESSAGE ="Exception requests are not routed to a senior at the moment."
+EXCEPTION_OFF_MESSAGE = "Exception requests are not routed to a senior at the moment."
 EDIT_ASSUMPTION_NEEDS_TEXT = (
     "Type the new sentence in the box (one line, up to 300 characters), "
     "then press the Edit assumption button."
