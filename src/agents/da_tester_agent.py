@@ -56,6 +56,7 @@ class TestPlanResult:
     attempts: int
     problems: list[str] = field(default_factory=list)
     message: str = ""
+    not_covered: list[str] = field(default_factory=list)  # F1e: planned cases the requirement lacks
 
     @property
     def ok(self) -> bool:
@@ -176,9 +177,9 @@ def write_test_plan(
             logger.warning("The Tester could not be reached (%s).", error)
             return TestPlanResult(None, provider, model, attempt, [str(error)], str(error))
         provider, model = llm_reply.provider, llm_reply.model
-        reply, problems = _parse_plan(llm_reply.text, record, developer_text)
+        reply, problems, not_covered = _parse_plan(llm_reply.text, record, developer_text)
         if reply is not None and not problems:
-            return TestPlanResult(reply, provider, model, attempt)
+            return TestPlanResult(reply, provider, model, attempt, not_covered=not_covered)
         _log_rejected(record.request_id, attempt, llm_reply, problems)
         sent = prompt + retry_note(problems)
     return TestPlanResult(None, provider, model, MAX_ATTEMPTS, problems)
@@ -212,17 +213,33 @@ def draft_test_case(
     return TestCaseResult(None, "", False, provider, model, MAX_ATTEMPTS, problems)
 
 
+def _split_not_covered(data, record: RequestRecord) -> tuple[object, list[str]]:
+    """Fix G9 F1e: a planned case that names no criterion of the request is not planned. Its
+    words come back so the screen can say "Not covered by the requirement"."""
+    cases = data.get("cases") if isinstance(data, dict) else None
+    if not isinstance(cases, list):
+        return data, []
+    known = {criterion.id for criterion in record.acceptance_criteria}
+    kept, dropped = [], []
+    for case in cases:
+        covered = isinstance(case, dict) and case.get("criterion_id") in known
+        (kept if covered or not isinstance(case, dict) else dropped).append(case)
+    words = [str(case.get("given", "")).strip()[:120] for case in dropped]
+    return {**data, "cases": kept}, [w for w in words if w]
+
+
 def _parse_plan(
     text: str, record: RequestRecord, developer_text: str
-) -> tuple[TestPlanReply | None, list[str]]:
+) -> tuple[TestPlanReply | None, list[str], list[str]]:
     data = load_json(text)
     if data is NOT_JSON:
-        return None, ["The reply was not valid JSON. Reply with JSON only."]
+        return None, ["The reply was not valid JSON. Reply with JSON only."], []
+    data, not_covered = _split_not_covered(data, record)
     try:
         reply = TestPlanReply.model_validate(data)
     except ValidationError as error:
-        return None, _shape_problems(error)
-    return reply, find_test_plan_problems(reply, record, developer_text)
+        return None, _shape_problems(error), []
+    return reply, find_test_plan_problems(reply, record, developer_text), not_covered
 
 
 def _parse_case(

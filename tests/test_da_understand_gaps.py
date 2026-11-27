@@ -136,6 +136,21 @@ def test_g9_9d_a_gap_a_criterion_already_names_is_dropped_by_plain_code():
     assert [g.case for g in kept] == ["empty values"]  # case and word order do not matter
 
 
+def test_g9_9e_a_planned_case_with_no_covering_criterion_is_not_planned():
+    from agents.da_tester_agent import write_test_plan
+    from tests.da_stub_client import StubClient
+
+    plan = {"cases": [
+        {"criterion_id": "AC-1", "given": "A user runs the tool", "expect": "It prints OK text"},
+        {"criterion_id": "AC-9", "given": "An empty file", "expect": "It prints an error text"},
+    ]}  # fmt: skip
+
+    result = write_test_plan(StubClient(plan), _record(), [], "")
+
+    assert result.ok and result.not_covered == ["An empty file"]
+    assert [case.criterion_id for case in result.reply.cases] == ["AC-1"]
+
+
 def test_a_not_needed_line_and_the_cap_of_five():
     rulebook = load_rulebook_file(SEED_RULEBOOK_FILE)
     record = _record(out_of_scope=["Not needed: empty values: never happens here"])
