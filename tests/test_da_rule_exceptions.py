@@ -122,6 +122,39 @@ def test_reject_returns_the_request_with_the_conflict_still_open(settings):
     assert f"{ASK_EXCEPTION_PREFIX}1" in after.choices
 
 
+def _add_get_help(settings, request_id):
+    from datetime import UTC, datetime
+
+    from agents.da_escalation_flow import escalate
+    from pydantic_classes.da_escalation_models import TriggerDecision
+
+    decision = TriggerDecision(trigger="get_help", fire=True, reason="Escalated in Understand")
+    with open_db(settings.db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        escalate(conn, request_id, decision, datetime.now(UTC))
+
+
+@pytest.mark.parametrize("verdict", [approve_exception, reject_exception])
+def test_a_row_with_another_reason_stays_open_after_the_exception_is_settled(settings, verdict):
+    """Finish review 3: only the exception is settled; Get help still waits for the senior."""
+    view, _ = _at_conflict(settings)
+    _ask(settings, view)
+    _add_get_help(settings, view.request.request_id)
+    row = _rows(settings, view.request.request_id)[0]
+    assert set(row.triggers) == {"rule_exception", "get_help"}
+
+    verdict(settings, row.escalation_id, row.revision, "senior1", "Decided")
+
+    left = _rows(settings, view.request.request_id)[0]
+    assert left.outcome == "open" and left.triggers == ["get_help"]
+    assert left.exception_asks == [] and len(left.reasons) == 1
+    assert "may break" not in left.reasons[0]
+    status = flow.get_understand_view(settings, view.request.request_id).request.status
+    assert status == "ESCALATION_REQUIRED"
+    events = [e.event_type for e in list_audit_events(settings.db_path, view.request.request_id)]
+    assert "rule_exception" in events
+
+
 def test_the_inbox_shows_approve_and_reject_and_the_action_runs(make_settings):
     """Review round 2: the senior can say yes or no on the Inbox screen, not only in code."""
     from agents.da_inbox import get_inbox_row

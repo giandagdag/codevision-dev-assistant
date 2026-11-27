@@ -116,7 +116,7 @@ def perform_rule_button(
     elif action == "add":
         gap = _pick(gaps, number, len(conflicts))
         record = _or_refused(lambda: rules.with_gap_criterion(record, gap))
-        audit = ("gap_criterion_added", {"case": gap.case})
+        audit = ("gap_criterion_added", {"gap": number})
     elif action == "no":
         gap = _pick(gaps, number, len(conflicts))
         reason = _reason(text, rules.NOT_NEEDED_NEEDS_REASON)
@@ -124,7 +124,7 @@ def perform_rule_button(
             raise RefineError(rules.NO_ROOM_MESSAGE)
         line = rules.not_needed_line(gap, reason)
         record = record.model_copy(update={"out_of_scope": [*record.out_of_scope, line]})
-        audit = ("gap_not_needed", {"case": gap.case, "reason": reason})
+        audit = ("gap_not_needed", {"gap": number, "reason": reason})
     elif action != "again":
         raise RefineError("That is not one of the choices.")
     found = check_record(settings, request_id, record, client)  # no lock during the AI call

@@ -10,6 +10,7 @@ The interpreter only suggests (rule R2). Questions, decisions, statuses and the 
 gate are all decided here.
 """
 
+import json
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -695,6 +696,8 @@ def get_understand_view(settings: Settings, request_id: str) -> UnderstandView:
             record = read_confirmed_record(conn, request_id, request.version) or record
         older = session.step == "done" and not _rule_check_ran(conn, request_id)
         note = OLDER_REQUEST_NOTE if older else ""
+        question = _dropped_case_question(conn, request_id)
+        note = f"{note}\n{question}".strip() if question else note
     return UnderstandView(
         request=request,
         record=record,
@@ -714,6 +717,26 @@ def get_understand_view(settings: Settings, request_id: str) -> UnderstandView:
         revision=session.revision,
         demo_mode=settings.llm_provider == "fake",
         rule_check_note=note,
+    )
+
+
+def _dropped_case_question(conn: sqlite3.Connection, request_id: str) -> str:
+    """Fix G9 T3: a test case dropped for expecting text the requirement lacks becomes a question
+    on the Summary tab ('' when none was dropped)."""
+    try:
+        rows = conn.execute(
+            "SELECT details FROM da_audit_events WHERE request_id = ? "
+            "AND event_type = 'test_case_dropped' ORDER BY event_id",
+            (request_id,),
+        ).fetchall()
+    except sqlite3.OperationalError:  # no audit table yet
+        return ""
+    names = sorted({name for row in rows for name in json.loads(row[0]).get("cases", [])})
+    if not names:
+        return ""
+    return (
+        "Open question: the requirement does not say what these tests should expect, so they "
+        f"were not written: {', '.join(names)}. Add the exact result to the requirement."
     )
 
 
@@ -974,7 +997,8 @@ def _rule_button(
         if gap is not None:
             turn.session.record = record
             turn.session.last_changed_fields = [field]
-            turn.audit("developer", "gap_criterion_added", {"case": gap.case})
+            number = option.removeprefix(rules.ADD_CRITERION_PREFIX)  # not the AI's words
+            turn.audit("developer", "gap_criterion_added", {"gap": number})
         if checked is None:  # Change it myself: the box is already open
             turn.say("assistant", rules.CHANGE_MYSELF_MESSAGE)
         else:
@@ -1596,7 +1620,8 @@ def gap_not_needed(
         )
         session.gaps = [g for g in session.gaps if g != gap]
         session.last_changed_fields = ["out_of_scope"]
-        turn.audit("developer", "gap_not_needed", {"case": gap.case, "reason": text})
+        number = option.removeprefix(rules.NOT_NEEDED_PREFIX)
+        turn.audit("developer", "gap_not_needed", {"gap": number, "reason": text})
         _run_gate(turn)
     return get_understand_view(settings, request_id)
 

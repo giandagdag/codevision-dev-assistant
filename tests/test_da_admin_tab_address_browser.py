@@ -7,6 +7,7 @@ import pytest
 from werkzeug.serving import make_server
 
 from callbacks.screen_callbacks import da_admin_page_callbacks as admin_cb
+from layouts.da_admin_common import ADMIN_TABS
 from layouts.da_admin_page import ADMIN_PATH
 from web import da_home_web_server as server_module
 
@@ -52,15 +53,17 @@ def test_g9_18_admin_tab_clicks_never_show_the_developer_assistant_page(make_liv
     page = make_live_page(base)
     page.get_by_role("tab", name="Overview", exact=True).wait_for(timeout=15000)
     page.wait_for_timeout(2000)
-    for name, key in (("Project charter", "charter"), ("Build and test", "build")):
+    # every Admin tab; Overview is open already, so it is clicked last, from another tab
+    for key, name, _phase in (*ADMIN_TABS[1:], ADMIN_TABS[0]):
         page.get_by_role("tab", name=name, exact=True).click()
         page.wait_for_url(f"**tab={key}**", timeout=5000)  # wait on the address, not a fixed time
         page.get_by_role("tab", name=name, exact=True).wait_for(timeout=15000)
-        page.wait_for_timeout(1000)  # the reload has settled: the page is up and Admin is showing
+        page.wait_for_timeout(500)
+        assert selected(page) == name
         assert not page.locator("#da-page-content").is_visible()
         assert "Opening..." not in page.locator("body").inner_text()
-    # PARKED (G9 review 2): the address is still written with a page reload (W26-8 stays open);
-    # this test checks the settled screen, not the moment of the reload.
+    page.get_by_role("tab", name="Build and test", exact=True).click()
+    page.wait_for_url("**tab=build**", timeout=5000)
     page.reload()
     page.get_by_role("tab", name="Build and test", exact=True).wait_for(timeout=15000)
     page.wait_for_timeout(1500)

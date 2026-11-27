@@ -39,8 +39,28 @@ def test_a_single_message_word_is_checked_but_code_names_pass():
         "        self.assertIn('items', out)\n"
     )
 
-    assert ex.invented_by_method(code, "output NO INPUT PROVIDED") == {"test_x": ["ERROR"]}
-    assert ex.invented_by_method(code, "output NO INPUT PROVIDED and error") == {}
+    # Finish review 3: a lower-case one-word value is checked too
+    bad = {"test_x": ["ERROR", "items"]}
+    assert ex.invented_by_method(code, "output NO INPUT PROVIDED") == bad
+    half = ex.invented_by_method(code, "output NO INPUT PROVIDED and error")
+    assert half == {"test_x": ["items"]}
+    assert ex.invented_by_method(code, "error items") == {}
+
+
+def test_contract_names_and_arguments_count_as_requirement_text():
+    from types import SimpleNamespace
+
+    from pydantic_classes.da_build_models import Contract, ContractFile, ContractItem
+
+    item = ContractItem(name="summarise", kind="function", args=["totals"], summary="Adds up")
+    contract = Contract(files=[ContractFile(path="src/a.py", items=[item])])
+    record = SimpleNamespace(acceptance_criteria=[], exceptions=[])
+
+    wanted = ex.requirement_text(record, [], contract)
+
+    code = "class T:\n    def test_x(self):\n        self.assertIn('totals', out)\n"
+    assert ex.invented_by_method(code, wanted) == {}
+    assert ex.invented_by_method(code.replace("totals", "balance"), wanted) != {}
 
 
 def test_reason_names_the_method_and_the_text():

@@ -104,7 +104,40 @@ def test_g9_9c_not_needed_with_a_reason_is_recorded_and_confirm_works(settings):
     assert "Not needed: no arguments: the menu never calls it that way" in after.record.out_of_scope
     events = [e.event_type for e in list_audit_events(settings.db_path, request_id)]
     assert "gap_not_needed" in events
+    audited = [e.details for e in list_audit_events(settings.db_path, request_id)
+               if e.event_type == "gap_not_needed"]  # fmt: skip
+    assert audited[0]["gap"] == "1" and "case" not in audited[0]  # the number, not the AI's words
     assert _proceed(settings, after, client).request.status == "CONFIRMED_FOR_DISCOVERY"
+
+
+def test_add_this_criterion_audits_only_the_gap_number(settings):
+    after, client = _refused(settings)
+
+    flow.choose_option(
+        settings, after.request.request_id, f"{ADD_CRITERION_PREFIX}1", after.revision,
+        client=client,
+    )  # fmt: skip
+
+    audited = [e.details for e in list_audit_events(settings.db_path, after.request.request_id)
+               if e.event_type == "gap_criterion_added"]  # fmt: skip
+    assert audited == [{"gap": "1"}]
+
+
+def test_a_case_dropped_by_t3_is_a_question_on_the_summary_tab(settings):
+    from db_table_functions.da_db import open_db
+    from db_table_functions.db_tbl_da_audit import insert_audit_event
+
+    view = da_play.to_checkpoint(settings)
+    request_id = view.request.request_id
+    assert "Open question" not in flow.get_understand_view(settings, request_id).rule_check_note
+    with open_db(settings.db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        dropped = {"cases": ["test_ac_2"]}
+        insert_audit_event(conn, request_id, "system", "test_case_dropped", dropped)
+
+    note = flow.get_understand_view(settings, request_id).rule_check_note
+
+    assert "Open question" in note and "test_ac_2" in note
 
 
 def test_the_check_failing_says_so_and_blocks_confirm(settings):

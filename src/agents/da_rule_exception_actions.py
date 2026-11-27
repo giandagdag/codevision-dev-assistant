@@ -58,18 +58,37 @@ def _decide(settings, escalation_id, base_revision, senior_id, note, approve, no
         verdict = "approved" if approve else "rejected"
         if approve:
             _write_exceptions(conn, row, senior_id, now)
-        closed = row.model_copy(
-            update={"outcome": "returned", "close_note": clean, "closed_by": senior_id}
-        )
-        update_escalation(conn, closed, base_revision, now)
-        target, _note = return_status_for(conn, row)
-        update_request(conn, row.request_id, now=now, status=target)
-        moved = {"from": STATUS_ESCALATION, "to": target}
-        _audit(conn, row, "status_changed", senior_id, moved, now)
-        restore_flow_steps(conn, row.request_id, target, now)
+        rest = _without_exception(row)
+        if rest is not None:  # other reasons remain: settle only the exception, keep the row open
+            update_escalation(conn, rest, base_revision, now)
+        else:
+            closed = row.model_copy(
+                update={"outcome": "returned", "close_note": clean, "closed_by": senior_id}
+            )
+            update_escalation(conn, closed, base_revision, now)
+            target, _note = return_status_for(conn, row)
+            update_request(conn, row.request_id, now=now, status=target)
+            moved = {"from": STATUS_ESCALATION, "to": target}
+            _audit(conn, row, "status_changed", senior_id, moved, now)
+            restore_flow_steps(conn, row.request_id, target, now)
         asked = ", ".join(f"{a.rule} for {a.criterion}" for a in row.exception_asks)
         _audit(conn, row, "rule_exception", senior_id, {"verdict": verdict, "asked": asked}, now)
         _say(conn, row, senior_id, f"Exception {verdict} ({asked}): {clean}", now)
+
+
+def _without_exception(row: EscalationRow) -> EscalationRow | None:
+    """The row minus its exception reason, or None when nothing else is left on it."""
+    triggers = [name for name in row.triggers if name != "rule_exception"]
+    if not triggers:
+        return None
+    lines = {f"{a.criterion} may break {a.rule}: {a.reason}" for a in row.exception_asks}
+    reasons = [text for text in row.reasons if text not in lines]
+    open_item = row.open_item if row.open_item not in lines else (reasons[0] if reasons else "")
+    return row.model_copy(
+        update={
+            "triggers": triggers, "reasons": reasons, "open_item": open_item, "exception_asks": [],
+        }
+    )
 
 
 def _write_exceptions(conn, row: EscalationRow, senior_id: str, now: datetime) -> None:

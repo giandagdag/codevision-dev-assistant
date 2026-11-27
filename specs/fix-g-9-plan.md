@@ -265,3 +265,17 @@ code changes): `tests/ops` 657 passed; `tests/test_da_[a-f]*` 1665 passed (21 mi
   `evidence(expected=)` keyword; missing space after `=` in da_handoff_screen:22, da_rule_check_agent:32,
   da_understand_flow:185 (F8).
 
+**Round 2 left five Should fix items; SO-4: all fixed before round 3 (27 Nov 2026).**
+- Approve/Reject on an exception settles only the exception reason (`_without_exception` in
+  `da_rule_exception_actions.py`); a row with another reason (Get help) stays open and the request
+  keeps waiting. Chosen by chief (SO-5, stay inside the app). Test: both verdicts, row with Get help.
+- T3 (`da_test_expectations.py`): lower-case one-word values are checked; contract names and
+  arguments count as requirement text. Tests changed and added in `test_da_test_expectations.py`.
+- Audit keeps only the gap number (`{"gap": "1"}`) for `gap_criterion_added` and `gap_not_needed`,
+  Understand and v2 lane. Tests in `test_da_understand_gaps.py`.
+- A case dropped by T3 becomes an "Open question" line on the Summary tab (`rule_check_note`, read
+  from the `test_case_dropped` audit events in `get_understand_view`). Test: gaps file.
+- G9-18 clicks every Admin tab (all of `ADMIN_TABS`) and then F5 on Build and test.
+- `tests/_f4_tmp.txt` is still in the index: the safety hook refuses `git rm` and `git restore
+  --staged`. Commits name their files, so it is never committed. Gian: `git rm --cached tests/_f4_tmp.txt`.
+

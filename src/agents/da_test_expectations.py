@@ -14,7 +14,7 @@ NOT_COVERED_NOTE = "Not covered: the test could not be written from the requirem
 _MIN_LENGTH = 4
 # Positions that may hold an expected literal. assertEqual takes both sides: the writer may put
 # the literal first. A single word is checked only when it reads like a message (_is_message).
-_CODE_WORDS = frozenset({"True", "False", "None"})
+_CODE_WORDS = frozenset({"true", "false", "none"})
 _ASSERTS = {"assertEqual": (0, 1), "assertIn": (0,), "assertIs": (1,)}
 
 
@@ -25,7 +25,8 @@ def _plain(text: str) -> str:
 def requirement_text(record: RequestRecord, decisions: list[str], contract: Contract) -> str:
     parts = [f"{c.given} {c.when} {c.then}" for c in record.acceptance_criteria]
     parts += decisions + list(record.exceptions)
-    parts += [item.summary for entry in contract.files for item in entry.items]
+    for item in (item for entry in contract.files for item in entry.items):
+        parts += [item.summary, item.name, *item.args]  # the contract's own names count too
     return _plain(" ".join(parts))
 
 
@@ -57,8 +58,8 @@ def _is_message(text: str) -> bool:
         return False
     if " " in text:
         return True
-    code_like = text.endswith(("Error", "Exception", "Warning")) or text in _CODE_WORDS
-    return text.isalpha() and (text.isupper() or text.istitle()) and not code_like
+    code_like = text.endswith(("Error", "Exception", "Warning")) or text.casefold() in _CODE_WORDS
+    return text.isalpha() and not code_like  # any case: "invalid" is a message like "Invalid"
 
 
 def invented_by_method(code: str, wanted: str) -> dict[str, list[str]]:
