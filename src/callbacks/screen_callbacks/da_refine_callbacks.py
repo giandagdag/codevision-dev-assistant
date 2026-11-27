@@ -51,15 +51,16 @@ def run_refine(settings, key: str, state: dict, text: str = "", arg: str = "") -
     return outcome.message
 
 
-def handle_refine_button(settings, trigger, clicks_value, state, refresh):
+def handle_refine_button(settings, trigger, clicks_value, state, refresh, text=""):
     """A Refine button was pressed. `trigger` is its pattern id; the index is the action key.
+    `text` is the box (the reason for Ask for an exception and Not needed).
     Returns (refresh counter, message under the chat)."""
     state = state or {}
     if not isinstance(trigger, dict) or not clicks_value or not state.get("refine"):
         raise PreventUpdate
     try:
         with ai_turn(state.get("request_id")):
-            message = run_refine(settings, trigger["index"], state)
+            message = run_refine(settings, trigger["index"], state, text or "")
     except SHOWN_ERRORS as error:
         return no_update, str(error)
     return (refresh or 0) + 1, message
@@ -133,11 +134,11 @@ def register_da_refine_callbacks(app, current_settings) -> None:
         prevent_initial_call=True,
     )(on_describe)
 
-    def on_refine_button(clicks, state, refresh):
+    def on_refine_button(clicks, state, refresh, text):
         trigger = ctx.triggered_id
         if trigger is None or not ctx.triggered[0]["value"]:
             raise PreventUpdate
-        return handle_refine_button(current_settings(), trigger, True, state, refresh)
+        return handle_refine_button(current_settings(), trigger, True, state, refresh, text)
 
     def on_conflict_pick(clicks, state, refresh):
         trigger = ctx.triggered_id
@@ -158,6 +159,7 @@ def register_da_refine_callbacks(app, current_settings) -> None:
         Input({"type": REFINE_TYPE, "index": ALL}, "n_clicks"),
         State(STATE_ID, "data"),
         State(REFRESH_ID, "data"),
+        State(TEXT_ID, "value"),
         running=BUSY,
         prevent_initial_call=True,
     )(on_refine_button)

@@ -220,6 +220,8 @@ Commit subjects "G9 finish step N" (N = the F number). Runs of at most 3 steps. 
   callback, removed). G9-b removed from parked-items.
 - **F5** v2 refine lane shows conflicts and gaps with the same five buttons. Test: G9-6 with each
   button pressed.
+  DONE (new `da_refine_rules.py`; items saved on the Refine state; keys `rc:use|change|ask|add|no:N`
+  and `rc:again`; approve writes RX-n into the proposed record).
 - **F6** A G5 zone finding also shows as conflict `ZONE:<name>`; G5 safety gate unchanged. Test: the
   conflict appears with buttons, and the existing G5 gate tests still pass.
 - **F7** First find the cause (`_rounds_used` already skips `referee_only` rows, so look for the

@@ -18,6 +18,7 @@ from agents.da_senior_actions import (
 )
 from agents.da_understand_rules import exception_line
 from db_table_functions.db_tbl_da_escalation import update_escalation
+from db_table_functions.db_tbl_da_refine import read_refine_state, save_refine_state
 from db_table_functions.db_tbl_da_requests import update_request
 from db_table_functions.db_tbl_da_understand import read_session, save_session
 from pydantic_classes.da_escalation_models import EscalationRow
@@ -72,6 +73,18 @@ def _decide(settings, escalation_id, base_revision, senior_id, note, approve, no
 
 
 def _write_exceptions(conn, row: EscalationRow, senior_id: str, now: datetime) -> None:
+    has_table = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'da_refine_state'"
+    ).fetchone()
+    refine = read_refine_state(conn, row.request_id) if has_table else None
+    if refine is not None and refine.step == "req_checkpoint" and refine.pending_record:
+        record = refine.pending_record  # F5: the ask came from the v2 checkpoint
+        for ask in row.exception_asks:
+            line = exception_line(record, ask.rule, ask.criterion, senior_id, ask.reason)
+            record = record.model_copy(update={"exceptions": [*record.exceptions, line]})
+        changed = refine.model_copy(update={"pending_record": record})
+        save_refine_state(conn, changed, refine.revision, now)
+        return
     session = read_session(conn, row.request_id)
     if session is None:
         raise SeniorActionError("There is no request record to write the exception into.")

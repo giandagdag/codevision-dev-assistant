@@ -356,7 +356,10 @@ def revise(
         else:
             diff = diff_records(context.record, proposed)
             tx.say("assistant", checkpoint_text(diff))
-            tx.set(step=STEP_REQ_CHECKPOINT, pending_record=proposed)
+            tx.set(
+                step=STEP_REQ_CHECKPOINT, pending_record=proposed,
+                check_conflicts=[], check_gaps=[], check_failed=False,
+            )  # fmt: skip
         return _save(tx, base_revision)
 
 
@@ -391,23 +394,36 @@ def checkpoint_text(diff: RecordDiff) -> str:
     return "\n".join(lines)
 
 
+def check_record(settings, request_id: str, record, client: LLMClient | None) -> dict:
+    """Fix G9 U8: the Understand rule check on a proposed version. One AI call, no lock held.
+    Returns the state fields that hold the result (conflicts an exception allows are left out)."""
+    rulebook = get_rulebook_for_request(settings.db_path, request_id).rulebook
+    result = run_rule_check(settings, record, rulebook, client)
+    if not result.ran:
+        return {"check_conflicts": [], "check_gaps": [], "check_failed": True}
+    kept = without_excepted(record, result.conflicts)
+    return {"check_conflicts": kept, "check_gaps": result.gaps, "check_failed": False}
+
+
+def check_lines(found: dict) -> list[str]:
+    """The same result in words, one line per open item."""
+    lines = conflict_lines(found["check_conflicts"]) + gap_lines(found["check_gaps"])
+    return [COULD_NOT_RUN] if found["check_failed"] else lines
+
+
 def _rule_problems(
     settings, request_id: str, base_revision: int, client: LLMClient | None
-) -> list[str]:
-    """Fix G9 U8: the Understand rule check on the proposed version, before it is confirmed.
-    One AI call, no lock held. Empty when the record follows the rulebook."""
+) -> tuple[list[str], dict]:
+    """The lines that stop Confirm v2 (empty when the record follows the rulebook), and the
+    result to save so the screen can draw the buttons."""
     with open_db(settings.db_path) as conn:
         ensure_build_tables(conn)
         state = _load_state(conn, request_id, base_revision)
         _require_step(state, STEP_REQ_CHECKPOINT)
-    record = state.pending_record
-    if record is None:
-        return []  # the "no proposed change" message is raised below
-    rulebook = get_rulebook_for_request(settings.db_path, request_id).rulebook
-    result = run_rule_check(settings, record, rulebook, client)
-    if not result.ran:
-        return [COULD_NOT_RUN]
-    return conflict_lines(without_excepted(record, result.conflicts)) + gap_lines(result.gaps)
+    if state.pending_record is None:
+        return [], {}  # the "no proposed change" message is raised below
+    found = check_record(settings, request_id, state.pending_record, client)
+    return check_lines(found), found
 
 
 def confirm_revision(
@@ -419,8 +435,13 @@ def confirm_revision(
 ) -> RefineState:
     """Confirm v2: save the next record version (same CVDA number) and hand over to Discover."""
     now = now or datetime.now(UTC)
-    problems = _rule_problems(settings, request_id, base_revision, client)
+    problems, found = _rule_problems(settings, request_id, base_revision, client)
     if problems:
+        with _write(settings.db_path) as conn:  # keep the items: the screen draws their buttons
+            request = _require_request(conn, request_id)
+            tx = RefineTx(conn, request, _load_state(conn, request_id, base_revision), now)
+            tx.set(**found)
+            _save(tx, base_revision)
         listed = "\n".join(f"- {line}" for line in problems)
         raise RefineError(f"Before you can confirm, these items need attention:\n{listed}")
     with _write(settings.db_path) as conn:
