@@ -77,9 +77,18 @@ def test_g9_17_admin_then_developer_assistant_then_start_shows_understand_not_op
     page.locator("#da-dev-menu").click()  # Admin -> Developer Assistant
     page.locator("#da-start-card").wait_for(timeout=10000)  # Home shows, not a stuck "Opening..."
     page.locator("#da-start-card").click()
-    page.locator("#da-text").wait_for(timeout=10000)  # the Understand page
-    page.wait_for_timeout(5000)
-    assert page.locator("#da-text").is_visible()
+    page.locator("#da-text").wait_for(timeout=5000)  # the Understand page
+    assert "Opening..." not in page.locator("#da-page-content").inner_text()
+
+
+def test_g9_17_home_then_admin_then_home_then_start_shows_understand(make_live_page, base):
+    page = make_live_page(base.replace("/admin", "/"))
+    page.locator("#da-admin-menu").click()
+    page.get_by_role("tab", name="Project charter", exact=True).click()
+    page.wait_for_url("**tab=charter**", timeout=5000)
+    page.locator("#da-dev-menu").click()
+    page.locator("#da-start-card").click(timeout=10000)
+    page.locator("#da-text").wait_for(timeout=5000)
     assert "Opening..." not in page.locator("#da-page-content").inner_text()
 
 
@@ -99,12 +108,27 @@ def test_shared_link_and_back(make_live_page, base):
     page.get_by_role("tab", name="Repository and index", exact=True).wait_for(timeout=15000)
     page.wait_for_timeout(1500)
     assert selected(page) == "Repository and index"
+    # G9 F4: a click replaces the address (no history entry), so Back is not part of this any more
     page.get_by_role("tab", name="Build and test", exact=True).click()
     page.wait_for_url("**tab=build**", timeout=5000)
-    page.go_back()
-    page.wait_for_url("**tab=repository**", timeout=5000)
+    assert selected(page) == "Build and test"
+
+
+def test_g9_f4_tab_click_does_not_reload_and_home_round_trip_keeps_tab(make_live_page, base):
+    page = make_live_page(base)
+    page.get_by_role("tab", name="Overview", exact=True).wait_for(timeout=15000)
+    page.wait_for_timeout(2000)
+    page.evaluate("window.__f4 = 1")
+    for name, key in (("Project charter", "charter"), ("Build and test", "build")):
+        page.get_by_role("tab", name=name, exact=True).click()
+        page.wait_for_url(f"**tab={key}**", timeout=5000)
+    assert page.evaluate("window.__f4") == 1  # same page, no reload
+    page.locator("#da-dev-menu").click()
+    page.locator("#da-start-card").wait_for(timeout=10000)
+    page.locator("#da-admin-menu").click()
+    page.get_by_role("tab", name="Build and test", exact=True).wait_for(timeout=10000)
     page.wait_for_timeout(1000)
-    assert selected(page) == "Repository and index"
+    assert selected(page) == "Build and test"  # the tab was kept
 
 
 def test_catalog_view_in_the_address(make_live_page, base):

@@ -216,6 +216,8 @@ Commit subjects "G9 finish step N" (N = the F number). Runs of at most 3 steps. 
   and F5, "Opening..." guard keys on pathname only. Tests (Playwright): Admin, each tab, Home, Start a
   change request shows Understand within 5 s; Admin, tab, F5 keeps the tab. After 2 failed tries keep
   the current code and park as Low with the order and tries; on success remove G9-b from parked-items.
+  DONE (try 1: replaceState + store; try 2: the stuck "Opening..." came from the Address-to-Tabs
+  callback, removed). G9-b removed from parked-items.
 - **F5** v2 refine lane shows conflicts and gaps with the same five buttons. Test: G9-6 with each
   button pressed.
 - **F6** A G5 zone finding also shows as conflict `ZONE:<name>`; G5 safety gate unchanged. Test: the

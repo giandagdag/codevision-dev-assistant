@@ -28,26 +28,15 @@ def tab_and_view(search: str | None) -> tuple[str, str | None]:
     return tab, view
 
 
-# Browser side. Address -> tabs (Back, Forward, a typed link) and tabs -> address (a click).
+TAB_MEMORY_ID = "da-admin-tab-memory"  # dcc.Store in the shell: the last Admin address text
+
+# Browser side: tabs -> address (a click). A typed link or F5 is read by the page (Python).
 _TAB_KEYS = json.dumps(TAB_KEYS)
 _VIEW_KEYS = json.dumps(VIEW_KEYS)
 _CAPABILITY = json.dumps(TAB_CAPABILITY)
 
-ADDRESS_TO_TABS_JS = f"""
-function(search, tab, view) {{
-    var noChange = window.dash_clientside.no_update;
-    var query = new URLSearchParams(search || '');
-    var tabs = {_TAB_KEYS}, views = {_VIEW_KEYS};
-    var wantTab = tabs[query.get('tab')];
-    if (!wantTab) {{ return [noChange, noChange]; }}
-    var wantView = wantTab === {_CAPABILITY} ? views[query.get('view')] : undefined;
-    return [wantTab === tab ? noChange : wantTab,
-            !wantView || wantView === view ? noChange : wantView];
-}}
-"""
-
 TABS_TO_ADDRESS_JS = f"""
-function(tab, view, search) {{
+function(tab, view) {{
     var tabs = {_TAB_KEYS}, views = {_VIEW_KEYS};
     var key = Object.keys(tabs).find(function (k) {{ return tabs[k] === tab; }});
     if (!key) {{ return window.dash_clientside.no_update; }}
@@ -58,6 +47,11 @@ function(tab, view, search) {{
         if (viewKey) {{ query.set('view', viewKey); }}
     }}
     var next = '?' + query.toString();
-    return next === (search || '') ? window.dash_clientside.no_update : next;
+    // G9 F4: replaceState, not a dcc.Location write, so Dash sees no address change and never
+    // rebuilds the page; the store keeps the tab for a trip to Home and back.
+    if (next !== window.location.search) {{
+        window.history.replaceState(null, '', window.location.pathname + next);
+    }}
+    return next;
 }}
 """

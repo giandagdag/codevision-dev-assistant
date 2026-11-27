@@ -41,6 +41,7 @@ from callbacks.screen_callbacks.da_test_report_page_callbacks import (  # noqa: 
 from configs.da_config import ConfigError  # noqa: E402
 from db_table_functions.da_db import DatabaseBusyError  # noqa: E402
 from db_table_functions.db_tbl_da_rulebook import RulebookError, get_active_version  # noqa: E402
+from layouts.da_admin_address import TAB_MEMORY_ID  # noqa: E402
 from layouts.da_admin_page import ADMIN_CONTENT_ID, ADMIN_PATH  # noqa: E402
 from layouts.da_capability_map_view import map_shell  # noqa: E402
 from layouts.da_developer_assistant_page import (  # noqa: E402
@@ -93,6 +94,7 @@ def create_app() -> Dash:
         dmc.AppShell(
             [
                 dcc.Location(id=LOCATION_ID),
+                dcc.Store(id=TAB_MEMORY_ID),
                 dmc.AppShellHeader(_header(), px="md"),
                 dmc.AppShellNavbar(_menu(), p="xs"),
                 dmc.AppShellMain(

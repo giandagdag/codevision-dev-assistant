@@ -23,11 +23,12 @@ Spec `specs/fix-g-9.md`, plan `specs/fix-g-9-plan.md`.
 ### Still open: do not drop these workarounds yet
 - W26-6 (clicking the Tests tab again after a Dispute): the tab-keeping script was never run in a
   browser. Please check it by hand once before dropping the workaround.
-- W26-8 (Admin tab clicks reload the whole page): **not fixed**. The address is written by a
-  callback and Dash reloads the page for that. I tried `refresh="callback-nav"` and writing the
-  address with `history.pushState`; both leave Home stuck on "Opening..." after Admin, Home, Start.
-  So the real cause is in the Home page redraw without a reload, and I could not find it. PARKED.
-  The settled screen is right (tests pass); only the flash during the reload remains.
+- W26-8 (Admin tab clicks reload the whole page): **fixed in G9 finish F4**. A tab click writes
+  the address with `history.replaceState` (no reload, no history entry) and keeps the tab in a
+  store; F5 and a typed `?tab=` still read the address. The old "stuck on Opening..." after Admin,
+  Home, Start was a different cause: the Address-to-Tabs callback ran on every address change while
+  the Admin tabs were gone. It is removed (Playwright tests cover Admin, tab, Home, Start).
+  Back/Forward no longer step through tabs (a click replaces the address).
 
 ### Known gaps
 - B3 (required results for command-line pairs) was parked by the builder (`specs/parked-items.md`,

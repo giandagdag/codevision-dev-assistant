@@ -104,7 +104,11 @@ from db_table_functions.db_tbl_da_rulebook import (
     get_version,
     restore_version,
 )
-from layouts.da_admin_address import ADDRESS_TO_TABS_JS, TABS_TO_ADDRESS_JS, tab_and_view
+from layouts.da_admin_address import (
+    TAB_MEMORY_ID,
+    TABS_TO_ADDRESS_JS,
+    tab_and_view,
+)
 from layouts.da_admin_builds_panel import BUILD_USE_BTN
 from layouts.da_admin_catalog_meaning import (
     CAP_MEANING_ID,
@@ -1046,26 +1050,23 @@ def register_da_admin_page_callbacks(app) -> None:
         Output(DEV_WRAP_ID, "style"),
         Input(LOCATION_ID, "pathname"),
         State(LOCATION_ID, "search"),
+        State(TAB_MEMORY_ID, "data"),
     )
-    def show_page(pathname, search):
-        return admin_content(get_admin_settings(), pathname, search), developer_page_style(pathname)
+    def show_page(pathname, search, memory=None):
+        # the remembered tab wins: replaceState moved the real address, not Dash's copy of it
+        return (
+            admin_content(get_admin_settings(), pathname, memory or search),
+            developer_page_style(pathname),
+        )
 
     # Fix G5 N5: the address and the tabs follow each other in the browser (no reload).
-    app.clientside_callback(
-        ADDRESS_TO_TABS_JS,
-        Output(ADMIN_TABS_ID, "value", allow_duplicate=True),
-        Output(CAT_VIEW_ID, "value", allow_duplicate=True),
-        Input(LOCATION_ID, "search"),
-        State(ADMIN_TABS_ID, "value"),
-        State(CAT_VIEW_ID, "value"),
-        prevent_initial_call=True,
-    )
+    # G9 F4: the tab click writes the address with replaceState (no history entry), so there is no
+    # address-to-tabs callback any more: it kept running on every address change of other pages.
     app.clientside_callback(
         TABS_TO_ADDRESS_JS,
-        Output(LOCATION_ID, "search", allow_duplicate=True),
+        Output(TAB_MEMORY_ID, "data", allow_duplicate=True),
         Input(ADMIN_TABS_ID, "value"),
         Input(CAT_VIEW_ID, "value"),
-        State(LOCATION_ID, "search"),
         prevent_initial_call=True,
     )
 
