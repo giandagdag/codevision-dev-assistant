@@ -29,6 +29,20 @@ def test_invented_message_is_found_and_names_are_not():
     assert bad == {"test_a": ["Error message"]}  # case and spacing blind; ValueError passes
 
 
+def test_a_single_message_word_is_checked_but_code_names_pass():
+    """Finish review 1, Must 3: 'ERROR' is invented when the requirement says NO INPUT PROVIDED."""
+    code = (
+        "class T:\n"
+        "    def test_x(self):\n"
+        "        self.assertIn('ERROR', out)\n"
+        "        self.assertIn('ValueError', out)\n"
+        "        self.assertIn('items', out)\n"
+    )
+
+    assert ex.invented_by_method(code, "output NO INPUT PROVIDED") == {"test_x": ["ERROR"]}
+    assert ex.invented_by_method(code, "output NO INPUT PROVIDED and error") == {}
+
+
 def test_reason_names_the_method_and_the_text():
     reason = ex.reason_for_writer({"test_a": ["Error message"]})
 

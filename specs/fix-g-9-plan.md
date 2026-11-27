@@ -232,5 +232,16 @@ Commit subjects "G9 finish step N" (N = the F number). Runs of at most 3 steps. 
   done in `ops/work_queue.json`.
 
 ### Finish review
-(empty until F2)
+**Round 1 (27 Nov 2026): 3 Must fix, 5 Should fix/FYI.** Ran: 98 G9 tests, 126 nearby, ruff, smoke: pass.
+- Must 1 `da_rule_conflicts.py:23-24`: "import daily rates" / "loan package" flagged as libraries. Fix: only
+  code-like names (backticks, dotted, "the X library"); drop "package" and verb "import".
+- Must 2 `da_rule_conflicts.py:150`: any AI `LIB:name` kept, rule text not cut (crash in ExceptionAsk,
+  AI text in audit). Fix: keep LIB only when the library is refused by the rulebook; drop long rules.
+- Must 3 `da_test_expectations.py:52` `_is_message`: one-word expected strings skip T3. Fix: check single
+  words too (backed by the requirement text or contract names).
+- Should: skip second AI rule check at Proceed when the fingerprint is current; `rule_exception` label in
+  `da_admin_metrics.TRIGGER_WORDS`; Approve/Reject closes a row that holds other reasons.
+- FYI: plain conflicts lost when the AI call fails; `allowed_by` substring; `says_complies` "no/not";
+  `evidence(expected=)` keyword; missing space after `=` in da_handoff_screen:22, da_rule_check_agent:32,
+  da_understand_flow:185 (F8).
 

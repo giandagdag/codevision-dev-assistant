@@ -54,6 +54,32 @@ def test_everyday_bank_wording_is_not_a_library(rulebook):
     assert plain_conflicts(_record(then=text), rulebook) == []
 
 
+def test_import_as_a_verb_and_package_are_ordinary_words(rulebook):
+    """Finish review 1, Must 1."""
+    text = "The clerk can import daily rates from the loan package screen"
+
+    assert plain_conflicts(_record(then=text), rulebook) == []
+
+
+def test_import_written_like_code_is_still_checked(rulebook):
+    found = plain_conflicts(_record(then="Load it with `import numpy` first"), rulebook)
+
+    assert [c.rule for c in found] == ["LIB:numpy"]
+
+
+def test_ai_cite_of_an_approved_library_or_a_long_rule_is_dropped(rulebook):
+    """Finish review 1, Must 2."""
+    conflicts = [
+        RuleConflict("AC-1", "LIB:pydantic", "why", "fix"),
+        RuleConflict("AC-1", "LIB:" + "x" * 500, "why", "fix"),
+        RuleConflict("AC-1", "LIB:requests", "why", "fix"),
+    ]
+
+    kept = keep_real_conflicts(conflicts, _record(), rulebook)
+
+    assert [c.rule for c in kept] == ["LIB:requests"]
+
+
 def test_plain_conflicts_carry_no_wording_to_paste(rulebook):
     record = _record(then="The result is sent with the subprocess module to a shell")
 

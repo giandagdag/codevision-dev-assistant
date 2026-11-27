@@ -13,8 +13,8 @@ from pydantic_classes.da_request_record_models import RequestRecord
 NOT_COVERED_NOTE = "Not covered: the test could not be written from the requirement"
 _MIN_LENGTH = 4
 # Positions that may hold an expected literal. assertEqual takes both sides: the writer may put
-# the literal first. Single words (no space) are not checked on purpose: "ValueError", "OK" and
-# file names are too often plain code, not requirement text.
+# the literal first. A single word is checked only when it reads like a message (_is_message).
+_CODE_WORDS = frozenset({"True", "False", "None"})
 _ASSERTS = {"assertEqual": (0, 1), "assertIn": (0,), "assertIs": (1,)}
 
 
@@ -50,8 +50,15 @@ def expected_strings(method: ast.FunctionDef) -> list[str]:
 
 
 def _is_message(text: str) -> bool:
-    """Words with a space: a message. Single names (ValueError, True, a file name) pass."""
-    return len(text.strip()) >= _MIN_LENGTH and " " in text.strip()
+    """Words with a space: a message. A single word counts too when it reads like a message
+    (ERROR, Invalid); code names (ValueError, True, a file name, a dict key) pass."""
+    text = text.strip()
+    if len(text) < _MIN_LENGTH:
+        return False
+    if " " in text:
+        return True
+    code_like = text.endswith(("Error", "Exception", "Warning")) or text in _CODE_WORDS
+    return text.isalpha() and (text.isupper() or text.istitle()) and not code_like
 
 
 def invented_by_method(code: str, wanted: str) -> dict[str, list[str]]:

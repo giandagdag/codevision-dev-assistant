@@ -11,17 +11,20 @@ import sys
 from agents.da_approach_checks import library_name
 from da_logging import get_logger
 from pydantic_classes.da_request_record_models import RequestRecord
-from pydantic_classes.da_rule_conflict_models import RuleConflict
+from pydantic_classes.da_rule_conflict_models import TEXT_MAX, RuleConflict
 from pydantic_classes.da_rulebook_models import Rulebook
 
 logger = get_logger(__name__)
 
 SUMMARY = "SUMMARY"
 
-# "import requests", "the requests library", "package foo": a library named on purpose.
-# Only "import X" names what follows; "library and ..." would catch ordinary words.
-_LIBRARY_AFTER = re.compile(r"\bimport\s+([A-Za-z_][\w.-]*)", re.I)
-_LIBRARY_BEFORE = re.compile(r"\b([A-Za-z_][\w-]*)\s+(?:library|package)\b", re.I)
+# A library named on purpose: "import X" written like code (line start or after a backtick) or
+# "the X library". Mid-sentence "import daily rates" and "loan package" are ordinary bank words, so
+# they count only for the blocked list (_LOOSE_IMPORT, _PACKAGE_BEFORE).
+_LIBRARY_AFTER = re.compile(r"(?:^|`)[ \t]*import\s+([A-Za-z_][\w.-]*)", re.I | re.M)
+_LOOSE_IMPORT = re.compile(r"\bimport\s+([A-Za-z_][\w.-]*)", re.I)
+_LIBRARY_BEFORE = re.compile(r"\b([A-Za-z_][\w-]*)\s+library\b", re.I)
+_PACKAGE_BEFORE = re.compile(r"\b([A-Za-z_][\w-]*)\s+package\b", re.I)
 _MODULE_BEFORE = re.compile(r"\b([A-Za-z_][\w-]*)\s+module\b", re.I)
 _STDLIB = frozenset(name.lower() for name in sys.stdlib_module_names)
 _FILLER = frozenset({"the", "a", "an", "this", "that", "new", "python", "standard", "of"})
@@ -138,7 +141,20 @@ def keep_real_conflicts(
     return kept
 
 
+def _library_refused(name: str, rulebook: Rulebook) -> bool:
+    """True when the rulebook refuses this library: blocked, or neither approved nor standard."""
+    policy = rulebook.policy
+    name = library_name(name)
+    if name in {library_name(item) for item in policy.build_blocked_imports}:
+        return True
+    top = name.split(".")[0]
+    approved = {library_name(item) for item in policy.approved_libraries}
+    return bool(name) and top not in approved and top not in _STDLIB
+
+
 def _rule_exists(rule: str, rulebook: Rulebook) -> bool:
+    if len(rule) > TEXT_MAX:  # the cite is stored and audited: a long one is not a rule ID
+        return False
     kind, _, rest = rule.partition(":")
     if not rest:
         return rule in {item.rule_id for item in rulebook.rules}
@@ -148,7 +164,7 @@ def _rule_exists(rule: str, rulebook: Rulebook) -> bool:
             1 <= int(number) <= len(rulebook.charter.out_of_scope)
         )
     if kind == "LIB":
-        return True  # a library name needs no list: any named library can be refused
+        return _library_refused(rest, rulebook)
     if kind == "ZONE":
         return rest in {zone.name for zone in rulebook.policy.flag_review_zones}
     return False
@@ -161,6 +177,8 @@ def _named_libraries(text: str, with_module: bool = False) -> set[str]:
     names |= {library_name(m) for m in _LIBRARY_BEFORE.findall(text)}
     if with_module:
         names |= {library_name(m) for m in _MODULE_BEFORE.findall(text)}
+        names |= {library_name(m) for m in _PACKAGE_BEFORE.findall(text)}
+        names |= {library_name(m) for m in _LOOSE_IMPORT.findall(text)}
     return {name for name in names if name not in _FILLER}
 
 

@@ -632,7 +632,11 @@ def choose_option(
         return _rule_button(settings, session, option, base_revision, now, client)
     # Fix G9 U2: Proceed reads the record against the rulebook first (AI call, no lock held).
     checked = None
-    if session.step == "checkpoint" and option == PROCEED_OPTION:
+    # A check that already read this exact text is not asked again (one AI call per round).
+    fresh = session.rule_check_state == "ok" and session.rule_check_for == record_fingerprint(
+        session.record
+    )
+    if session.step == "checkpoint" and option == PROCEED_OPTION and not fresh:
         checked = _check_rules(settings, session, client)
     with _turn(settings.db_path, request_id, base_revision, now) as turn:
         if checked is not None:

@@ -89,7 +89,7 @@ def test_use_the_suggested_wording_runs_the_check_again_then_confirm_works(setti
     assert done.request.status == "CONFIRMED_FOR_DISCOVERY"
     events = [e.event_type for e in list_audit_events(settings.db_path, done.request.request_id)]
     assert "rule_wording_used" in events
-    assert events.count("rule_check") == 3
+    assert events.count("rule_check") == 2  # the second Proceed reuses the fresh check
 
 
 def test_change_it_myself_only_explains(settings):
