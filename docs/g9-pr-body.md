@@ -22,5 +22,10 @@ Spec `specs/fix-g-9.md`, plan `specs/fix-g-9-plan.md`.
 
 ### Known gaps
 - Step 8 (no invented cases, T2/G9-9) waits for Gian: the planner runs after Understand is confirmed.
-- No browser test for the Tests tab scroll (G9-15) or the Admin -> Start a change request flow (G9-17);
-  both are covered by callback and wiring tests. Worth one manual check at 1366 px.
+- G9-15 (See the findings pressed three times) has no browser test: a live Tests tab with findings
+  needs a full build behind a real server. Only the button, the ids and the script wiring are tested.
+  Please press it once by hand. G9-16 (tab kept after a Dispute) is tested on the drawn key only; the
+  tab script itself runs in the browser and was not run in one.
+- G9-17 and G9-18 have Playwright tests in `tests/test_da_admin_tab_address_browser.py`.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)

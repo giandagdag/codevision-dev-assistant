@@ -1032,29 +1032,6 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
         prevent_initial_call=True,
     )(handle_form)
 
-    app.clientside_callback(
-        SCROLL_TO_FINDINGS_JS,
-        Output(KEYS_ID, "data", allow_duplicate=True),
-        Input(SEE_FINDINGS_ID, "n_clicks"),
-        prevent_initial_call=True,
-    )
-    app.clientside_callback(
-        RESTORE_TAB_JS,
-        Output(TABS_ID, "value", allow_duplicate=True),
-        Output(TAB_MEMORY_ID, "data", allow_duplicate=True),
-        Input(PAGE_CONTENT_ID, "children"),
-        State(TAB_KEY_ID, "data"),
-        State(TAB_MEMORY_ID, "data"),
-        prevent_initial_call=True,
-    )
-    app.clientside_callback(
-        REMEMBER_TAB_JS,
-        Output(TAB_MEMORY_ID, "data"),
-        Input(TABS_ID, "value"),
-        State(TAB_KEY_ID, "data"),
-        prevent_initial_call=True,
-    )
-
     # Phase 7: Accept, Reopen and Dispute on the Tests tab. Pattern ids exist only on that tab.
     app.callback(
         Output(REFRESH_ID, "data", allow_duplicate=True),
@@ -1126,3 +1103,28 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
         State(REFRESH_ID, "data"),
         prevent_initial_call=True,
     )(change_mark)
+
+    # Fix G9 S2 and S4 (registered last so the order tests above still hold). The Home screen has
+    # no key store, so that State is optional: a missing key clears the tab memory.
+    app.clientside_callback(
+        SCROLL_TO_FINDINGS_JS,
+        Output(KEYS_ID, "data", allow_duplicate=True),
+        Input(SEE_FINDINGS_ID, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    app.clientside_callback(
+        RESTORE_TAB_JS,
+        Output(TABS_ID, "value", allow_duplicate=True),
+        Output(TAB_MEMORY_ID, "data", allow_duplicate=True),
+        Input(PAGE_CONTENT_ID, "children"),
+        State(TAB_KEY_ID, "data", allow_optional=True),
+        State(TAB_MEMORY_ID, "data"),
+        prevent_initial_call=True,
+    )
+    app.clientside_callback(
+        REMEMBER_TAB_JS,
+        Output(TAB_MEMORY_ID, "data"),
+        Input(TABS_ID, "value"),
+        State(TAB_KEY_ID, "data", allow_optional=True),
+        prevent_initial_call=True,
+    )

@@ -57,7 +57,35 @@ def test_g9_18_admin_tab_clicks_never_show_the_developer_assistant_page(make_liv
         assert "Opening..." not in page.locator("body").inner_text()
     page.reload()
     page.get_by_role("tab", name="Overview", exact=True).wait_for(timeout=15000)
+    page.wait_for_timeout(1500)
+    assert selected(page) == "Overview"  # F5 keeps the tab
     assert not page.locator("#da-page-content").is_visible()
+
+
+def test_g9_17_admin_then_developer_assistant_then_start_shows_understand_not_opening(
+    make_live_page, base
+):
+    page = make_live_page(base)
+    page.get_by_role("tab", name="Project charter", exact=True).click()
+    page.wait_for_url("**tab=charter**", timeout=5000)
+    page.locator("#da-dev-menu").click()  # Admin -> Developer Assistant
+    page.locator("#da-start-card").wait_for(timeout=10000)  # Home shows, not a stuck "Opening..."
+    page.locator("#da-start-card").click()
+    page.locator("#da-text").wait_for(timeout=10000)  # the Understand page
+    page.wait_for_timeout(5000)
+    assert page.locator("#da-text").is_visible()
+    assert "Opening..." not in page.locator("#da-page-content").inner_text()
+
+
+def test_g9_17_admin_to_home_through_the_menu_always_redraws(make_live_page, base):
+    page = make_live_page(base)
+    page.get_by_role("tab", name="Overview", exact=True).wait_for(timeout=15000)
+    page.locator("#da-dev-menu").click()
+    page.locator("#da-start-card").wait_for(timeout=10000)
+    page.locator("#da-admin-menu").click()
+    page.get_by_role("tab", name="Overview", exact=True).wait_for(timeout=10000)
+    page.locator("#da-dev-menu").click()
+    page.locator("#da-start-card").wait_for(timeout=10000)  # back again: redrawn, not stale
 
 
 def test_shared_link_and_back(make_live_page, base):

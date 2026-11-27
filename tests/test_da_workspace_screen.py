@@ -408,7 +408,8 @@ def test_register_attaches_the_workspace_hops():
     # then the Handoff buttons and the Copy summary script (Phase 10 step 5)
     # then one more (B1 step 6: the two buttons of a test that disagrees with a criterion)
     # then one more (B2 step 10: Let the AI describe it)
-    assert len(hops) == 8 + 3 + 1 + 1 + 1 + 1 + 2 + 1 + 1
+    # then three at the very end (Fix G9: See the findings scroll, keep and restore the open tab)
+    assert len(hops) == 8 + 3 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 3
     click_hop = hops[0]
     assert click_hop["prevent_initial_call"] is True
     assert click_hop["clientside_function"]["function_name"]

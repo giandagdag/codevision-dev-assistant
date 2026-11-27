@@ -9,6 +9,7 @@ from dash import Dash
 from agents import da_build_agent as agent
 from agents import da_build_flow as flow
 from agents import da_build_loop as loop
+from agents import da_tester_flow as tflow
 from callbacks.screen_callbacks import da_developer_assistant_page_callbacks as cb
 from layouts import da_developer_assistant_page as page
 from layouts import da_tester_panel as tp
@@ -47,11 +48,18 @@ def test_g9_16_every_draw_names_its_tab_and_step_so_a_redraw_can_keep_the_tab(
     settings, monkeypatch
 ):
     first = draw_not_passing(settings, monkeypatch)
-    request_id = next(
-        c for c in components(first, "Store") if c.id == page.STATE_ID
-    ).data["request_id"]
+    state = next(c for c in components(first, "Store") if c.id == page.STATE_ID).data
+    request_id = state["request_id"]
+    row = next(
+        r
+        for r in tflow.get_tester_view(settings, request_id).rows
+        if r.finding.severity == "must_fix"
+    )
+    fid = row.finding.finding_id
+    cb.perform_finding_action(settings, f"dispute:{fid}", {fid: "I checked it, the plan is fine"},
+                              state, 0)  # G9-16: a real Dispute, then the redraw
 
-    second = cb.show_page(f"?request={request_id}", 1)  # a redraw, e.g. after a Dispute
+    second = cb.show_page(f"?request={request_id}", 1)
 
     keys = [
         c.data for t in (first, second) for c in components(t, "Store") if c.id == page.TAB_KEY_ID
