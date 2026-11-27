@@ -184,3 +184,53 @@ event): both leave Home on "Opening..." after Admin, Home, Start (G9-17). Cause 
 
 Then full pytest, ruff, smoke check, code review (max 3 rounds), PR into `auto/phases-7-10` with
 `--body-file`.
+
+Step 8 question: ANSWERED, option (a), built as F1 below.
+
+## Finish steps (spec `specs/fix-g-9-finish.md`, Gian chose option a)
+Commit subjects "G9 finish step N" (N = the F number). Runs of at most 3 steps. **Run order: F2 first
+(the spec says the review is the first step), then F1, F3, F4 to F9.** Every step has tests.
+
+- **F2** Code review round 1 of the new cycle on PR #118 as it stands. Must fix items are fixed
+  before F1 starts. Result written under "Finish review" below.
+- **F1** Gap check in the same rule check call. Reuse `keep_real_conflicts` style and
+  `confirmation_gate_problems`; no new module except a small gap model.
+  - Reply gains `uncovered` (max 5; case 120, question 200, suggested_criterion 250 chars), read with
+    the forgiving reader; fake script entry `rule_check` returns it in tests.
+  - `keep_real_gaps`: drop a gap (ignoring case and word order; G9-9d also tests reordered, capitalised
+    words) whose words are already in a criterion's given part, a decision, the
+    out-of-scope list (charter and record, "Not needed" lines included); drops logged as a count only.
+  - Gate lines "Gap: case. question"; buttons Add this criterion (next AC-n, check runs again),
+    Change it myself, Not needed (reason 10+ chars, line "Not needed: case: reason", audit
+    `gap_not_needed`). F1d: same gate on a v2 or later requirement. F1f: failure message
+    "The rule and gap check could not run: Try again", Confirm stays blocked. Old records without
+    `uncovered` read as no gaps. F1e: Approach planner case with no covering criterion is not planned
+    and shows "Not covered by the requirement: <case>" on the Tests tab (FYI); old requests past
+    Understand are not re-checked.
+  - Tests G9-9, 9b, 9c, 9d, 9e, plus: v2 gap blocks, failure message blocks, old record loads.
+- **F3** Command-line required results run in the sandbox after Layer A, as a child process of the
+  entry script (60 s limit, same Job Object and clean environment as the test runner), stdout with
+  trailing spaces and line ends stripped, "non-zero" = any non-zero. Mismatch goes back to the
+  Builder as a repair note, Tester not called. Remove G9-a from parked-items. Test G9-12b.
+- **F4** Admin tab click: clientside `replaceState`, tab kept in a `dcc.Store`, `?tab=` read on load
+  and F5, "Opening..." guard keys on pathname only. Tests (Playwright): Admin, each tab, Home, Start a
+  change request shows Understand within 5 s; Admin, tab, F5 keeps the tab. After 2 failed tries keep
+  the current code and park as Low with the order and tries; on success remove G9-b from parked-items.
+- **F5** v2 refine lane shows conflicts and gaps with the same five buttons. Test: G9-6 with each
+  button pressed.
+- **F6** A G5 zone finding also shows as conflict `ZONE:<name>`; G5 safety gate unchanged. Test: the
+  conflict appears with buttons, and the existing G5 gate tests still pass.
+- **F7** First find the cause (`_rounds_used` already skips `referee_only` rows, so look for the
+  counter that is still wrong). Test: round counter unchanged after a referee-only round.
+- **F8** Browser tests from the `tests/test_da_poll_browser.py` set-up: G9-15, G9-16, Inbox Approve and
+  Reject (G9-3), the F1 buttons. Round-2 FYI fixes: the missing space after `=` (found at
+  `COULD_NOT_RUN =` in da_rule_check_agent.py), and the stale check result.
+- **F9** Full pytest in groups on one commit (each group named with its count in the PR body, every
+  group passes on that same commit, a cut-off run counts as no result), ruff, smoke check. Code review
+  rounds 2 and 3 if needed (cap 3, then stop and report). PR #118 body: replace "Known gaps" by what
+  F1 to F8 closed and what is still parked. The chief merges PR #118, closes #119 and marks Fix G9
+  done in `ops/work_queue.json`.
+
+### Finish review
+(empty until F2)
+
