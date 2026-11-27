@@ -7,6 +7,7 @@ import pytest
 from werkzeug.serving import make_server
 
 from callbacks.screen_callbacks import da_admin_page_callbacks as admin_cb
+from layouts.da_admin_address import TAB_KEYS
 from layouts.da_admin_common import ADMIN_TABS
 from layouts.da_admin_page import ADMIN_PATH
 from web import da_home_web_server as server_module
@@ -54,7 +55,10 @@ def test_g9_18_admin_tab_clicks_never_show_the_developer_assistant_page(make_liv
     page.get_by_role("tab", name="Overview", exact=True).wait_for(timeout=15000)
     page.wait_for_timeout(2000)
     # every Admin tab; Overview is open already, so it is clicked last, from another tab
-    for key, name, _phase in (*ADMIN_TABS[1:], ADMIN_TABS[0]):
+    # the address says "catalog" for the tab id "capability", so look the word up
+    address_key = {tab: word for word, tab in TAB_KEYS.items()}
+    for tab, name, _phase in (*ADMIN_TABS[1:], ADMIN_TABS[0]):
+        key = address_key[tab]
         page.get_by_role("tab", name=name, exact=True).click()
         page.wait_for_url(f"**tab={key}**", timeout=5000)  # wait on the address, not a fixed time
         page.get_by_role("tab", name=name, exact=True).wait_for(timeout=15000)
