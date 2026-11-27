@@ -97,7 +97,7 @@ def test_g3_1_every_run_tests_call_in_src_passes_settings():
                 count += 1
                 if "settings" not in {k.arg for k in node.keywords}:
                     missing.append(f"{path.name}:{node.lineno}")
-    assert count == 6 and not missing
+    assert count == 7 and not missing  # G9 step 12 added the required-results run
 
 
 def test_g3_3_a_missing_file_refuses_the_run_in_plain_words(monkeypatch, tmp_path):

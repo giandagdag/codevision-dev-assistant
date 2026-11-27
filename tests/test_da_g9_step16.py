@@ -75,10 +75,10 @@ def test_g9_16_the_tab_callbacks_are_registered_on_the_static_memory_store():
 
     assert page.TAB_MEMORY_ID in str(page.layout())  # outside the redrawn content
     outputs = " ".join(app.callback_map)
-    assert page.TAB_MEMORY_ID in outputs and page.TABS_ID in outputs
+    assert page.TAB_MEMORY_ID in outputs  # no Output on the tabs: Home has none
 
 
 def test_the_restore_script_keeps_a_tab_only_for_the_same_key():
     js = cb.RESTORE_TAB_JS
-    assert "memory.key === key" in js and "return [memory.tab" in js
+    assert "memory.key === key" in js and "tab.click()" in js
     assert "null" in js  # a new step clears the memory

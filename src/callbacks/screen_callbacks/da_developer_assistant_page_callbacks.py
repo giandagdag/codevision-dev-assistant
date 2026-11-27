@@ -245,9 +245,18 @@ function(clicks) {{
 # (same key); a new step clears the memory so the server's choice wins.
 RESTORE_TAB_JS = """
 function(children, key, memory) {
-    if (memory && memory.key === key) { return [memory.tab, window.dash_clientside.no_update]; }
-    if (memory) { return [window.dash_clientside.no_update, null]; }
-    return [window.dash_clientside.no_update, window.dash_clientside.no_update];
+    var none = window.dash_clientside.no_update;
+    if (memory && memory.key === key) {
+        // Press the tab button once the new page is on screen (an Output on the tabs would fail on
+        // pages that have none).
+        setTimeout(function () {
+            var tab = document.querySelector('[role=tab][id$="-tab-' + memory.tab + '"]');
+            var shown = tab && tab.getAttribute('aria-selected') === 'true';
+            if (tab && !shown && !tab.disabled) { tab.click(); }
+        }, 50);
+        return none;
+    }
+    return memory ? null : none;
 }
 """
 
@@ -1114,7 +1123,6 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
     )
     app.clientside_callback(
         RESTORE_TAB_JS,
-        Output(TABS_ID, "value", allow_duplicate=True),
         Output(TAB_MEMORY_ID, "data", allow_duplicate=True),
         Input(PAGE_CONTENT_ID, "children"),
         State(TAB_KEY_ID, "data", allow_optional=True),
