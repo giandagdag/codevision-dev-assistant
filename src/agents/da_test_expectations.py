@@ -13,7 +13,7 @@ from pydantic_classes.da_request_record_models import RequestRecord
 NOT_COVERED_NOTE = "Not covered: the test could not be written from the requirement"
 _MIN_LENGTH = 4
 # Positions that may hold an expected literal. assertEqual takes both sides: the writer may put
-# the literal first. A single word is checked only when it reads like a message (_is_message).
+# the literal first. A single word is checked too, unless it is a code name (_is_message).
 _CODE_WORDS = frozenset({"true", "false", "none"})
 _ASSERTS = {"assertEqual": (0, 1), "assertIn": (0,), "assertIs": (1,)}
 
@@ -51,8 +51,8 @@ def expected_strings(method: ast.FunctionDef) -> list[str]:
 
 
 def _is_message(text: str) -> bool:
-    """Words with a space: a message. A single word counts too when it reads like a message
-    (ERROR, Invalid); code names (ValueError, True, a file name, a dict key) pass."""
+    """Words with a space: a message. Any single alphabetic word of 4+ letters counts too (ERROR,
+    items); only True, False, None and names ending in Error, Exception or Warning pass."""
     text = text.strip()
     if len(text) < _MIN_LENGTH:
         return False

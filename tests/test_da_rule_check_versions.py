@@ -13,6 +13,7 @@ from agents.da_rule_check_agent import COULD_NOT_RUN
 from agents.da_rule_exception_actions import approve_exception
 from agents.da_understand_flow import OLDER_REQUEST_NOTE
 from db_table_functions.da_db import open_db
+from db_table_functions.db_tbl_da_audit import list_audit_events
 from db_table_functions.db_tbl_da_escalation import read_open_escalation
 from db_table_functions.db_tbl_da_refine import RefineError
 from tests import da_play
@@ -137,6 +138,11 @@ def _press(settings, request_id, key, text="", client=None):
     rules.perform_rule_button(settings, request_id, rev(settings, request_id), key, text, client)
 
 
+def _audited(settings, request_id, event_type):
+    return [e.details for e in list_audit_events(settings.db_path, request_id)
+            if e.event_type == event_type]  # fmt: skip
+
+
 def _blocked(settings, request_id, client):
     with pytest.raises(RefineError):
         lanes.confirm_revision(settings, request_id, rev(settings, request_id), client=client)
@@ -166,6 +172,7 @@ def test_f5_a_gap_gets_add_change_and_not_needed(settings):
     _press(settings, request_id, "rc:add:1", client=RuleClient(conflict=False))
     after = lanes.get_refine_state(settings, request_id).pending_record
     assert len(after.acceptance_criteria) == before + 1
+    assert _audited(settings, request_id, "gap_criterion_added") == [{"gap": "1"}]  # no AI words
 
 
 def test_f5_not_needed_wants_a_reason_and_records_the_line(settings):
@@ -180,6 +187,7 @@ def test_f5_not_needed_wants_a_reason_and_records_the_line(settings):
     state = lanes.get_refine_state(settings, request_id)
     assert state.check_gaps == []
     assert any(x.startswith("Not needed: empty file") for x in state.pending_record.out_of_scope)
+    assert _audited(settings, request_id, "gap_not_needed") == [{"gap": "1", "reason": reason}]
 
 
 def test_f5_change_it_myself_only_says_where_to_type(settings):
