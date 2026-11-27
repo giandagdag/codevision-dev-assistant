@@ -251,6 +251,13 @@ code changes): `tests/ops` 657 passed; `tests/test_da_[a-f]*` 1665 passed (21 mi
 `test_da_[g-l]*`, `test_da_[m-r]*`, `test_da_[s-z]*`, then the rest (`tests/*.py` not named
 `test_da_*`, other folders), ruff, smoke check, code review round 2.
 
+F9 final results (27 Nov 2026, code head 5ab4e60, then e4c3d3a changed only a comment, a CSS style and
+one test): `tests/ops` + `test_da_[a-f]*` 2322 (2321 passed first run; the one G9-18 browser test was a
+test bug, tab ids used as address words, fixed in 5ab4e60 and passed 9 of 9); `[g-l]` 442; `[m-r]` 478;
+`[s-z]` 1187; `test_db_tbl_*` 120; ruff clean; smoke check passed. Round 3: 0 Must fix; its Should fix
+and two FYI fixed in e4c3d3a (29 targeted tests pass). Parked: none new. Stray staged
+`tests/_f4_tmp.txt` is not committed; Gian can run `git rm --cached tests/_f4_tmp.txt`.
+
 ### Finish review
 **Round 1 (27 Nov 2026): 3 Must fix, 5 Should fix/FYI.** Ran: 98 G9 tests, 126 nearby, ruff, smoke: pass.
 - Must 1 `da_rule_conflicts.py:23-24`: "import daily rates" / "loan package" flagged as libraries. Fix: only
