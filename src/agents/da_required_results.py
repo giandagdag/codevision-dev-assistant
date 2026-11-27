@@ -123,11 +123,17 @@ def check_file(
     pairs: list[RequiredResult], code: dict[str, str]
 ) -> tuple[str, dict[str, tuple[RequiredResult, str]]]:
     """Fix G9 B3: a small unittest file that runs each function pair once, and a map of test
-    method -> (pair, code path). A failure message says what the function really did. CLI pairs
-    are not run (parked-items)."""
+    method -> (pair, code path). A failure message says what the code really did. A command-line
+    pair runs the script as a child process of this test (F3)."""
     methods, found = [], {}
     for number, pair in enumerate(pairs):
-        path = _defining_path(pair.name, code) if pair.kind == "function" and pair.has_value else ""
+        if pair.kind == "cli":
+            path = _script_path(pair.name, code)
+            if path:
+                found[f"test_r{number}"] = (pair, path)
+                methods.append(_cli_method(f"test_r{number}", pair, path))
+            continue
+        path = _defining_path(pair.name, code) if pair.has_value else ""
         if not path:
             continue
         module = path.removeprefix("src/").removesuffix(".py").replace("/", ".")
@@ -147,8 +153,52 @@ def check_file(
     return (text if found else ""), found
 
 
+def _script_path(name: str, code: dict[str, str]) -> str:
+    """The code file the command line names ('' when the Builder wrote no such file)."""
+    wanted = name.removeprefix("./")
+    return next((p for p in code if p == wanted or p.endswith("/" + wanted)), "")
+
+
+def _cli_method(method: str, pair: RequiredResult, path: str) -> str:
+    """One test that runs the script with the literal arguments (60 s limit; the sandbox already
+    gives the clean environment and the Job Object). Output is compared with trailing spaces and
+    line ends stripped; "non-zero" means any non-zero exit code."""
+    return (
+        f"    def {method}(self):\n"
+        "        import subprocess, sys\n"
+        "        def flat(text):\n"
+        "            return '\\n'.join(line.rstrip() for line in text.strip().splitlines())\n"
+        "        try:\n"
+        f"            done = subprocess.run([sys.executable, {path!r}, *{list(pair.args)!r}],\n"
+        "                capture_output=True, text=True, timeout=60)\n"
+        "        except subprocess.TimeoutExpired:\n"
+        "            self.fail('did not finish within 60 seconds')\n"
+        "        except OSError as error:\n"
+        "            self.fail('could not start: ' + str(error))\n"
+        "        seen = []\n"
+        f"        if {pair.has_value!r} and flat(done.stdout) != flat({pair.value or ''!r}):\n"
+        "            seen.append('printed ' + repr(flat(done.stdout)))\n"
+        f"        want = {pair.exit_code!r}\n"
+        "        if want == 'non-zero' and done.returncode == 0:\n"
+        "            seen.append('exited with code 0')\n"
+        "        elif want.isdigit() and done.returncode != int(want):\n"
+        "            seen.append('exited with code ' + str(done.returncode))\n"
+        "        if seen:\n"
+        "            self.fail(' and '.join(seen))\n"
+    )
+
+
 def mismatch_text(pair: RequiredResult, path: str, actual: str) -> str:
     """The repair note for one pair: criterion, expected, actual."""
+    if pair.kind == "cli":
+        expected = ", ".join(
+            ([f"print {pair.value!r}"] if pair.has_value else [])
+            + ([f"exit with code {pair.exit_code}"] if pair.exit_code else [])
+        )
+        return (
+            f"{pair.criterion_id} requires running {pair.given} to {expected}, but it {actual}. "
+            "Change the code so it does exactly this."
+        )
     return (
         f"{pair.criterion_id} requires {pair.given} to return {pair.value!r}, "
         f"but it {actual}. Return the required value; do not raise."

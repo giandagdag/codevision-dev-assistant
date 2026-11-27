@@ -82,6 +82,46 @@ def test_g9_12_code_that_raises_instead_of_returning_is_caught_before_the_tester
         assert read_reviews(conn, request_id, first.build_number) == []
 
 
+def _run_cli_check(tmp_path, script_text):
+    """Build the generated check for the G9-12b criterion and run it on a made-up script."""
+    import subprocess
+    import sys
+
+    item = criterion(
+        1, "`python tool.py` is run with no arguments",
+        "it prints 'NO INPUT PROVIDED', exit code non-zero",
+    )  # fmt: skip
+    [pair] = rr.required_results(record_of(item))
+    text, found = rr.check_file([pair], {"src/tool.py": script_text})
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "tool.py").write_text(script_text, encoding="utf-8")
+    (tmp_path / "check_required.py").write_text(text, encoding="utf-8")
+    done = subprocess.run(
+        [sys.executable, "-m", "unittest", "check_required"],
+        cwd=tmp_path, capture_output=True, text=True, timeout=60,
+    )  # fmt: skip
+    return done, found, pair
+
+
+def test_g9_12b_a_command_line_that_prints_error_and_exits_0_is_caught(tmp_path):
+    done, found, pair = _run_cli_check(tmp_path, "print('Error')\n")
+
+    assert done.returncode != 0
+    assert "printed 'Error'" in done.stderr and "exited with code 0" in done.stderr
+    [(_, path)] = found.values()
+    note = rr.mismatch_text(pair, path, "printed 'Error' and exited with code 0")
+    assert "AC-1 requires running tool.py to print 'NO INPUT PROVIDED'" in note
+    assert "exit with code non-zero, but it printed 'Error'" in note
+
+
+def test_a_command_line_that_follows_the_criterion_passes(tmp_path):
+    script = "import sys\nprint('NO INPUT PROVIDED   ')\nsys.exit(2)\n"
+
+    done, _, _ = _run_cli_check(tmp_path, script)
+
+    assert done.returncode == 0, done.stderr  # trailing spaces do not count, any non-zero is fine
+
+
 def test_the_builder_prompt_holds_the_pairs_and_the_never_raise_rule(seed_rulebook):
     context = make_context(seed_rulebook)
     item = criterion(9, "check('abc') is called", "check('abc') returns 'INVALID PASSWORD'")
