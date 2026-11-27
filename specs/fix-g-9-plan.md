@@ -224,6 +224,8 @@ Commit subjects "G9 finish step N" (N = the F number). Runs of at most 3 steps. 
   and `rc:again`; approve writes RX-n into the proposed record).
 - **F6** A G5 zone finding also shows as conflict `ZONE:<name>`; G5 safety gate unchanged. Test: the
   conflict appears with buttons, and the existing G5 gate tests still pass.
+  DONE (`_zone_conflicts` in `da_rule_conflicts.py`: one `ZONE:Destructive data change` conflict per
+  missing item when the record is destructive; G5 gate files untouched).
 - **F7** First find the cause (`_rounds_used` already skips `referee_only` rows, so look for the
   counter that is still wrong). Test: round counter unchanged after a referee-only round.
 - **F8** Browser tests from the `tests/test_da_poll_browser.py` set-up: G9-15, G9-16, Inbox Approve and

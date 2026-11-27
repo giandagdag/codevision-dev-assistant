@@ -9,6 +9,7 @@ import re
 import sys
 
 from agents.da_approach_checks import library_name
+from agents.da_destructive import DESTRUCTIVE_ZONE, missing_questions
 from da_logging import get_logger
 from pydantic_classes.da_request_record_models import RequestRecord
 from pydantic_classes.da_rule_conflict_models import GAP_LIMIT, TEXT_MAX, Gap, RuleConflict
@@ -103,7 +104,17 @@ def plain_conflicts(record: RequestRecord, rulebook: Rulebook) -> list[RuleConfl
                         "",
                     )
                 )
+    found += _zone_conflicts(record)
     return [conflict.cut() for conflict in found]
+
+
+def _zone_conflicts(record: RequestRecord) -> list[RuleConflict]:
+    """F6: the G5 destructive-data gate (da_destructive, unchanged) also shows as a conflict,
+    one per missing item, so the developer sees it with the same buttons."""
+    if not record.destructive:
+        return []
+    zone = f"ZONE:{DESTRUCTIVE_ZONE}"
+    return [RuleConflict(SUMMARY, zone, question, "") for question in missing_questions(record)]
 
 
 def record_fingerprint(record: RequestRecord) -> str:

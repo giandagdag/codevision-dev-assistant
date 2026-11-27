@@ -122,6 +122,33 @@ def test_unknown_rule_and_unknown_place_are_dropped(rulebook):
     assert keep_real_conflicts(conflicts, record, rulebook) == [real]
 
 
+def test_f6_a_destructive_request_shows_each_missing_item_as_a_zone_conflict(rulebook):
+    from agents.da_destructive import DESTRUCTIVE_ZONE, missing_questions
+
+    record = _record(destructive=True)
+
+    zone = [c for c in plain_conflicts(record, rulebook) if c.rule.startswith("ZONE:")]
+
+    assert [c.rule for c in zone] == [f"ZONE:{DESTRUCTIVE_ZONE}"] * len(missing_questions(record))
+    assert zone and all(c.criterion == "SUMMARY" and c.fix == "" for c in zone)
+
+
+def test_f6_an_ordinary_request_has_no_zone_conflict(rulebook):
+    assert not [c for c in plain_conflicts(_record(), rulebook) if c.rule.startswith("ZONE:")]
+
+
+def test_f6_the_zone_conflict_has_change_and_exception_buttons():
+    from agents.da_refine_rules import rule_buttons
+    from pydantic_classes.da_refine_models import RefineState
+
+    conflict = RuleConflict("SUMMARY", "ZONE:Destructive data change", "why", "")
+    state = RefineState(
+        request_id="CVDA-2026-0001", pending_record=_record(), check_conflicts=[conflict]
+    )
+
+    assert [key for key, _ in rule_buttons(state)] == ["rc:change:1", "rc:ask:1"]
+
+
 def test_kept_conflict_texts_are_cut_to_200(rulebook):
     long = "x" * 500
 
