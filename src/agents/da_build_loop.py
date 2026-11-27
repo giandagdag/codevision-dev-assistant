@@ -664,7 +664,9 @@ class _Run:
                     text=text,
                     fingerprint=fingerprint(text),
                     net_methods=current.net_methods if current else [],
-                    expected_to_change_methods=current.expected_to_change_methods if current else [],
+                    expected_to_change_methods=(
+                        current.expected_to_change_methods if current else []
+                    ),
                 ),
                 tx.now,
             )

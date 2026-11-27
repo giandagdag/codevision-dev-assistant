@@ -48,7 +48,7 @@ def test_approved_library_and_plain_text_pass(rulebook):
 
 
 def test_everyday_bank_wording_is_not_a_library(rulebook):
-    """Review round 2: 'requests', 'http', 'csv module', 'report module' in prose are not libraries."""
+    """Review round 2: everyday words like 'requests' or 'csv module' are not libraries."""
     text = "A user requests the HTTP report page; the report module reads it with the csv module"
 
     assert plain_conflicts(_record(then=text), rulebook) == []

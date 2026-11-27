@@ -178,5 +178,9 @@ Keep it under 6,000 bytes (a test checks it).
 ### Step 18: AF-2 label scan and docs (G9-21)
 - Label scan on every new screen part; short docs note; PR body file listing workarounds that end.
 
+PARKED step 17 (part W26-8, G9-18 no page reload): the address is written by a callback and Dash
+reloads the page. Tried `refresh="callback-nav"` and `history.pushState` (with and without a popstate
+event): both leave Home on "Opening..." after Admin, Home, Start (G9-17). Cause not found; reverted.
+
 Then full pytest, ruff, smoke check, code review (max 3 rounds), PR into `auto/phases-7-10` with
 `--body-file`.

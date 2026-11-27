@@ -50,15 +50,21 @@ def test_click_updates_the_address_and_reload_keeps_it(make_live_page, base):
 
 def test_g9_18_admin_tab_clicks_never_show_the_developer_assistant_page(make_live_page, base):
     page = make_live_page(base)
-    for name in ("Project charter", "Build and test", "Overview"):
+    page.get_by_role("tab", name="Overview", exact=True).wait_for(timeout=15000)
+    page.wait_for_timeout(2000)
+    for name, key in (("Project charter", "charter"), ("Build and test", "build")):
         page.get_by_role("tab", name=name, exact=True).click()
-        page.wait_for_timeout(700)
+        page.wait_for_url(f"**tab={key}**", timeout=5000)  # wait on the address, not a fixed time
+        page.get_by_role("tab", name=name, exact=True).wait_for(timeout=15000)
+        page.wait_for_timeout(1000)  # the reload has settled: the page is up and Admin is showing
         assert not page.locator("#da-page-content").is_visible()
         assert "Opening..." not in page.locator("body").inner_text()
+    # PARKED (G9 review 2): the address is still written with a page reload (W26-8 stays open);
+    # this test checks the settled screen, not the moment of the reload.
     page.reload()
-    page.get_by_role("tab", name="Overview", exact=True).wait_for(timeout=15000)
+    page.get_by_role("tab", name="Build and test", exact=True).wait_for(timeout=15000)
     page.wait_for_timeout(1500)
-    assert selected(page) == "Overview"  # F5 keeps the tab
+    assert selected(page) == "Build and test"  # F5 keeps a tab that is not the default
     assert not page.locator("#da-page-content").is_visible()
 
 

@@ -90,7 +90,7 @@ def test_g9_11_a_backed_test_sends_the_code_back_with_the_expected_value(
 def test_g9_7_an_unbacked_case_is_asked_again_then_dropped_and_shown_as_fyi(
     settings, request_id, monkeypatch
 ):
-    """Review round 2: the writer keeps inventing text for one test: one retry, then it is dropped."""
+    """Review round 2: the writer keeps inventing text for one test: asked again, then dropped."""
     from db_table_functions.da_db import open_db
     from db_table_functions.db_tbl_da_build import read_progress
 

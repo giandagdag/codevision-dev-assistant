@@ -18,14 +18,30 @@ Spec `specs/fix-g-9.md`, plan `specs/fix-g-9-plan.md`.
 
 ### Workarounds that end with this merge
 - W26-1: escalation answer as the way out of a wrong test (T-4), and wording every failure case by hand.
-- W26-6: clicking the Tests tab again after a Dispute. W26-7: F5. W26-8: waiting for the tab to settle.
+- W26-7: F5 (the Admin tab address is tested with a real F5 on a non-default tab).
+
+### Still open: do not drop these workarounds yet
+- W26-6 (clicking the Tests tab again after a Dispute): the tab-keeping script was never run in a
+  browser. Please check it by hand once before dropping the workaround.
+- W26-8 (Admin tab clicks reload the whole page): **not fixed**. The address is written by a
+  callback and Dash reloads the page for that. I tried `refresh="callback-nav"` and writing the
+  address with `history.pushState`; both leave Home stuck on "Opening..." after Admin, Home, Start.
+  So the real cause is in the Home page redraw without a reload, and I could not find it. PARKED.
+  The settled screen is right (tests pass); only the flash during the reload remains.
 
 ### Known gaps
+- B3 (required results for command-line pairs) was parked by the builder (`specs/parked-items.md`,
+  G9-a) without asking Gian. Gian decides; CVDA-2026-0006 is a command-line tool.
+- The v2 and later refine lane shows a rule conflict as an error only: no wording, change or
+  exception buttons there (U8 asked for the same gate).
+- A `ZONE:` conflict (G5 flag-for-review zone) is not shown as a rule conflict; the G5 gate still blocks.
+- The review-2 fixes (Inbox Approve/Reject buttons, plain-word library check, referee swapping only
+  stuck tests) have unit tests, not browser tests.
 - Step 8 (no invented cases, T2/G9-9) waits for Gian: the planner runs after Understand is confirmed.
-- G9-15 (See the findings pressed three times) has no browser test: a live Tests tab with findings
-  needs a full build behind a real server. Only the button, the ids and the script wiring are tested.
-  Please press it once by hand. G9-16 (tab kept after a Dispute) is tested on the drawn key only; the
-  tab script itself runs in the browser and was not run in one.
+- G9-15 (See the findings pressed three times) and G9-16 (tab kept after a Dispute) have no browser
+  test. Only the button, the ids, the drawn key and the script wiring are tested. Please press them by
+  hand once. (A live build behind a server exists in `tests/test_da_poll_browser.py`; copying it was
+  left for a later fix.)
 - G9-17 and G9-18 have Playwright tests in `tests/test_da_admin_tab_address_browser.py`.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)

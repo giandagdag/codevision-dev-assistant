@@ -92,8 +92,7 @@ def create_app() -> Dash:
     app.layout = dmc.MantineProvider(
         dmc.AppShell(
             [
-                # "callback-nav": a callback writing the address (admin tab clicks) must not reload the page.
-                dcc.Location(id=LOCATION_ID, refresh="callback-nav"),
+                dcc.Location(id=LOCATION_ID),
                 dmc.AppShellHeader(_header(), px="md"),
                 dmc.AppShellNavbar(_menu(), p="xs"),
                 dmc.AppShellMain(
