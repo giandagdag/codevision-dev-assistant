@@ -246,6 +246,11 @@ Commit subjects "G9 finish step N" (N = the F number). Runs of at most 3 steps. 
   F1 to F8 closed and what is still parked. The chief merges PR #118, closes #119 and marks Fix G9
   done in `ops/work_queue.json`.
 
+F9 test groups (commit f3a33c0 or a later commit that changes only plan text; rerun every group if any
+code changes): `tests/ops` 657 passed; `tests/test_da_[a-f]*` 1665 passed (21 min). Still to run:
+`test_da_[g-l]*`, `test_da_[m-r]*`, `test_da_[s-z]*`, then the rest (`tests/*.py` not named
+`test_da_*`, other folders), ruff, smoke check, code review round 2.
+
 ### Finish review
 **Round 1 (27 Nov 2026): 3 Must fix, 5 Should fix/FYI.** Ran: 98 G9 tests, 126 nearby, ruff, smoke: pass.
 - Must 1 `da_rule_conflicts.py:23-24`: "import daily rates" / "loan package" flagged as libraries. Fix: only
