@@ -234,6 +234,12 @@ Commit subjects "G9 finish step N" (N = the F number). Runs of at most 3 steps. 
 - **F8** Browser tests from the `tests/test_da_poll_browser.py` set-up: G9-15, G9-16, Inbox Approve and
   Reject (G9-3), the F1 buttons. Round-2 FYI fixes: the missing space after `=` (found at
   `COULD_NOT_RUN =` in da_rule_check_agent.py), and the stale check result.
+  DONE (`tests/test_da_g9_finish_browser.py`: G9-15, G9-16; `tests/test_da_g9_inbox_browser.py`:
+  Inbox Approve, Reject, F1 Add this criterion). G9-16 browser test found a real bug: after a redraw
+  the new Tabs announced the server's tab and overwrote the user's choice before the restore read it.
+  `REMEMBER_TAB_JS` now keeps a tab only after a real click on a tab. Missing spaces fixed
+  (`da_handoff_screen`, `da_understand_flow`; `da_rule_check_agent` was already done). Stale check
+  result was fixed in the review-round-1 commit. Not browser-tested: F1 Change it myself and Not needed.
 - **F9** Full pytest in groups on one commit (each group named with its count in the PR body, every
   group passes on that same commit, a cut-off run counts as no result), ruff, smoke check. Code review
   rounds 2 and 3 if needed (cap 3, then stop and report). PR #118 body: replace "Known gaps" by what
