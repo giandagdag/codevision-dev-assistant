@@ -99,6 +99,7 @@ from pydantic_classes.da_models import (
     display_status,
 )
 from pydantic_classes.da_request_record_models import (
+    LIST_LENGTH_LIMIT,
     QUESTION_COUNT,
     TEXT_LIMIT,
     AssumedCase,
@@ -628,6 +629,8 @@ def choose_option(
         return _assume(settings, session, base_revision, now, client)
     if option.startswith(rules.ASK_EXCEPTION_PREFIX):  # the reason lives in the box
         raise UnderstandError(rules.EXCEPTION_NEEDS_REASON)
+    if option.startswith(rules.NOT_NEEDED_PREFIX):
+        raise UnderstandError(rules.NOT_NEEDED_NEEDS_REASON)
     if session.step == "correction" and option in rules.buttons(session):
         return _rule_button(settings, session, option, base_revision, now, client)
     # Fix G9 U2: Proceed reads the record against the rulebook first (AI call, no lock held).
@@ -928,11 +931,14 @@ def _check_rules(
 def _store_rule_check(turn: _Turn, result: RuleCheckResult, fingerprint: str) -> None:
     session = turn.session
     session.rule_conflicts = result.conflicts
+    session.gaps = result.gaps
     session.rule_check_state = "ok" if result.ran else "failed"
     session.rule_check_for = fingerprint
     # Counts only: never the AI's words (they stay in the rejected-reply log).
     turn.audit(
-        "system", "rule_check", {"ran": result.ran, "conflicts": len(result.conflicts)}
+        "system",
+        "rule_check",
+        {"ran": result.ran, "conflicts": len(result.conflicts), "gaps": len(result.gaps)},
     )
 
 
@@ -949,12 +955,15 @@ def _rule_button(
     request_id = session.request_id
     record, field, checked = session.record, "", None
     conflict = rules.conflict_for(session, option, rules.USE_WORDING_PREFIX)
-    if conflict is not None:
-        try:
+    gap = rules.gap_for(session, option, rules.ADD_CRITERION_PREFIX)
+    try:
+        if conflict is not None:
             record, field = rules.with_wording(session.record, conflict)
-        except ValueError as error:
-            raise UnderstandError(str(error)) from error
-    if conflict is not None or option == rules.TRY_AGAIN_OPTION:
+        elif gap is not None:  # F1c: the suggested criterion becomes the next AC-n
+            record, field = rules.with_gap_criterion(session.record, gap), "acceptance_criteria"
+    except ValueError as error:
+        raise UnderstandError(str(error)) from error
+    if conflict is not None or gap is not None or option == rules.TRY_AGAIN_OPTION:
         checked = _check_rules(settings, session.model_copy(update={"record": record}), client)
     with _turn(settings.db_path, request_id, base_revision, now) as turn:
         turn.say("developer", option)
@@ -962,6 +971,10 @@ def _rule_button(
             turn.session.record = record
             turn.session.last_changed_fields = [field]
             turn.audit("developer", "rule_wording_used", {"rule": conflict.rule})
+        if gap is not None:
+            turn.session.record = record
+            turn.session.last_changed_fields = [field]
+            turn.audit("developer", "gap_criterion_added", {"case": gap.case})
         if checked is None:  # Change it myself: the box is already open
             turn.say("assistant", rules.CHANGE_MYSELF_MESSAGE)
         else:
@@ -1549,6 +1562,42 @@ def ask_for_exception(
             turn.say("assistant", "A senior developer will look at your exception request.")
         elif decision.switched_off:
             turn.say("assistant", EXCEPTION_OFF_MESSAGE)
+    return get_understand_view(settings, request_id)
+
+
+def gap_not_needed(
+    settings: Settings,
+    request_id: str,
+    option: str,
+    reason: str,
+    base_revision: int,
+    now: datetime | None = None,
+) -> UnderstandView:
+    """Fix G9 F1c: the developer says a gap is not needed (the box holds the reason). It is
+    recorded as an out-of-scope line, so the check never asks about it again."""
+    now = now or datetime.now(UTC)
+    with _turn(settings.db_path, request_id, base_revision, now) as turn:
+        session = turn.session
+        if session.step != "correction":
+            raise UnderstandError(_wrong_step_message(session))
+        gap = rules.gap_for(session, option, rules.NOT_NEEDED_PREFIX)
+        if gap is None:
+            raise UnderstandError(_not_a_choice_message(option, _choices_for(session)))
+        text = " ".join((reason or "").split())
+        if len(text) < rules.EXCEPTION_MIN_CHARS:
+            raise UnderstandError(rules.NOT_NEEDED_NEEDS_REASON)
+        text = _accept_developer_text(text)
+        line = rules.not_needed_line(gap, text)
+        if len(session.record.out_of_scope) >= LIST_LENGTH_LIMIT:
+            raise UnderstandError(rules.NO_ROOM_MESSAGE)
+        turn.say("developer", f"{option}: {text}")
+        session.record = session.record.model_copy(
+            update={"out_of_scope": [*session.record.out_of_scope, line]}
+        )
+        session.gaps = [g for g in session.gaps if g != gap]
+        session.last_changed_fields = ["out_of_scope"]
+        turn.audit("developer", "gap_not_needed", {"case": gap.case, "reason": text})
+        _run_gate(turn)
     return get_understand_view(settings, request_id)
 
 

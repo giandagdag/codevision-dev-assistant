@@ -64,6 +64,23 @@ def test_g9_6_a_conflict_stops_the_new_version_and_nothing_is_saved(settings):
     assert state.step != "req_checkpoint"  # the second try, with no conflict, went through
 
 
+def test_f1d_a_gap_stops_the_new_version_too(settings):
+    request_id = _at_v2_checkpoint(settings)
+
+    class GapClient(RuleClient):
+        def complete(self, prompt, system=None):
+            gap = {"case": "no arguments", "question": "What then?", "suggested_criterion": "g"}
+            return LLMReply(text=json.dumps({"conflicts": [], "uncovered": [gap]}),
+                            provider="fake", model="fake")  # fmt: skip
+
+    with pytest.raises(RefineError) as error:
+        lanes.confirm_revision(
+            settings, request_id, rev(settings, request_id), client=GapClient()
+        )
+
+    assert "Gap: no arguments. What then?" in str(error.value)
+
+
 def test_a_failed_check_blocks_the_new_version(settings):
     request_id = _at_v2_checkpoint(settings)
 

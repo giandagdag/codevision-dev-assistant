@@ -17,3 +17,23 @@ class RuleConflict:
         return RuleConflict(
             self.criterion, self.rule, self.why[:TEXT_MAX], self.fix[:TEXT_MAX], self.title
         )
+
+
+GAP_CASE_MAX, GAP_QUESTION_MAX, GAP_CRITERION_MAX = 120, 200, 250
+GAP_LIMIT = 5
+
+
+@dataclass(frozen=True)
+class Gap:
+    """Fix G9 F1: an input or situation no criterion covers, found by the rule check call."""
+
+    case: str  # e.g. "no arguments"
+    question: str  # what should happen?
+    suggested_criterion: str  # "Given ..., when ..., then ..."
+
+    def cut(self) -> Gap:
+        return Gap(
+            self.case[:GAP_CASE_MAX],
+            self.question[:GAP_QUESTION_MAX],
+            self.suggested_criterion[:GAP_CRITERION_MAX],
+        )

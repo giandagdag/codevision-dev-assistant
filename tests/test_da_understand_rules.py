@@ -109,7 +109,7 @@ def test_a_failed_check_blocks_confirm_until_try_again_works(settings):
 
     after = _proceed(settings, view, RuleClient(criterion, fail=True))
 
-    assert "The rule check could not run: Try again" in after.messages[-1].text
+    assert "The rule and gap check could not run: Try again" in after.messages[-1].text
     assert TRY_AGAIN_OPTION in after.choices
     ok = flow.choose_option(
         settings, after.request.request_id, TRY_AGAIN_OPTION, after.revision,

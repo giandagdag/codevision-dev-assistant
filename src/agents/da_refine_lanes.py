@@ -36,7 +36,7 @@ from agents.da_refine_checks import (
 )
 from agents.da_rule_check_agent import COULD_NOT_RUN, run_rule_check
 from agents.da_understand_checks import developer_message_problem
-from agents.da_understand_rules import conflict_lines, without_excepted
+from agents.da_understand_rules import conflict_lines, gap_lines, without_excepted
 from configs.da_config import ConfigError
 from db_table_functions.da_db import begin_write, open_db
 from db_table_functions.db_tbl_da_approach import (
@@ -407,7 +407,7 @@ def _rule_problems(
     result = run_rule_check(settings, record, rulebook, client)
     if not result.ran:
         return [COULD_NOT_RUN]
-    return conflict_lines(without_excepted(record, result.conflicts))
+    return conflict_lines(without_excepted(record, result.conflicts)) + gap_lines(result.gaps)
 
 
 def confirm_revision(

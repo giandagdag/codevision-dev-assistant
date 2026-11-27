@@ -11,7 +11,7 @@ import sys
 from agents.da_approach_checks import library_name
 from da_logging import get_logger
 from pydantic_classes.da_request_record_models import RequestRecord
-from pydantic_classes.da_rule_conflict_models import TEXT_MAX, RuleConflict
+from pydantic_classes.da_rule_conflict_models import GAP_LIMIT, TEXT_MAX, Gap, RuleConflict
 from pydantic_classes.da_rulebook_models import Rulebook
 
 logger = get_logger(__name__)
@@ -138,6 +138,27 @@ def keep_real_conflicts(
             kept.append(conflict.cut())
     if dropped:
         logger.warning("Rule check: dropped %s conflicts (%s)", len(dropped), sorted(set(dropped)))
+    return kept
+
+
+def keep_real_gaps(gaps: list[Gap], record: RequestRecord, rulebook: Rulebook) -> list[Gap]:
+    """Fix G9 F1b: keep a gap only when its case is not already named (ignoring case and word
+    order) in a criterion's given part, a decision, the out-of-scope lists or a "Not needed" line.
+    At most GAP_LIMIT; only the count of drops is logged, never the AI's words."""
+    known = [c.given for c in record.acceptance_criteria]
+    known += [f"{d.question} {d.choice}" for d in record.decisions]
+    known += [*record.out_of_scope, *rulebook.charter.out_of_scope]
+    bags = [_bag(text) for text in known]
+    kept: list[Gap] = []
+    dropped = 0
+    for gap in gaps:
+        bag = _bag(gap.case)
+        if not bag or any(bag <= other for other in bags) or gap.case in {g.case for g in kept}:
+            dropped += 1
+        elif len(kept) < GAP_LIMIT:
+            kept.append(gap.cut())
+    if dropped:
+        logger.warning("Rule check: dropped %s gaps already covered", dropped)
     return kept
 
 

@@ -12,6 +12,7 @@ from agents.da_rejected_reply_log import write_rejected_reply
 from agents.da_reply_reader import read_json_object
 from agents.da_rule_conflicts import (
     keep_real_conflicts,
+    keep_real_gaps,
     plain_conflicts,
     rulebook_text,
     texts_of,
@@ -21,7 +22,7 @@ from agents.da_understand_agent import get_understand_client
 from configs.da_config import ConfigError, Settings
 from da_logging import get_logger
 from pydantic_classes.da_request_record_models import RequestRecord
-from pydantic_classes.da_rule_conflict_models import RuleConflict
+from pydantic_classes.da_rule_conflict_models import Gap, RuleConflict
 from pydantic_classes.da_rulebook_models import Rulebook
 
 logger = get_logger(__name__)
@@ -29,14 +30,16 @@ logger = get_logger(__name__)
 PROMPT_FILE = Path(__file__).resolve().parents[1] / "data" / "da_rule_check_prompt.md"
 STEP = "rule_check"  # the fake script step
 MARKER = "You are the rule check of a developer assistant"  # the prompt's first words
-COULD_NOT_RUN ="The rule check could not run: Try again"
+COULD_NOT_RUN = "The rule and gap check could not run: Try again"
 CONFLICT_KEYS = ("criterion", "rule", "why", "fix")
+GAP_KEYS = ("case", "question", "suggested_criterion")
 
 
 @dataclass(frozen=True)
 class RuleCheckResult:
     ran: bool
     conflicts: list[RuleConflict] = field(default_factory=list)
+    gaps: list[Gap] = field(default_factory=list)
 
 
 def build_prompt(record: RequestRecord, rulebook: Rulebook) -> str:
@@ -81,7 +84,21 @@ def run_rule_check(
         return RuleCheckResult(ran=False)
     from_ai = [_conflict(item) for item in asked if isinstance(item, dict)]
     found = keep_real_conflicts([c for c in from_ai if c], record, rulebook)
-    return RuleCheckResult(ran=True, conflicts=titled(_merge(plain, found), rulebook))
+    # No "uncovered" key (an older script or reply) means no gaps, never a failure.
+    uncovered = data.get("uncovered")
+    gaps = [_gap(item) for item in uncovered if isinstance(item, dict)] if isinstance(
+        uncovered, list
+    ) else []
+    return RuleCheckResult(
+        ran=True,
+        conflicts=titled(_merge(plain, found), rulebook),
+        gaps=keep_real_gaps([g for g in gaps if g], record, rulebook),
+    )
+
+
+def _gap(item: dict) -> Gap | None:
+    values = [str(item.get(key, "")).strip() for key in GAP_KEYS]
+    return Gap(*values) if all(values[:2]) else None
 
 
 def _conflict(item: dict) -> RuleConflict | None:
