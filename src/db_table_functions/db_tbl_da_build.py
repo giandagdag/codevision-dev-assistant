@@ -18,7 +18,7 @@ import json
 import sqlite3
 from datetime import datetime
 
-from db_table_functions.da_db import to_db_time
+from db_table_functions.da_db import add_column_if_missing, to_db_time
 from db_table_functions.db_tbl_da_approach import ensure_approach_tables
 from db_table_functions.db_tbl_da_enhance import ensure_enhance_tables
 from db_table_functions.db_tbl_da_escalation import ensure_escalation_tables
@@ -177,14 +177,14 @@ def _add_code_test_columns(conn: sqlite3.Connection) -> None:
     """Fix D1: da_build_rounds gets the code test columns. Old rows read as no code tests."""
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(da_build_rounds)")}
     if "code_tests" not in columns:
-        conn.execute("ALTER TABLE da_build_rounds ADD COLUMN code_tests TEXT")
+        add_column_if_missing(conn, "da_build_rounds", "code_tests", "TEXT")
     if "dropped_code_tests" not in columns:
-        conn.execute(
-            "ALTER TABLE da_build_rounds ADD COLUMN dropped_code_tests TEXT NOT NULL DEFAULT '[]'"
+        add_column_if_missing(
+            conn, "da_build_rounds", "dropped_code_tests", "TEXT NOT NULL DEFAULT '[]'"
         )
     if "referee_only" not in columns:  # Fix G9 T4: old rows read as a normal round
-        conn.execute(
-            "ALTER TABLE da_build_rounds ADD COLUMN referee_only INTEGER NOT NULL DEFAULT 0"
+        add_column_if_missing(
+            conn, "da_build_rounds", "referee_only", "INTEGER NOT NULL DEFAULT 0"
         )
 
 
@@ -194,7 +194,7 @@ def _add_kind_column(conn: sqlite3.Connection) -> None:
     `build`."""
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(da_build_runs)")}
     if "kind" not in columns:
-        conn.execute("ALTER TABLE da_build_runs ADD COLUMN kind TEXT NOT NULL DEFAULT 'build'")
+        add_column_if_missing(conn, "da_build_runs", "kind", "TEXT NOT NULL DEFAULT 'build'")
 
 
 # --- the working state ---

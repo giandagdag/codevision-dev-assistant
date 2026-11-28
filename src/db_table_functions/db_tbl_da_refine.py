@@ -15,7 +15,7 @@ import json
 import sqlite3
 from datetime import datetime
 
-from db_table_functions.da_db import to_db_time
+from db_table_functions.da_db import add_column_if_missing, to_db_time
 from db_table_functions.db_tbl_da_understand import (
     STALE_MESSAGE,
     StaleRevisionError,
@@ -145,7 +145,7 @@ def _add_net_columns(conn: sqlite3.Connection) -> None:
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(da_test_sets)")}
     for name in ("net_methods", "expected_to_change_methods"):
         if name not in columns:
-            conn.execute(f"ALTER TABLE da_test_sets ADD COLUMN {name} TEXT NOT NULL DEFAULT '[]'")
+            add_column_if_missing(conn, "da_test_sets", name, "TEXT NOT NULL DEFAULT '[]'")
 
 
 # --- the working state ---

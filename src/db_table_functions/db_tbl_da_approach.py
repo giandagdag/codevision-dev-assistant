@@ -13,7 +13,7 @@ import json
 import sqlite3
 from datetime import datetime
 
-from db_table_functions.da_db import to_db_time
+from db_table_functions.da_db import add_column_if_missing, to_db_time
 from db_table_functions.db_tbl_da_discovery import ensure_discovery_tables
 from db_table_functions.db_tbl_da_understand import (
     STALE_MESSAGE,
@@ -100,7 +100,7 @@ def ensure_approach_tables(conn: sqlite3.Connection) -> None:
     conn.executescript(_CREATE_TABLES_SQL)
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(da_approach_versions)")}
     if "index_build" not in columns:  # Upgrade G5e: old rows read as "not recorded" (NULL)
-        conn.execute("ALTER TABLE da_approach_versions ADD COLUMN index_build INTEGER")
+        add_column_if_missing(conn, "da_approach_versions", "index_build", "INTEGER")
 
 
 # --- approach versions ---
