@@ -19,6 +19,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from agents import da_build_agent as agent
+from agents import da_required_results as required
+from agents import da_test_expectations as expectations
 from agents import da_tester_review as tester
 from agents import da_tester_review_agent as tester_agent
 from agents.da_approach_checks import normalise_path
@@ -522,8 +524,35 @@ class _Run:
         line = self._line("Tester writes the tests from your test plan", "running")
         result = agent.write_tests(self.client("tester"), self.context, contract)
         self._raise_for(result, UNABLE_MESSAGE)
+        code = self._expectations_backed(result.value, contract, line)
         path = f"tests/{self.test_id}/test_{self.test_id}.py"
-        self._save_frozen("test", path, result.value, "tester", line)
+        self._save_frozen("test", path, code, "tester", line)
+
+    def _expectations_backed(self, code: str, contract: Contract, line: int) -> str:
+        """Fix G9 T3: expected text must come from the requirement; one retry, then drop it."""
+        ctx = self.context
+        wanted = expectations.requirement_text(
+            ctx.record, [f"{d.question} {d.choice}" for d in ctx.approach.decisions], contract
+        )
+        bad = expectations.invented_by_method(code, wanted)
+        if not bad:
+            return code
+        again = agent.write_tests(
+            self.client("tester"), ctx, contract, expectations.reason_for_writer(bad)
+        )
+        self._raise_for(again, UNABLE_MESSAGE)
+        bad = expectations.invented_by_method(again.value, wanted)
+        if not bad:
+            return again.value
+        with self._turn() as tx:
+            note = expectations.NOT_COVERED_NOTE
+            tx.audit("system", "test_case_dropped", {"cases": sorted(bad), "note": note})
+            # T3/G9-7: the developer sees it on the checklist too (FYI, never blocks)
+            self._note(tx, f"FYI. {note}: {', '.join(sorted(bad))}", "done")
+        kept = expectations.drop_methods(again.value, set(bad))
+        if not kept:  # nothing left that the requirement backs: the same stop as a bad reply
+            raise _Paused("unable", UNABLE_MESSAGE)
+        return kept
 
     def _raise_for(self, result: agent.AIResult, unable_text: str) -> None:
         if result.ok:
@@ -579,10 +608,84 @@ class _Run:
             if is_system_pause(last.layer_b if last is not None else None):
                 self._retry_unproven(last, contract, tests)  # Run again: no round is used
                 continue
+            _, unbacked = self._stuck(tests)
+            if unbacked and not any(item.referee_only for item in done):
+                tests = self._referee_rewrite(unbacked, contract, tests)
+                layer_b = self._layer_b(tests)
+                self._record_round(
+                    len(done) + 1, last.layer_a, layer_b, contract, tests, referee_only=True
+                )
+                continue
             used = _rounds_used(done)
             if used >= limit:
                 return self._finish_failed(used)
             self._one_round(len(done) + 1, contract, tests)
+
+    def _stuck(self, tests: str) -> tuple[dict[str, str], dict[str, list[str]]]:
+        """Fix G9 T4: tests that failed the same way (same actual value) in the last two counted
+        rounds, and those of them whose expected text the requirement does not back. Only the
+        requirement tests are looked at, never the Phase 9 safety-net tests."""
+        counted = [r for r in self.inp.rounds if not _is_free_row(r)]
+        if len(counted) < 2 or counted[-1] is not self.inp.rounds[-1]:
+            return {}, {}
+        stuck = expectations.same_failures(counted[-2].layer_b, counted[-1].layer_b)
+        ours = find_test_methods(_parse(self.inp.frozen["test"].text))
+        stuck = {name: text for name, text in stuck.items() if name in ours}
+        ctx = self.context
+        wanted = expectations.requirement_text(
+            ctx.record, [f"{d.question} {d.choice}" for d in ctx.approach.decisions],
+            Contract.model_validate_json(self.inp.frozen["contract"].text),
+        )
+        bad = expectations.invented_by_method(tests, wanted)
+        return stuck, {name: texts for name, texts in bad.items() if name in stuck}
+
+    def _referee_rewrite(
+        self, unbacked: dict[str, list[str]], contract: Contract, tests: str
+    ) -> str:
+        """The test writer rewrites once; the new test set is saved as the next version."""
+        self._alive()
+        result = agent.write_tests(
+            self.client("tester"), self.context, contract, expectations.reason_for_writer(unbacked)
+        )
+        self._raise_for(result, UNABLE_MESSAGE)
+        code = self._expectations_backed(result.value, contract, 0)
+        names = set(unbacked)
+        # Only the stuck methods change; every other test (net, repro, added cases) stays as it is.
+        text = expectations.replace_methods(tests, code, names)
+        with self._turn() as tx:
+            current = read_latest_test_set(tx.conn, self.request_id, tx.state.approach_version)
+            insert_test_set(
+                tx.conn,
+                TestSet(
+                    request_id=self.request_id,
+                    test_set_version=next_test_set_version(tx.conn, self.request_id),
+                    approach_version=tx.state.approach_version,
+                    added_case_ids=current.added_case_ids if current else [],
+                    text=text,
+                    fingerprint=fingerprint(text),
+                    net_methods=current.net_methods if current else [],
+                    expected_to_change_methods=(
+                        current.expected_to_change_methods if current else []
+                    ),
+                ),
+                tx.now,
+            )
+            tx.audit(
+                "system",
+                "test_rewritten_by_referee",
+                {
+                    "old": expectations.expected_of(tests, names),
+                    "new": expectations.expected_of(code, names),
+                },
+            )
+        self.inp.test_set_text = text
+        return text
+
+    def _referee_note(self, tests: str) -> str:
+        """T4, backed: the requirement stands, so the code must change (no question asked)."""
+        stuck, unbacked = self._stuck(tests)
+        backed = {name for name in stuck if name not in unbacked}
+        return expectations.repair_note(tests, backed, self.inp.record) if backed else ""
 
     def _retry_unproven(self, last: RoundRecord, contract: Contract, tests: str) -> None:
         """Run only Layer B again on the saved code, as a new row (rounds are append-only, so the
@@ -625,10 +728,12 @@ class _Run:
             to_write, failures = self._finding_input()
         else:
             to_write, failures = self._fix_input(number)
+            failures = (failures + "\n" + self._referee_note(tests)).strip() if failures else ""
         with self._turn() as tx:
-            tx.set(step="b_running", current_round=len(self.inp.rounds))
-            # Not proven rows hold a row number but no budget, so show the budget count.
-            used_now = _rounds_used(self.inp.rounds) + 1
+            # Free rows (Not proven, referee) hold a row number but no budget: show the budget.
+            used_before = _rounds_used(self.inp.rounds)
+            tx.set(step="b_running", current_round=used_before)
+            used_now = used_before + 1
             self._note(tx, f"Round {used_now} of {limit}", "done")
         generated: dict[str, str] = {}
         problems: list[LayerAProblem] = []
@@ -637,12 +742,45 @@ class _Run:
             generated[path] = text
             problems += found
         layer_a = self._layer_a(generated, contract, problems)
+        if layer_a.ok:  # Fix G9 B3: a required result is checked before Layer B and the Tester
+            wrong = self._required_problems()
+            layer_a = LayerAResult(problems=wrong) if wrong else layer_a
         if not layer_a.ok:
             return self._record_round(number, layer_a, None, contract, tests)
         layer_b = self._layer_b(tests)
         # Fix D1 (D1-4): code tests only once the requirement tests pass.
         code_tests, dropped = self._code_tests(contract) if layer_b.ok else (None, [])
         return self._record_round(number, layer_a, layer_b, contract, tests, code_tests, dropped)
+
+    def _required_problems(self) -> list[LayerAProblem]:
+        """Each required `function(literals) -> value` pair is run once in the sandbox. A
+        mismatch is a repair note naming the criterion, the expected and the actual."""
+        code = {path: item.text for path, item in self.inp.code.items()}
+        text, found = required.check_file(required.required_results(self.inp.record), code)
+        if not found:
+            return []
+        policy = self.inp.policy
+        ran = run_tests(
+            self.reference,
+            code,
+            f"{self.test_id}_req",
+            text,
+            exclude=policy.build_sandbox_exclude,
+            timeout_seconds=policy.build_test_timeout_seconds,
+            settings=self.settings,
+        )
+        # A sandbox that could not start is Layer B's to report, not a code problem.
+        return [
+            LayerAProblem(
+                code="R1",
+                path=found[name][1],
+                text=required.mismatch_text(*found[name], item.message),
+            )
+            for item in (ran.tests if ran.ran else [])
+            if item.result in ("fail", "error")
+            for name in [item.name.rsplit(".", 1)[-1]]
+            if name in found
+        ]
 
     def _judge(self, code: dict[str, str], text: str, ran: LayerBResult) -> list[str]:
         """Fix D1 (E5): the Tester says, per failing C-test, code bug or wrong test. Returns the
@@ -952,6 +1090,7 @@ class _Run:
         code_tests: LayerBResult | None = None,
         dropped_code_tests: list[str] | None = None,
         layer_a_line: int | None = None,
+        referee_only: bool = False,
     ) -> bool:
         passed = layer_a.ok and layer_b is not None and layer_b.ok
         # F3: tests that never reported are the Developer Assistant's problem. Show the rows,
@@ -974,6 +1113,7 @@ class _Run:
             files_to_fix=fix,
             code_tests=code_tests,
             dropped_code_tests=dropped_code_tests or [],
+            referee_only=referee_only,
         )
         limit = self.inp.policy.build_max_rounds
         with self._turn() as tx:
@@ -1019,8 +1159,8 @@ class _Run:
             if not passed and not unproven:
                 tx.audit("system", "round_failed", {"round": number, "files_to_fix": fix})
                 counted = _rounds_used(self.inp.rounds) + 1  # this round is not appended yet
-                if counted < limit and not self.check:
-                    tx.set(step="b_round_failed", current_round=number)
+                if counted < limit and not self.check and not referee_only:
+                    tx.set(step="b_round_failed", current_round=counted)
                     tx.say(
                         "assistant",
                         _round_failed_text(counted, layer_a, layer_b, len(self.inp.cases), fix),
@@ -1314,7 +1454,7 @@ class _Run:
         with self._turn() as tx:
             if tx.request.status == STATUS_BUILDING:
                 tx.move_to(STATUS_TESTER_REVIEW)
-            tx.set(step="b_tester_review", current_round=number)
+            tx.set(step="b_tester_review", current_round=_budget_round(self.inp.rounds, number))
             tx.audit("system", "tester_review_started", {"round": number})
             tx.say("assistant", "Tests pass. The independent Tester is now reviewing the code.")
             return self._note(
@@ -1533,13 +1673,14 @@ class _Run:
         planned = [_clean(item.path) for item in self.inp.planned]
         fix = tester.files_to_fix(findings, planned)
         tx.move_to(STATUS_BUILDING)
-        tx.set(step="b_round_failed", current_round=number)
+        shown = _budget_round(self.inp.rounds, number)
+        tx.set(step="b_round_failed", current_round=shown)
         names = ", ".join(path.rsplit("/", 1)[-1] for path in fix)
         count = len(tester.must_fix_items(findings))
         tx.audit("system", "round_failed", {"round": number, "files_to_fix": fix, "by": "tester"})
         tx.say(
             "assistant",
-            f"Round {number}: the Tester found {count} Must fix. "
+            f"Round {shown}: the Tester found {count} Must fix. "
             + (f"Fixing only {names}." if len(fix) == 1 else f"Fixing only these files: {names}."),
         )
 
@@ -1693,7 +1834,18 @@ def _last_line(lines: list[ProgressLine], prefix: str) -> int | None:
 
 def _rounds_used(rounds: list[RoundRecord]) -> int:
     """Rounds against the budget. A Not proven row is the app's problem, so it is not counted."""
-    return sum(1 for item in rounds if not is_system_pause(item.layer_b))
+    return sum(1 for item in rounds if not _is_free_row(item))
+
+
+def _budget_round(rounds: list[RoundRecord], number: int) -> int:
+    """The round as the developer counts it: row `number` without the free rows before it (G9 F7).
+    The row number goes in the audit; the screen and the chat show this one."""
+    return _rounds_used([item for item in rounds if item.round <= number])
+
+
+def _is_free_row(item: RoundRecord) -> bool:
+    """Not proven rows and referee re-runs use no round of the budget."""
+    return item.referee_only or is_system_pause(item.layer_b)
 
 
 def _round_passed(record: RoundRecord) -> bool:

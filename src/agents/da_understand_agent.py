@@ -103,12 +103,15 @@ def build_prompt(
     rulebook_version: int,
     decided: Sequence[str] = (),
     queued: Sequence[str] = (),
+    rules_text: str = "",
 ) -> str:
-    """The prompt text. Only the charter's purpose, scope lists and glossary go in (rule R10).
+    """The prompt text: the charter's purpose, scope lists and glossary (rule R10), plus the
+    rest of the rulebook as rules_text (Fix G9 U1).
 
     decided and queued are the questions already decided and already waiting to be asked, so the
     interpreter returns only NEW ones (Phase 6 fixes, U5)."""
     values = {
+        "rules": rules_text,
         "rulebook_version": str(rulebook_version),
         "purpose": charter.purpose,
         "in_scope": _bullets(charter.in_scope),
@@ -139,13 +142,16 @@ def interpret(
     developer_text: str,
     decided: Sequence[str] = (),
     queued: Sequence[str] = (),
+    rules_text: str = "",
 ) -> InterpretResult:
     """Ask the interpreter, check the reply, retry once with a note. The record is never changed.
 
     developer_text is everything the developer has typed on this request, used to tell names
     the developer gave from names the interpreter invented.
     """
-    prompt = build_prompt(question, answer, record, charter, rulebook_version, decided, queued)
+    prompt = build_prompt(
+        question, answer, record, charter, rulebook_version, decided, queued, rules_text
+    )
     sent = prompt
     for attempt in range(1, MAX_ATTEMPTS + 1):
         llm_reply = client.complete(sent)

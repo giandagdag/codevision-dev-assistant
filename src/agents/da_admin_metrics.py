@@ -56,6 +56,7 @@ TRIGGER_WORDS = {
     "cap_hit_twice": "Cap hit twice",
     "out_of_scope": "Out of scope",
     "tester_unable_twice": "Tester unable twice",
+    "rule_exception": "Rule exception",
 }
 ESCALATION_STATUS = "ESCALATION_REQUIRED"
 # Start of the open item a dispute writes. Keep in step with DISPUTE_PREFIX in da_tester_flow.py;

@@ -10,6 +10,7 @@ The interpreter only suggests (rule R2). Questions, decisions, statuses and the 
 gate are all decided here.
 """
 
+import json
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -19,6 +20,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from agents import da_understand_rules as rules
 from agents.da_destructive import pending_for
 from agents.da_enhance_checks import (
     available_symbols,
@@ -29,8 +31,10 @@ from agents.da_enhance_checks import (
 from agents.da_enhance_flow import baseline_texts, maybe_offer_switch
 from agents.da_escalation_flow import escalate as open_escalation
 from agents.da_escalation_flow import request_triggers
-from agents.da_escalation_triggers import get_help, out_of_scope_understand
+from agents.da_escalation_triggers import get_help, out_of_scope_understand, rule_exception
 from agents.da_llm_client import LLMClient, LLMClientError
+from agents.da_rule_check_agent import RuleCheckResult, run_rule_check
+from agents.da_rule_conflicts import record_fingerprint, rulebook_text
 from agents.da_safety_check import (
     DECISION_P5,
     DECISION_STOP,
@@ -58,6 +62,7 @@ from db_table_functions.db_tbl_da_audit import (
     insert_audit_event,
     list_audit_events,
 )
+from db_table_functions.db_tbl_da_escalation import read_open_escalation, update_escalation
 from db_table_functions.db_tbl_da_handoff import refuse_if_locked
 from db_table_functions.db_tbl_da_requests import (
     get_rulebook_for_request,
@@ -81,6 +86,7 @@ from db_table_functions.db_tbl_da_understand import (
     read_session,
     save_session,
 )
+from pydantic_classes.da_escalation_models import ExceptionAsk
 from pydantic_classes.da_models import (
     ALLOWED_MOVES,
     STATUS_CLARIFICATION,
@@ -94,6 +100,7 @@ from pydantic_classes.da_models import (
     display_status,
 )
 from pydantic_classes.da_request_record_models import (
+    LIST_LENGTH_LIMIT,
     QUESTION_COUNT,
     TEXT_LIMIT,
     AssumedCase,
@@ -176,6 +183,8 @@ SENIOR_MESSAGE = "This change has many open decisions. Please get help from a se
 # B2 S7c: the two buttons at the decision limit. (The checkpoint has its own "Proceed".)
 NO_NEGATIVE_OPTION = "No negative scenario applies"  # B2 S8
 EDIT_ASSUMPTION_PREFIX = "Edit assumption "  # B2 P34, then the number
+OLDER_REQUEST_NOTE = "Rule check: not run (older request)"
+EXCEPTION_OFF_MESSAGE = "Exception requests are not routed to a senior at the moment."
 EDIT_ASSUMPTION_NEEDS_TEXT = (
     "Type the new sentence in the box (one line, up to 300 characters), "
     "then press the Edit assumption button."
@@ -619,7 +628,23 @@ def choose_option(
         return _decide(settings, request_id, option, False, base_revision, now, client)
     if session.step == "senior" and option == ASSUME_OPTION:
         return _assume(settings, session, base_revision, now, client)
+    if option.startswith(rules.ASK_EXCEPTION_PREFIX):  # the reason lives in the box
+        raise UnderstandError(rules.EXCEPTION_NEEDS_REASON)
+    if option.startswith(rules.NOT_NEEDED_PREFIX):
+        raise UnderstandError(rules.NOT_NEEDED_NEEDS_REASON)
+    if session.step == "correction" and option in rules.buttons(session):
+        return _rule_button(settings, session, option, base_revision, now, client)
+    # Fix G9 U2: Proceed reads the record against the rulebook first (AI call, no lock held).
+    checked = None
+    # A check that already read this exact text is not asked again (one AI call per round).
+    fresh = session.rule_check_state == "ok" and session.rule_check_for == record_fingerprint(
+        session.record
+    )
+    if session.step == "checkpoint" and option == PROCEED_OPTION and not fresh:
+        checked = _check_rules(settings, session, client)
     with _turn(settings.db_path, request_id, base_revision, now) as turn:
+        if checked is not None:
+            _store_rule_check(turn, *checked)
         if turn.session.step == "checkpoint":
             _choose_checkpoint(turn, option)
         elif turn.session.step == "senior":
@@ -669,6 +694,10 @@ def get_understand_view(settings: Settings, request_id: str) -> UnderstandView:
         record = session.record
         if session.step == "done":
             record = read_confirmed_record(conn, request_id, request.version) or record
+        older = session.step == "done" and not _rule_check_ran(conn, request_id)
+        note = OLDER_REQUEST_NOTE if older else ""
+        question = _dropped_case_question(conn, request_id)
+        note = f"{note}\n{question}".strip() if question else note
     return UnderstandView(
         request=request,
         record=record,
@@ -687,7 +716,40 @@ def get_understand_view(settings: Settings, request_id: str) -> UnderstandView:
         text_prompt=CHECKPOINT_PROMPT if session.step == "checkpoint" else "",
         revision=session.revision,
         demo_mode=settings.llm_provider == "fake",
+        rule_check_note=note,
     )
+
+
+def _dropped_case_question(conn: sqlite3.Connection, request_id: str) -> str:
+    """Fix G9 T3: a test case dropped for expecting text the requirement lacks becomes a question
+    on the Summary tab ('' when none was dropped)."""
+    try:
+        rows = conn.execute(
+            "SELECT details FROM da_audit_events WHERE request_id = ? "
+            "AND event_type = 'test_case_dropped' ORDER BY event_id",
+            (request_id,),
+        ).fetchall()
+    except sqlite3.OperationalError:  # no audit table yet
+        return ""
+    names = sorted({name for row in rows for name in json.loads(row[0]).get("cases", [])})
+    if not names:
+        return ""
+    return (
+        "Open question: the requirement does not say what these tests should expect, so they "
+        f"were not written: {', '.join(names)}. Add the exact result to the requirement."
+    )
+
+
+def _rule_check_ran(conn: sqlite3.Connection, request_id: str) -> bool:
+    """The audit trail holds a `rule_check` line once the check ran (Understand or v2+)."""
+    try:
+        found = conn.execute(
+            "SELECT 1 FROM da_audit_events WHERE request_id = ? AND event_type = 'rule_check'",
+            (request_id,),
+        ).fetchone()
+    except sqlite3.OperationalError:  # no audit table yet: nothing ever ran
+        return False
+    return found is not None
 
 
 def list_my_requests(settings: Settings, developer_id: str | None = None) -> list[Request]:
@@ -728,6 +790,7 @@ def _interpret(
             # Told what is already decided or waiting, so only NEW questions come back (U5).
             decided=[decision.question for decision in session.record.decisions],
             queued=[pending.question for pending in session.pending_decisions],
+            rules_text=rulebook_text(pinned.rulebook),
         )
     except (ConfigError, LLMClientError) as error:
         # Shown in the chat as a plain message: e.g. onprem "not configured yet".
@@ -879,6 +942,71 @@ def _ask_decision(turn: _Turn) -> None:
     )
 
 
+def _check_rules(
+    settings: Settings, session: UnderstandSession, client: LLMClient | None
+) -> tuple[RuleCheckResult, str]:
+    """One rule check of the record as it is now, and the fingerprint of the text it read."""
+    rulebook = get_rulebook_for_request(settings.db_path, session.request_id).rulebook
+    result = run_rule_check(settings, session.record, rulebook, client)
+    return result, record_fingerprint(session.record)
+
+
+def _store_rule_check(turn: _Turn, result: RuleCheckResult, fingerprint: str) -> None:
+    session = turn.session
+    session.rule_conflicts = result.conflicts
+    session.gaps = result.gaps
+    session.rule_check_state = "ok" if result.ran else "failed"
+    session.rule_check_for = fingerprint
+    # Counts only: never the AI's words (they stay in the rejected-reply log).
+    turn.audit(
+        "system",
+        "rule_check",
+        {"ran": result.ran, "conflicts": len(result.conflicts), "gaps": len(result.gaps)},
+    )
+
+
+def _rule_button(
+    settings: Settings,
+    session: UnderstandSession,
+    option: str,
+    base_revision: int,
+    now: datetime,
+    client: LLMClient | None,
+) -> UnderstandView:
+    """A rule-conflict button at the correction step (U5): use the wording, change it yourself,
+    or try the check again. Wording and Try again run the check again, then the gate."""
+    request_id = session.request_id
+    record, field, checked = session.record, "", None
+    conflict = rules.conflict_for(session, option, rules.USE_WORDING_PREFIX)
+    gap = rules.gap_for(session, option, rules.ADD_CRITERION_PREFIX)
+    try:
+        if conflict is not None:
+            record, field = rules.with_wording(session.record, conflict)
+        elif gap is not None:  # F1c: the suggested criterion becomes the next AC-n
+            record, field = rules.with_gap_criterion(session.record, gap), "acceptance_criteria"
+    except ValueError as error:
+        raise UnderstandError(str(error)) from error
+    if conflict is not None or gap is not None or option == rules.TRY_AGAIN_OPTION:
+        checked = _check_rules(settings, session.model_copy(update={"record": record}), client)
+    with _turn(settings.db_path, request_id, base_revision, now) as turn:
+        turn.say("developer", option)
+        if conflict is not None:
+            turn.session.record = record
+            turn.session.last_changed_fields = [field]
+            turn.audit("developer", "rule_wording_used", {"rule": conflict.rule})
+        if gap is not None:
+            turn.session.record = record
+            turn.session.last_changed_fields = [field]
+            number = option.removeprefix(rules.ADD_CRITERION_PREFIX)  # not the AI's words
+            turn.audit("developer", "gap_criterion_added", {"gap": number})
+        if checked is None:  # Change it myself: the box is already open
+            turn.say("assistant", rules.CHANGE_MYSELF_MESSAGE)
+        else:
+            _store_rule_check(turn, *checked)
+            _run_gate(turn)
+    return get_understand_view(settings, request_id)
+
+
 def _run_gate(turn: _Turn, announce: bool = True) -> bool:
     """Run the confirmation gate. Pass: the checkpoint. Fail: list every problem and ask what
     should change. Returns True if it passed.
@@ -888,6 +1016,7 @@ def _run_gate(turn: _Turn, announce: bool = True) -> bool:
     """
     session = turn.session
     problems = confirmation_gate_problems(session.record, len(session.pending_decisions))
+    problems += rules.gate_lines(session)
     if problems:
         session.step = "correction"
         turn.move_to(STATUS_CLARIFICATION)
@@ -1417,6 +1546,86 @@ def set_no_negative_reason(
     return get_understand_view(settings, request_id)
 
 
+def ask_for_exception(
+    settings: Settings,
+    request_id: str,
+    option: str,
+    reason: str,
+    base_revision: int,
+    now: datetime | None = None,
+) -> UnderstandView:
+    """Fix G9 U6: ask the capability's senior to allow one conflict (the box holds the reason).
+    One Inbox item; the request waits at Understand. A second ask joins the open item."""
+    now = now or datetime.now(UTC)
+    with _turn(settings.db_path, request_id, base_revision, now) as turn:
+        session = turn.session
+        if session.step != "correction":
+            raise UnderstandError(_wrong_step_message(session))
+        conflict = rules.conflict_for(session, option, rules.ASK_EXCEPTION_PREFIX)
+        if conflict is None:
+            raise UnderstandError(_not_a_choice_message(option, _choices_for(session)))
+        text = " ".join((reason or "").split())
+        if len(text) < rules.EXCEPTION_MIN_CHARS:
+            raise UnderstandError(rules.EXCEPTION_NEEDS_REASON)
+        text = _accept_developer_text(text)[:500]
+        line = f"{conflict.criterion} may break {conflict.rule}: {text}"
+        decision = rule_exception(request_triggers(turn.conn, request_id), line)
+        turn.say("developer", f"{option}: {text}")
+        result = open_escalation(turn.conn, request_id, decision, turn.now, line)
+        if result.opened or result.reason_added:
+            row = read_open_escalation(turn.conn, request_id)
+            ask = ExceptionAsk(criterion=conflict.criterion, rule=conflict.rule, reason=text)
+            asks = [*row.exception_asks, ask]
+            update_escalation(
+                turn.conn, row.model_copy(update={"exception_asks": asks}), row.revision, turn.now
+            )
+            details = {"rule": conflict.rule, "for": conflict.criterion}
+            turn.audit("developer", "rule_exception_asked", details)
+        if result.opened:
+            turn.move_to(STATUS_ESCALATION)
+            turn.say("assistant", "A senior developer will look at your exception request.")
+        elif decision.switched_off:
+            turn.say("assistant", EXCEPTION_OFF_MESSAGE)
+    return get_understand_view(settings, request_id)
+
+
+def gap_not_needed(
+    settings: Settings,
+    request_id: str,
+    option: str,
+    reason: str,
+    base_revision: int,
+    now: datetime | None = None,
+) -> UnderstandView:
+    """Fix G9 F1c: the developer says a gap is not needed (the box holds the reason). It is
+    recorded as an out-of-scope line, so the check never asks about it again."""
+    now = now or datetime.now(UTC)
+    with _turn(settings.db_path, request_id, base_revision, now) as turn:
+        session = turn.session
+        if session.step != "correction":
+            raise UnderstandError(_wrong_step_message(session))
+        gap = rules.gap_for(session, option, rules.NOT_NEEDED_PREFIX)
+        if gap is None:
+            raise UnderstandError(_not_a_choice_message(option, _choices_for(session)))
+        text = " ".join((reason or "").split())
+        if len(text) < rules.EXCEPTION_MIN_CHARS:
+            raise UnderstandError(rules.NOT_NEEDED_NEEDS_REASON)
+        text = _accept_developer_text(text)
+        line = rules.not_needed_line(gap, text)
+        if len(session.record.out_of_scope) >= LIST_LENGTH_LIMIT:
+            raise UnderstandError(rules.NO_ROOM_MESSAGE)
+        turn.say("developer", f"{option}: {text}")
+        session.record = session.record.model_copy(
+            update={"out_of_scope": [*session.record.out_of_scope, line]}
+        )
+        session.gaps = [g for g in session.gaps if g != gap]
+        session.last_changed_fields = ["out_of_scope"]
+        number = option.removeprefix(rules.NOT_NEEDED_PREFIX)
+        turn.audit("developer", "gap_not_needed", {"gap": number, "reason": text})
+        _run_gate(turn)
+    return get_understand_view(settings, request_id)
+
+
 def _proceed_assumption_slots(session: UnderstandSession) -> list[int]:
     """Positions in `record.assumptions` of the Proceed assumptions. They sit in the same order as
     `assumed_cases`, so slot n of one is slot n of the other (P34)."""
@@ -1466,8 +1675,9 @@ def edit_assumption(
 
 
 def _choices_for(session: UnderstandSession) -> list[str]:
-    if session.step == "correction" and _no_negative_offered(session.record):
-        return [NO_NEGATIVE_OPTION]
+    if session.step == "correction":
+        no_negative = [NO_NEGATIVE_OPTION] if _no_negative_offered(session.record) else []
+        return [*rules.buttons(session), *no_negative]
     if session.step == "decision":
         return _decision_choices(session.pending_decisions[0])
     if session.step == "checkpoint":

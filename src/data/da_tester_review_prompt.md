@@ -72,5 +72,6 @@ Rules:
 - `cites` is what the finding stands on. Check 4: `DD-n` or `RU-n` from the lists above.
   Check 5: `PLAN:<path>` of a planned file, or a criterion such as `AC-2` that the code goes beyond.
   Check 6: a rule ID from the judgement rules above.
-- `message` is one plain sentence, up to 300 characters.
+- `message` is one plain sentence, up to 300 characters. A finding names what is wrong and what to
+  change. If the code follows the rule, write no finding.
 - A finding with a wrong file, line, quote or cite is thrown away. Report only what you can point at.

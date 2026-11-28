@@ -15,6 +15,7 @@ from agents.da_approach_agent import fill_template
 from agents.da_build_agent import format_approach, format_cases
 from agents.da_build_checks import case_ids_from_method, find_test_methods
 from agents.da_guidance import guidance_block
+from agents.da_understand_rules import exception_ids, exception_prompt_lines
 from pydantic_classes.da_approach_models import ApproachVersion, TestCase
 from pydantic_classes.da_build_models import (
     LABEL_NOT_PASSING,
@@ -228,6 +229,20 @@ def allowed_cites(
     return set()
 
 
+def cite_notes(
+    approach: ApproachVersion, record: RequestRecord, rules: list[Rule]
+) -> dict[str, str]:
+    """Fix G9 F3: the plain meaning of every cite a finding may show (tooltip text)."""
+    notes = {rule.rule_id: f"{rule.rule_id}: {rule.title}" for rule in rules}
+    for n, item in enumerate(approach.decisions, 1):
+        notes[f"DD-{n}"] = f"Design decision {n}: {item.question} → {item.choice}"
+    for n, item in enumerate(approach.plan.reuse_decisions, 1):
+        notes[f"RU-{n}"] = f"Reuse decision {n}: {item.decision}: {item.reason}"
+    for line in record.exceptions:
+        notes[line.split(":", 1)[0]] = line
+    return notes
+
+
 def check_evidence(
     item: ReplyFinding, files: dict[str, str], cites: set[str], window: int
 ) -> tuple[ReplyFinding | None, str]:
@@ -278,6 +293,36 @@ def required_by(line_text: str, record: RequestRecord) -> str:
     return ""
 
 
+def allowed_by(cites: str, line_text: str, message: str, record: RequestRecord) -> str:
+    """Fix G9 U7: the RX-n that allows this finding's rule for the criterion the code line serves
+    ("" when none). The criterion is the one the finding names, or the one whose text holds a
+    string literal of the line. Another criterion's finding stays a Must fix."""
+    for (criterion, rule), rx in exception_ids(record).items():
+        if rule != cites:
+            continue
+        found = next((c for c in record.acceptance_criteria if c.id == criterion), None)
+        words = " ".join((message, line_text))
+        literals = [m.group(1) or m.group(2) for m in _STRING_LITERAL.finditer(line_text)]
+        text = f"{found.given} {found.when} {found.then}".lower() if found else ""
+        if re.search(rf"(?<![\w-]){re.escape(criterion)}(?!\w)", words) or any(
+            lit.lower() in text for lit in literals
+        ):
+            return rx
+    return ""
+
+
+_SAYS_COMPLIES = re.compile(
+    r"\b(complies|comply|complying|meets|follows|satisfies|in line with)\b", re.IGNORECASE
+)
+_SAYS_PROBLEM = re.compile(r"\b(but|however|does not|doesn't|do not|don't)\b", re.IGNORECASE)
+COMPLIES_REASON = "Not a problem: the finding says the code complies"
+
+
+def says_complies(message: str) -> bool:
+    """Fix G9 F1: the message praises the code and names no problem."""
+    return bool(_SAYS_COMPLIES.search(message)) and not _SAYS_PROBLEM.search(message)
+
+
 def split_findings(
     items: list[ReplyFinding],
     files: dict[str, str],
@@ -292,6 +337,8 @@ def split_findings(
     for item in items:
         cites = allowed_cites(item.check, approach, record, rules, planned)
         checked, reason = check_evidence(item, files, cites, window)
+        if checked is not None and says_complies(checked.message):
+            checked, reason = None, COMPLIES_REASON
         base = checked or item
         message = base.message.strip()[:MESSAGE_LIMIT]
         severity = base.severity
@@ -301,6 +348,9 @@ def split_findings(
             if ac:  # B1 guard: the audit trail is this note in the saved review
                 severity = "fyi"
                 message = f"Required by {ac}. {message}"[:MESSAGE_LIMIT]
+            elif rx := allowed_by(base.cites, line_text, message, record):
+                severity = "fyi"
+                message = f"Allowed by {rx}. {message}"[:MESSAGE_LIMIT]
         result.append(
             Finding(
                 finding_id="T",
@@ -529,7 +579,11 @@ def build_review_prompt(data: ReviewInput, only_file: str | None = None) -> str:
         "results": format_results(data.layer_b),
         "code": "\n\n".join(blocks) or "(no code)",
     }
-    return fill_template(REVIEW_PROMPT, values) + guidance_block(data.senior_guidance)
+    return (
+        fill_template(REVIEW_PROMPT, values)
+        + exception_prompt_lines(data.record)
+        + guidance_block(data.senior_guidance)
+    )
 
 
 def _same(a: str, b: str) -> bool:

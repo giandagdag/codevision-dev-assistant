@@ -69,10 +69,10 @@ def test_slow_server_does_not_leave_home_on_screen(make_live_page, live, monkeyp
     base, view = live
     original = cb.show_page
 
-    def slow(search, refresh):
+    def slow(search, refresh, pathname=None):
         if search and "request=" in search:
             time.sleep(3)
-        return original(search, refresh)
+        return original(search, refresh, pathname)
 
     monkeypatch.setattr(cb, "show_page", slow)
     app = server_module.create_app()

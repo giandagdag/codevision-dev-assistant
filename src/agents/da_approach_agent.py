@@ -29,6 +29,7 @@ from agents.da_llm_client import LLMClient, LLMClientError, LLMReply, get_llm_cl
 from agents.da_problem_kinds import problem_kinds
 from agents.da_rejected_reply_log import write_rejected_reply
 from agents.da_understand_agent import strip_think_block
+from agents.da_understand_rules import exception_prompt_lines
 from configs.da_config import Settings
 from da_logging import get_logger
 from pydantic_classes.da_approach_models import ApproachDecision, ApproachReply, ApproachVersion
@@ -217,7 +218,11 @@ def build_prompt(call: str, context: ApproachContext) -> str:
         "change_section": _change_section(context.change_text),
         "call_rules": CALL_RULES[call],
     }
-    return fill_template(PROMPT_FILE, values) + guidance_block(context.senior_guidance)
+    return (
+        fill_template(PROMPT_FILE, values)
+        + exception_prompt_lines(context.record)
+        + guidance_block(context.senior_guidance)
+    )
 
 
 def fill_template(template_file: Path, values: dict[str, str]) -> str:

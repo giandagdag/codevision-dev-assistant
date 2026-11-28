@@ -18,7 +18,7 @@ import json
 import sqlite3
 from datetime import datetime
 
-from db_table_functions.da_db import to_db_time
+from db_table_functions.da_db import add_column_if_missing, to_db_time
 from db_table_functions.db_tbl_da_approach import ensure_approach_tables
 from db_table_functions.db_tbl_da_enhance import ensure_enhance_tables
 from db_table_functions.db_tbl_da_escalation import ensure_escalation_tables
@@ -113,6 +113,7 @@ CREATE TABLE IF NOT EXISTS da_build_rounds (
     files_to_fix   TEXT NOT NULL DEFAULT '[]',
     code_tests     TEXT,
     dropped_code_tests TEXT NOT NULL DEFAULT '[]',
+    referee_only   INTEGER NOT NULL DEFAULT 0,
     created_at     TEXT NOT NULL,
     PRIMARY KEY (request_id, build_number, round)
 );
@@ -176,10 +177,14 @@ def _add_code_test_columns(conn: sqlite3.Connection) -> None:
     """Fix D1: da_build_rounds gets the code test columns. Old rows read as no code tests."""
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(da_build_rounds)")}
     if "code_tests" not in columns:
-        conn.execute("ALTER TABLE da_build_rounds ADD COLUMN code_tests TEXT")
+        add_column_if_missing(conn, "da_build_rounds", "code_tests", "TEXT")
     if "dropped_code_tests" not in columns:
-        conn.execute(
-            "ALTER TABLE da_build_rounds ADD COLUMN dropped_code_tests TEXT NOT NULL DEFAULT '[]'"
+        add_column_if_missing(
+            conn, "da_build_rounds", "dropped_code_tests", "TEXT NOT NULL DEFAULT '[]'"
+        )
+    if "referee_only" not in columns:  # Fix G9 T4: old rows read as a normal round
+        add_column_if_missing(
+            conn, "da_build_rounds", "referee_only", "INTEGER NOT NULL DEFAULT 0"
         )
 
 
@@ -189,7 +194,7 @@ def _add_kind_column(conn: sqlite3.Connection) -> None:
     `build`."""
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(da_build_runs)")}
     if "kind" not in columns:
-        conn.execute("ALTER TABLE da_build_runs ADD COLUMN kind TEXT NOT NULL DEFAULT 'build'")
+        add_column_if_missing(conn, "da_build_runs", "kind", "TEXT NOT NULL DEFAULT 'build'")
 
 
 # --- the working state ---
@@ -387,8 +392,8 @@ def read_frozen_files(
 def insert_round(conn: sqlite3.Connection, item: RoundRecord, now: datetime) -> None:
     conn.execute(
         "INSERT INTO da_build_rounds (request_id, build_number, round, layer_a, layer_b,"
-        " failure_report, timed_out, files_to_fix, code_tests, dropped_code_tests, created_at)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " failure_report, timed_out, files_to_fix, code_tests, dropped_code_tests,"
+        " referee_only, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             item.request_id,
             item.build_number,
@@ -400,6 +405,7 @@ def insert_round(conn: sqlite3.Connection, item: RoundRecord, now: datetime) -> 
             json.dumps(item.files_to_fix),
             item.code_tests.model_dump_json() if item.code_tests else None,
             json.dumps(item.dropped_code_tests),
+            1 if item.referee_only else 0,
             to_db_time(now),
         ),
     )
@@ -498,6 +504,7 @@ def _to_round(row: sqlite3.Row) -> RoundRecord:
             LayerBResult.model_validate_json(row["code_tests"]) if row["code_tests"] else None
         ),
         dropped_code_tests=json.loads(row["dropped_code_tests"]),
+        referee_only=bool(row["referee_only"]),
         created_at=datetime.fromisoformat(row["created_at"]),
     )
 

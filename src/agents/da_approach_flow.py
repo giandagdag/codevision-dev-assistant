@@ -901,11 +901,16 @@ def _run_tester(
                 "they are. Do you accept the test plan?",
             )
             return
+        # F1e (FYI): a case the requirement does not back is not planned, only named.
+        not_covered = [] if result is None else result.not_covered
+        if not_covered:
+            turn.audit("system", "test_case_not_covered", {"count": len(not_covered)})
+        fyi = "".join(f"\nFYI, Not covered by the requirement: {text}" for text in not_covered)
         turn.say(
             "assistant",
             f"The Tester wrote {len(cases)} test cases covering {criteria} of "
             f"{len(snap.record.acceptance_criteria)} criteria, in plain language. Is anything "
-            "missing? You can add your own cases.",
+            f"missing? You can add your own cases.{fyi}",
         )
 
 

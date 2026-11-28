@@ -14,7 +14,7 @@ import json
 import sqlite3
 from datetime import datetime
 
-from db_table_functions.da_db import to_db_time
+from db_table_functions.da_db import add_column_if_missing, to_db_time
 from db_table_functions.db_tbl_da_understand import (
     STALE_MESSAGE,
     StaleRevisionError,
@@ -144,7 +144,7 @@ def ensure_enhance_tables(conn: sqlite3.Connection) -> None:
     # stay valid). Like adding a field to a physical file with CHGPF.
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(da_unassigned_files)")}
     if "resolved_capability" not in columns:
-        conn.execute("ALTER TABLE da_unassigned_files ADD COLUMN resolved_capability TEXT")
+        add_column_if_missing(conn, "da_unassigned_files", "resolved_capability", "TEXT")
 
 
 # --- the working state ---

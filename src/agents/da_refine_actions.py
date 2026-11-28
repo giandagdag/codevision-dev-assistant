@@ -26,6 +26,7 @@ from agents import da_refine_lanes as lanes
 from agents import da_refine_owntest as owntest
 from agents import da_refine_picks as picks
 from agents import da_refine_revision as revision
+from agents import da_refine_rules as rules
 from agents.da_discover_flow import (
     CONFIRM_OPTION,
     ESCALATE_OPTION,
@@ -198,7 +199,11 @@ def get_refine_bar(settings, request_id: str) -> RefineBox:
     if step == STEP_REQ_FINDINGS:
         return _findings_bar(settings, request_id, rev)
     if step in LANE_STEPS:
-        return _lane_bar(step, request.status, rev)
+        box = _lane_bar(step, request.status, rev)
+        if step == lanes.STEP_REQ_CHECKPOINT and state and request.status == STATUS_REVISION:
+            box.buttons = [*rules.rule_buttons(state), *box.buttons]  # F5: conflicts and gaps
+            box.note = "\n".join(part for part in (box.note, rules.rule_note(state)) if part)
+        return box
     mode = workspace.mode if workspace else "picker"
     box = get_refine_box(settings, request_id, request.status, build.step, mode)
     if not box.offered or step != lanes.STEP_START:
@@ -333,6 +338,8 @@ def perform_refine(
     call = _Call(key, settings, request_id, refine_revision, build_revision, text or "", arg)
     if key.startswith("restore_pick:"):  # the build number rides in the button key
         call.key, call.arg = "restore_pick", key.partition(":")[2]
+    if key.startswith(rules.KEY_PREFIX):  # F5: "rc:use:1", the action and number ride in the key
+        call.key, call.arg = "rule", key
     handler = HANDLERS.get(call.key)
     if handler is None:
         raise RefineError("That button runs in your browser or does not exist.")
@@ -409,6 +416,13 @@ def _confirm_v2(call: _Call) -> Outcome:
     s, r = call.settings, call.request_id
     lanes.confirm_revision(s, r, call.refine_revision)
     return _chain(call, lambda: revision.run_discover(s, r, call.rr()))
+
+
+def _rule(call: _Call) -> Outcome:
+    rules.perform_rule_button(
+        call.settings, call.request_id, call.refine_revision, call.arg, call.text
+    )
+    return Outcome()
 
 
 def _findings_ok(call: _Call) -> Outcome:
@@ -502,6 +516,7 @@ HANDLERS: dict[str, Callable[[_Call], Outcome]] = {
     "cancel": _plain(lanes.cancel),
     "revise": _plain(lanes.revise),
     "confirm_v2": _confirm_v2,
+    "rule": _rule,
     "discover": _plain(revision.run_discover),
     "findings_ok": _findings_ok,
     "findings_escalate": _plain(help_.escalate_findings),

@@ -74,6 +74,20 @@ def test_the_tester_prompt_takes_no_code_at_all(context, fake_contract):
     assert "return True" not in prompt and "```" not in prompt
 
 
+def test_the_tester_prompt_shows_each_criterion_word_for_word(context, fake_contract):
+    """Fix G9 T1: exact criterion text, the copy-exactly rule and the RX-n lines."""
+    context.record.exceptions = ["RX-1: CV-PY-001 allowed for AC-1, approved by Sam, legacy"]
+    prompt = agent.build_tests_prompt(context, fake_contract)
+
+    for case in context.cases:
+        item = next(c for c in context.record.acceptance_criteria if c.id == case.criterion_id)
+        assert f"- {item.id} ({item.kind}): given {item.given}; when {item.when}" in prompt
+        assert item.then in prompt
+    assert "Never invent message text" in prompt
+    assert "RX-1: CV-PY-001 allowed for AC-1" in prompt
+    assert "{{" not in prompt
+
+
 def test_the_code_prompt_sends_this_file_in_full_and_the_others_as_contract_lines(
     context, fake_contract
 ):

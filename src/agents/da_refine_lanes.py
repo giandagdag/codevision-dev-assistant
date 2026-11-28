@@ -34,7 +34,9 @@ from agents.da_refine_checks import (
     diff_records,
     refine_cap_reached,
 )
+from agents.da_rule_check_agent import COULD_NOT_RUN, run_rule_check
 from agents.da_understand_checks import developer_message_problem
+from agents.da_understand_rules import conflict_lines, gap_lines, without_excepted
 from configs.da_config import ConfigError
 from db_table_functions.da_db import begin_write, open_db
 from db_table_functions.db_tbl_da_approach import (
@@ -354,7 +356,10 @@ def revise(
         else:
             diff = diff_records(context.record, proposed)
             tx.say("assistant", checkpoint_text(diff))
-            tx.set(step=STEP_REQ_CHECKPOINT, pending_record=proposed)
+            tx.set(
+                step=STEP_REQ_CHECKPOINT, pending_record=proposed,
+                check_conflicts=[], check_gaps=[], check_failed=False,
+            )  # fmt: skip
         return _save(tx, base_revision)
 
 
@@ -389,11 +394,56 @@ def checkpoint_text(diff: RecordDiff) -> str:
     return "\n".join(lines)
 
 
+def check_record(settings, request_id: str, record, client: LLMClient | None) -> dict:
+    """Fix G9 U8: the Understand rule check on a proposed version. One AI call, no lock held.
+    Returns the state fields that hold the result (conflicts an exception allows are left out)."""
+    rulebook = get_rulebook_for_request(settings.db_path, request_id).rulebook
+    result = run_rule_check(settings, record, rulebook, client)
+    if not result.ran:
+        return {"check_conflicts": [], "check_gaps": [], "check_failed": True}
+    kept = without_excepted(record, result.conflicts)
+    return {"check_conflicts": kept, "check_gaps": result.gaps, "check_failed": False}
+
+
+def check_lines(found: dict) -> list[str]:
+    """The same result in words, one line per open item."""
+    lines = conflict_lines(found["check_conflicts"]) + gap_lines(found["check_gaps"])
+    return [COULD_NOT_RUN] if found["check_failed"] else lines
+
+
+def _rule_problems(
+    settings, request_id: str, base_revision: int, client: LLMClient | None
+) -> tuple[list[str], dict]:
+    """The lines that stop Confirm v2 (empty when the record follows the rulebook), and the
+    result to save so the screen can draw the buttons."""
+    with open_db(settings.db_path) as conn:
+        ensure_build_tables(conn)
+        state = _load_state(conn, request_id, base_revision)
+        _require_step(state, STEP_REQ_CHECKPOINT)
+    if state.pending_record is None:
+        return [], {}  # the "no proposed change" message is raised below
+    found = check_record(settings, request_id, state.pending_record, client)
+    return check_lines(found), found
+
+
 def confirm_revision(
-    settings, request_id: str, base_revision: int, now: datetime | None = None
+    settings,
+    request_id: str,
+    base_revision: int,
+    now: datetime | None = None,
+    client: LLMClient | None = None,
 ) -> RefineState:
     """Confirm v2: save the next record version (same CVDA number) and hand over to Discover."""
     now = now or datetime.now(UTC)
+    problems, found = _rule_problems(settings, request_id, base_revision, client)
+    if problems:
+        with _write(settings.db_path) as conn:  # keep the items: the screen draws their buttons
+            request = _require_request(conn, request_id)
+            tx = RefineTx(conn, request, _load_state(conn, request_id, base_revision), now)
+            tx.set(**found)
+            _save(tx, base_revision)
+        listed = "\n".join(f"- {line}" for line in problems)
+        raise RefineError(f"Before you can confirm, these items need attention:\n{listed}")
     with _write(settings.db_path) as conn:
         request = _require_request(conn, request_id)
         state = _load_state(conn, request_id, base_revision)
@@ -406,6 +456,7 @@ def confirm_revision(
         insert_confirmed_record(conn, record, request.developer_id, now)
         tx = RefineTx(conn, request, state, now)
         tx.say("developer", CONFIRM_V2_LABEL)
+        tx.audit("system", "rule_check", {"ran": True, "conflicts": 0, "version": record.version})
         tx.audit(
             "developer",
             "record_revised",

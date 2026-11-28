@@ -77,7 +77,7 @@ def test_10_48_handoffs_and_escalations_are_real_numbers(db_path):
     assert report.escalations.value == 3
     assert dict(report.escalations.items) == {
         "Get help": 2, "Dispute": 1, "Cap hit twice": 0, "Out of scope": 0,
-        "Tester unable twice": 0,
+        "Tester unable twice": 0, "Rule exception": 0,
     }  # fmt: skip
     assert "open 1, closed 2" in report.escalations.text
     assert "5.0 hours" in report.escalations.text  # (6 h + 4 h) / 2

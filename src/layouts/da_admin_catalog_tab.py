@@ -88,6 +88,7 @@ from styles import da_styles
 
 # --- Capability catalog and the Unassigned queue (Phase 11b) ---
 
+MISSING_CHIP_LABEL = "Show: Missing backup"  # Fix G9 S3
 CATALOG_TABLE = "capabilities"
 CATALOG_COLUMNS = ("name", "description", "named_senior", "backup_senior", "kind", "path_patterns")
 CAPABILITY_KINDS = ("Business", "Shared foundation")
@@ -170,8 +171,9 @@ def catalog_view(
                             size="xs",
                             w=380,
                         ),
-                        dmc.Chip("Missing backup", id=CAP_MISSING_ID, checked=missing_backup),
+                        dmc.Chip(MISSING_CHIP_LABEL, id=CAP_MISSING_ID, checked=missing_backup),
                     ],
+                    justify="space-between",  # G9 S3: the chip sits at the far right end
                     mb="xs",
                 ),
                 html.Div(id=CAP_MEANING_ID),

@@ -12,7 +12,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from db_table_functions.da_db import open_db, to_db_time
+from db_table_functions.da_db import add_column_if_missing, open_db, to_db_time
 from db_table_functions.db_tbl_da_understand import (
     STALE_MESSAGE,
     StaleRevisionError,
@@ -78,9 +78,9 @@ def _add_impact_column(conn: sqlite3.Connection) -> None:
     no impact."""
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(da_discovery_results)")}
     if "impact" not in columns:
-        conn.execute("ALTER TABLE da_discovery_results ADD COLUMN impact TEXT")
+        add_column_if_missing(conn, "da_discovery_results", "impact", "TEXT")
     if "index_build" not in columns:  # Upgrade G5e: old rows read as "not recorded" (NULL)
-        conn.execute("ALTER TABLE da_discovery_results ADD COLUMN index_build INTEGER")
+        add_column_if_missing(conn, "da_discovery_results", "index_build", "INTEGER")
 
 
 def insert_result(conn: sqlite3.Connection, result: DiscoveryResult, now: datetime) -> None:

@@ -57,6 +57,7 @@ from pydantic_classes.da_request_record_models import RequestRecord
 
 REFINE_PLACEHOLDER = "Tell me what to change or fix, then press Send."
 EDIT_HINT = "Edit anything, then click Re-scan."
+RESCAN_HINT = "Reads your own edits so the Tester checks them."  # Fix G9 S1
 
 
 @dataclass

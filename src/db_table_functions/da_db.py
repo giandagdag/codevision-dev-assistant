@@ -48,6 +48,23 @@ def begin_write(conn: sqlite3.Connection) -> None:
     conn.execute("BEGIN IMMEDIATE")
 
 
+def add_column_if_missing(
+    conn: sqlite3.Connection, table: str, column: str, definition: str
+) -> None:
+    """ALTER TABLE ... ADD COLUMN that survives a race.
+
+    Two screen callbacks on a fresh database can both see the column missing; the second ALTER
+    then fails with "duplicate column name". That means someone else already did it, so it is done.
+    Names come from code constants only (never user text); definition is the type and default.
+    """
+    assert table.isidentifier() and column.isidentifier(), "table and column must be identifiers"
+    try:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+    except sqlite3.OperationalError as error:
+        if "duplicate column name" not in str(error):
+            raise
+
+
 def to_db_time(moment: datetime) -> str:
     # Fixed-width UTC text (always with microseconds) so text order equals time order.
     return moment.astimezone(UTC).isoformat(timespec="microseconds")

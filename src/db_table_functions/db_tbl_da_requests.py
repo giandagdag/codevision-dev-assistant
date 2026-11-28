@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 from da_logging import get_logger
-from db_table_functions.da_db import begin_write, open_db, to_db_time
+from db_table_functions.da_db import add_column_if_missing, begin_write, open_db, to_db_time
 from db_table_functions.db_tbl_da_rulebook import (
     RulebookError,
     ensure_rulebook_tables,
@@ -52,7 +52,7 @@ def _add_follows_column(conn: sqlite3.Connection) -> None:
     does not change a table that already exists, so an older database gets the column here."""
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(da_requests)")}
     if "follows_request_id" not in columns:
-        conn.execute("ALTER TABLE da_requests ADD COLUMN follows_request_id TEXT")
+        add_column_if_missing(conn, "da_requests", "follows_request_id", "TEXT")
 
 
 class RequestNotFoundError(Exception):

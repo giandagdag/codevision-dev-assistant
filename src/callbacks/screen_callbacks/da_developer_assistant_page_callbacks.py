@@ -7,6 +7,7 @@ CodeVision defines its callback functions inside the register function. Ours are
 the file and only attached inside it, so tests can call them directly.
 """
 
+import json
 from functools import lru_cache
 from urllib.parse import parse_qs
 
@@ -47,9 +48,11 @@ from agents.da_understand_flow import (
     FORM_OPTIONAL_BOX,
     NO_NEGATIVE_OPTION,
     FormError,
+    ask_for_exception,
     choose_option,
     create_understand_request,
     edit_assumption,
+    gap_not_needed,
     get_understand_view,
     list_my_requests,
     set_functions_in_scope,
@@ -61,6 +64,7 @@ from agents.da_understand_flow import (
 from agents.da_understand_flow import (
     PROCEED_OPTION as UNDERSTAND_PROCEED,
 )
+from agents.da_understand_rules import ASK_EXCEPTION_PREFIX, NOT_NEEDED_PREFIX
 from callbacks.screen_callbacks.da_handoff_callbacks import register_da_handoff_callbacks
 from callbacks.screen_callbacks.da_refine_callbacks import register_da_refine_callbacks, run_refine
 from callbacks.screen_callbacks.da_workspace_callbacks import register_da_workspace_callbacks
@@ -74,8 +78,10 @@ from db_table_functions.db_tbl_da_understand import (
     StaleRevisionError,
     UnderstandError,
 )
+from layouts.da_admin_page import ADMIN_PATH
 from layouts.da_build_panel import POLL_ID, POLL_MS
 from layouts.da_busy_text import BUSY_JS
+from layouts.da_capability_map_view import MAP_PATH
 from layouts.da_developer_assistant_page import (
     BUSY_ID,
     CHOICE_TYPE,
@@ -96,6 +102,9 @@ from layouts.da_developer_assistant_page import (
     START_KEY,
     STATE_ID,
     SWITCH_ID,
+    TAB_KEY_ID,
+    TAB_MEMORY_ID,
+    TABS_ID,
     TEXT_ID,
     add_pill_note,
     approach_buttons,
@@ -133,8 +142,14 @@ from layouts.da_enhance_panel import (
     scope_picker,
     test_plan_net_section,
 )
+from layouts.da_inbox_page import INBOX_PATH
 from layouts.da_lock_buttons import lock_buttons
-from layouts.da_tester_panel import FINDING_ACT_TYPE, FINDING_REASON_TYPE
+from layouts.da_tester_panel import (
+    FINDING_ACT_TYPE,
+    FINDING_REASON_TYPE,
+    FINDINGS_ID,
+    SEE_FINDINGS_ID,
+)
 from pydantic_classes.da_models import (
     STATUS_APPROACH_PROPOSED,
     STATUS_BUILDING,
@@ -204,6 +219,65 @@ PAGE_BUSY = (
     {**da_styles.PAGE, "pointerEvents": "none", "opacity": 0.75},
     da_styles.PAGE,
 )
+
+# Pages that own the address while they show (the Developer Assistant stays built but hidden).
+OTHER_PAGES = (ADMIN_PATH, INBOX_PATH, MAP_PATH)
+
+# G9 S5: "Opening..." only when the Developer Assistant page is the one showing.
+OPENING_JS = f"""
+function(search, pathname) {{
+    if ({json.dumps(list(OTHER_PAGES))}.indexOf(pathname) >= 0) {{
+        return window.dash_clientside.no_update;
+    }}
+    return 'Opening...';
+}}
+"""
+
+# G9 S2: See the findings scrolls the findings table into view on every press.
+SCROLL_TO_FINDINGS_JS = f"""
+function(clicks) {{
+    var table = document.getElementById('{FINDINGS_ID}');
+    if (clicks && table) {{ table.scrollIntoView({{behavior: 'smooth', block: 'start'}}); }}
+    return window.dash_clientside.no_update;
+}}
+"""
+
+# G9 S4: after a redraw the user's tab stays open when the step is the same as when he chose it
+# (same key); a new step clears the memory so the server's choice wins.
+RESTORE_TAB_JS = """
+function(children, key, memory) {
+    var none = window.dash_clientside.no_update;
+    if (memory && memory.key === key) {
+        // Press the tab button once the new page is on screen (an Output on the tabs would fail on
+        // pages that have none).
+        setTimeout(function () {
+            var tab = document.querySelector('[role=tab][id$="-tab-' + memory.tab + '"]');
+            var shown = tab && tab.getAttribute('aria-selected') === 'true';
+            if (tab && !shown && !tab.disabled) { tab.click(); }
+        }, 50);
+        return none;
+    }
+    return memory ? null : none;
+}
+"""
+
+# The user pressed a tab: remember it with the key of this draw. A redraw makes new Tabs that
+# announce the server's tab too; only a value that follows a real click on a tab is remembered.
+REMEMBER_TAB_JS = """
+function(tab, key) {
+    if (!window.daTabListener) {
+        window.daTabListener = true;
+        document.addEventListener('click', function (event) {
+            if (event.target.closest && event.target.closest('[role=tab]')) {
+                window.daTabClicked = true;
+            }
+        }, true);
+    }
+    if (!window.daTabClicked) { return window.dash_clientside.no_update; }
+    window.daTabClicked = false;  // one click is remembered once
+    return tab ? {key: key, tab: tab} : window.dash_clientside.no_update;
+}
+"""
 
 # Enter sends, Shift+Enter makes a new line. Dash cannot tell them apart in Python, so this small
 # browser script (a Dash clientside callback) does the one thing a function key does on a 5250
@@ -347,13 +421,15 @@ def perform_scope_save(settings: Settings, chosen, state, refresh):
     return (refresh or 0) + 1, ""
 
 
-def show_page(search: str | None, refresh: int | None):
+def show_page(search: str | None, refresh: int | None, pathname: str | None = None):
     """Draw Home, the blank workspace, or one request, from the URL.
 
     The conversation lives in the database, so a page reload draws exactly the same thing.
     While an escalation is open (and the chat lock is on) the composer becomes the waiting line
-    (Phase 10, spec section 11).
+    (Phase 10, spec section 11). G9 S6: while Admin, Inbox or the map shows, the address is theirs.
     """
+    if pathname in OTHER_PAGES:
+        raise PreventUpdate
     page = _draw_page(search, refresh)
     params = parse_qs((search or "").lstrip("?"))
     if params.get("request"):
@@ -574,6 +650,12 @@ def _perform_action(settings: Settings, trigger, text, state, refresh):
                 return (refresh or 0) + 1, no_update, ""
             if option.startswith(EDIT_ASSUMPTION_PREFIX):  # B2 P34: the box holds the new sentence
                 edit_assumption(settings, request_id, option, text or "", revision)
+                return (refresh or 0) + 1, no_update, ""
+            if option.startswith(ASK_EXCEPTION_PREFIX):  # G9 U6: the box holds the reason
+                ask_for_exception(settings, request_id, option, text or "", revision)
+                return (refresh or 0) + 1, no_update, ""
+            if option.startswith(NOT_NEEDED_PREFIX):  # G9 F1c: the box holds the reason
+                gap_not_needed(settings, request_id, option, text or "", revision)
                 return (refresh or 0) + 1, no_update, ""
             view = choose_option(settings, request_id, option, revision)
             if view.request.status == STATUS_CONFIRMED:
@@ -894,18 +976,22 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
     except ConfigError:
         pass  # the page itself shows the settings problem
     # Draws on first load too, so this one does not use prevent_initial_call.
+    # G9 S5: the pathname is an input too, so a menu change always redraws the request page.
     app.callback(
         Output(PAGE_CONTENT_ID, "children"),
         Input(LOCATION_ID, "search"),
         Input(REFRESH_ID, "data"),
+        Input(LOCATION_ID, "pathname"),
     )(show_page)
 
     # Fix G5 N6: the old page (Home and its subtitle) stayed on screen while a slow server built the
     # request page. The browser clears it at once when the address changes; show_page then fills it.
+    # G9 S5: only while the Developer Assistant page is the one showing.
     app.clientside_callback(
-        "function(search) { return 'Opening...'; }",
+        OPENING_JS,
         Output(PAGE_CONTENT_ID, "children", allow_duplicate=True),
         Input(LOCATION_ID, "search"),
+        Input(LOCATION_ID, "pathname"),
         prevent_initial_call=True,
     )
 
@@ -1041,3 +1127,27 @@ def register_da_developer_assistant_page_callbacks(app) -> None:
         State(REFRESH_ID, "data"),
         prevent_initial_call=True,
     )(change_mark)
+
+    # Fix G9 S2 and S4 (registered last so the order tests above still hold). The Home screen has
+    # no key store, so that State is optional: a missing key clears the tab memory.
+    app.clientside_callback(
+        SCROLL_TO_FINDINGS_JS,
+        Output(KEYS_ID, "data", allow_duplicate=True),
+        Input(SEE_FINDINGS_ID, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    app.clientside_callback(
+        RESTORE_TAB_JS,
+        Output(TAB_MEMORY_ID, "data", allow_duplicate=True),
+        Input(PAGE_CONTENT_ID, "children"),
+        State(TAB_KEY_ID, "data", allow_optional=True),
+        State(TAB_MEMORY_ID, "data"),
+        prevent_initial_call=True,
+    )
+    app.clientside_callback(
+        REMEMBER_TAB_JS,
+        Output(TAB_MEMORY_ID, "data"),
+        Input(TABS_ID, "value"),
+        State(TAB_KEY_ID, "data", allow_optional=True),
+        prevent_initial_call=True,
+    )

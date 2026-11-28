@@ -16,6 +16,7 @@ from pydantic_classes.da_request_record_models import (
     CriterionKind,
     RequestRecord,
 )
+from pydantic_classes.da_rule_conflict_models import Gap, RuleConflict
 from pydantic_classes.da_tester_models import Finding
 
 LaneName = Literal["requirement", "approach", "bug"]
@@ -167,6 +168,10 @@ class RefineState(_Shape):
     # Restore: 0 nothing open, -1 the list of earlier builds is open, N the build chosen (its
     # warning is in the chat; Restore build N or Cancel waits). Cleared by Cancel or by the restore.
     restore_pick: int = 0
+    # Fix G9 F5: what the rule check found in `pending_record` (old rows read as nothing found).
+    check_conflicts: list[RuleConflict] = Field(default_factory=list)
+    check_gaps: list[Gap] = Field(default_factory=list)
+    check_failed: bool = False
 
 
 class RefineRow(_Shape):

@@ -62,5 +62,5 @@ def test_b3_the_banner_shows_the_reason_and_a_link_to_the_findings():
     text = str(panel.tester_report(view, can_act=True))
 
     assert "2 of 19 tests fail." in text
-    assert "See the findings" in text and "#da-tester-findings" in text
+    assert "See the findings" in text and panel.SEE_FINDINGS_ID in text  # G9 S2: a button now
     assert "Reviewed by Qwen3.6-35B-A3B in" in text and "/m/" not in text

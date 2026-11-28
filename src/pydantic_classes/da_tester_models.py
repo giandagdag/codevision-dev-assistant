@@ -152,3 +152,4 @@ class TesterView(BaseModel):
     reason: str = ""  # G5 B3: why the label is Not passing, one line
     can_rerun: bool = False
     layer_c_ran: bool = False
+    cite_notes: dict[str, str] = Field(default_factory=dict)  # G9 F3: cite -> its plain meaning

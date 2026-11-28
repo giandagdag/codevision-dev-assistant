@@ -19,11 +19,18 @@ from agents.da_discover_flow import (
     INDEX_NOW_AVAILABLE_LINE,
     outcome_status,
 )
-from agents.da_handoff_screen import FOLLOW_UP_KEY, READY_KEY, HandoffBox
+from agents.da_handoff_screen import (
+    CHECK_FOLDER_HINT,
+    CHECK_FOLDER_KEY,
+    FOLLOW_UP_KEY,
+    READY_KEY,
+    HandoffBox,
+)
 from agents.da_refine_describe import DESCRIBE_KEY, DESCRIBE_LABEL
+from agents.da_refine_flow import RESCAN_KEY
 from agents.da_refine_hooks import STEP_REQ_APPROACH, STEP_REQ_FINDINGS
 from agents.da_refine_lanes import STEP_APPROACH, STEP_BUG, STEP_REQ_CHECKPOINT
-from agents.da_refine_screen import RefineBox, RefineBuildPanel, VersionHistory
+from agents.da_refine_screen import RESCAN_HINT, RefineBox, RefineBuildPanel, VersionHistory
 from agents.da_understand_assume import ASSUME_BASIS
 from agents.da_understand_checks import MAX_MESSAGE_LENGTH
 from agents.da_understand_flow import (
@@ -90,6 +97,9 @@ REFINE_MAIN_KEYS = (
 )
 REFINE_CANCEL_KEYS = ("cancel", "restore_cancel")  # drawn as plain grey outline, apart (B2 S2)
 KEYS_ID = "da-keys-ready"  # target of the Enter-to-send script; holds nothing
+TABS_ID = "da-panel-tabs"  # G9 S4: the right-panel tabs
+TAB_KEY_ID = "da-tab-key"  # the step + tab the server chose for this draw
+TAB_MEMORY_ID = "da-tab-memory"  # the tab the user opened, with the key it was opened under
 BUSY_ID = "da-busy"  # the "searching" line, shown only while a Discover action runs
 # The 4-box form (Phase 6 fixes). Pattern ids, so the page can have none of them (all other
 # screens) and one callback still reads all five boxes in order.
@@ -194,6 +204,7 @@ def layout() -> list:
     return [
         dcc.Store(id=REFRESH_ID, data=0),
         dcc.Store(id=KEYS_ID),
+        dcc.Store(id=TAB_MEMORY_ID),
         dcc.Download(id=REPORT_FILE_ID),
         *workspace_hop_stores(),
         dmc.Box(id=PAGE_CONTENT_ID, style=da_styles.PAGE),
@@ -511,20 +522,25 @@ def _workspace(
             panels.append(_tab_panel(net, NET_TAB_VALUE))
         if audit:
             panels.append(_tab_panel(audit, "audit"))
+        chosen = open_tab or ("approach" if approach else "discovery")
         tabs = dmc.Tabs(
             [tab_list, *panels],
-            value=open_tab or ("approach" if approach else "discovery"),
+            value=chosen,
+            id=TABS_ID,
             style={**da_styles.COLUMN, "flex": 1},
         )
         side_children = [tabs]
     else:
+        chosen = "summary"
         side_children = [
-            dmc.Tabs(tab_list, value="summary"),
+            dmc.Tabs(tab_list, value="summary", id=TABS_ID),
             dmc.Box(panel, style=da_styles.PANEL_BODY),
         ]
     side = dmc.Paper(side_children, withBorder=True, radius="md", style=da_styles.COLUMN)
     return [
         dcc.Store(id=STATE_ID, data=state),
+        # G9 S4: step + tab the server chose; the same key on a redraw keeps the user's tab.
+        dcc.Store(id=TAB_KEY_ID, data=f"{request_id}|{step}|{chosen}"),
         *(stores or []),
         *([poll] if poll is not None else []),
         parts.stepper(step),
@@ -983,10 +999,22 @@ def _build_bar(
             dmc.Group([_lock(), dmc.Text(note, size="xs", fw=600)]),
             *handoff_lines,
             dmc.Group(shown, mt="xs", mb="xs"),
+            *button_hints(extra_browser, handoff if not lane else None),
         ],
         style=da_styles.CHOICES_BAR,
         pb="xs",
     )
+
+
+def button_hints(refine_browser: list, handoff: HandoffBox | None) -> list:
+    """Fix G9 S1: one dimmed hint line for Re-scan and for Check my folder, when they are shown."""
+    lines = []
+    if any(key == RESCAN_KEY for key, _ in refine_browser):
+        lines.append(RESCAN_HINT)
+    if handoff is not None and handoff.offered:
+        if any(key == CHECK_FOLDER_KEY for key, _ in handoff.browser_buttons):
+            lines.append(CHECK_FOLDER_HINT)
+    return [dmc.Text(line, size="xs", c=da_styles.MUTED) for line in lines]
 
 
 def refine_buttons(refine: RefineBox) -> list:
@@ -1542,6 +1570,12 @@ def _summary_panel(view: UnderstandView | None) -> list:
                     empty=empty("references", "None provided (optional)"),
                 )
             ],
+        ),
+        *(
+            [dmc.Text(view.rule_check_note, size="xs", c=da_styles.MUTED, id="da-rule-check-note",
+                      style={"whiteSpace": "pre-line"})]  # the note holds line breaks
+            if view and view.rule_check_note
+            else []
         ),
     ]
 
